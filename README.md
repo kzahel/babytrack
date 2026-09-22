@@ -1,8 +1,8 @@
 # babytrack: product and business opportunity proposal
 
 Working name. A free, open source (MIT), end-to-end encrypted baby tracker with
-first-party hosted sync, native apps on both stores, a web client, and an Apple
-Watch app. Self-hostable in one command.
+first-party hosted sync, native apps on both stores, a web client, and watch
+apps for Apple Watch and Wear OS. Self-hostable in one command.
 
 Status: proposal, September 2026. Nothing built yet.
 
@@ -28,8 +28,8 @@ Activity logging, fast enough to use one-handed at 3am:
 - Medication and temperature with dose intervals
 - Notes, multiple children, twins done properly
 
-Platforms: iOS, Android, Apple Watch, web. All four are first-class and all
-share one encrypted data model.
+Platforms: iOS, Android, Apple Watch, Wear OS, web. All are first-class and
+all share one encrypted data model.
 
 Sharing: unlimited caregivers per family, forever. Realtime sync between
 caregivers with offline support and conflict-free merge (append-only event log
@@ -44,8 +44,8 @@ exports. Export: one tap, open format, always available.
   functional with no account and no network.
 - **End-to-end encrypted sync.** The server is a dumb relay for encrypted
   blobs. The family key is shared by QR or invite link, never through the
-  server. The watch gets the key from the phone over WatchConnectivity. Web
-  gets it via a link fragment. We cannot read user data.
+  server. Watches get the key from the phone over WatchConnectivity (watchOS)
+  or the Data Layer API (Wear OS). Web gets it via a link fragment. We cannot read user data.
 - **Notifications without plaintext.** Server sends empty wake pushes; the
   client decrypts and renders. Reminders (wake windows, feed intervals) are
   scheduled on-device from local data.
@@ -64,8 +64,8 @@ Against the paid incumbents (Huckleberry, Nara, Glow, Napper):
 2. Private by construction, not by policy. We can't see the data, so there is
    nothing to sell, leak, or lose in an acquisition.
 3. Web client. Almost nobody in the category offers one.
-4. Faster logging: widgets, lock screen timers, Watch complications, Siri and
-   Assistant shortcuts.
+4. Faster logging: widgets, lock screen timers, watch complications and
+   tiles, Siri and Assistant shortcuts.
 5. Durable: works if we disappear, exports in one tap, self-host if you want.
 
 Against the 2026 open source entrants (Enfold, Beanlo, Finnberry, Baby Buddy):
@@ -73,7 +73,7 @@ Against the 2026 open source entrants (Enfold, Beanlo, Finnberry, Baby Buddy):
 1. On both stores on day one with a hosted service we commit to running.
    Self-host-only projects never reach a sleep-deprived parent searching the
    App Store.
-2. Apple Watch app. None of them have one.
+2. Watch apps on both Apple Watch and Wear OS. None of them have either.
 3. E2EE. Only one tiny project has attempted it and it is single-user.
 4. MIT rather than AGPL. Friendlier signal, no rebrand covenants.
 5. Native and small rather than Flutter, Next.js, or Firebase.
@@ -114,7 +114,7 @@ tier is complete and permanent, and announce in advance that a paid unlock for
 extras will come later. No surprises.
 
 Phase 2, lifetime unlock. One-time $20 to $40 for convenience extras that do
-not gate the core: Apple Watch app, widgets, PDF reports, daycare share links,
+not gate the core: watch apps, widgets, PDF reports, daycare share links,
 twin mode niceties. Baby Daybook does this at ~$30 and is estimated at ~$30K/mo
 after roughly seven years of installs. That is the realistic ceiling for a
 solo indie here, not a year-two projection.
@@ -164,7 +164,7 @@ shnick92/baby-tracker (React PWA, two-parent only, MIT).
 Not really open: Sprout Track (custom non-commercial license), Sara (GPL but
 Firebase backend).
 
-None of the open source projects has a watch app. None has E2EE with
+None of the open source projects has a watch app on either platform. None has E2EE with
 multi-caregiver sync.
 
 ## Risks
@@ -177,8 +177,9 @@ multi-caregiver sync.
   over medical citations). Keep medical content out of the MVP.
 - Crowded 2026 field means "free and open" is table stakes. Distribution and
   logging speed decide it.
-- Solo maintenance burden across four platforms. Sharing the sync and crypto
-  engine is the leverage point.
+- Solo maintenance burden across five platforms. Sharing the sync and crypto
+  engine is the leverage point. Watch apps are three screens each: start/stop
+  timers, one-tap diaper, last-event complication.
 
 ## Open questions
 

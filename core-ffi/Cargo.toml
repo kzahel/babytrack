@@ -10,5 +10,14 @@ publish.workspace = true
 path = "src/lib.rs"
 crate-type = ["rlib", "cdylib", "staticlib"]
 
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["bindgen"]
+
+[features]
+bindgen = ["uniffi/cli"]
+
 [dependencies]
 babytrack-core.workspace = true
+uniffi = "=0.32.2"

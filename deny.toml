@@ -1,6 +1,16 @@
 [licenses]
 allow = ["MIT", "Apache-2.0", "BSD-3-Clause", "Unicode-3.0"]
 unused-allowed-license = "allow"
+# The M0 native binding uses UniFFI. Keep its MPL allowance limited to the
+# pinned UniFFI crates; project-authored sources remain MIT.
+exceptions = [
+  { crate = "uniffi@=0.32.2", allow = ["MPL-2.0"] },
+  { crate = "uniffi_core@=0.32.2", allow = ["MPL-2.0"] },
+  { crate = "uniffi_internal_macros@=0.32.2", allow = ["MPL-2.0"] },
+  { crate = "uniffi_macros@=0.32.2", allow = ["MPL-2.0"] },
+  { crate = "uniffi_meta@=0.32.2", allow = ["MPL-2.0"] },
+  { crate = "uniffi_pipeline@=0.32.2", allow = ["MPL-2.0"] },
+]
 
 [sources]
 unknown-registry = "deny"

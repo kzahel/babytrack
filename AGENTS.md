@@ -117,6 +117,7 @@ cargo check --workspace --locked
 cargo test --workspace --locked
 cargo check -p babytrack-core-wasm --target wasm32-unknown-unknown --locked
 bash scripts/check_wasm_smoke.sh
+bash scripts/check_native_smoke.sh
 python3 scripts/check_workspace.py
 cargo deny check advisories bans licenses sources
 ```
@@ -126,6 +127,7 @@ The M0 byte, operation, crypto, and in-memory replay components run
 bytes, published unit conversions, hash, Ed25519, XChaCha, fixed HPKE
 decryption, a full batch byte vector, and encrypted minor/inert batches.
 Per-Family HLC boundary tests run there as well. The wasm smoke calls the
-shared core through JavaScript with fixed encrypted vectors. `core-ffi`,
-`server`, and `cli` still have no behavioral tests. Add gates for their
-behavior with M0 work.
+shared core through JavaScript with fixed encrypted vectors. The native
+smoke calls it through Swift and Kotlin with the same selected vectors. `server`
+and `cli` still have no behavioral tests. Add gates for their behavior with
+M0 work.

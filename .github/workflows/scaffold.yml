@@ -40,12 +40,31 @@ jobs:
           command: check
           command-arguments: bans licenses sources advisories
 
+  native:
+    name: Native bindings (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Run Kotlin and available Swift bindings
+        run: bash scripts/check_native_smoke.sh
+
   required:
     name: Required checks
     if: always()
-    needs: rust
+    needs: [rust, native]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Require the scaffold job
-        run: test '${{ needs.rust.result }}' = success
+      - name: Require the Rust and native jobs
+        run: |
+          test '${{ needs.rust.result }}' = success
+          test '${{ needs.native.result }}' = success

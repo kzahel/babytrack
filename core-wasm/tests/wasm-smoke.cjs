@@ -40,6 +40,13 @@ const wrongSigner = Buffer.from(signer);
 wrongSigner[0] ^= 1;
 assert.throws(() => clean.apply_envelope(envelope('CROSSMINORBYTE01'), relayId, epochKey, wrongSigner, 1n));
 assert.equal(clean.last_cursor(), 0n);
+const wrongRelay = Buffer.from(relayId);
+wrongRelay[0] ^= 1;
+assert.throws(() => clean.apply_envelope(envelope('CROSSMINORBYTE01'), wrongRelay, epochKey, signer, 1n));
+const wrongFamilyId = Buffer.from(familyId);
+wrongFamilyId[0] ^= 1;
+assert.throws(() => new WasmFamily(wrongFamilyId)
+  .apply_envelope(envelope('CROSSMINORBYTE01'), relayId, epochKey, signer, 1n));
 
 const genesis = full.cases.find((entry) => entry.id === 'GENESIS01');
 const fixedBatch = full.cases.find((entry) => entry.id === 'BATCHBYTE01');

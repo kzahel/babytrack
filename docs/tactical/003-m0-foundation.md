@@ -111,8 +111,10 @@ receipt/authorization checks and an atomic
 log/projection transaction. `bash scripts/check_wasm_smoke.sh` builds the
 wasm-bindgen Node binding and runs the fixed encrypted Family and child batch,
 unknown minor field, four inert cases, and wrong key/signature checks through
-JavaScript. This is one binding proof; the full vector suite, native
-Swift/Kotlin bindings, and real browser/IndexedDB gate remain open.
+JavaScript. `bash scripts/check_native_smoke.sh` generates UniFFI bindings
+and runs the same selected encrypted cases through Kotlin/JNA and Swift on
+macOS. These are three binding proofs for a subset; the full vector suite,
+bidirectional write path, and real browser/IndexedDB gate remain open.
 
 Every agreed FS case gets a deterministic core/relay action binding with
 assertions for local state, shared state, pending outbox, visible status, and

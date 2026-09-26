@@ -42,14 +42,17 @@ appear implemented.
 The five Rust targets and root build files now exist. The core now contains
 a canonical CBOR codec, operation decoder, crypto/HPKE primitives, signed
 batch bytes, in-memory projection, HLC, and vector tests. `core-wasm/` now
-calls the shared batch/projection path from JavaScript against fixed vectors;
-`core-ffi/`, `server/`, and `cli/` remain scaffold boundaries. The documentation,
-test, and platform paths marked for later milestones are future paths, not
+calls the shared batch/projection path from JavaScript against fixed vectors.
+`core-ffi/` exposes that path through UniFFI and passes selected Swift and
+Kotlin encrypted vectors; `server/` and `cli/` remain scaffold boundaries.
+The documentation, test, and platform paths marked for later milestones are future paths, not
 links to existing files. Scaffold targets compile without implementing their
 responsibilities. The CBOR vector tests cover only the first byte subset;
 other targets reporting zero cases are not evidence of protocol or product
 correctness. The Node wasm smoke is a binding proof, not a browser storage
-or IndexedDB test.
+or IndexedDB test. UniFFI's MPL-2.0 runtime/build crates have exact-version
+exceptions in `deny.toml`; generated native bindings are build outputs, not
+committed project sources.
 
 The workspace uses package names such as `babytrack-core` rather than a Rust
 crate named `core`, and pins Rust 1.92.0. Path names above remain short.

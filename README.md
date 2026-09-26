@@ -10,9 +10,9 @@ canonical CBOR codec, structural operation decoder, tested hash, signature,
 AEAD, and HPKE primitives, plus a signed encrypted batch byte proof in Rust,
 JavaScript, Swift, and Kotlin. It has in-memory local/shared projections, a
 native SQLite and browser IndexedDB local-only journals, and a per-Family
-HLC. The development relay can stage and atomically commit a signed Family
-genesis and answer an authenticated promotion-result read. It has no later
-control or batch sync routes yet. No complete application or sharing flow
+HLC. The development relay can commit a signed Family genesis and its first
+manager-issued invitation, then serve authenticated control/object reads.
+It has no claim, grant, removal, or batch sync routes yet. No complete application or sharing flow
 exists yet.
 Scenario files
 still describe expected behavior; they are not passing product tests.
@@ -69,7 +69,7 @@ Then follow the task-specific links; do not load all documentation by default.
 decoding, crypto, projection, local SQLite journal, and clock behavior in
 `core/`. `core-wasm/` includes the browser local journal adapter;
 and `core-ffi/` expose initial JavaScript, Swift, and Kotlin bindings;
-`server/` has the narrow genesis development routes; `cli/` remains a
+`server/` has narrow genesis and first-invitation development routes; `cli/` remains a
 scaffold target. `wire/` holds CBOR and public cryptographic primitives
 shared between core and relay.
 Only the client-facing targets depend on `core/`. The

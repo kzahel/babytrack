@@ -1,5 +1,5 @@
-//! Development relay routes. Only genesis promotion is enabled until the
-//! remaining public control validator and read ACL are implemented.
+//! Development relay routes. Genesis and the first manager invitation are
+//! enabled; later control and batch kinds remain closed.
 
 use std::{
     path::Path,
@@ -15,6 +15,7 @@ use axum::{
 };
 
 use crate::store::RelayStore;
+use babytrack_wire::cbor::{self, Value};
 
 type Shared = Arc<Mutex<RelayStore>>;
 
@@ -26,9 +27,12 @@ pub(crate) fn router(
     Ok(Router::new()
         .route(
             "/v1/families/{family}/objects/{object}",
-            post(stage_genesis),
+            post(stage_control_object).get(read_object),
         )
-        .route("/v1/families/{family}/control", post(commit_genesis))
+        .route(
+            "/v1/families/{family}/control",
+            post(commit_control).get(read_control),
+        )
         .route(
             "/v1/families/{family}/promotions/{promotion}",
             get(promotion_result),
@@ -78,7 +82,22 @@ fn cbor_response(bytes: Vec<u8>) -> ([(axum::http::HeaderName, &'static str); 1]
     ([(CONTENT_TYPE, "application/cbor")], bytes)
 }
 
-async fn stage_genesis(
+fn transition_kind(body: &[u8], staged: bool) -> Result<u64, StatusCode> {
+    let value = cbor::decode(body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let Value::Map(fields) = value else {
+        return Err(StatusCode::BAD_REQUEST);
+    };
+    let index = if staged { 1 } else { 0 };
+    let Some((_, Value::Map(unsigned))) = fields.get(index) else {
+        return Err(StatusCode::BAD_REQUEST);
+    };
+    let Some((6, Value::Integer(kind))) = unsigned.get(5) else {
+        return Err(StatusCode::BAD_REQUEST);
+    };
+    (*kind).try_into().map_err(|_| StatusCode::BAD_REQUEST)
+}
+
+async fn stage_control_object(
     State(store): State<Shared>,
     RoutePath((family, object)): RoutePath<(String, String)>,
     OriginalUri(uri): OriginalUri,
@@ -92,13 +111,16 @@ async fn stage_genesis(
     let mut store = store
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let response = store
-        .stage_genesis_object(family_id, object_id, &body)
-        .map_err(|_| StatusCode::CONFLICT)?;
+    let response = match transition_kind(&body, true)? {
+        1 => store.stage_genesis_object(family_id, object_id, &body),
+        2 => store.stage_first_issue_object(family_id, object_id, &body),
+        _ => return Err(StatusCode::NOT_IMPLEMENTED),
+    }
+    .map_err(|_| StatusCode::CONFLICT)?;
     Ok(cbor_response(response))
 }
 
-async fn commit_genesis(
+async fn commit_control(
     State(store): State<Shared>,
     RoutePath(family): RoutePath<String>,
     OriginalUri(uri): OriginalUri,
@@ -118,9 +140,75 @@ async fn commit_genesis(
     let mut store = store
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let response = match transition_kind(&body, false)? {
+        1 => store.commit_genesis(family_id, &body, committed_ms),
+        2 => store.commit_first_issue(family_id, &body, committed_ms),
+        _ => return Err(StatusCode::NOT_IMPLEMENTED),
+    }
+    .map_err(|_| StatusCode::CONFLICT)?;
+    Ok(cbor_response(response))
+}
+
+async fn read_control(
+    State(store): State<Shared>,
+    RoutePath(family): RoutePath<String>,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<impl axum::response::IntoResponse, StatusCode> {
+    let family_id = canonical_id(&family)?;
+    if headers
+        .get(CONTENT_TYPE)
+        .is_none_or(|v| v.as_bytes() != b"application/cbor")
+    {
+        return Err(StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    }
+    let query = uri.query().ok_or(StatusCode::BAD_REQUEST)?;
+    let digits = query
+        .strip_prefix("after=")
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    if digits.is_empty()
+        || (digits.len() > 1 && digits.starts_with('0'))
+        || !digits.bytes().all(|b| b.is_ascii_digit())
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let after: u64 = digits.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
+    let exact = uri
+        .path_and_query()
+        .ok_or(StatusCode::BAD_REQUEST)?
+        .as_str();
+    let mut store = store
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let response = store
-        .commit_genesis(family_id, &body, committed_ms)
-        .map_err(|_| StatusCode::CONFLICT)?;
+        .control_page_authenticated(family_id, after, exact, &body)
+        .map_err(|_| StatusCode::FORBIDDEN)?;
+    Ok(cbor_response(response))
+}
+
+async fn read_object(
+    State(store): State<Shared>,
+    RoutePath((family, object)): RoutePath<(String, String)>,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<impl axum::response::IntoResponse, StatusCode> {
+    let family_id = canonical_id(&family)?;
+    let object_id = canonical_id(&object)?;
+    if uri.query().is_some()
+        || headers
+            .get(CONTENT_TYPE)
+            .is_none_or(|v| v.as_bytes() != b"application/cbor")
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let mut store = store
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let response = store
+        .object_authenticated(family_id, object_id, uri.path(), &body)
+        .map_err(|_| StatusCode::FORBIDDEN)?;
     Ok(cbor_response(response))
 }
 
@@ -270,6 +358,156 @@ mod tests {
                 .await
                 .unwrap(),
             committed
+        );
+    }
+
+    #[tokio::test]
+    async fn first_issue_http_stage_commit_and_authenticated_fetch() {
+        let genesis: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/api-genesis-v1.json").unwrap(),
+        )
+        .unwrap();
+        let issue: Json =
+            serde_json::from_str(&std::fs::read_to_string("../tests/vectors/api-v1.json").unwrap())
+                .unwrap();
+        let chain: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/contiguous-chain-v1.json").unwrap(),
+        )
+        .unwrap();
+        let seed: [u8; 32] = hex(chain["test_only_inputs"]["relay_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let family: [u8; 16] = hex(genesis["inputs"]["family_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let promotion: [u8; 16] = hex(genesis["inputs"]["promotion_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let genesis_response = hex(genesis["expect"]["commit_response_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let Value::Map(fields) = cbor::decode(&genesis_response).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(committed) = &fields[1].1 else {
+            panic!()
+        };
+        let Value::Map(fields) = cbor::decode(committed).unwrap() else {
+            panic!()
+        };
+        let Value::Array(receipt) = &fields[2].1 else {
+            panic!()
+        };
+        let Value::Integer(genesis_time) = receipt[4] else {
+            panic!()
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("relay.db");
+        let mut store = RelayStore::open(&db, seed).unwrap();
+        store
+            .stage_genesis_object(
+                family,
+                promotion,
+                &hex(genesis["inputs"]["stage_body_cbor_hex"].as_str().unwrap()),
+            )
+            .unwrap();
+        store
+            .commit_genesis(
+                family,
+                &hex(genesis["inputs"]["commit_candidate_cbor_hex"]
+                    .as_str()
+                    .unwrap()),
+                genesis_time.try_into().unwrap(),
+            )
+            .unwrap();
+        drop(store);
+        let app = router(&db, seed).unwrap();
+        let stage = Request::post(issue["inputs"]["stage_path"].as_str().unwrap())
+            .header(CONTENT_TYPE, "application/cbor")
+            .body(Body::from(hex(issue["inputs"]["stage_body_cbor_hex"]
+                .as_str()
+                .unwrap())))
+            .unwrap();
+        let response = app.clone().oneshot(stage).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            to_bytes(response.into_body(), 2 * 1024 * 1024)
+                .await
+                .unwrap()
+                .to_vec(),
+            hex(issue["expect"]["stage_response_cbor_hex"].as_str().unwrap())
+        );
+        let pending_object = Request::get(issue["inputs"]["read_object_path"].as_str().unwrap())
+            .header(CONTENT_TYPE, "application/cbor")
+            .body(Body::from(hex(
+                issue["inputs"]["read_object_auth_cbor_hex"]
+                    .as_str()
+                    .unwrap(),
+            )))
+            .unwrap();
+        assert_eq!(
+            app.clone().oneshot(pending_object).await.unwrap().status(),
+            StatusCode::FORBIDDEN
+        );
+        let commit = Request::post(issue["inputs"]["commit_path"].as_str().unwrap())
+            .header(CONTENT_TYPE, "application/cbor")
+            .body(Body::from(hex(issue["inputs"]["commit_body_cbor_hex"]
+                .as_str()
+                .unwrap())))
+            .unwrap();
+        let response = app.clone().oneshot(commit).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let committed = to_bytes(response.into_body(), 2 * 1024 * 1024)
+            .await
+            .unwrap();
+        let Value::Map(fields) = cbor::decode(&committed).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(issue_committed) = &fields[1].1 else {
+            panic!()
+        };
+        let control = Request::get(issue["inputs"]["read_control_path"].as_str().unwrap())
+            .header(CONTENT_TYPE, "application/cbor")
+            .body(Body::from(hex(issue["inputs"]["read_auth_cbor_hex"]
+                .as_str()
+                .unwrap())))
+            .unwrap();
+        let response = app.clone().oneshot(control).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let page = to_bytes(response.into_body(), 2 * 1024 * 1024)
+            .await
+            .unwrap();
+        let Value::Map(page) = cbor::decode(&page).unwrap() else {
+            panic!()
+        };
+        let Value::Array(entries) = &page[3].1 else {
+            panic!()
+        };
+        let Value::Array(entry) = &entries[0] else {
+            panic!()
+        };
+        assert_eq!(entry[0], Value::Integer(2));
+        assert_eq!(entry[2], Value::Bytes(issue_committed.clone()));
+        let object = Request::get(issue["inputs"]["read_object_path"].as_str().unwrap())
+            .header(CONTENT_TYPE, "application/cbor")
+            .body(Body::from(hex(
+                issue["inputs"]["read_object_auth_cbor_hex"]
+                    .as_str()
+                    .unwrap(),
+            )))
+            .unwrap();
+        let response = app.clone().oneshot(object).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            to_bytes(response.into_body(), 2 * 1024 * 1024)
+                .await
+                .unwrap()
+                .to_vec(),
+            hex(issue["expect"]["object_response_cbor_hex"]
+                .as_str()
+                .unwrap())
         );
     }
 }

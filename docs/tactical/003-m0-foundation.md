@@ -53,28 +53,26 @@ copy/restore; no Family handle reaches another Family's rows, keys, or file.
 Canonical CBOR and domain-separated hash, signature, and AEAD primitives
 now live in a narrow `babytrack-wire` crate. The client core reexports the
 same implementation; the relay can depend on it without importing client
-storage, plaintext operations, or Family keys. The real relay, authority
-validation, and route tests below remain open.
+storage, plaintext operations, or Family keys. Later authority kinds and
+batch routes below remain open.
 The relay crate now encodes candidate-to-committed control receipts, object
 stage responses, and ordered control pages from the narrow wire crate.
 Exact genesis and invite-issue API byte vectors pass, including the relay
-signature. These constructors are internal to the relay and are not yet
-reachable through a server endpoint: authority validation, atomic storage,
-read authentication, and network delivery must precede any write route.
+signature. The constructors are internal to validated SQLite transactions.
 The relay's genesis candidate validator now independently checks the pinned
 relay identity, zero parent, initial manager row and signature, resulting
 state/core hashes, epoch, and ordered promotion manifest. It accepts the
 published candidate and rejects a wrong relay key or altered signature.
-This covers only reservation of a new Family; later control kinds still
-need public relay authorization and state transition checks.
+Later control kinds still need public relay authorization and state
+transition checks.
 SQLite now durably reserves one exact genesis candidate for a Family before
 membership exists. Only objects matching its signed manifest can stage;
 none is readable as committed data until every object and the signed
 genesis receipt land in one transaction. Identical staging/commit retries
 return the first bytes. The genesis API fixture passes through staging,
 restart, commit, another retry, and reopen; changing the relay signing key
-on reopen fails. This internal store is not yet an HTTP relay, and it does
-not accept subsequent controls or batches.
+on reopen fails. Only the first invitation transition can follow genesis;
+batch writes remain closed.
 The first Axum development routes now expose genesis object staging,
 genesis commit, and a signed manager-only promotion-result read. Routes
 require canonical lowercase path IDs, exact path/body Family and object
@@ -82,16 +80,21 @@ binding, canonical CBOR media type, and an exact signed GET path. A router
 test sends the published promotion bytes through HTTP, checks pending and
 committed results, and rejects a cross-Family path and bad read signature.
 The dev binary takes a SQLite path, an existing raw 32-byte relay seed file,
-and a bind address. Invitation, normal object, log, batch, and WebSocket
-routes remain unavailable until their public authority and ACL checks exist.
+and a bind address. Further invitation/join transitions, batch, and
+WebSocket routes remain unavailable until their authority checks exist.
 The relay independently verifies the first manager-issued invitation against
 its promoted genesis head: manager signature and role, fixed invitation
 role/key, resulting public state/core hashes, and membership-object
 manifest. SQLite stages that exact candidate, rejects a missing object,
 then commits the membership object, receipt, head, and cursor 2 atomically.
 The published invitation API bytes pass through a restart and exact retries.
-The corresponding HTTP invitation routes and authenticated reads are the
-next slice; claims and later authority transitions remain closed.
+The corresponding HTTP invitation routes now stage and commit this first
+issue, then serve a signed manager read of the control page and committed
+membership object. A router test sends the published API request bytes
+through staging and fetch, checks that an uncommitted object is unreadable,
+and confirms the fetched cursor 2 entry equals the commit response. Claims,
+later authority transitions, general object ACLs, encrypted batches, and
+WebSocket wakes remain closed.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

@@ -600,6 +600,129 @@ impl RelayStore {
         ]))?;
         Ok(body)
     }
+
+    pub fn control_page_authenticated(
+        &mut self,
+        family_id: [u8; 16],
+        after: u64,
+        exact_path: &str,
+        auth_bytes: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        let expected_path = format!(
+            "/v1/families/{}/control?after={after}",
+            lower_hex(&family_id)
+        );
+        if exact_path != expected_path {
+            return Err(Error::Invalid("control read path not canonical"));
+        }
+        self.verify_active_manager_read(family_id, exact_path, auth_bytes)?;
+        let mut statement = self.db.prepare(
+            "SELECT cursor,committed_bytes FROM entries WHERE family_id=?1 AND kind=1 AND cursor>?2 ORDER BY cursor LIMIT 257"
+        )?;
+        let mut rows = statement.query(params![
+            &family_id[..],
+            i64::try_from(after).map_err(|_| Error::Invalid("cursor range"))?
+        ])?;
+        let mut entries = Vec::new();
+        while let Some(row) = rows.next()? {
+            let cursor: i64 = row.get(0)?;
+            entries.push(receipt::RelayEntry {
+                cursor: cursor
+                    .try_into()
+                    .map_err(|_| Error::Invalid("cursor range"))?,
+                kind: 1,
+                committed_bytes: row.get(1)?,
+            });
+        }
+        let has_more = entries.len() > 256;
+        entries.truncate(256);
+        Ok(receipt::encode_control_page(
+            family_id, after, &entries, has_more,
+        )?)
+    }
+
+    pub fn object_authenticated(
+        &mut self,
+        family_id: [u8; 16],
+        object_id: [u8; 16],
+        exact_path: &str,
+        auth_bytes: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        let expected_path = format!(
+            "/v1/families/{}/objects/{}",
+            lower_hex(&family_id),
+            lower_hex(&object_id)
+        );
+        if exact_path != expected_path {
+            return Err(Error::Invalid("object read path not canonical"));
+        }
+        self.verify_active_manager_read(family_id, exact_path, auth_bytes)?;
+        let object: Option<(i64,Vec<u8>,Vec<u8>)> = self.db.query_row(
+            "SELECT kind,object_bytes,transition_id FROM committed_objects WHERE family_id=?1 AND object_id=?2",
+            params![&family_id[..],&object_id[..]], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
+        ).optional()?;
+        let Some((kind, bytes, transition)) = object else {
+            return Err(Error::Invalid("object not committed"));
+        };
+        Ok(cbor::encode(&Value::Map(vec![
+            (1, Value::Integer(1)),
+            (2, Value::Integer(kind.into())),
+            (3, Value::Bytes(object_id.to_vec())),
+            (4, Value::Bytes(bytes)),
+            (5, Value::Bytes(transition)),
+        ]))?)
+    }
+
+    fn verify_active_manager_read(
+        &mut self,
+        family_id: [u8; 16],
+        exact_path: &str,
+        auth_bytes: &[u8],
+    ) -> Result<(), Error> {
+        let saved: Option<Vec<u8>> = self
+            .db
+            .query_row(
+                "SELECT candidate_bytes FROM families WHERE family_id=?1 AND active=1",
+                params![&family_id[..]],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let genesis_bytes = saved.ok_or(Error::Invalid("Family not active"))?;
+        let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
+        // Later role/removal transitions must update this ACL before they can
+        // become reachable. The current relay accepts only the first issue.
+        let verified = read_auth::verify_get(
+            auth_bytes,
+            family_id,
+            genesis.relay_id,
+            genesis.manager_id,
+            genesis.manager_signing_key,
+            exact_path,
+        )?;
+        self.record_read_id(family_id, &verified)
+    }
+
+    fn record_read_id(
+        &mut self,
+        family_id: [u8; 16],
+        verified: &read_auth::VerifiedRead,
+    ) -> Result<(), Error> {
+        let tx = self.db.transaction()?;
+        let old:Option<Vec<u8>>=tx.query_row(
+            "SELECT request_hash FROM read_requests WHERE family_id=?1 AND signer_id=?2 AND request_id=?3",
+            params![&family_id[..],&verified.signer_id[..],&verified.request_id[..]],|r|r.get(0),
+        ).optional()?;
+        if let Some(hash) = old {
+            if hash != verified.request_hash {
+                return Err(Error::Invalid("request ID reused with different bytes"));
+            }
+        } else {
+            tx.execute("INSERT INTO read_requests(family_id,signer_id,request_id,request_hash) VALUES(?1,?2,?3,?4)",
+                params![&family_id[..],&verified.signer_id[..],&verified.request_id[..],&verified.request_hash[..]])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
 }
 
 fn lower_hex(bytes: &[u8]) -> String {

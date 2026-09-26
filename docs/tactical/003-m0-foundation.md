@@ -181,6 +181,11 @@ still need validation before a holder signs admission. Public admission
 now atomically replaces a
 proved pending device with its active row at the invitation's fixed role
 and commitment; repair names that admission and leaves authority unchanged.
+The control dispatcher now covers all v1 kinds except genesis (the explicit
+starting root). Fresh signed tests cover canceling an unused invitation,
+removing a keyless pending enrollment without rotation, promoting a member,
+demoting a manager while canceling that issuer's unused invitations, and
+rejecting demotion of the final manager.
 The contiguous byte vector passes through both transitions. Validating the
 HPKE grant and encrypted membership objects, producing these transitions,
 and encrypted membership readiness remain open. Public replay now also

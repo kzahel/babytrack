@@ -189,10 +189,13 @@ impl ControlChain {
         let unsigned = exact_map(&root[0].1, 11)?;
         match number(&unsigned[5].1)? {
             2 => self.apply_invite_issue(bytes),
+            3 => self.apply_invite_cancel(bytes),
             4 => self.apply_invite_claim(bytes),
             5 => self.apply_key_proof(bytes),
             6 => self.apply_admit_grant(bytes),
+            7 => self.apply_role_change(bytes),
             8 => self.apply_remove_active(bytes),
+            9 => self.apply_remove_pending(bytes),
             10 => self.apply_grant_repair(bytes),
             11 => self.apply_holder_challenge(bytes),
             _ => Err(Error::UnsupportedKind),
@@ -449,6 +452,193 @@ impl ControlChain {
         self.memberships.insert(transition_id, membership_check);
         self.issue_times.insert(invitation_id, committed_ms);
         self.remember_control_ids(new_transition_id, new_object_ids);
+        Ok(())
+    }
+
+    pub fn apply_invite_cancel(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        let object = cbor::decode_with_limits(
+            bytes,
+            cbor::Limits {
+                max_bytes: 1024 * 1024,
+                max_depth: 16,
+            },
+        )?;
+        let root = exact_map(&object, 4)?;
+        let unsigned = exact_map(&root[0].1, 11)?;
+        self.check_unsigned(unsigned, 3, self.current_epoch()?)?;
+        let delta = exact_map(&unsigned[6].1, 1)?;
+        let invitation_id = fixed::<16>(&delta[0].1)?;
+        let state = exact_map(&self.state, 7)?;
+        let invitation = find_row(&state[6].1, 6, 0, invitation_id)?
+            .ok_or(Error::Invalid("invitation to cancel is absent"))?;
+        if number(&invitation[5])? != 1 {
+            return Err(Error::Invalid("only an unused invitation can be canceled"));
+        }
+        let signatures = array(&root[1].1, 1)?;
+        let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
+        let signer = find_row(&state[4].1, 5, 0, signer_id)?
+            .ok_or(Error::Invalid("cancel signer not active"))?;
+        if number(&signer[4])? != 2 {
+            return Err(Error::Invalid("cancel signer not manager"));
+        }
+        let signer_key = fixed::<32>(&signer[1])?;
+        let mut next_state = self.state.clone();
+        let Value::Map(map) = &mut next_state else {
+            unreachable!()
+        };
+        let Value::Array(invitations) = &mut map[6].1 else {
+            unreachable!()
+        };
+        for row in invitations {
+            let Value::Array(fields) = row else {
+                unreachable!()
+            };
+            if fixed::<16>(&fields[0])? == invitation_id {
+                fields[5] = Value::Integer(3);
+            }
+        }
+        self.finalize(
+            bytes,
+            root,
+            unsigned,
+            FinalizePlan {
+                next_state,
+                expected_signers: &[(signer_id, signer_key)],
+                manifest_kinds: &[1],
+                before_ms: None,
+            },
+        )
+    }
+
+    pub fn apply_role_change(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        let object = cbor::decode_with_limits(
+            bytes,
+            cbor::Limits {
+                max_bytes: 1024 * 1024,
+                max_depth: 16,
+            },
+        )?;
+        let root = exact_map(&object, 4)?;
+        let unsigned = exact_map(&root[0].1, 11)?;
+        self.check_unsigned(unsigned, 7, self.current_epoch()?)?;
+        let delta = exact_map(&unsigned[6].1, 3)?;
+        let device_id = fixed::<16>(&delta[0].1)?;
+        let old_role = number(&delta[1].1)?;
+        let new_role = number(&delta[2].1)?;
+        if !matches!((old_role, new_role), (1, 2) | (2, 1)) {
+            return Err(Error::Invalid("role change must switch member and manager"));
+        }
+        let state = exact_map(&self.state, 7)?;
+        let target = find_row(&state[4].1, 5, 0, device_id)?
+            .ok_or(Error::Invalid("role target not active"))?;
+        if number(&target[4])? != old_role {
+            return Err(Error::Invalid("role target's prior role differs"));
+        }
+        let signatures = array(&root[1].1, 1)?;
+        let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
+        let signer = find_row(&state[4].1, 5, 0, signer_id)?
+            .ok_or(Error::Invalid("role signer not active"))?;
+        if number(&signer[4])? != 2 {
+            return Err(Error::Invalid("role signer not manager"));
+        }
+        let signer_key = fixed::<32>(&signer[1])?;
+        let mut next_state = self.state.clone();
+        let Value::Map(map) = &mut next_state else {
+            unreachable!()
+        };
+        let Value::Array(active) = &mut map[4].1 else {
+            unreachable!()
+        };
+        for row in active.iter_mut() {
+            let Value::Array(fields) = row else {
+                unreachable!()
+            };
+            if fixed::<16>(&fields[0])? == device_id {
+                fields[4] = Value::Integer(new_role.into());
+            }
+        }
+        if !active
+            .iter()
+            .any(|row| array(row, 5).is_ok_and(|fields| number(&fields[4]).ok() == Some(2)))
+        {
+            return Err(Error::Invalid("role change would remove the last manager"));
+        }
+        if old_role == 2 {
+            let Value::Array(invitations) = &mut map[6].1 else {
+                unreachable!()
+            };
+            for row in invitations {
+                let Value::Array(fields) = row else {
+                    unreachable!()
+                };
+                if fixed::<16>(&fields[1])? == device_id && number(&fields[5])? == 1 {
+                    fields[5] = Value::Integer(3);
+                }
+            }
+        }
+        self.finalize(
+            bytes,
+            root,
+            unsigned,
+            FinalizePlan {
+                next_state,
+                expected_signers: &[(signer_id, signer_key)],
+                manifest_kinds: &[1],
+                before_ms: None,
+            },
+        )
+    }
+
+    pub fn apply_remove_pending(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        let object = cbor::decode_with_limits(
+            bytes,
+            cbor::Limits {
+                max_bytes: 1024 * 1024,
+                max_depth: 16,
+            },
+        )?;
+        let root = exact_map(&object, 4)?;
+        let unsigned = exact_map(&root[0].1, 11)?;
+        self.check_unsigned(unsigned, 9, self.current_epoch()?)?;
+        let delta = exact_map(&unsigned[6].1, 2)?;
+        let invitation_id = fixed::<16>(&delta[0].1)?;
+        let device_id = fixed::<16>(&delta[1].1)?;
+        let state = exact_map(&self.state, 7)?;
+        let pending = find_row(&state[5].1, 9, 0, invitation_id)?
+            .ok_or(Error::Invalid("pending invitation to remove is absent"))?;
+        if fixed::<16>(&pending[1])? != device_id {
+            return Err(Error::Invalid("pending removal device mismatch"));
+        }
+        let signatures = array(&root[1].1, 1)?;
+        let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
+        let signer = find_row(&state[4].1, 5, 0, signer_id)?
+            .ok_or(Error::Invalid("pending removal signer not active"))?;
+        if number(&signer[4])? != 2 {
+            return Err(Error::Invalid("pending removal signer not manager"));
+        }
+        let signer_key = fixed::<32>(&signer[1])?;
+        let mut next_state = self.state.clone();
+        let Value::Map(map) = &mut next_state else {
+            unreachable!()
+        };
+        let Value::Array(pending_rows) = &mut map[5].1 else {
+            unreachable!()
+        };
+        pending_rows.retain(|row| {
+            !array(row, 9).is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(invitation_id))
+        });
+        self.finalize(
+            bytes,
+            root,
+            unsigned,
+            FinalizePlan {
+                next_state,
+                expected_signers: &[(signer_id, signer_key)],
+                manifest_kinds: &[1],
+                before_ms: None,
+            },
+        )?;
+        self.challenges.remove(&invitation_id);
         Ok(())
     }
 

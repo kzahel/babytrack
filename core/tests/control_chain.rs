@@ -559,6 +559,336 @@ fn transition_id(case: &serde_json::Value) -> [u8; 16] {
     id.as_slice().try_into().unwrap()
 }
 
+fn test_control(
+    chain: &ControlChain,
+    kind: u64,
+    transition_id: [u8; 16],
+    delta: Value,
+    next_state: Value,
+    signer: ([u8; 16], [u8; 32]),
+    relay_seed: [u8; 32],
+) -> Vec<u8> {
+    let Value::Map(state) = &next_state else {
+        unreachable!()
+    };
+    let manifest_bytes = b"opaque membership";
+    let mut object_id = transition_id;
+    object_id[15] = object_id[15].wrapping_add(100);
+    let manifest = Value::Array(vec![Value::Array(vec![
+        Value::Integer(1),
+        Value::Bytes(object_id.to_vec()),
+        Value::Bytes(crypto::hash("object", manifest_bytes).unwrap().to_vec()),
+        Value::Integer(manifest_bytes.len() as i128),
+    ])]);
+    let mut parts = vec![
+        Value::Integer(1),
+        Value::Bytes(chain.family_id().to_vec()),
+        Value::Bytes(chain.relay_id().to_vec()),
+        Value::Bytes(chain.head_hash().to_vec()),
+        Value::Bytes(transition_id.to_vec()),
+        Value::Integer(kind.into()),
+        delta,
+        Value::Bytes(
+            crypto::hash("auth-state", &cbor::encode(&next_state).unwrap())
+                .unwrap()
+                .to_vec(),
+        ),
+        state[3].1.clone(),
+    ];
+    let core = crypto::hash(
+        "transition-core",
+        &cbor::encode(&Value::Array(parts.clone())).unwrap(),
+    )
+    .unwrap();
+    parts.push(manifest);
+    parts.push(Value::Bytes(core.to_vec()));
+    let unsigned = Value::Map(
+        parts
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| (index as u64 + 1, value))
+            .collect(),
+    );
+    let unsigned_bytes = cbor::encode(&unsigned).unwrap();
+    let signatures = Value::Array(vec![Value::Array(vec![
+        Value::Bytes(signer.0.to_vec()),
+        Value::Bytes(
+            crypto::sign_cbor("control-transition", &unsigned_bytes, &signer.1)
+                .unwrap()
+                .to_vec(),
+        ),
+    ])]);
+    let signed = Value::Array(vec![unsigned.clone(), signatures.clone()]);
+    let receipt = Value::Array(vec![
+        Value::Bytes(chain.family_id().to_vec()),
+        Value::Bytes(chain.relay_id().to_vec()),
+        Value::Bytes(transition_id.to_vec()),
+        Value::Integer((chain.last_global_cursor() + 1).into()),
+        Value::Integer(2_000_000_000_000),
+        Value::Bytes(
+            crypto::hash("control-signed", &cbor::encode(&signed).unwrap())
+                .unwrap()
+                .to_vec(),
+        ),
+    ]);
+    let receipt_signature = crypto::sign_cbor(
+        "control-receipt",
+        &cbor::encode(&receipt).unwrap(),
+        &relay_seed,
+    )
+    .unwrap();
+    cbor::encode(&Value::Map(vec![
+        (1, unsigned),
+        (2, signatures),
+        (3, receipt),
+        (4, Value::Bytes(receipt_signature.to_vec())),
+    ]))
+    .unwrap()
+}
+
+fn v4(suffix: u8) -> [u8; 16] {
+    let mut id = [
+        0x12, 0x3e, 0x45, 0x67, 0xe8, 0x9b, 0x42, 0xd3, 0xa4, 0x56, 0x42, 0x66, 0x14, 0x17, 0x40, 0,
+    ];
+    id[15] = suffix;
+    id
+}
+
+#[test]
+fn manager_cancel_role_and_pending_removal_preserve_fixed_authority() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../tests/vectors/contiguous-chain-v1.json")).unwrap();
+    let transitions = fixture["transitions"].as_array().unwrap();
+    let wire = |index: usize| hex_bytes(transitions[index]["committed_cbor_hex"].as_str().unwrap());
+    let relay_public =
+        bytes::<32>("2543b92ff1095511476adc8369db6ddc933665a11978dda1404ee1066ca9559d");
+    let relay_seed = bytes::<32>(
+        fixture["test_only_inputs"]["relay_sign_seed_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let manager_id = bytes::<16>(
+        fixture["test_only_inputs"]["manager_device_id_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let manager_seed = bytes::<32>(
+        fixture["test_only_inputs"]["manager_sign_seed_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let recipient_id = bytes::<16>(
+        fixture["test_only_inputs"]["recipient_device_id_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let recipient_seed = bytes::<32>(
+        fixture["test_only_inputs"]["recipient_sign_seed_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let mut chain = ControlChain::from_genesis(&wire(0), relay_public).unwrap();
+    chain.apply_control(&wire(1)).unwrap();
+    let invitation_id: [u8; 16] = if let Value::Map(state) =
+        cbor::decode(&chain.state_bytes().unwrap()).unwrap()
+        && let Value::Array(invitations) = &state[6].1
+        && let Value::Array(row) = &invitations[0]
+        && let Value::Bytes(id) = &row[0]
+    {
+        id.as_slice().try_into().unwrap()
+    } else {
+        unreachable!()
+    };
+    let mut canceled = cbor::decode(&chain.state_bytes().unwrap()).unwrap();
+    if let Value::Map(state) = &mut canceled
+        && let Value::Array(invitations) = &mut state[6].1
+        && let Value::Array(row) = &mut invitations[0]
+    {
+        row[5] = Value::Integer(3);
+    }
+    let cancel = test_control(
+        &chain,
+        3,
+        v4(103),
+        Value::Map(vec![(1, Value::Bytes(invitation_id.to_vec()))]),
+        canceled.clone(),
+        (manager_id, manager_seed),
+        relay_seed,
+    );
+    chain.apply_control(&cancel).unwrap();
+    assert_eq!(
+        chain.state_bytes().unwrap(),
+        cbor::encode(&canceled).unwrap()
+    );
+    assert!(chain.apply_control(&wire(2)).is_err());
+
+    let mut pending_chain = ControlChain::from_genesis(&wire(0), relay_public).unwrap();
+    pending_chain.apply_control(&wire(1)).unwrap();
+    pending_chain.apply_control(&wire(2)).unwrap();
+    let mut removed = cbor::decode(&pending_chain.state_bytes().unwrap()).unwrap();
+    if let Value::Map(state) = &mut removed {
+        state[5].1 = Value::Array(vec![]);
+    }
+    let remove_pending = test_control(
+        &pending_chain,
+        9,
+        v4(109),
+        Value::Map(vec![
+            (1, Value::Bytes(invitation_id.to_vec())),
+            (2, Value::Bytes(recipient_id.to_vec())),
+        ]),
+        removed.clone(),
+        (manager_id, manager_seed),
+        relay_seed,
+    );
+    pending_chain.apply_control(&remove_pending).unwrap();
+    assert_eq!(
+        pending_chain.state_bytes().unwrap(),
+        cbor::encode(&removed).unwrap()
+    );
+    assert!(pending_chain.apply_control(&wire(3)).is_err());
+
+    let mut role_chain = ControlChain::from_genesis(&wire(0), relay_public).unwrap();
+    for index in 1..=5 {
+        role_chain.apply_control(&wire(index)).unwrap();
+    }
+    let mut promoted = cbor::decode(&role_chain.state_bytes().unwrap()).unwrap();
+    if let Value::Map(state) = &mut promoted
+        && let Value::Array(active) = &mut state[4].1
+    {
+        for row in active {
+            if let Value::Array(fields) = row
+                && fields[0] == Value::Bytes(recipient_id.to_vec())
+            {
+                fields[4] = Value::Integer(2);
+            }
+        }
+    }
+    let promote = test_control(
+        &role_chain,
+        7,
+        v4(107),
+        Value::Map(vec![
+            (1, Value::Bytes(recipient_id.to_vec())),
+            (2, Value::Integer(1)),
+            (3, Value::Integer(2)),
+        ]),
+        promoted.clone(),
+        (manager_id, manager_seed),
+        relay_seed,
+    );
+    role_chain.apply_control(&promote).unwrap();
+    assert_eq!(
+        role_chain.state_bytes().unwrap(),
+        cbor::encode(&promoted).unwrap()
+    );
+    let extra_invitation_id = v4(201);
+    let extra_issue_id = v4(202);
+    let extra_invite_public = crypto::signing_public_key(&[9u8; 32]);
+    let mut with_unused_invite = promoted;
+    if let Value::Map(state) = &mut with_unused_invite
+        && let Value::Array(invitations) = &mut state[6].1
+    {
+        invitations.push(Value::Array(vec![
+            Value::Bytes(extra_invitation_id.to_vec()),
+            Value::Bytes(manager_id.to_vec()),
+            Value::Bytes(extra_invite_public.to_vec()),
+            Value::Integer(1),
+            Value::Bytes(extra_issue_id.to_vec()),
+            Value::Integer(1),
+        ]));
+        invitations.sort_by(|left, right| {
+            let (Value::Array(left), Value::Array(right)) = (left, right) else {
+                unreachable!()
+            };
+            let (Value::Bytes(left), Value::Bytes(right)) = (&left[0], &right[0]) else {
+                unreachable!()
+            };
+            left.cmp(right)
+        });
+    }
+    let extra_issue = test_control(
+        &role_chain,
+        2,
+        extra_issue_id,
+        Value::Map(vec![
+            (1, Value::Bytes(extra_invitation_id.to_vec())),
+            (2, Value::Bytes(manager_id.to_vec())),
+            (3, Value::Bytes(extra_invite_public.to_vec())),
+            (4, Value::Integer(1)),
+        ]),
+        with_unused_invite.clone(),
+        (manager_id, manager_seed),
+        relay_seed,
+    );
+    role_chain.apply_control(&extra_issue).unwrap();
+    let mut demoted = with_unused_invite;
+    if let Value::Map(state) = &mut demoted
+        && let Value::Array(active) = &mut state[4].1
+    {
+        for row in active {
+            if let Value::Array(fields) = row
+                && fields[0] == Value::Bytes(manager_id.to_vec())
+            {
+                fields[4] = Value::Integer(1);
+            }
+        }
+    }
+    if let Value::Map(state) = &mut demoted
+        && let Value::Array(invitations) = &mut state[6].1
+    {
+        for row in invitations {
+            if let Value::Array(fields) = row
+                && fields[0] == Value::Bytes(extra_invitation_id.to_vec())
+            {
+                fields[5] = Value::Integer(3);
+            }
+        }
+    }
+    let demote = test_control(
+        &role_chain,
+        7,
+        v4(117),
+        Value::Map(vec![
+            (1, Value::Bytes(manager_id.to_vec())),
+            (2, Value::Integer(2)),
+            (3, Value::Integer(1)),
+        ]),
+        demoted.clone(),
+        (recipient_id, recipient_seed),
+        relay_seed,
+    );
+    role_chain.apply_control(&demote).unwrap();
+    assert_eq!(
+        role_chain.state_bytes().unwrap(),
+        cbor::encode(&demoted).unwrap()
+    );
+
+    let mut sole = ControlChain::from_genesis(&wire(0), relay_public).unwrap();
+    let mut no_manager = cbor::decode(&sole.state_bytes().unwrap()).unwrap();
+    if let Value::Map(state) = &mut no_manager
+        && let Value::Array(active) = &mut state[4].1
+        && let Value::Array(manager) = &mut active[0]
+    {
+        manager[4] = Value::Integer(1);
+    }
+    let invalid_demotion = test_control(
+        &sole,
+        7,
+        v4(227),
+        Value::Map(vec![
+            (1, Value::Bytes(manager_id.to_vec())),
+            (2, Value::Integer(2)),
+            (3, Value::Integer(1)),
+        ]),
+        no_manager,
+        (manager_id, manager_seed),
+        relay_seed,
+    );
+    assert!(sole.apply_control(&invalid_demotion).is_err());
+    assert_eq!(sole.last_global_cursor(), 1);
+}
+
 fn object_bytes(fixture: &serde_json::Value, id: [u8; 16]) -> Vec<u8> {
     let hex: String = id.iter().map(|byte| format!("{byte:02x}")).collect();
     hex_bytes(fixture["objects_by_id_hex"][hex.as_str()].as_str().unwrap())

@@ -237,6 +237,14 @@ replayed older prefix fail without lowering the pin. This is an observed
 public-authority journal only. It does not yet make a device data-ready,
 persist enrollment credentials or keyring, project remote data, or clear a
 local outbox atomically with its accepted shared entry.
+Committed manifest objects now persist only after their hash, length, ID,
+and transition match signed history. A manager-only ready replay requires
+every declared object, decrypts membership, opens the complete rotation
+grant set and keyring, and then projects each accepted batch in the same
+cursor order. Withholding one grant keeps it unready without lowering the
+public pin; the completed projection survives restart by rebuilding from
+the verified log and objects. This is not yet a joining-device session,
+secure durable credential/key storage, or local outbox confirmation.
 `FamilySession` now consumes the fixed genesis and `BATCHBYTE01` acceptance
 through a core-owned path: it verifies the manager, head, epoch, sequence,
 object hash, cursor, and relay-signed receipt before projecting the first

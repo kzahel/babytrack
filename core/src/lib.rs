@@ -19,6 +19,8 @@ pub mod session;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod shared_history;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod shared_ready;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod sqlite_store;
 
 mod ids;

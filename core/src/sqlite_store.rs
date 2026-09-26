@@ -115,6 +115,8 @@ pub(crate) struct VerifiedSharedEntry<'a> {
     pub receipt_bytes: &'a [u8],
 }
 
+pub(crate) type SharedObjects = Vec<([u8; 16], Vec<u8>)>;
+
 pub struct SqliteStore {
     connection: Connection,
 }
@@ -193,6 +195,15 @@ impl SqliteStore {
                committed_bytes BLOB NOT NULL,
                receipt_bytes BLOB NOT NULL,
                PRIMARY KEY (family_id, cursor),
+               FOREIGN KEY (family_id) REFERENCES shared_roots(family_id)
+             );
+             CREATE TABLE IF NOT EXISTS shared_objects (
+               family_id BLOB NOT NULL,
+               object_id BLOB NOT NULL CHECK(length(object_id) = 16),
+               transition_id BLOB NOT NULL CHECK(length(transition_id) = 16),
+               kind INTEGER NOT NULL CHECK(kind > 0),
+               object_bytes BLOB NOT NULL,
+               PRIMARY KEY (family_id, object_id),
                FOREIGN KEY (family_id) REFERENCES shared_roots(family_id)
              );
              INSERT OR IGNORE INTO local_sync_state(family_id)
@@ -625,6 +636,58 @@ impl SqliteStore {
         )?;
         transaction.commit()?;
         Ok(())
+    }
+
+    pub(crate) fn store_verified_shared_object(
+        &mut self,
+        family: FamilyHandle,
+        transition_id: [u8; 16],
+        kind: u16,
+        object_id: [u8; 16],
+        object_bytes: &[u8],
+    ) -> Result<(), Error> {
+        let transaction = self.connection.transaction()?;
+        let _ = checked_family(&transaction, family)?;
+        transaction.execute(
+            "INSERT OR IGNORE INTO shared_objects
+             (family_id, object_id, transition_id, kind, object_bytes)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                family.family_id.as_slice(),
+                object_id.as_slice(),
+                transition_id.as_slice(),
+                i64::from(kind),
+                object_bytes
+            ],
+        )?;
+        let prior: (Vec<u8>, i64, Vec<u8>) = transaction.query_row(
+            "SELECT transition_id, kind, object_bytes FROM shared_objects
+             WHERE family_id = ?1 AND object_id = ?2",
+            params![family.family_id.as_slice(), object_id.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
+        if prior.0 != transition_id || prior.1 != i64::from(kind) || prior.2 != object_bytes {
+            return Err(Error::CorruptState);
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn shared_objects(&self, family: FamilyHandle) -> Result<SharedObjects, Error> {
+        let _ = checked_family(&self.connection, family)?;
+        let mut statement = self.connection.prepare(
+            "SELECT object_id, object_bytes FROM shared_objects
+             WHERE family_id = ?1 ORDER BY object_id",
+        )?;
+        statement
+            .query_map([family.family_id.as_slice()], |row| {
+                Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })?
+            .map(|row| {
+                let (id, bytes) = row?;
+                Ok((id.try_into().map_err(|_| Error::CorruptState)?, bytes))
+            })
+            .collect::<Result<Vec<_>, Error>>()
     }
 }
 

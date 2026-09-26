@@ -3,7 +3,9 @@
 use std::{fs, path::PathBuf, time::SystemTime};
 
 use babytrack_core::{
+    operation::Operation,
     shared_history::PublicHistorySession,
+    shared_ready::ReadyManagerSession,
     sqlite_store::{FamilyHandle, SqliteStore},
 };
 
@@ -122,7 +124,85 @@ fn interleaved_authority_and_data_keep_one_durable_pinned_cursor() {
             .accept_batch(&mut store, &envelope, &receipt)
             .is_err()
     );
+    let initial_key = bytes::<32>(
+        fixture["test_only_inputs"]["epoch_1_key_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let manager_agreement = bytes::<32>(
+        fixture["test_only_inputs"]["manager_agreement_seed_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    assert!(
+        ReadyManagerSession::from_store(&store, family, initial_key, manager_agreement).is_err()
+    );
+    let objects = fixture["objects_by_id_hex"].as_object().unwrap();
+    let mut altered = bytes_from_hex(
+        objects["943e4567e89b42d3a456426614174000"]
+            .as_str()
+            .unwrap(),
+    );
+    *altered.last_mut().unwrap() ^= 1;
+    assert!(
+        session
+            .accept_object(
+                &mut store,
+                bytes("943e4567e89b42d3a456426614174000"),
+                &altered,
+            )
+            .is_err()
+    );
+    let held_back = "943e4567e89b42d3a456426614174000";
+    for (id, hex) in objects {
+        if id != held_back {
+            session
+                .accept_object(
+                    &mut store,
+                    bytes(id),
+                    &bytes_from_hex(hex.as_str().unwrap()),
+                )
+                .unwrap();
+        }
+    }
+    assert!(
+        ReadyManagerSession::from_store(&store, family, initial_key, manager_agreement).is_err()
+    );
+    session
+        .accept_object(
+            &mut store,
+            bytes(held_back),
+            &bytes_from_hex(objects[held_back].as_str().unwrap()),
+        )
+        .unwrap();
+    let ready =
+        ReadyManagerSession::from_store(&store, family, initial_key, manager_agreement).unwrap();
+    assert_eq!(ready.observed_cursor(), 9);
+    assert_eq!(ready.active_epoch(), 2);
+    assert_eq!(ready.projection().last_cursor(), 9);
+    let operation = Operation::decode_bound(
+        &bytes_from_hex(batch["operation_cbor_hex"].as_str().unwrap()),
+        &family.family_id,
+        &bytes::<16>(
+            fixture["test_only_inputs"]["recipient_device_id_hex"]
+                .as_str()
+                .unwrap(),
+        ),
+    )
+    .unwrap();
+    assert!(ready.projection().record(&operation.record_id).is_some());
     drop(session);
+    drop(store);
+    let store = SqliteStore::open(&path).unwrap();
+    let ready_after_restart =
+        ReadyManagerSession::from_store(&store, family, initial_key, manager_agreement).unwrap();
+    assert_eq!(ready_after_restart.observed_cursor(), 9);
+    assert!(
+        ready_after_restart
+            .projection()
+            .record(&operation.record_id)
+            .is_some()
+    );
     drop(store);
 
     // Deleting an earlier row while leaving the high-water pin cannot make

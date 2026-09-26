@@ -13,5 +13,6 @@ contract updates its vectors and relevant scenarios in the same change.
 
 Symbolic user outcomes live in `docs/scenarios/`. Exact inputs and expected
 outputs live in `tests/vectors/`; M0 binds them to Rust, Swift, Kotlin, and
-browser runners. The Rust core currently executes only the CBOR subset of
-`records-v1.json`; the other vectors and language bindings remain M0 work.
+browser runners. The Rust core currently executes the CBOR subset of
+`records-v1.json` and selected operation bytes; the other vectors and
+language bindings remain M0 work.

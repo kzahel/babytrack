@@ -6,9 +6,10 @@ native phone/watch apps and a web client.
 `babytrack` is a working name.
 
 **Status: M0 implementation in progress.** The Rust core has a strict
-canonical CBOR codec and executable CBOR vectors. It has no complete
-application, sharing, or relay behavior yet. Scenario files still describe
-expected behavior; they are not passing product tests.
+canonical CBOR codec, structural operation decoder, and executable byte
+vectors. It has no complete application, sharing, or relay behavior yet.
+Scenario files still describe expected behavior; they are not passing
+product tests.
 
 ## Product and architecture
 
@@ -57,9 +58,9 @@ Then follow the task-specific links; do not load all documentation by default.
 ## Repository today
 
 `docs/topics/` holds decisions; `docs/tactical/` holds work plans;
-`docs/scenarios/` holds symbolic acceptance cases. The workspace has a byte
-codec in `core/` and scaffold targets in `core-ffi/`, `core-wasm/`, `server/`,
-and `cli/`.
+`docs/scenarios/` holds symbolic acceptance cases. The workspace has byte
+and operation decoding in `core/` and scaffold targets in `core-ffi/`,
+`core-wasm/`, `server/`, and `cli/`.
 Only the client-facing targets depend on `core/`. The
 [layout topic](docs/topics/repository-layout.md) maps future components;
 [002](docs/tactical/002-repository-scaffold.md) records scaffold validation.
@@ -81,10 +82,11 @@ cargo deny check advisories bans licenses sources
 
 Install `cargo-deny` 0.20.2 for the last command. The Rust core's
 `core/tests/cbor_vectors.rs` runs the six CBOR cases in
-`tests/vectors/records-v1.json` plus canonicality and limit checks. Run it
-directly with `cargo test -p babytrack-core`. The other vectors, bindings,
-and product flows are not executable yet; compilation does not establish
-protocol correctness.
+`tests/vectors/records-v1.json` plus canonicality and limit checks;
+`core/tests/operation_vectors.rs` checks selected operation bytes and binding
+failures. Run both with `cargo test -p babytrack-core`. The other vectors,
+bindings, and product flows are not executable yet; compilation does not
+establish protocol correctness.
 
 Reference repositories are listed in [references.yaml](references.yaml).
 Run `scripts/sync_references.py [name ...]` to populate gitignored

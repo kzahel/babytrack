@@ -16,8 +16,9 @@ in tacticals, exact protocol formats in future `docs/protocol/`, and test
 expectations in scenario/vector files. Summaries link to the owner. If two
 documents contradict, reconcile them or ask; do not silently pick one.
 
-Status: M0 implementation in progress. The Rust core has a canonical CBOR
-codec and vector tests; no full application or relay behavior exists yet.
+Status: M0 implementation in progress. The Rust core has canonical CBOR and
+structural operation decoding with first byte-vector tests; no full
+application or relay behavior exists yet.
 `babytrack` is a code name.
 
 The working tree may contain concurrent human or agent changes. Do not revert,
@@ -118,6 +119,6 @@ python3 scripts/check_workspace.py
 cargo deny check advisories bans licenses sources
 ```
 
-The M0 byte codec runs `cargo test -p babytrack-core`; its fixture test
-executes the CBOR cases in `tests/vectors/records-v1.json`. Other targets
+The M0 byte and operation decoders run `cargo test -p babytrack-core`; fixture
+tests cover CBOR and selected operation bytes. Other targets
 still have no behavioral tests. Add gates for their behavior with M0 work.

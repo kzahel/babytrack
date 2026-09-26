@@ -85,10 +85,13 @@ agreed product promise.
 
 ## Test placement and CI
 
-The first Rust byte-codec increment implements strict canonical CBOR and runs
-CB01-CB06 from `tests/vectors/records-v1.json` with
-`cargo test -p babytrack-core`. The rest of slice 1 remains open: versioned
-operation decoding, all byte fixtures, crypto, bindings, and browser storage.
+The Rust core implements canonical CBOR and structural version-1 operation
+decoding, with Family/author binding and unknown-field byte retention.
+`cargo test -p babytrack-core` runs CB01-CB06 from
+`tests/vectors/records-v1.json`, plus fixed operation and minor-field cases
+from `full-wire-v1.json` and `negative-batch-v1.json`. The rest of slice 1
+remains open: full field validity, all byte fixtures, crypto, bindings, and
+browser storage.
 
 Every agreed FS case gets a deterministic core/relay action binding with
 assertions for local state, shared state, pending outbox, visible status, and
@@ -97,8 +100,8 @@ owner. FS31-FS32, FS46, and FS56 use a malicious relay; honest-relay cases
 do not inherit those stronger assumptions. Selected UI observations are
 reused later: M1 Android local/sharing/recovery cases, M2 web Family and
 browser-key cases, M3 iOS parity, and M4 watch targeting. M0 records actual
-runner commands next to its completed gate; this planning file asserts no
-passing test today.
+runner commands next to its completed gate; the passing byte subset does not
+establish any complete scenario or slice gate today.
 
 The CI path rules in the [MVP plan](../mvp-plan.md#ci) are required:
 core, bindings, protocol, scenarios, vectors, dependency, and CI edits run

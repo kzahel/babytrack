@@ -2,7 +2,9 @@
 
 These are normative version-1 inputs and expected results. M0 binds each
 case to Rust, Swift, Kotlin, wasm, and relay runners. The Rust core currently
-runs CB01-CB06 in `records-v1.json`; no other passing result is implied here.
+runs CB01-CB06 in `records-v1.json` and selected operation-byte assertions
+from `full-wire-v1.json` and `negative-batch-v1.json`; no other passing
+result is implied here.
 Hex is lowercase bytes, IDs are fixed 16-byte hex,
 and each case starts from its stated state. Rejection means no state, cursor,
 sequence, or outbox mutation unless the expected result says otherwise.

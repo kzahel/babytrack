@@ -212,7 +212,15 @@ old epoch key fail. The addressed repair HPKE grant now binds its purpose,
 original admission, current recipient key version, transition context,
 object hash, and unchanged epoch commitment; the contiguous repair object
 opens to the same epoch key and a wrong private key fails. Core session
-enforcement of readiness and rotation grant/keyring opening remain open.
+enforcement of readiness remains open.
+The removal manifest now yields an opaque rotation check. Before activating
+epoch two, it requires exactly one hashed HPKE grant for every remaining
+active device, rejects a grant to the removed device, opens the addressed
+new key against its signed commitment, and opens the hashed keyring under
+that key. Every earlier numbered key must be present once and match its
+pinned commitment. The contiguous removal objects pass; a removed device
+or tampered keyring fails. Durable rotated-key storage and full session
+readiness remain open.
 `FamilySession` now consumes the fixed genesis and `BATCHBYTE01` acceptance
 through a core-owned path: it verifies the manager, head, epoch, sequence,
 object hash, cursor, and relay-signed receipt before projecting the first

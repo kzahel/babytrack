@@ -250,6 +250,40 @@ fn admission_moves_proved_pending_device_to_active_and_repair_preserves_role() {
             .unwrap(),
     );
     let rotated_key = chain.verify_current_epoch_key(&epoch_two).unwrap();
+    let rotation = chain.rotation(&transition_id(&transitions[7])).unwrap();
+    let grants: Vec<_> = rotation
+        .grant_ids()
+        .into_iter()
+        .map(|id| (id, object_bytes(&fixture, id)))
+        .collect();
+    let keyring = object_bytes(&fixture, rotation.keyring_id());
+    let manager_id = bytes::<16>(
+        fixture["test_only_inputs"]["manager_device_id_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let manager_agreement = bytes::<32>(
+        fixture["test_only_inputs"]["manager_agreement_seed_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let keys = rotation
+        .open_for(manager_id, &manager_agreement, &grants, &keyring)
+        .unwrap();
+    assert_eq!(keys.current(), &rotated_key);
+    assert_eq!(keys.earlier(1), Some(&opened));
+    assert!(
+        rotation
+            .open_for(recipient_id, &agreement_private, &grants, &keyring)
+            .is_err()
+    );
+    let mut changed_keyring = keyring.clone();
+    *changed_keyring.last_mut().unwrap() ^= 1;
+    assert!(
+        rotation
+            .open_for(manager_id, &manager_agreement, &grants, &changed_keyring)
+            .is_err()
+    );
     let removal_membership = chain
         .membership_check(&transition_id(&transitions[7]))
         .unwrap();

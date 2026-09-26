@@ -13,6 +13,7 @@ use crate::{
     handoff::{self, VerifiedChallenge},
     membership::{self, VerifiedMembership},
     projection::VerifiedEpochKey,
+    rotation::{self, ObjectRef, VerifiedRotation},
     session,
 };
 
@@ -25,6 +26,7 @@ pub enum Error {
     Handoff(handoff::Error),
     Grant(grant::Error),
     Membership(membership::Error),
+    Rotation(rotation::Error),
     Invalid(&'static str),
     UnsupportedKind,
 }
@@ -63,6 +65,11 @@ impl From<membership::Error> for Error {
         Self::Membership(value)
     }
 }
+impl From<rotation::Error> for Error {
+    fn from(value: rotation::Error) -> Self {
+        Self::Rotation(value)
+    }
+}
 
 pub struct ControlChain {
     genesis: Genesis,
@@ -82,6 +89,8 @@ pub struct ControlChain {
     seen_batch_ids: BTreeSet<[u8; 16]>,
     current_commitment: [u8; 32],
     memberships: BTreeMap<[u8; 16], VerifiedMembership>,
+    epoch_commitments: BTreeMap<u32, [u8; 32]>,
+    rotations: BTreeMap<[u8; 16], VerifiedRotation>,
 }
 
 struct FinalizePlan<'a> {
@@ -127,6 +136,8 @@ impl ControlChain {
             seen_batch_ids: BTreeSet::new(),
             current_commitment: genesis_commitment,
             memberships: BTreeMap::new(),
+            epoch_commitments: BTreeMap::from([(1, genesis_commitment)]),
+            rotations: BTreeMap::new(),
         })
     }
 
@@ -154,6 +165,10 @@ impl ControlChain {
 
     pub fn latest_repair_grant(&self, device_id: &[u8; 16]) -> Option<&VerifiedRepairGrant> {
         self.repair_grants.get(device_id)
+    }
+
+    pub fn rotation(&self, transition_id: &[u8; 16]) -> Option<&VerifiedRotation> {
+        self.rotations.get(transition_id)
     }
 
     pub fn verify_current_epoch_key(&self, key: &[u8; 32]) -> Result<VerifiedEpochKey, Error> {
@@ -1095,6 +1110,59 @@ impl ControlChain {
         let mut kinds = vec![1];
         kinds.extend(std::iter::repeat_n(4, remaining));
         kinds.push(5);
+        let next_auth = exact_map(&next_state, 7)?;
+        let Value::Array(active_rows) = &next_auth[4].1 else {
+            unreachable!()
+        };
+        let mut recipients = BTreeMap::new();
+        for row in active_rows {
+            let fields = array(row, 5)?;
+            recipients.insert(
+                fixed::<16>(&fields[0])?,
+                (
+                    fixed::<32>(&fields[2])?,
+                    number(&fields[3])?
+                        .try_into()
+                        .map_err(|_| Error::Invalid("agreement key version outside u32"))?,
+                ),
+            );
+        }
+        let manifest = array(&unsigned[9].1, remaining + 2)?;
+        let mut grants = Vec::with_capacity(remaining);
+        for entry in &manifest[1..=remaining] {
+            let fields = array(entry, 4)?;
+            if number(&fields[0])? != 4 {
+                return Err(Error::Invalid("rotation grant manifest kind invalid"));
+            }
+            grants.push(ObjectRef {
+                id: fixed::<16>(&fields[1])?,
+                hash: fixed::<32>(&fields[2])?,
+            });
+        }
+        let keyring_entry = array(&manifest[remaining + 1], 4)?;
+        if number(&keyring_entry[0])? != 5 {
+            return Err(Error::Invalid("rotation keyring manifest kind invalid"));
+        }
+        let rotation = VerifiedRotation {
+            family_id: self.genesis.family_id(),
+            relay_id: self.genesis.relay_id(),
+            prior_head: fixed::<32>(&unsigned[3].1)?,
+            transition_id: fixed::<16>(&unsigned[4].1)?,
+            state_hash: fixed::<32>(&unsigned[7].1)?,
+            epoch: next_epoch
+                .try_into()
+                .map_err(|_| Error::Invalid("epoch outside u32"))?,
+            commitment: new_commitment,
+            core_hash: fixed::<32>(&unsigned[10].1)?,
+            delta: unsigned[6].1.clone(),
+            grants,
+            keyring: ObjectRef {
+                id: fixed::<16>(&keyring_entry[1])?,
+                hash: fixed::<32>(&keyring_entry[2])?,
+            },
+            recipients,
+            prior_commitments: self.epoch_commitments.clone(),
+        };
         self.finalize(
             bytes,
             root,
@@ -1107,6 +1175,9 @@ impl ControlChain {
             },
         )?;
         self.current_commitment = new_commitment;
+        self.epoch_commitments
+            .insert(rotation.epoch, new_commitment);
+        self.rotations.insert(rotation.transition_id, rotation);
         self.challenges.clear();
         self.admission_grants.remove(&target_id);
         self.repair_grants.remove(&target_id);

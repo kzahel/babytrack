@@ -58,6 +58,12 @@ fn fixed_batch_matches_every_wire_byte_and_opens() {
         hex_bytes(expected["header_cbor_hex"].as_str().unwrap())
     );
     assert_eq!(Header::decode(&sealed.header_bytes), Ok(header.clone()));
+    let mut invalid_header = header.clone();
+    invalid_header.batch_id[6] = 0x70;
+    assert!(invalid_header.encode().is_err());
+    invalid_header = header.clone();
+    invalid_header.epoch = 0;
+    assert!(invalid_header.encode().is_err());
     assert_eq!(sealed.plaintext_bytes, expected_plaintext);
     assert_eq!(
         sealed.aad,

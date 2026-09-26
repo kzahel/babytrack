@@ -6,7 +6,7 @@
 
 use crate::{
     cbor::{self, Limits, Value},
-    crypto,
+    crypto, ids,
     operation::{self, Operation},
 };
 
@@ -147,7 +147,18 @@ impl Header {
     }
 
     pub fn encode(&self) -> Result<Vec<u8>, Error> {
-        if self.device_sequence == 0 || self.plaintext_len as usize > MAX_PLAINTEXT_BYTES {
+        if !ids::is_v4(&self.family_id)
+            || !ids::is_v4(&self.batch_id)
+            || !ids::is_v4(&self.author_device_id)
+        {
+            return Err(Error::Invalid(
+                "batch Family, batch, or author ID must be UUIDv4",
+            ));
+        }
+        if self.epoch == 0
+            || self.device_sequence == 0
+            || self.plaintext_len as usize > MAX_PLAINTEXT_BYTES
+        {
             return Err(Error::Invalid(
                 "batch sequence or plaintext length outside limits",
             ));

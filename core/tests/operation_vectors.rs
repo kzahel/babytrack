@@ -81,6 +81,16 @@ fn newer_minor_field_stays_canonical_and_opaque() {
     let parsed = Operation::decode_bound(&with_extension, &family, &author).unwrap();
     assert_eq!(parsed.canonical_bytes(), with_extension);
     assert_eq!(parsed.field_bytes(500), Some(vec![0xf4]));
+    let mut invalid_record_id = operation.record_id;
+    invalid_record_id[6] = (invalid_record_id[6] & 0x0f) | 0x40;
+    let Value::Map(mut map) = cbor::decode(&bytes).unwrap() else {
+        panic!("operation map")
+    };
+    map.iter_mut().find(|(key, _)| *key == 4).unwrap().1 = Value::Bytes(invalid_record_id.to_vec());
+    assert_eq!(
+        Operation::decode_bound(&cbor::encode(&Value::Map(map)).unwrap(), &family, &author),
+        Err(Error::Invalid("child/activity record ID must be UUIDv7"))
+    );
 }
 
 #[test]
@@ -129,6 +139,26 @@ fn version_family_author_and_shape_fail_closed() {
     assert_eq!(
         Operation::decode_bound(&mutate(1, Value::Integer(2)), &family, &author),
         Err(Error::UnsupportedVersion)
+    );
+    let mut invalid_family = family;
+    invalid_family[6] = (invalid_family[6] & 0x0f) | 0x70;
+    assert_eq!(
+        Operation::decode_bound(
+            &mutate(2, Value::Bytes(invalid_family.to_vec())),
+            &family,
+            &author
+        ),
+        Err(Error::Invalid("Family ID must be UUIDv4"))
+    );
+    let mut invalid_author = author;
+    invalid_author[8] = 0;
+    assert_eq!(
+        Operation::decode_bound(
+            &mutate(7, Value::Bytes(invalid_author.to_vec())),
+            &family,
+            &author
+        ),
+        Err(Error::Invalid("author ID must be UUIDv4"))
     );
     assert!(Operation::decode_bound(&mutate(6, Value::Integer(9)), &family, &author).is_err());
     assert!(Operation::decode_bound(&mutate(8, Value::Array(vec![])), &family, &author).is_err());

@@ -3,7 +3,10 @@
 //! History-dependent checks (membership, prior creates, duplicate operation
 //! IDs, and field projection) belong to batch replay, not this decoder.
 
-use crate::cbor::{self, Limits, Value};
+use crate::{
+    cbor::{self, Limits, Value},
+    ids,
+};
 
 const MAX_OPERATION_BYTES: usize = 64 * 1024;
 const MAX_TEXT_BYTES: usize = 16 * 1024;
@@ -173,11 +176,14 @@ impl Operation {
             return Err(Error::UnsupportedVersion);
         }
         let decoded_family = bytes16(required(&map, 2)?, "Family ID must be 16 bytes")?;
+        if !ids::is_v4(&decoded_family) {
+            return Err(Error::Invalid("Family ID must be UUIDv4"));
+        }
         if &decoded_family != family_id {
             return Err(Error::WrongFamily);
         }
         let operation_id = bytes16(required(&map, 3)?, "operation ID must be 16 bytes")?;
-        if operation_id[6] >> 4 != 7 || operation_id[8] >> 6 != 2 {
+        if !ids::is_v7(&operation_id) {
             return Err(Error::Invalid("operation ID must be UUIDv7"));
         }
         let record_id = bytes16(required(&map, 4)?, "record ID must be 16 bytes")?;
@@ -186,6 +192,9 @@ impl Operation {
         let kind = Kind::from_wire(unsigned(required(&map, 6)?, "invalid kind")?)
             .ok_or(Error::Invalid("invalid kind"))?;
         let decoded_author = bytes16(required(&map, 7)?, "author ID must be 16 bytes")?;
+        if !ids::is_v4(&decoded_author) {
+            return Err(Error::Invalid("author ID must be UUIDv4"));
+        }
         if &decoded_author != author_device_id {
             return Err(Error::WrongAuthor);
         }
@@ -199,6 +208,12 @@ impl Operation {
         let child_id = optional(&map, 10)
             .map(|value| bytes16(value, "child ID must be 16 bytes"))
             .transpose()?;
+        if scope != Scope::Family && !ids::is_v7(&record_id) {
+            return Err(Error::Invalid("child/activity record ID must be UUIDv7"));
+        }
+        if child_id.as_ref().is_some_and(|id| !ids::is_v7(id)) {
+            return Err(Error::Invalid("activity child ID must be UUIDv7"));
+        }
         let fields = optional(&map, 11)
             .map(|value| match value {
                 Value::Map(fields) if fields.len() <= MAX_FIELDS => {

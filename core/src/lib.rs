@@ -10,4 +10,5 @@ pub mod hpke;
 pub mod operation;
 pub mod projection;
 
+mod ids;
 mod record_validity;

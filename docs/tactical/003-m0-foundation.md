@@ -121,6 +121,8 @@ The core operation encoder also drives a signed encrypted multi-batch replay:
 cursor order beats an extreme HLC, tombstoned fields stay retained, restore
 is explicit, identical operation bytes dedupe, conflicting IDs and second
 creates become inert, and replay from the beginning matches incremental state.
+The decoder now enforces UUIDv4 Family/device/batch identities, UUIDv7
+operation/child/activity identities, and a positive batch epoch.
 `bash scripts/check_browser_smoke.sh` launches Playwright's isolated Chromium
 shell, loads the wasm binding, and checks IndexedDB reload, an aborted
 multi-store transaction, and Family-scoped keys and rows. It uses fixture

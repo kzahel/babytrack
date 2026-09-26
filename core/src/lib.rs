@@ -10,6 +10,7 @@ pub mod hlc;
 pub mod hpke;
 pub mod operation;
 pub mod projection;
+pub mod session;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod sqlite_store;
 

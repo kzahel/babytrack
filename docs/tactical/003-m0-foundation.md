@@ -160,8 +160,15 @@ The Rust core now verifies the fixed `GENESIS01` committed control object:
 relay pin and receipt signature, manager signature, transition core and
 state hashes, promotion manifest binding, receipt context, and head hash.
 Only this verified genesis can issue an epoch-key token after checking its
-committed key commitment. Subsequent control transitions, persistence of
-the pinned head, and accepted-batch authorization remain open.
+committed key commitment. Subsequent control transitions and persistence of
+the pinned head remain open.
+`FamilySession` now consumes the fixed genesis and `BATCHBYTE01` acceptance
+through a core-owned path: it verifies the manager, head, epoch, sequence,
+object hash, cursor, and relay-signed receipt before projecting the first
+shared event. Tampered receipts/envelopes and duplicate replay leave the
+cursor unchanged. This currently covers only epoch-one manager data after
+genesis; later members, rotation, durable shared replay, and malicious relay
+fork checks remain open.
 `bash scripts/check_browser_smoke.sh` launches Playwright's isolated Chromium
 shell, loads the wasm binding, and checks IndexedDB reload, an aborted
 multi-store transaction, and Family-scoped keys and rows. It uses fixture

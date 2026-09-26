@@ -88,6 +88,15 @@ struct Smoke {
             )
             fatalError("wrong signer accepted")
         } catch {}
+        var tamperedSignature = envelope("CROSSMINORBYTE01")
+        tamperedSignature[tamperedSignature.count - 1] ^= 1
+        do {
+            _ = try clean.applyEnvelope(
+                envelope: tamperedSignature, relayId: relayId,
+                epochKey: epochKey, signerPublicKey: signer, cursor: 1
+            )
+            fatalError("tampered signature accepted")
+        } catch {}
         var wrongRelay = relayId
         wrongRelay[0] ^= 1
         do {

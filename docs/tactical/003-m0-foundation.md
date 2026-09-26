@@ -124,7 +124,9 @@ JavaScript. `bash scripts/check_native_smoke.sh` generates UniFFI bindings
 and runs the same selected encrypted cases through Kotlin/JNA and Swift on
 macOS. All four runtimes seal the fixed child and Family operations to the
 exact expected encrypted envelope bytes, then verify, decrypt, and project
-them. The caller supplies the fixture's nonce, batch ID, and sequence;
+them. Wrong key, signer, Family, relay, and tampered envelope signature
+are rejected without advancing the projection cursor in each runtime.
+The caller supplies the fixture's nonce, batch ID, and sequence;
 production allocation and retry ownership belong to the durable outbox.
 The core operation encoder also drives a signed encrypted multi-batch replay:
 cursor order beats an extreme HLC, tombstoned fields stay retained, restore

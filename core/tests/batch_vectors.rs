@@ -147,6 +147,16 @@ fn fixed_batch_matches_every_wire_byte_and_opens() {
         )
         .is_err()
     );
+    let mut tampered_signature = sealed.envelope_bytes.clone();
+    *tampered_signature.last_mut().unwrap() ^= 1;
+    assert!(batch::open_verified(
+        &tampered_signature,
+        &family_id,
+        &relay_id,
+        &epoch_key,
+        &signing_public
+    )
+    .is_err());
 }
 
 #[test]

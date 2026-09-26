@@ -722,6 +722,26 @@ async fn dynamic_flow(early_batch: bool) {
             )
             .unwrap();
     }
+    let mut clone = if early_batch {
+        let clone_path = dir.path().join("manager-clone.db");
+        rusqlite::Connection::open(&local_path)
+            .unwrap()
+            .execute("VACUUM INTO ?1", [clone_path.to_str().unwrap()])
+            .unwrap();
+        let mut clone_store = SqliteStore::open(&clone_path).unwrap();
+        let clone_manager = ManagerCreation::resume(&clone_store, family, &wrapping_key).unwrap();
+        let clone_ready = clone_manager.confirm(&mut clone_store, committed).unwrap();
+        let clone_batch = match clone_manager
+            .stage_next_local(&clone_ready, &mut clone_store)
+            .unwrap()
+        {
+            NextUpload::Fresh(batch) => batch,
+            NextUpload::RetryExact(_) => panic!("clone already had a pending batch"),
+        };
+        Some((clone_store, clone_manager, clone_batch))
+    } else {
+        None
+    };
     let manager_batch = match resumed
         .stage_next_local(&manager_ready, &mut local)
         .unwrap()
@@ -770,6 +790,118 @@ async fn dynamic_flow(early_batch: bool) {
         recipient_ready.projection().record(&post_child_id)
     );
     if early_batch {
+        assert_eq!(
+            manager_ready.projection().record(&late_child_id),
+            recipient_ready.projection().record(&late_child_id)
+        );
+    }
+    if let Some((ref mut clone_store, ref clone_manager, ref clone_batch)) = clone {
+        assert_eq!(clone_batch.sequence, manager_batch.sequence);
+        assert_ne!(clone_batch.envelope_bytes, manager_batch.envelope_bytes);
+        let rejection = http_bytes(
+            &app,
+            Method::POST,
+            &batch_path,
+            clone_batch.envelope_bytes.clone(),
+        )
+        .await;
+        assert_eq!(
+            http_bytes(
+                &app,
+                Method::POST,
+                &batch_path,
+                clone_batch.envelope_bytes.clone(),
+            )
+            .await,
+            rejection
+        );
+        let Value::Map(fields) = cbor::decode(&rejection).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(rejected_receipt) = &fields[1].1 else {
+            panic!()
+        };
+        let result_path = format!(
+            "/v1/families/{}/batch-results/{}",
+            lower_hex(&family.family_id),
+            lower_hex(&clone_batch.batch_id)
+        );
+        let read = clone_manager.sign_get(&result_path).unwrap();
+        let result = BatchResult::decode(
+            &relay
+                .batch_result_authenticated(
+                    family.family_id,
+                    clone_batch.batch_id,
+                    &result_path,
+                    &read.bytes,
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            result.receipt_bytes.as_deref(),
+            Some(rejected_receipt.as_slice())
+        );
+        let mut clone_public = PublicHistorySession::resume(clone_store, family).unwrap();
+        assert!(
+            clone_public
+                .reject_conflicting_sequence_pending(clone_store, rejected_receipt)
+                .is_err()
+        );
+        clone_public
+            .accept_batch(clone_store, &manager_batch.envelope_bytes, manager_receipt)
+            .unwrap();
+        let mut forged_receipt = rejected_receipt.clone();
+        *forged_receipt.last_mut().unwrap() ^= 1;
+        assert!(
+            clone_public
+                .reject_conflicting_sequence_pending(clone_store, &forged_receipt)
+                .is_err()
+        );
+        clone_public
+            .reject_conflicting_sequence_pending(clone_store, rejected_receipt)
+            .unwrap();
+        let clone_ready = clone_manager.confirm(clone_store, committed).unwrap();
+        let rebatch = match clone_manager
+            .stage_next_local(&clone_ready, clone_store)
+            .unwrap()
+        {
+            NextUpload::Fresh(batch) => batch,
+            NextUpload::RetryExact(_) => panic!("verified conflict kept obsolete envelope"),
+        };
+        assert_eq!(rebatch.sequence, manager_batch.sequence + 1);
+        assert_ne!(rebatch.batch_id, clone_batch.batch_id);
+        let response = http_bytes(
+            &app,
+            Method::POST,
+            &batch_path,
+            rebatch.envelope_bytes.clone(),
+        )
+        .await;
+        let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(rebatch_receipt) = &fields[1].1 else {
+            panic!()
+        };
+        clone_public
+            .accept_batch(clone_store, &rebatch.envelope_bytes, rebatch_receipt)
+            .unwrap();
+        let mut manager_public = PublicHistorySession::resume(&local, family).unwrap();
+        manager_public
+            .accept_batch(&mut local, &rebatch.envelope_bytes, rebatch_receipt)
+            .unwrap();
+        recipient_public
+            .accept_batch(
+                &mut recipient_store,
+                &rebatch.envelope_bytes,
+                rebatch_receipt,
+            )
+            .unwrap();
+        let manager_ready = resumed.confirm(&mut local, committed).unwrap();
+        let recipient_ready =
+            ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).unwrap();
+        assert_eq!(manager_ready.observed_cursor(), 10);
         assert_eq!(
             manager_ready.projection().record(&late_child_id),
             recipient_ready.projection().record(&late_child_id)

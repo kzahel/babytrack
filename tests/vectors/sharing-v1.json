@@ -460,6 +460,20 @@
         "status_after_removal": 3,
         "claim": "reject-terminal"
       }
+    },
+    {
+      "id": "BATCH06",
+      "scenario": "FS49",
+      "initial": {"manager_head": "genesis", "epoch": 1, "manager_sequence": 1},
+      "actions": ["seal exact manager batch at genesis", "commit the batch before invitation or delay it until after admission", "interleave join controls at ordinary global cursors"],
+      "expect": {"manager_batch": "accepted-once", "recipient_after_grant": "verified-same-history", "same_epoch_ancestor": "valid"}
+    },
+    {
+      "id": "BATCH07",
+      "scenario": "FS62",
+      "initial": {"device_sequence": 2, "copied_credential": true},
+      "actions": ["accept X at sequence 2", "reject independently sealed Y at sequence 2", "retry and query Y result", "verify X in ordered prefix", "reseal Y operation at sequence 3"],
+      "expect": {"Y_rejection_reason": 4, "Y_exact_result": "stable-signed-receipt", "Y_operation": "retained-until-accepted", "next_sequence": 4}
     }
   ]
 }

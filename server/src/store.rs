@@ -134,6 +134,11 @@ impl RelayStore {
                PRIMARY KEY (family_id, batch_id),
                UNIQUE (family_id, author_id, sequence),
                UNIQUE (family_id, cursor)
+             );
+             CREATE TABLE IF NOT EXISTS rejected_batch_results (
+               family_id BLOB NOT NULL, batch_id BLOB NOT NULL,
+               envelope_bytes BLOB NOT NULL, receipt_bytes BLOB NOT NULL,
+               PRIMARY KEY (family_id, batch_id)
              );",
         )?;
         let relay_public = crypto::signing_public_key(&relay_seed);
@@ -1043,49 +1048,23 @@ impl RelayStore {
         )?;
         let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
         let author = batch_authority::claimed_author(envelope_bytes)?;
-        let signer = if author == genesis.manager_id {
-            genesis.manager_signing_key
-        } else if controls == 6 {
-            let prefix = load_proved_prefix(&self.db, self.relay_public, path_family)?;
-            let admitted = control_at(&self.db, path_family, 5)?;
-            let admission = authority::verify_first_admission(
-                &control_candidate(&admitted)?,
-                &prefix.join.genesis,
-                &prefix.join.issue,
-                &prefix.join.claim,
-                &prefix.challenge,
-                &prefix.proof,
-                prefix.proof_head,
-            )?;
-            if author != admission.recipient_id {
-                return Err(Error::Invalid("batch author not active"));
+        let (signer, active_author) = if author == genesis.manager_id {
+            (genesis.manager_signing_key, true)
+        } else if controls >= 3 {
+            let prefix = load_join_prefix(&self.db, self.relay_public, path_family)?;
+            if author != prefix.claim.device_id {
+                return Err(Error::Invalid("batch author not enrolled"));
             }
-            prefix.join.claim.signing_public
+            (prefix.claim.signing_public, controls == 6)
         } else {
-            return Err(Error::Invalid("batch author not active"));
+            return Err(Error::Invalid("batch author not enrolled"));
         };
         let batch = batch_authority::verify(envelope_bytes, path_family, genesis.relay_id, signer)?;
         if batch.family_id != path_family
             || batch.relay_id != genesis.relay_id
             || batch.author_id != author
-            || batch.epoch != 1
         {
-            return Err(Error::Invalid("batch authority or epoch mismatch"));
-        }
-        let genesis_head = crypto::hash("control-head", &genesis_committed)?;
-        let known_ancestor = if author == genesis.manager_id {
-            let mut found = false;
-            for ordinal in 0..controls {
-                let committed = control_at(&self.db, path_family, ordinal)?;
-                found |= crypto::hash("control-head", &committed)? == batch.control_head;
-            }
-            found
-        } else {
-            crypto::hash("control-head", &control_at(&self.db, path_family, 5)?)?
-                == batch.control_head
-        };
-        if !known_ancestor || (controls == 1 && batch.control_head != genesis_head) {
-            return Err(Error::Invalid("batch control head not authorized ancestor"));
+            return Err(Error::Invalid("batch identity mismatch"));
         }
         let tx = self.db.transaction()?;
         let prior: Option<(Vec<u8>, Vec<u8>)> = tx.query_row(
@@ -1099,11 +1078,36 @@ impl RelayStore {
             }
             return Ok(receipt::batch_commit_response(&old_receipt)?);
         }
-        let cursor: i64 = tx.query_row(
-            "SELECT cursor FROM families WHERE family_id=?1 AND active=1",
+        let prior_rejection: Option<(Vec<u8>, Vec<u8>)> = tx.query_row(
+            "SELECT envelope_bytes,receipt_bytes FROM rejected_batch_results WHERE family_id=?1 AND batch_id=?2",
+            params![&path_family[..], &batch.batch_id[..]],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        ).optional()?;
+        if let Some((old_envelope, old_receipt)) = prior_rejection {
+            if old_envelope != envelope_bytes {
+                return Err(Error::Invalid("batch ID reused with different bytes"));
+            }
+            return Ok(receipt::batch_commit_response(&old_receipt)?);
+        }
+        let genesis_head = crypto::hash("control-head", &genesis_committed)?;
+        let known_ancestor = if author == genesis.manager_id {
+            let mut found = false;
+            for ordinal in 0..controls {
+                let committed = control_at(&tx, path_family, ordinal)?;
+                found |= crypto::hash("control-head", &committed)? == batch.control_head;
+            }
+            found
+        } else {
+            crypto::hash("control-head", &control_at(&tx, path_family, 5)?)? == batch.control_head
+        };
+        let (cursor, current_head): (i64, Vec<u8>) = tx.query_row(
+            "SELECT cursor,head_hash FROM families WHERE family_id=?1 AND active=1",
             params![&path_family[..]],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
+        let current_head: [u8; 32] = current_head
+            .try_into()
+            .map_err(|_| Error::Invalid("Family head length"))?;
         let last: Option<i64> = tx.query_row(
             "SELECT MAX(sequence) FROM batch_results WHERE family_id=?1 AND author_id=?2",
             params![&path_family[..], &author[..]],
@@ -1113,8 +1117,32 @@ impl RelayStore {
             .map_err(|_| Error::Invalid("stored sequence negative"))?
             .checked_add(1)
             .ok_or(Error::Invalid("sequence overflow"))?;
-        if batch.sequence != next_sequence {
-            return Err(Error::Invalid("batch sequence mismatch"));
+        let reason = if !active_author {
+            Some(2)
+        } else if batch.epoch != 1 {
+            Some(1)
+        } else if !known_ancestor || (controls == 1 && batch.control_head != genesis_head) {
+            Some(3)
+        } else if batch.sequence != next_sequence {
+            Some(4)
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            let rejected = receipt::rejected_batch(
+                &batch,
+                u64::try_from(cursor).map_err(|_| Error::Invalid("cursor negative"))?,
+                current_head,
+                reason,
+                next_sequence,
+                &self.relay_seed,
+            )?;
+            tx.execute(
+                "INSERT INTO rejected_batch_results(family_id,batch_id,envelope_bytes,receipt_bytes) VALUES(?1,?2,?3,?4)",
+                params![&path_family[..], &batch.batch_id[..], envelope_bytes, &rejected],
+            )?;
+            tx.commit()?;
+            return Ok(receipt::batch_commit_response(&rejected)?);
         }
         let next_cursor: u64 = u64::try_from(cursor)
             .map_err(|_| Error::Invalid("cursor negative"))?
@@ -1166,7 +1194,7 @@ impl RelayStore {
             ControlReader::Manager | ControlReader::Active => {}
             _ => return Err(Error::Invalid("reader cannot fetch batch results")),
         }
-        let receipt: Option<Vec<u8>> = self
+        let mut receipt: Option<Vec<u8>> = self
             .db
             .query_row(
                 "SELECT receipt_bytes FROM batch_results WHERE family_id=?1 AND batch_id=?2",
@@ -1174,6 +1202,16 @@ impl RelayStore {
                 |r| r.get(0),
             )
             .optional()?;
+        if receipt.is_none() {
+            receipt = self
+                .db
+                .query_row(
+                    "SELECT receipt_bytes FROM rejected_batch_results WHERE family_id=?1 AND batch_id=?2",
+                    params![&family_id[..], &batch_id[..]],
+                    |r| r.get(0),
+                )
+                .optional()?;
+        }
         Ok(cbor::encode(&Value::Map(vec![
             (1, Value::Integer(1)),
             (2, receipt.map_or(Value::Null, Value::Bytes)),

@@ -485,7 +485,12 @@ cursor 2 before the invitation, shifts every later control cursor, and is
 verified by the recipient before its claim. Relay authority indexes controls
 by order, accepts a continuously authorized manager's same-epoch ancestor,
 and the core replays interleaved entries before preparing later controls.
-The medium rejection finding remains open.
+The medium finding now has a real-relay credential-clone regression: one
+accepted batch and a competing exact batch receive distinct durable signed
+results, a lost response resolves by batch-ID query, and the rejected copy
+retains its operation until a verified competing prefix permits resealing at
+the next sequence. FS62/BATCH07 records the case. This closes the specific
+advisory finding; later epoch and removal variants remain in the M0 gates.
 
 The reviewer found no key/plaintext disclosure to relay storage, keyless
 admission, forged device authorship, or deletion of committed local

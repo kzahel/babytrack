@@ -394,6 +394,11 @@ malicious relay is not proof of noninclusion on a hidden fork.
 
 On timeout, query by signed batch ID and retry **identical bytes** while the
 result is unknown; never sign different bytes with the same sequence. After
+a signed sequence rejection, the client first verifies the competing accepted
+entry in its complete ordered prefix through the rejection cursor. It then
+archives the rejected envelope, keeps its operation bytes, and stages a fresh
+batch at the verified next sequence with a new nonce and ID. A rejection
+without that competing entry leaves the outbox uncertain. After
 a definite old-epoch rejection and verified new control head, use the next
 expected sequence and a new batch ID/nonce while retaining operation IDs.
 The local outbox removes an operation only after a verified accepted result

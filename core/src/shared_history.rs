@@ -302,12 +302,101 @@ impl PublicHistorySession {
         {
             return Err(Error::Invalid("rejection differs from pinned stale batch"));
         }
-        store.record_verified_stale_rejection(
+        store.record_verified_rejection(
             self.family,
             &pending,
             receipt_bytes,
             self.cursor(),
             self.head_hash(),
+            pending.sequence,
+        )?;
+        Ok(())
+    }
+
+    /// A signed sequence rejection becomes actionable only after the local
+    /// verified prefix contains the competing accepted batch. Preserve the
+    /// local operation and advance its next sealing sequence atomically.
+    pub fn reject_conflicting_sequence_pending(
+        &self,
+        store: &mut SqliteStore,
+        receipt_bytes: &[u8],
+    ) -> Result<(), Error> {
+        let pending = store
+            .pending_batch(self.family)?
+            .ok_or(Error::Invalid("no uncertain local batch"))?;
+        let signer = self.chain.active_signing_public(self.family.device_id)?;
+        let signed = batch::verify_signed_envelope(
+            &pending.envelope_bytes,
+            &self.family.family_id,
+            &self.chain.relay_id(),
+            &signer,
+        )?;
+        if signed.header().author_device_id != self.family.device_id
+            || signed.header().batch_id != pending.batch_id
+            || signed.header().device_sequence != pending.sequence
+            || signed.object_hash() != pending.object_hash
+        {
+            return Err(Error::Invalid("pending sequence metadata differs"));
+        }
+        let history = store
+            .shared_history(self.family)?
+            .ok_or(Error::Invalid("Family has no shared genesis"))?;
+        let receipt = session::verify_rejected_receipt(receipt_bytes, &history.relay_public_key)?;
+        if receipt.reason != 4
+            || receipt.family_id != self.family.family_id
+            || receipt.relay_id != self.chain.relay_id()
+            || receipt.batch_id != pending.batch_id
+            || receipt.object_hash != pending.object_hash
+            || receipt.device_sequence != pending.sequence
+            || receipt.cursor > self.cursor()
+        {
+            return Err(Error::Invalid(
+                "sequence rejection differs from pending batch",
+            ));
+        }
+        let mut at_rejection =
+            ControlChain::from_genesis(&history.genesis_bytes, history.relay_public_key)?;
+        let mut competing = false;
+        for entry in history
+            .entries
+            .iter()
+            .filter(|entry| entry.cursor <= receipt.cursor)
+        {
+            match entry.kind {
+                1 => at_rejection.apply_control(&entry.committed_bytes)?,
+                2 => {
+                    let accepted = at_rejection
+                        .apply_public_batch(&entry.committed_bytes, &entry.receipt_bytes)?;
+                    if accepted.header().author_device_id == self.family.device_id
+                        && accepted.header().device_sequence == pending.sequence
+                        && accepted.header().batch_id != pending.batch_id
+                    {
+                        competing = true;
+                    }
+                }
+                _ => return Err(Error::Invalid("shared prefix entry kind invalid")),
+            }
+        }
+        let current_next = self.chain.next_sequence_for(self.family.device_id)?;
+        if !competing
+            || at_rejection.last_global_cursor() != receipt.cursor
+            || at_rejection.head_hash() != receipt.control_head
+            || at_rejection.next_sequence_for(self.family.device_id)?
+                != receipt.next_expected_sequence
+            || receipt.next_expected_sequence <= pending.sequence
+            || current_next < receipt.next_expected_sequence
+        {
+            return Err(Error::Invalid(
+                "sequence conflict lacks verified accepted prefix",
+            ));
+        }
+        store.record_verified_rejection(
+            self.family,
+            &pending,
+            receipt_bytes,
+            self.cursor(),
+            self.head_hash(),
+            current_next,
         )?;
         Ok(())
     }

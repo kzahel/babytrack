@@ -173,6 +173,7 @@ dependencies = [
  "axum",
  "babytrack-core",
  "babytrack-server",
+ "rusqlite",
  "serde_json",
  "tempfile",
  "tokio",

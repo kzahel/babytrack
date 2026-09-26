@@ -1372,6 +1372,16 @@
       "expect": ["The new Family gets fresh authority and operation IDs but retains child and activity record IDs within its new Family scope.", "The opaque field bytes still refer to the retained child ID and remain byte-identical.", "No source Family credential or global cross-Family lookup is used."],
       "variants": ["source Family still exists locally", "same record ID exists in another Family"],
       "decisions": ["D3", "D4"]
+    },
+    {
+      "id": "FS62",
+      "status": "agreed",
+      "requirements": ["U1", "U4"],
+      "given": "Two installations copied the same Family device credential and independently sealed different exact batches with the same next accepted sequence.",
+      "actions": ["The relay accepts one batch and durably rejects the other with a signed sequence receipt.", "The rejected installation loses its response, queries the batch result, and verifies the competing accepted entry in its ordered history.", "It reseals its still-local operation with the verified next sequence, fresh nonce, and batch ID."],
+      "expect": ["The exact retry and batch-ID query return the original signed rejection without consuming another sequence.", "An unverified or forged rejection cannot clear the outbox.", "The retained operation enters shared history at most once after verified resealing, and all devices converge."],
+      "variants": ["response lost before local persistence", "relay or client restart", "another entry follows the rejected receipt cursor", "conflicting batch contains a different local operation"],
+      "decisions": ["D6"]
     }
   ]
 }

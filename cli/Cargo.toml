@@ -15,6 +15,7 @@ babytrack-core.workspace = true
 [dev-dependencies]
 axum = "0.8"
 babytrack-server = { path = "../server", features = ["test-harness"] }
+rusqlite = { version = "=0.32.1", features = ["bundled"] }
 serde_json = "1"
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

@@ -985,13 +985,14 @@ impl SqliteStore {
         Ok(())
     }
 
-    pub(crate) fn record_verified_stale_rejection(
+    pub(crate) fn record_verified_rejection(
         &mut self,
         family: FamilyHandle,
         pending: &PreparedBatch,
         receipt_bytes: &[u8],
         pinned_cursor: u64,
         pinned_head: [u8; 32],
+        new_next_sequence: u64,
     ) -> Result<(), Error> {
         let transaction = self.connection.transaction()?;
         let _ = checked_family(&transaction, family)?;
@@ -1016,6 +1017,9 @@ impl SqliteStore {
         if next_sequence != i64::try_from(pending.sequence).map_err(|_| Error::CorruptState)? {
             return Err(Error::CorruptState);
         }
+        if new_next_sequence < pending.sequence {
+            return Err(Error::CorruptState);
+        }
         transaction.execute(
             "INSERT INTO rejected_local_batches
              (family_id, batch_id, envelope_bytes, receipt_bytes, rejected_at_cursor)
@@ -1035,6 +1039,13 @@ impl SqliteStore {
         if deleted != 1 {
             return Err(Error::CorruptState);
         }
+        transaction.execute(
+            "UPDATE local_sync_state SET next_sequence = ?2 WHERE family_id = ?1",
+            params![
+                family.family_id.as_slice(),
+                i64::try_from(new_next_sequence).map_err(|_| Error::CorruptState)?
+            ],
+        )?;
         transaction.commit()?;
         Ok(())
     }

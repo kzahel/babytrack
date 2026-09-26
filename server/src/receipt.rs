@@ -206,6 +206,41 @@ pub(crate) fn accepted_batch(
     ]))?)
 }
 
+pub(crate) fn rejected_batch(
+    batch: &VerifiedBatch,
+    cursor: u64,
+    current_head: [u8; 32],
+    reason: u16,
+    next_expected_sequence: u64,
+    relay_seed: &[u8; 32],
+) -> Result<Vec<u8>, Error> {
+    if cursor == 0
+        || batch.sequence == 0
+        || next_expected_sequence == 0
+        || !(1..=5).contains(&reason)
+    {
+        return Err(Error::Invalid("rejected batch cursor, sequence, or reason"));
+    }
+    let body = Value::Map(vec![
+        (1, Value::Integer(1)),
+        (2, Value::Bytes(batch.family_id.to_vec())),
+        (3, Value::Bytes(batch.relay_id.to_vec())),
+        (4, Value::Bytes(batch.batch_id.to_vec())),
+        (5, Value::Bytes(batch.object_hash.to_vec())),
+        (6, Value::Bool(false)),
+        (7, Value::Integer(cursor.into())),
+        (8, Value::Bytes(current_head.to_vec())),
+        (9, Value::Integer(batch.sequence.into())),
+        (10, Value::Integer(reason.into())),
+        (11, Value::Integer(next_expected_sequence.into())),
+    ]);
+    let signed = crypto::sign_cbor("batch-receipt", &cbor::encode(&body)?, relay_seed)?;
+    Ok(cbor::encode(&Value::Map(vec![
+        (1, body),
+        (2, Value::Bytes(signed.to_vec())),
+    ]))?)
+}
+
 pub(crate) fn batch_commit_response(receipt_bytes: &[u8]) -> Result<Vec<u8>, Error> {
     Ok(cbor::encode(&Value::Map(vec![
         (1, Value::Integer(1)),

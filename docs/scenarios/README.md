@@ -19,7 +19,7 @@ Read the relevant cases and their owning decisions, not the whole catalog.
 | Family/child targeting | FS22-FS25, FS54 | Family sharing U6, D7 |
 | Recovery and file restore | FS26-FS30, FS40-FS45, FS61 | Family sharing U7, D3-D5; [portable file](../protocol/portable-file-v1.md) |
 | Malicious relay limits | FS31-FS32, FS46, FS56 | Family sharing trust limits; [sync threat model](../topics/sync-and-encryption.md#threat-model) |
-| Batch authorship and hostile data | FS50, FS60 | [Sharing protocol](../protocol/sharing-v1.md#signed-encrypted-batches-and-receipts); [records](../protocol/records-v1.md#merge-and-clock-rules) |
+| Batch authorship and hostile data | FS50, FS60, FS62 | [Sharing protocol](../protocol/sharing-v1.md#signed-encrypted-batches-and-receipts); [records](../protocol/records-v1.md#merge-and-clock-rules) |
 | Credential and Family isolation | FS52, FS58 | [Sharing protocol](../protocol/sharing-v1.md#promotion-isolation-and-trust-limits) |
 | Displaced edits | FS33 | Family sharing D6; [event model](../topics/event-model.md) |
 

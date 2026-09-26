@@ -462,6 +462,41 @@ and PR; introduce path selection as component suites grow. Randomized fault
 sequences and fuzzing run nightly with saved seeds. Physical device startup
 and size baselines begin in M1; simulator timing is informational.
 
+## Advisory first-cohort sync review
+
+Daybreak Blue at high thinking reviewed fixed commit
+`5ada80cfbf76d7a5c18d23e9c6e6a804a392c67c` in read-only plan mode
+through Yep Anywhere session `01a0dffd-fe08-7d92-a22d-ca06d89dc3db`
+(process `940df9e3-caca-48a3-9772-cb296aeaf0ca`). The separate checkout
+remained clean. The reviewer ran `cargo test -p babytrack-cli --test
+dynamic_creation --locked`, `cargo test -p babytrack-core --locked`, and
+`cargo test -p babytrack-server --locked`; all passed. Result: **advisory
+FAIL** for first-cohort eventual sync, not the formal early M0 gate.
+
+| Finding | Disposition |
+|---|---|
+| High: a manager batch durably staged against genesis can be rejected before admission and then forever rejected for a stale exact head, despite the same epoch and continued authority. | Blocker. Let manager batches commit from genesis, verify a known same-epoch ancestor and continuous authorization, and remove fixed join cursor positions. Add FS49/BATCH06 with a batch staged before joining and controls interleaved with batches. |
+| Medium: identifiable definite batch rejections return unsigned HTTP 409 and have no durable result. A cloned credential's conflicting sequence can leave an exact outbox item stuck. | Blocker. Persist signed rejection receipts and expose exact retries/results; after verified competing acceptance, retain the operation but archive/resequence its old envelope. Bind BATCH02/BATCH04 and lost-response variants. |
+
+The reviewer found no key/plaintext disclosure to relay storage, keyless
+admission, forged device authorship, or deletion of committed local
+operations in this subset. It called out unexecuted multi-chunk boundaries,
+mixed-version exchange, removal, repair, polling, private copy, and browser
+outbox as remaining work. Its threat assumptions match the
+[Family trust limits](../topics/family-sharing-and-trust.md#accepted-trust-limits):
+local keys stay protected; a malicious relay can withhold or fork history
+and lie about its clock. The newer HTTP-write integration test at `ba840d8`
+addresses one transport coverage gap, but neither blocker above.
+
+Readable and password-protected portable snapshots now export and restore
+local-only Families through the core. The FILEBYTE08 fixture validates the
+readable format. The protected form uses the fixed Argon2id/XChaCha profile,
+NFC passwords, an app-supplied memory budget check, and one failure category
+for a wrong password or corrupt ciphertext. A restore publishes a new
+Family and its saved-point/gap metadata in one SQLite transaction; source
+authority is not copied. Shared pending work, private copy, browser parity,
+and UI wiring remain open.
+
 ## Advisory authority and key-handoff preflight
 
 Daybreak Blue at high thinking reviewed fixed commit

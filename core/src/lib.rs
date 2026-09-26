@@ -28,6 +28,7 @@ pub mod hpke;
 pub mod issue;
 pub mod membership;
 pub mod operation;
+pub mod portable_file;
 pub mod projection;
 pub mod rotation;
 pub mod session;

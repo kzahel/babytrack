@@ -73,6 +73,18 @@ pub fn decode_with_limits(bytes: &[u8], limits: Limits) -> Result<Value, Error> 
     Ok(value)
 }
 
+/// Decode one canonical CBOR value from the start of a larger byte stream.
+/// The caller must define and validate the format of any following bytes.
+pub fn decode_prefix_with_limits(bytes: &[u8], limits: Limits) -> Result<(Value, usize), Error> {
+    let bounded = &bytes[..bytes.len().min(limits.max_bytes)];
+    let mut decoder = Decoder {
+        bytes: bounded,
+        offset: 0,
+    };
+    let value = decoder.value(0, limits.max_depth)?;
+    Ok((value, decoder.offset))
+}
+
 pub fn encode(value: &Value) -> Result<Vec<u8>, Error> {
     let mut bytes = Vec::new();
     write_value(&mut bytes, value, 0, DEFAULT_MAX_DEPTH)?;

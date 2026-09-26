@@ -38,6 +38,10 @@ impl Record {
     pub fn field(&self, id: u64) -> Option<&Field> {
         self.fields.get(&id)
     }
+
+    pub fn fields(&self) -> impl Iterator<Item = (u64, &Field)> {
+        self.fields.iter().map(|(id, field)| (*id, field))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,6 +110,10 @@ impl LocalProjection {
         self.records.get(id)
     }
 
+    pub fn records(&self) -> impl Iterator<Item = &Record> {
+        self.records.values()
+    }
+
     /// Validate and apply one already decoded local operation atomically.
     /// Its append index is the field winner before first sharing.
     pub fn append(&mut self, operation: &Operation, index: u64) -> Result<(), LocalError> {
@@ -156,6 +164,10 @@ impl Projection {
 
     pub fn record(&self, id: &[u8; 16]) -> Option<&Record> {
         self.records.get(id)
+    }
+
+    pub fn records(&self) -> impl Iterator<Item = &Record> {
+        self.records.values()
     }
 
     /// Genesis promotes the existing local log at cursor one. All promoted

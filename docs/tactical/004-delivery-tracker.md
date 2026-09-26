@@ -33,9 +33,9 @@ slice.
 |---|---|
 | Active implementation owner | [003 M0 foundation](003-m0-foundation.md), slices 2 and 3; slice 1 cross-language gate is still open. |
 | Next demonstrable proof | Fresh random-key manager and recipient stores complete invite, claim, challenge, proof, grant, encrypted promotion of existing records, and subsequent encrypted child batches through HTTP writes and authenticated relay reads. Next: broaden membership/removal and exercise transport loss and polling. |
-| Next dependent slice | Complete local copy/backup and browser outbox before the M0 exit gate. |
+| Next dependent slice | Extend local-only portable backup to shared current state and pending work, implement private copy, and complete browser outbox before the M0 exit gate. |
 | Next independent review | The required early M0 authority review follows implemented invite, grant, and rotation. |
-| Open advisory | The [byte/crypto preflight](003-m0-foundation.md#advisory-bytecrypto-preflight) returned FAIL for fixture-shaped production exports, nonce/retry ownership, local validity, and signed-but-undecryptable replay. Fixture exports are gated; the initial manager path now stages and confirms native batches with replayable evidence. Full membership authority, later epochs, and browser outbox remain before shared sync. |
+| Open advisory | The [first-cohort review](003-m0-foundation.md#advisory-first-cohort-sync-review) found two eventual-sync blockers: same-epoch ancestor batches can wedge during join, and definite batch rejections lack signed durable results. Earlier byte/crypto findings remain tracked in 003. Full membership authority, later epochs, and browser outbox remain before shared sync. |
 | CI signal today | Read-only Rust, native-binding, and browser jobs are required on every push/PR. Local checks passed; a remote Actions result has not been verified here. |
 
 Update this card when the active slice changes. Do not copy fine-grained
@@ -69,6 +69,7 @@ preflight can reduce rework but never substitutes for a named gate.
 | When | Review question | Gate owner |
 |---|---|---|
 | M0 byte/crypto preflight, run at `8402bd8` | Are the implemented wire, key, and binding boundaries safe enough to build on? Advisory FAIL; see the [record](003-m0-foundation.md#advisory-bytecrypto-preflight). | 003 slice 1; advisory only |
+| M0 first-cohort preflight, run at `5ada80c` | Can a fresh join and promotion preserve eventual shared progress through retries and interleaving? Advisory FAIL; see the [record](003-m0-foundation.md#advisory-first-cohort-sync-review). | 003 slices 2–3; advisory only |
 | After minimal authority implementation, before broader sync | Can an unauthorized, stale, or hostile device gain or retain shared authority or a new epoch key? | [Early M0 gate](../mvp-plan.md#security-review-gates), 003 slice 3 |
 | M0 exit, before real Family data | Can crash/retry, pending work, restore, or cross-Family access violate the agreed promises? | [End-of-M0 gate](../mvp-plan.md#security-review-gates), 003 slice 4 |
 | New web/watch boundary and M5 | Does the new client or deployment boundary change the threat model or user-visible guarantees? | Later milestone tacticals and MVP plan |

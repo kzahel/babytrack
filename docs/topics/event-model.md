@@ -1,6 +1,7 @@
 # Event model
 
-Status: proposed design, September 2026. Must be settled before M0 code.
+Status: proposed design, September 2026. M-1 must settle the record envelopes
+and remaining MVP questions before M0 code.
 Owns what gets logged: entities, event types and fields, timers, units, time
 and day boundaries, multiple children, import mapping, and export. How
 events are stored, merged, and synced is owned by
@@ -8,17 +9,20 @@ events are stored, merged, and synced is owned by
 
 ## Entities
 
-- **Family.** The unit of sharing. Holds settings such as display units.
+- **Family.** The user-facing name for an independent tracking and sharing
+  space; it need not describe a biological or legal household. It holds
+  settings such as display units. One app can hold multiple Families.
 - **Child.** Name, birth date, and sex (WHO growth charts are sex-specific).
   A family has any number of children.
 - **Holder.** A caregiver device or backup, defined in the sync topic. Each
   event records which device wrote it.
-- **Event.** Everything logged. Children and family settings are also stored
-  as events so they merge and sync the same way.
+- **Activity event.** A child-scoped item in the timeline. Child and family
+  metadata also use the shared operation and sync machinery, but their
+  envelope and scope are an M-1 decision.
 
 ## Event envelope
 
-Every event has:
+Every child-scoped activity event has:
 
 - `id`: UUIDv7, created on the device that logs it;
 - `child`: the child it belongs to;
@@ -76,6 +80,10 @@ the UI offers to merge them rather than guessing.
   caregiver was at the time.
 - Durations, intervals since the last feed, and wake windows use instants
   only, so they are unaffected by time zones or daylight saving.
+- A caregiver may log or import an activity whose `start` is in the past.
+  The activity time controls where it appears in timelines and reports; the
+  operation's HLC records when the change was made and controls merge order.
+  Backfilling does not require rewriting old operations.
 - Lists and timelines show each event at the local time it was logged, with
   a marker when that offset differs from the viewing device's current one.
 - A day is a calendar day in the viewing device's current time zone. Events
@@ -85,9 +93,12 @@ the UI offers to merge them rather than guessing.
 
 ## Multiple children
 
-Every event belongs to exactly one child. Logging for twins at once creates
-one event per child sharing a `group` id, so each child's history stays
-complete and either event can be edited alone.
+Every activity event belongs to exactly one child in exactly one Family.
+Child identity and display name are scoped to that Family. Two Families may
+each represent the same real child but keep separate histories unless a user
+explicitly imports records into one of them. Logging for twins at once
+creates one event per child sharing a `group` id, so each child's history
+stays complete and either event can be edited alone.
 
 ## Unknown types and fields
 
@@ -106,14 +117,33 @@ plan applied to events.
   source row, so importing the same file twice creates no duplicates. The
   mapping tables are written once real, anonymized sample exports are
   collected.
+- **No automatic family merge in the MVP.** Competing live families, child
+  identities, memberships, and operation histories are not merged. Members
+  may keep both Families in one app and switch between them without merging.
+  An activity created while one Family is active belongs only to that Family.
+  Members can backfill entries manually, and the planned competitor CSV import
+  can create entries in the chosen family. A later client-side import tool may
+  copy selected records from a local family into another as new operations,
+  mapped to a chosen child; this is data import, not sync-history merging.
 
 ## Validation
 
 - Vectors for unit conversion and display rounding.
 - Vectors for day boundaries across midnight, daylight saving changes, and
   travel between zones.
+- A backdated activity appears at its activity time while its operation
+  retains the current HLC for merge ordering.
 - Round-trip tests: every type through encode, merge, export, and import.
 - Importer fixtures from real, anonymized exports.
+
+## M-1 candidate: record scopes
+
+Use one operation log over records with an explicit scope: family metadata,
+child metadata, or child activity. Only activity records require a child id
+and start time; child metadata has its own child id, and family metadata has
+neither. All scopes retain the same id, field-level merge, unknown-field,
+encryption, and sync rules. M-1 must confirm this envelope and define how
+deleting a child affects its activity history before encoding is frozen.
 
 ## Open questions
 
@@ -128,6 +158,20 @@ plan applied to events.
    configurable day start.
 4. **Diaper detail.** Whether to record colour and consistency in the MVP.
    Keep it out while medical content stays out.
+5. **Metadata envelope.** Decide whether family settings and children are
+   distinct record types with their own fields, while sharing the operation
+   log and merge machinery. They cannot use the required child id and
+   activity start time above without inventing false values.
+6. **Import identity.** "Source app and source row" must mean a stable
+   source record identifier or content-derived identity, not a line number:
+   overlapping exports can reorder rows. Specify how repeated imports and
+   genuinely changed source records behave.
+7. **Export promise.** Decide whether JSON Lines reproduces current visible
+   state or the full edit history. Include family and child metadata, units,
+   unknown fields, and deletion semantics in that contract.
+8. **Daily reports while travelling.** Current-viewer time zone makes two
+   caregivers in different zones see different daily totals. Decide whether
+   that is intended or whether family reports use a stable family zone.
 
 ## Reconsider if
 

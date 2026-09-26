@@ -22,7 +22,7 @@ Activity logging, fast enough to use one-handed at 3am:
 
 - Feeding: breast (side, timer), bottle (amount), solids
 - Sleep and naps with running timers and wake-window hints
-- Pumping with volume and a freezer inventory
+- Pumping with volume; proposed freezer inventory for stored milk portions
 - Diapers (wet, dirty, both)
 - Growth (weight, length, head) with WHO/CDC percentiles
 - Medication and temperature with dose intervals
@@ -31,21 +31,36 @@ Activity logging, fast enough to use one-handed at 3am:
 Platforms: iOS, Android, Apple Watch, Wear OS, web. All are first-class and
 all share one encrypted data model.
 
-Sharing: unlimited caregivers per family, forever. Realtime sync between
-caregivers with offline support and conflict-free merge (append-only event log
-or CRDT), so two parents logging the same feed never lose data.
+The app starts with a local-only Family, with no account or server, unless the
+person chooses to join an invitation on first launch. A **Family** is an
+independent space for children, entries, and sharing; it need not match a
+biological or legal family. One app can hold several Families and lets a
+caregiver switch between them. Sharing a local Family is an explicit choice
+that includes its existing history. A shared Family supports unlimited
+caregivers: members can read and write entries, while managers can
+also invite, remove, or change another person's role, including a manager's.
+At least one manager must remain. All members keep the history already stored
+on their devices and can make an independent local copy. Sync works offline
+and merges distinct entries from caregivers.
 
 Import: one-tap import from Huckleberry, Nara, and Baby Tracker (Nighp) CSV
 exports. Export: one tap, open format, always available.
 
+Merging two live Families or automatically combining child histories is out
+of the MVP. Anyone may backfill an activity with its original date. A later
+client-side import tool could copy selected data into another Family without
+merging membership or sync histories.
+
 ## Architecture principles
 
-- **Local-first.** The phone is the source of truth. The app is fully
-  functional with no account and no network.
+- **Local-first.** The phone is the source of truth. A person can create a
+  local-only Family, fully functional without an account or network, or join
+  an invitation on first launch. Sharing is opt-in for each local Family.
 - **End-to-end encrypted sync.** The server is a dumb relay for encrypted
-  blobs. The family key is shared by QR or invite link, never through the
-  server. Watches get the key from the phone over WatchConnectivity (watchOS)
-  or the Data Layer API (Wear OS). Web gets it via a link fragment. We cannot read user data.
+  blobs. A QR code or invite link bootstraps access; later epoch keys are
+  wrapped for each holder and relayed by the server. Wear OS can hold the
+  shared core and keys; the MVP Apple Watch app relays through the phone.
+  The web invite uses a link fragment. We cannot read user data.
 - **Notifications without plaintext.** Server sends empty wake pushes; the
   client decrypts and renders. Reminders (wake windows, feed intervals) are
   scheduled on-device from local data.
@@ -171,8 +186,11 @@ multi-caregiver sync.
 
 - Category economics cap the upside. Enter for the product, the infra
   exercise, and option value, not for income.
-- E2EE makes account recovery hard. Lose all devices and lose the data unless
-  we add a recovery phrase or key escrow. Needs a careful, simple answer.
+- E2EE makes key recovery hard. A shared family's relay copy is unusable
+  after all keys are lost; recovery needs another device, a backed-up key,
+  or a recovery phrase.
+- A sole local-only device can lose its records if it is lost or damaged;
+  a recovery phrase without a copy of the records is not a backup.
 - Store review friction for health-adjacent apps (Enfold was rejected once
   over medical citations). Keep medical content out of the MVP.
 - Crowded 2026 field means "free and open" is table stakes. Distribution and
@@ -183,9 +201,12 @@ multi-caregiver sync.
 
 ## Open questions
 
-Stack, sync design, and key recovery are settled in
-[docs/mvp-plan.md](docs/mvp-plan.md): a shared Rust core, an append-only
-operation log, and platform keychain backup with an optional recovery phrase.
-Still open:
+The architecture direction in [docs/mvp-plan.md](docs/mvp-plan.md) is a
+shared Rust core and append-only operation log. Protocol, recovery, and MVP
+scope details must be settled in
+[M-1 design closure](docs/tactical/001-pre-m0-design.md) before implementation.
+Freezer inventory would track individual portions of expressed milk: amount,
+storage date, and whether each portion was used or discarded. Its MVP status
+is open. Also open:
 
 - Final name. `babytrack` is the code name until publishing.

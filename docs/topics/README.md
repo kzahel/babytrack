@@ -12,9 +12,9 @@ over a concern from the plan, the plan keeps a short summary and links here.
 ## Active topics
 
 - [Sync and encryption](sync-and-encryption.md) — read before changing the
-  operation log, merge rules, batches, keys, key holders, grants, invites,
-  removal, recovery, the server API, encoding, protocol versioning, or the
-  threat model.
+  local-to-shared lifecycle, roles, private forks, operation log, merge
+  rules, batches, keys, key holders, grants, invites, removal, recovery,
+  the server API, encoding, protocol versioning, or the threat model.
 - [Event model](event-model.md) — read before changing entities, event types
   or fields, timers, units, time zones and day boundaries, multiple
   children, importers, or the export format.

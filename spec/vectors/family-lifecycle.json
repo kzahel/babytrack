@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "status": "symbolic_behavior_cases",
+  "cases": [
+    {
+      "id": "new-family-starts-local",
+      "given": "a fresh installation with no account or network",
+      "when": "the user creates a family and logs an activity",
+      "expect": [
+        "the activity is available locally",
+        "no relay family is registered"
+      ]
+    },
+    {
+      "id": "first-launch-joins-invite",
+      "given": "a fresh installation with a valid invitation",
+      "when": "the person joins the invited Family",
+      "expect": [
+        "the invited Family becomes available in the app",
+        "no empty local Family is created as a side effect"
+      ]
+    },
+    {
+      "id": "multiple-families-isolate-entries-and-roles",
+      "given": "one app with manager access to Family A and member access to Family B",
+      "when": "the person logs an activity in Family B, switches to Family A, and changes Family A membership",
+      "expect": [
+        "the activity appears only in Family B's history and export",
+        "the membership change applies only to Family A",
+        "Family A and Family B use separate device keypairs",
+        "Family B's keys, role, and sync state are unchanged"
+      ]
+    },
+    {
+      "id": "removal-from-one-family-preserves-another",
+      "given": "one app participates in shared Families A and B",
+      "when": "the device is removed from Family A",
+      "expect": [
+        "Family A stops receiving new shared entries after its removal cutover",
+        "Family B remains writable and continues syncing",
+        "Family B's identity and encryption epoch are unchanged"
+      ]
+    },
+    {
+      "id": "same-child-in-two-families-stays-separate",
+      "given": "two Families independently represent the same real child",
+      "when": "both Families are joined in one app",
+      "expect": [
+        "both child histories remain separately selectable",
+        "neither child identity nor history is merged automatically"
+      ]
+    },
+    {
+      "id": "first-share-includes-history",
+      "given": "a local-only family with existing activities",
+      "when": "its user explicitly enables sharing",
+      "expect": [
+        "the existing activities become part of the encrypted shared history",
+        "the family remains usable offline"
+      ]
+    },
+    {
+      "id": "member-can-log-not-manage",
+      "given": "a shared family with a manager and a member",
+      "when": "the member logs an activity and then tries to remove a device",
+      "expect": [
+        "the activity is accepted for sync",
+        "the membership change is rejected"
+      ]
+    },
+    {
+      "id": "manager-can-remove-manager",
+      "given": "a shared family with two managers",
+      "when": "one manager removes the other",
+      "expect": [
+        "the removal commits and a new key epoch begins",
+        "the remaining manager retains membership authority",
+        "the removed manager retains prior local data but gets no new epoch key"
+      ]
+    },
+    {
+      "id": "last-manager-must-remain",
+      "given": "a shared family with exactly one manager",
+      "when": "that manager tries to remove or demote themself without a successor",
+      "expect": [
+        "the membership change is rejected",
+        "the family still has one manager"
+      ]
+    },
+    {
+      "id": "removed-member-can-continue-privately",
+      "given": "a member with a complete local copy before removal",
+      "when": "a manager removes the member and the member starts a private copy",
+      "expect": [
+        "the member retains data already on the device",
+        "the member receives no key for entries after the committed removal",
+        "the private copy has a new family identity and keys",
+        "new entries in the private copy do not sync to the old family",
+        "the private copy can be shared later as a separate family"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "status": "symbolic_behavior_cases",
+  "cases": [
+    {
+      "id": "edit-appends-operation",
+      "given": "a bottle event with amount 100 ml created in operation one",
+      "when": "operation two sets its amount to 120 ml",
+      "expect": [
+        "the operation log still contains both operations",
+        "the current-record projection shows amount 120 ml",
+        "replaying the log reproduces the same projection"
+      ]
+    },
+    {
+      "id": "delete-appends-tombstone",
+      "given": "a visible event and its creation operation",
+      "when": "a later delete operation sets its tombstone",
+      "expect": [
+        "the creation and delete remain in the operation log",
+        "the event is absent from the visible timeline",
+        "replaying the log reproduces the same projection"
+      ]
+    },
+    {
+      "id": "backfill-has-two-times",
+      "given": "the current date is later than the activity date",
+      "when": "a member logs an activity that happened earlier",
+      "expect": [
+        "the timeline places the event on its activity date",
+        "the new operation carries the current merge clock",
+        "older operations are not rewritten"
+      ]
+    }
+  ]
+}

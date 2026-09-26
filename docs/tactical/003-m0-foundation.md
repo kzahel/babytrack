@@ -131,6 +131,14 @@ bounded control pages and opaque object responses against the published API
 bytes. These response envelopes remain untrusted until each contained
 control and object is checked against the pinned Family history. An
 independent recipient-store fetch through the relay is the next proof.
+An integration test now commits the first join through the relay's durable
+SQLite authority, restarts it, signs the recipient's reads, downloads its
+control page and manifest objects into a separate SQLite store, and opens
+the admission grant only after the full verified history is present. A wrong
+agreement key remains unable to open the grant, and readiness survives a
+recipient restart. This uses the fixed fixture identities and calls the
+relay's authenticated store boundary; dynamic claim generation, HTTP
+delivery, data batches, polling, and later joins still need end-to-end tests.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

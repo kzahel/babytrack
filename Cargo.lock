@@ -158,6 +158,9 @@ name = "babytrack-cli"
 version = "0.0.0"
 dependencies = [
  "babytrack-core",
+ "babytrack-server",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

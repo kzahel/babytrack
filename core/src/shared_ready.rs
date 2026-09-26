@@ -118,7 +118,17 @@ impl ReadyFamilySession {
         store: &SqliteStore,
         enrollment: &EnrollmentAttempt,
     ) -> Result<Self, Error> {
-        let family = enrollment.family();
+        Self::from_admission_grant(store, enrollment.family(), enrollment.agreement_private())
+    }
+
+    /// Reopen an admitted device using its locally held agreement key. The
+    /// grant must be named by verified public history and downloaded into
+    /// this Family's store before any data-ready view is returned.
+    pub fn from_admission_grant(
+        store: &SqliteStore,
+        family: FamilyHandle,
+        agreement_private: [u8; 32],
+    ) -> Result<Self, Error> {
         let public = PublicHistorySession::resume(store, family)?;
         let grant = public
             .chain()
@@ -128,7 +138,6 @@ impl ReadyFamilySession {
         let grant_object = objects
             .get(&grant.grant_id())
             .ok_or(Error::Invalid("recipient admission grant not downloaded"))?;
-        let agreement_private = enrollment.agreement_private();
         let key = grant.open(grant_object, &agreement_private)?;
         if key.epoch != 1 {
             return Err(Error::Invalid(

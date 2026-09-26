@@ -32,7 +32,7 @@ slice.
 | Field | Current answer |
 |---|---|
 | Active implementation owner | [003 M0 foundation](003-m0-foundation.md), slices 2 and 3; slice 1 cross-language gate is still open. |
-| Next demonstrable proof | Fetch the committed join transcript and grant into an independent recipient store, then exchange one signed batch through the real relay. |
+| Next demonstrable proof | The fixed join transcript and grant now reach an independent recipient store through the relay's authenticated SQLite boundary. Next: dynamic claim through HTTP and one signed batch through the real relay. |
 | Next dependent slice | Complete local copy/backup and browser outbox before the M0 exit gate. |
 | Next independent review | The required early M0 authority review follows implemented invite, grant, and rotation. |
 | Open advisory | The [byte/crypto preflight](003-m0-foundation.md#advisory-bytecrypto-preflight) returned FAIL for fixture-shaped production exports, nonce/retry ownership, local validity, and signed-but-undecryptable replay. Fixture exports are gated; the initial manager path now stages and confirms native batches with replayable evidence. Full membership authority, later epochs, and browser outbox remain before shared sync. |

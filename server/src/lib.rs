@@ -10,3 +10,5 @@ mod receipt;
 mod store;
 
 pub use receipt::{RelayEntry, encode_control_page};
+#[cfg(feature = "test-harness")]
+pub use store::RelayStore;

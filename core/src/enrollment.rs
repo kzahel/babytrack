@@ -555,6 +555,16 @@ mod tests {
         let ready = ReadyFamilySession::from_enrollment(&store, &enrollment).unwrap();
         assert_eq!(ready.observed_cursor(), 6);
         assert_eq!(ready.active_epoch(), 1);
+        assert_eq!(
+            ReadyFamilySession::from_admission_grant(
+                &store,
+                family,
+                enrollment.agreement_private(),
+            )
+            .unwrap()
+            .observed_cursor(),
+            6
+        );
         public.accept_control(&mut store, &wire(6)).unwrap();
         for object in transitions[6]["manifest"].as_array().unwrap() {
             let id = object[1].as_str().unwrap();

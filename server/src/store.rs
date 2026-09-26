@@ -13,7 +13,8 @@ use crate::{authority, read_auth, receipt};
 
 #[derive(Debug)]
 #[allow(dead_code)] // Detailed errors are mapped to protocol responses by routes.
-pub(crate) enum Error {
+#[allow(private_interfaces)] // The test-harness feature exposes only Debug/errors.
+pub enum Error {
     Sql(rusqlite::Error),
     Cbor(cbor::Error),
     Crypto(crypto::Error),
@@ -54,7 +55,7 @@ impl From<receipt::Error> for Error {
 }
 
 #[allow(dead_code)] // Will be owned by the HTTP service once routes are wired.
-pub(crate) struct RelayStore {
+pub struct RelayStore {
     db: Connection,
     relay_seed: [u8; 32],
     relay_public: [u8; 32],

@@ -42,8 +42,8 @@ fn encrypted_newer_minor_child_projects_and_rebuilds_identically() {
     let fixtures = fixture();
     let authenticated = authenticated(&fixtures, "CROSSMINORBYTE01");
     let opened = authenticated.parse().unwrap();
-    let family = opened.header.family_id;
-    let child_id = opened.operations[0].record_id;
+    let family = opened.header().family_id;
+    let child_id = opened.operations()[0].record_id;
     let mut projection = Projection::new(family);
     assert_eq!(
         projection.apply_authenticated(&authenticated, 1),
@@ -100,7 +100,7 @@ fn signed_invalid_batches_are_wholly_inert_but_consume_cursor() {
         assert_eq!(projection.inert_batches().len(), 1, "{id}");
         assert_eq!(
             projection.inert_batches()[0].object_hash,
-            batch.object_hash,
+            batch.object_hash(),
             "{id}"
         );
         assert!(projection.record(&family).is_none(), "{id}");
@@ -111,7 +111,7 @@ fn signed_invalid_batches_are_wholly_inert_but_consume_cursor() {
             Ok(Outcome::Applied),
             "{id}"
         );
-        let child_id = valid.parse().unwrap().operations[0].record_id;
+        let child_id = valid.parse().unwrap().operations()[0].record_id;
         assert!(projection.record(&child_id).is_some(), "{id}");
     }
 }
@@ -120,7 +120,7 @@ fn signed_invalid_batches_are_wholly_inert_but_consume_cursor() {
 fn cursor_and_family_guard_projection_before_mutation() {
     let fixtures = fixture();
     let batch = authenticated(&fixtures, "CROSSMINORBYTE01");
-    let family = batch.header.family_id;
+    let family = batch.header().family_id;
     let mut projection = Projection::new(family);
     assert!(projection.apply_authenticated(&batch, 2).is_err());
     assert_eq!(projection.last_cursor(), 0);
@@ -135,7 +135,7 @@ fn cursor_and_family_guard_projection_before_mutation() {
 fn verified_control_cursor_can_precede_a_data_batch() {
     let fixtures = fixture();
     let batch = authenticated(&fixtures, "CROSSMINORBYTE01");
-    let mut projection = Projection::new(batch.header.family_id);
+    let mut projection = Projection::new(batch.header().family_id);
     assert_eq!(projection.advance_control(1), Ok(()));
     assert_eq!(
         projection.apply_authenticated(&batch, 2),

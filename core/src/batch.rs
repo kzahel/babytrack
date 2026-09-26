@@ -40,21 +40,29 @@ pub struct SealedBatch {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenedBatch {
-    pub header: Header,
-    pub operations: Vec<Operation>,
-    pub object_hash: [u8; 32],
+    pub(crate) header: Header,
+    pub(crate) operations: Vec<Operation>,
+    pub(crate) object_hash: [u8; 32],
 }
 
 /// Signature-checked and decrypted bytes. Payload parsing is separate so an
 /// authorized malformed data entry can be recorded as inert at its cursor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthenticatedBatch {
-    pub header: Header,
-    pub object_hash: [u8; 32],
+    pub(crate) header: Header,
+    pub(crate) object_hash: [u8; 32],
     plaintext: Vec<u8>,
 }
 
 impl AuthenticatedBatch {
+    pub fn header(&self) -> &Header {
+        &self.header
+    }
+
+    pub fn object_hash(&self) -> [u8; 32] {
+        self.object_hash
+    }
+
     pub fn parse(&self) -> Result<OpenedBatch, Error> {
         let operations = parse_operations(&self.plaintext, &self.header)?;
         Ok(OpenedBatch {
@@ -62,6 +70,20 @@ impl AuthenticatedBatch {
             operations,
             object_hash: self.object_hash,
         })
+    }
+}
+
+impl OpenedBatch {
+    pub fn header(&self) -> &Header {
+        &self.header
+    }
+
+    pub fn operations(&self) -> &[Operation] {
+        &self.operations
+    }
+
+    pub fn object_hash(&self) -> [u8; 32] {
+        self.object_hash
     }
 }
 

@@ -88,10 +88,10 @@ fn fixed_batch_matches_every_wire_byte_and_opens() {
         &signing_public,
     )
     .unwrap();
-    assert_eq!(opened.header, header);
-    assert_eq!(opened.operations.len(), 1);
-    assert_eq!(opened.operations[0].canonical_bytes(), operation);
-    assert_eq!(opened.object_hash, sealed.object_hash);
+    assert_eq!(opened.header(), &header);
+    assert_eq!(opened.operations().len(), 1);
+    assert_eq!(opened.operations()[0].canonical_bytes(), operation);
+    assert_eq!(opened.object_hash(), sealed.object_hash);
 
     let mut wrong_family = family_id;
     wrong_family[0] ^= 1;
@@ -181,8 +181,8 @@ fn newer_minor_envelope_preserves_unknown_child_field() {
         &signing_public,
     )
     .unwrap();
-    assert_eq!(opened.header.minor, 1);
-    assert_eq!(opened.operations.len(), 1);
-    assert_eq!(opened.operations[0].field_bytes(500), Some(vec![0xf4]));
-    assert_eq!(opened.operations[0].canonical_bytes(), operation);
+    assert_eq!(opened.header().minor, 1);
+    assert_eq!(opened.operations().len(), 1);
+    assert_eq!(opened.operations()[0].field_bytes(500), Some(vec![0xf4]));
+    assert_eq!(opened.operations()[0].canonical_bytes(), operation);
 }

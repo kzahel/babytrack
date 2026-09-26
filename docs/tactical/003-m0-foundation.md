@@ -101,6 +101,8 @@ the original operation. The in-memory Rust projection runs CROSSMINORBYTE01
 and INERTBYTE01/PRECREATEBYTE01/WRONGSCOPEBYTE01/PREFSBYTE01: unknown field
 500 retains its canonical bytes, valid replay rebuilds identically, and a
 signed malformed batch consumes its cursor without applying operations.
+Replay also advances across separately verified control cursors in the same
+ordered stream.
 Published v1 field checks include UNIT01-UNIT03 and exact rational
 conversions. The core also generates a per-Family HLC with the published
 tie, future-stamp, counter-rollover, and maximum-wall behavior. Storage must

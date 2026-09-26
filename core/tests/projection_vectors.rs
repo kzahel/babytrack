@@ -130,3 +130,20 @@ fn cursor_and_family_guard_projection_before_mutation() {
     assert!(other.apply_authenticated(&batch, 1).is_err());
     assert_eq!(other.last_cursor(), 0);
 }
+
+#[test]
+fn verified_control_cursor_can_precede_a_data_batch() {
+    let fixtures = fixture();
+    let batch = authenticated(&fixtures, "CROSSMINORBYTE01");
+    let mut projection = Projection::new(batch.header.family_id);
+    assert_eq!(projection.advance_control(1), Ok(()));
+    assert_eq!(
+        projection.apply_authenticated(&batch, 2),
+        Ok(Outcome::Applied)
+    );
+    assert_eq!(projection.last_cursor(), 2);
+    assert_eq!(
+        projection.advance_control(2),
+        Err(babytrack_core::projection::Error::WrongCursor)
+    );
+}

@@ -90,6 +90,16 @@ impl Projection {
         &self.inert_batches
     }
 
+    /// Advance over a separately verified control-chain entry in the shared
+    /// cursor stream. Its membership and key effects belong to control replay.
+    pub fn advance_control(&mut self, cursor: u64) -> Result<(), Error> {
+        if self.last_cursor.checked_add(1) != Some(cursor) {
+            return Err(Error::WrongCursor);
+        }
+        self.last_cursor = cursor;
+        Ok(())
+    }
+
     /// Consume an authenticated data entry even if its plaintext is malformed.
     pub fn apply_authenticated(
         &mut self,

@@ -1,7 +1,7 @@
 # 003: M0 executable foundation
 
-Status: queued behind [001 M-1 design closure](001-pre-m0-design.md). No
-product implementation starts until that gate is complete. This workstream
+Status: ready after completed [001 M-1 design closure](001-pre-m0-design.md).
+This workstream
 turns the [versioned contracts](../protocol/README.md) and
 [scenario catalog](../scenarios/README.md) into shared core, relay, and CLI
 behavior. The [MVP plan](../mvp-plan.md#milestones) owns scope.

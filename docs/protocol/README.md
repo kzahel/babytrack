@@ -2,9 +2,8 @@
 
 M-1 defines version 1 before application code depends on it. These files own
 exact encodings and state transitions; the owning topics retain rationale and
-product decisions. The version is not deployed and may still change during
-the recorded security review. A change to a settled contract updates its
-vectors and relevant scenarios in the same change.
+product decisions. The version is not deployed. A change to a settled
+contract updates its vectors and relevant scenarios in the same change.
 
 | Contract | Scope |
 |---|---|

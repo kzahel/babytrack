@@ -1,6 +1,7 @@
 # 001: M-1 design closure
 
-Status: in progress. This is the design milestone before M0 implementation.
+Status: complete, September 2026. This is the design milestone before M0
+implementation; [003](003-m0-foundation.md) owns executable delivery.
 The [MVP plan](../mvp-plan.md) fixes the architecture requirements; the
 [Family sharing](../topics/family-sharing-and-trust.md),
 [sync](../topics/sync-and-encryption.md), and
@@ -59,7 +60,7 @@ closure; it does not maintain a second copy of those decisions.
   stranded Family after sole-manager loss.
 - [x] Decide D6: show the deterministic field winner and retain the
   displaced edit in inspectable history; restoring it creates a new edit.
-- [ ] State the exact security limit for removing a lost device, excluding
+- [x] State the exact security limit for removing a lost device, excluding
   all known devices of a departed person, or facing an actively malicious
   manager; define the remaining-manager replacement path and sole-manager
   loss outcome.
@@ -73,55 +74,56 @@ closure; it does not maintain a second copy of those decisions.
 - [x] Exclude freezer milk inventory from the MVP.
 - [x] Keep planned watch/widget basics in MVP milestones; paid unlocks are
   later extras and cannot gate Family data access.
-- [ ] Write concrete launch and dogfooding gates for two caregivers, offline
+- [x] Write concrete launch and dogfooding gates for two caregivers, offline
   logging, recovery, and export. Mark other surfaces as launch gates or
   explicitly later work.
 
 ### 2. Sync and security contract
 
-- [ ] Specify signed device batches and membership operations, authorized
+- [x] Specify signed device batches and membership operations, authorized
   epoch transitions, and an atomic server compare-and-swap for rotation.
   Model concurrent removals, failed rotations, and stale clients.
-- [ ] Specify how a local-only family becomes shared: identifiers, initial
+- [x] Specify how a local-only family becomes shared: identifiers, initial
   manager authority, and whether all existing history is uploaded.
-- [ ] Specify what happens to offline writes made under an old epoch after a
+- [x] Specify what happens to offline writes made under an old epoch after a
   removal, including whether they can be re-encrypted by a remaining holder
   and whether a removed holder's late writes are rejected.
-- [ ] Specify the decided single-use direct-join protocol: atomic enrollment,
+- [x] Specify the decided single-use direct-join protocol: atomic enrollment,
   authenticated retry by the same device, key handoff, and automatic
   asynchronous progress when a key holder and recipient sync at different
-  times. Validate background-wake and delayed-wake status on each platform;
-  do not require a second manual approval. Implement D8 expiry, cancellation,
+  times. Specify visible pending and delayed-wake fallback; M1 Android,
+  M2 web, and M3 iOS validate platform background behavior without changing
+  protocol authority. Do not require a second manual approval. Specify D8 expiry, cancellation,
   and issuer-removal races. Include concurrent redemption, preview, retry,
   replay, and leaked-link cases.
-- [ ] State what a malicious relay can hide or fork, what sequence numbers
+- [x] State what a malicious relay can hide or fork, what sequence numbers
   actually detect, and whether clients need an out-of-band history check.
-- [ ] Specify the lost-device and replacement flows under D4-D5: a new
+- [x] Specify the lost-device and replacement flows under D4-D5: a new
   installation cannot reuse old authority; a remaining manager may invite
   it; without one, only locally held data or a saved full file can seed a
   new Family. Make the backup status and data-loss boundary explicit.
-- [ ] Specify the decided full-file backup/restore contract: readable and
+- [x] Specify the decided full-file backup/restore contract: readable and
   optionally protected forms, saved record state, metadata, versioning,
   credentials excluded, atomic restore into a new Family, and failure cases.
   Relay ciphertext or a lost device's key cannot reconstruct missing records.
-- [ ] Specify the verified-removal notice and D7 private-copy transaction.
+- [x] Specify the verified-removal notice and D7 private-copy transaction.
   The new Family needs fresh identity and keys, must carry pending local
   work once, and must not merge with the original or retarget another Family.
 - [x] Choose native SQLite with an append-only log and rebuildable current
   record projection, updated together in one transaction.
-- [ ] Specify atomic promotion/private-copy behavior; a crash must not
+- [x] Specify atomic promotion/private-copy behavior; a crash must not
   strand or lose the original family history.
-- [ ] Specify canonical encoding, unknown-field preservation, API and batch
+- [x] Specify canonical encoding, unknown-field preservation, API and batch
   version negotiation, limits, and downgrade behavior.
-- [ ] Specify local storage, sync, and backup isolation across multiple
+- [x] Specify local storage, sync, and backup isolation across multiple
   Families on one device, using separate device keys; add leakage tests.
 
 ### 3. Event and data contract
 
 - [x] Choose distinct family metadata, child metadata, and child activity
   scopes in one operation log; tombstoning a child does not cascade-delete
-  its activity history. Exact envelopes remain protocol work.
-- [ ] State the exact meaning of last-writer-wins, including simultaneous
+  its activity history. Exact envelopes live in records v1.
+- [x] State the exact meaning of last-writer-wins, including simultaneous
   edits to one field, clock skew, tombstones, and a way to inspect or restore
   an overwritten edit if the product promises no loss.
 - [x] Keep breastfeeding segments as one field for the MVP; displaced edits
@@ -130,7 +132,7 @@ closure; it does not maintain a second copy of those decisions.
   use a content identity and preview warning otherwise. File backup promises
   saved record state, not full source edit history.
 - [x] Use viewer-zone midnight day boundaries for reports, with no
-  configurable day start in the MVP. Exact travel/DST vectors remain open.
+  configurable day start in the MVP. Include exact travel/DST vectors.
 
 ### 4. Validation and implementation handoff
 
@@ -138,22 +140,23 @@ closure; it does not maintain a second copy of those decisions.
   observations, and variation coverage. These are not executable tests.
 - [x] Define product-contract and independent security-review checkpoints
   before implementation, during M0, before real data, and at new boundaries.
-- [ ] Turn every agreed scenario into concrete M0 fixtures/actions/assertions
-  in the handoff plan; resolve proposals and assign UI coverage. Record exact
+- [x] Assign every agreed scenario to an ordered M0 slice; the scenario
+  catalog owns its actions/assertions and M0 makes executable fixtures.
+  Resolve proposals and assign UI coverage. Record exact
   runner commands when M0 creates them, not as fictitious M-1 test results.
-- [ ] Write `docs/protocol/` contracts and concrete `tests/vectors/` for settled
+- [x] Write `docs/protocol/` contracts and concrete `tests/vectors/` for settled
   protocol cases before M0 code, including join, remove, race, offline
   upload, recovery, unknown fields, and time boundaries.
-- [ ] List negative and adversarial tests beside each security guarantee.
+- [x] List negative and adversarial tests beside each security guarantee.
   Include a relay that withholds the latest batch or presents two histories.
-- [ ] Define the M0 cross-platform proof: one encrypted event through Rust,
+- [x] Define the M0 cross-platform proof: one encrypted event through Rust,
   Swift, Kotlin, and wasm before the core API is frozen, then a mixed-client
   exchange through the relay. Include a real-browser wasm/IndexedDB harness
   before the web product UI.
-- [ ] Define M0 slice gates for portability, local storage, real-relay sync,
+- [x] Define M0 slice gates for portability, local storage, real-relay sync,
   and adversarial membership/recovery. Require crash/restart and multi-Family
   isolation cases before M1 uses real data.
-- [ ] Review CI triggers and required checks against the shared-core and
+- [x] Review CI triggers and required checks against the shared-core and
   protocol/scenario/vector dependencies. Keep bounded deterministic protocol and relay tests
   on relevant PRs; run extended randomized tests and fuzzing nightly, with
   reproducible failure seeds. Keep performance baselines on physical devices.
@@ -161,11 +164,36 @@ closure; it does not maintain a second copy of those decisions.
 ## Decision lookup
 
 - Product decision status: [D4-D8](../topics/family-sharing-and-trust.md#m-1-ux-decision-status).
-- Protocol choices: [sync open questions](../topics/sync-and-encryption.md#open-questions).
-- Record/format choices: [event-model open questions](../topics/event-model.md#open-questions).
+- Protocol choices: [sharing](../protocol/sharing-v1.md),
+  [records](../protocol/records-v1.md), and
+  [portable file](../protocol/portable-file-v1.md).
+- Deferred importer mapping: [event-model follow-up](../topics/event-model.md#open-questions).
 - Relevant cases: [scenario index](../scenarios/README.md).
 - Build preparation: [002](002-repository-scaffold.md); it does not satisfy
   this tactical's product/protocol gates.
+- M0 implementation slices: [003](003-m0-foundation.md).
+
+## Adversarial review record
+
+Fixed protocol revision: `1571b77` on `main`. The independent Daybreak Blue
+high-thinking sessions used the local Yep Anywhere API in read-only plan
+mode. They assumed an honest relay for one ordered CAS history, single-use
+and seven-day timing; they also tested an actively malicious relay that may
+fork, withhold, or lie about its clock, an authorized hostile member, and
+mixed minor-version clients. The accepted malicious-relay limits remain in
+the Family sharing topic; the review did not prove an implementation secure.
+
+| Finding cluster | Disposition and regression cases |
+|---|---|
+| Key delivered before admission; keyless claim could not commit | Public keyless claim/proof, holder-generated verifier challenge, atomic admission/grant; FS47, FS51, FS55, FS59 and contiguous chain. |
+| Relay fork, forged authorship/removal, unknown upload result | Honest-relay scope explicit, per-device signed batches/receipts, signed removal chain and idempotent private copy; FS50, FS54, FS56-FS58. |
+| Relay time, hostile HLC, backup identity, cross-minor malformed values | Signed commit-time expiry with accepted malicious-clock limit, log-position merge, stable scoped record IDs, frozen v1 validity; FS20, FS33, FS60-FS61 and byte vectors. |
+| Missing transcript bytes, ordering, pre-create validity, metadata registry, object staging | Complete contiguous signed chain, unsigned-byte comparator, immediate inert pre-create batch, reserved record types, normal and genesis stage/commit/fetch fixtures; FS42, FS49, FS60. |
+
+The early reviews failed while these defects remained. A focused review of
+the fixed commit returned **PASS for the M-1 protocol/security gate**
+(`01a0de33-3364-7502-8663-35b4ce9f797c`). The M0 review gates still
+apply to code and real-family-data use.
 
 ## Gates
 

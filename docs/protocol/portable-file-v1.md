@@ -1,9 +1,9 @@
 # Portable Family file v1
 
-Status: M-1 candidate. This is the exact backup and independent-restore
-contract. A file contains a snapshot of locally held record state, not a
-credential for the source Family. CSV remains an analysis export, not this
-backup format.
+Status: M-1 decided contract, September 2026. This is the exact backup and
+independent-restore contract. A file contains a snapshot of locally held
+record state, not a credential for the source Family. CSV remains an analysis
+export, not this backup format.
 
 ## Readable form
 

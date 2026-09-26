@@ -1,6 +1,7 @@
 # Sharing protocol v1
 
-Status: M-1 candidate, pending adversarial review and vectors. This is a
+Status: M-1 decided contract, September 2026; implementation and cross-language
+execution remain M0 work. This is a
 versioned internal contract, not a deployed API. It implements the
 [Family sharing product contract](../topics/family-sharing-and-trust.md).
 An honest relay supplies one durable total order and atomic compare-and-swap;

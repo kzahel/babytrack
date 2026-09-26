@@ -1,7 +1,7 @@
 # Event model
 
-Status: v1 record and portable-file contracts drafted, September 2026;
-adversarial review and byte vectors remain M-1 work.
+Status: M-1 event decisions and v1 record/portable-file contracts agreed,
+September 2026; M0 execution remains.
 Owns what gets logged: entities, event types and fields, timers, units, time
 and day boundaries, multiple children, import mapping, and export. How
 events are stored, merged, and synced is owned by
@@ -22,7 +22,7 @@ retention of pending edits after removal and the open displaced-edit UX
   Each event records which device wrote it.
 - **Activity event.** A child-scoped item in the timeline. Child and family
   metadata also use the shared operation and sync machinery, but their
-  envelope and scope are an M-1 decision.
+  envelope and scope are fixed in [records v1](../protocol/records-v1.md).
 
 ## Event envelope
 
@@ -187,12 +187,13 @@ inspect that child's locally held history.
 
 ## Open questions
 
-1. **Importer mapping.** Write source-specific field and unit maps after
-   collecting real anonymized samples. A source without stable record IDs
-   must keep the duplicate warning and preview.
-2. **Importer and file validation.** Validate the
-   [portable-file contract](../protocol/portable-file-v1.md) and its vectors
-   across platforms. CSV remains an analysis export.
+1. **M1 importer mapping.** Write source-specific field and unit maps after
+   collecting real anonymized samples. This does not change M0 operation,
+   identity, or portable-file bytes: imports already use stable source IDs
+   where present and content identity with a preview warning otherwise.
+2. **M0 execution.** Run the [portable-file contract](../protocol/portable-file-v1.md)
+   and vectors across platforms. This is implementation validation, not an
+   unresolved format decision. CSV remains an analysis export.
 
 ## Reconsider if
 

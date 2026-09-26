@@ -1,8 +1,7 @@
 # Family sharing and trust
 
-Status: agreed product boundaries with explicitly proposed UX decisions,
-September 2026. M-1 remains in progress. Scenarios are specifications, not
-passing tests; no implementation exists yet.
+Status: M-1 product decisions agreed, September 2026. Scenarios are
+specifications, not passing tests; no product implementation exists yet.
 
 Owns the user-visible meaning of local work, sharing, access changes,
 independent copies, and recovery. The [sync topic](sync-and-encryption.md)
@@ -67,8 +66,14 @@ technical difficulty. Bring back the concrete user-visible tradeoff.
 | Hosted web code is compromised | Malicious delivered code can compromise that browser's access. Encrypted server storage does not solve this. |
 
 These limits do not permit silent data loss, accepting forged authority, or
-claiming a failed/unknown action succeeded. Exact local device protection
-and cryptographic verification remain M-1 work.
+claiming a failed/unknown action succeeded. Removing a lost credential
+stops that device and its copies from new-epoch access but cannot remove
+data already held, another independently enrolled device controlled by the
+same person, or actions by a still-authorized malicious manager. The access
+UI must list devices individually. A remaining manager can invite a
+replacement; after sole-manager loss, members can only copy locally held
+data into a new Family. The [sharing protocol](../protocol/sharing-v1.md)
+fixes verification; M0 must implement and test it.
 
 ## Device access without login
 
@@ -216,12 +221,13 @@ its device credentials, or silently replace or merge any existing Family.
 An old backup cannot bypass removal from a shared Family. File backup is the
 MVP's portable recovery path; it never carries original-Family authority.
 
-The [event model](event-model.md#import-and-export) owns the complete file
-contract. It must round-trip the saved record state, including children,
+The [event model](event-model.md#import-and-export) owns what data is saved;
+the [portable-file contract](../protocol/portable-file-v1.md) fixes its bytes.
+It must round-trip the saved record state, including children,
 needed settings/metadata, units, and unknown fields. CSV is an analysis
-format and is not promised to be a full-fidelity backup. Full edit-history
-retention, deletion representation, versioning, and the optional protection
-format still require M-1 specifications and fixtures. No key or phrase by
+format and is not promised to be a full-fidelity backup. The state-only
+history choice, deletion representation, versioning, and optional protection
+are specified with [vectors](../../tests/vectors/README.md). No key or phrase by
 itself recreates missing records.
 
 The UI explains readable-file access briefly, without making encryption a
@@ -235,8 +241,8 @@ and is not an MVP dependency. Do not promise such a tool exists yet.
 
 ## M-1 UX decision status
 
-Decided rows are product requirements. The other rows remain proposals for
-discussion, not decisions hidden in fixtures.
+All rows below are agreed product requirements. M0 implements them with
+the linked protocol and scenario contracts.
 
 | ID | User question | Current direction | State |
 |---|---|---|---|
@@ -253,8 +259,9 @@ or issuer-role loss is the one authorized enrollment; a later attempt is
 rejected. A committed pending enrollment does not disappear merely because
 seven days pass or its inviter is removed. A manager can separately remove
 the pending device before key admission. Once admission and grant commit,
-later removal uses normal rotation and cannot retract old history. The exact timestamp representation,
-clock source, and atomic checks belong in the protocol contract.
+later removal uses normal rotation and cannot retract old history. The
+[sharing protocol](../protocol/sharing-v1.md) fixes the signed relay clock,
+strict commit-time expiry comparison, and atomic checks.
 
 D7 distinguishes uncertainty from confirmed loss of access. A network outage,
 timeout, or unknown upload result leaves the original Family and its durable

@@ -1,7 +1,7 @@
 # Sync and encryption
 
-Status: M-1 contract drafted, September 2026; final adversarial review is
-pending. The normative v1 byte and state-machine rules are in
+Status: M-1 design decided, September 2026; M0 implementation and executed
+validation remain. The normative v1 byte and state-machine rules are in
 [records](../protocol/records-v1.md),
 [sharing](../protocol/sharing-v1.md), and
 [portable files](../protocol/portable-file-v1.md). Earlier candidate
@@ -70,7 +70,7 @@ The exact rule is in [records v1](../protocol/records-v1.md).
 
 ## Keys
 
-Working direction, subject to the remaining M-1 protocol decisions.
+Version-1 key choices follow the normative sharing contract.
 
 - **Epoch keys.** Batches are encrypted with a random 256-bit epoch key using
   XChaCha20-Poly1305. The associated data binds the family id, epoch number,
@@ -290,8 +290,8 @@ checks are still required.
 - Plaintext marker test: known strings written into events never appear in
   the server database or logs.
 - Run the agreed [sharing scenarios](../scenarios/family-sharing-scenarios.json)
-  with both race orders and lost-response/restart cases. Resolve proposed
-  cases before claiming M-1 closure; these are not executable tests yet.
+  with both race orders and lost-response/restart cases. All FS cases are
+  agreed specifications; M0 binds them to executable actions and assertions.
 
 ## V1 design decisions and remaining validation
 

@@ -146,11 +146,12 @@ Single use does not identify the intended person, and removal cannot retract
 data already received. The invitation screen explains that it grants access
 to existing history. This is the accepted tradeoff for direct join.
 
-Recommended additional protections are expiry and manager cancellation;
-their lifecycle details, including outstanding invitations when the creator
-loses manager authority, remain D8. The protocol must enforce consumption
-and authenticated resumption and must not embed a reusable raw Family key
-that bypasses that boundary. The accepted onboarding direction is asynchronous:
+Invitations expire seven days after their committed creation if still unused.
+Any active manager can cancel an unused invitation. Unused invitations also
+become invalid when their issuer loses manager authority. The protocol must
+enforce consumption and authenticated resumption. It must not embed a raw
+reusable Family key that bypasses that boundary. The accepted onboarding
+direction is asynchronous:
 after the recipient opens the invitation, key handoff and history download
 advance automatically whenever the required devices can run and connect.
 The inviter need not stay online or reopen the app at the same time as the
@@ -215,7 +216,16 @@ discussion, not decisions hidden in fixtures.
 | D5 | Am I removing a person or one device? | **Decided:** grants and removal are per Family-specific device. Show enrolled devices and revoke each one explicitly; labels do not establish person identity or person-wide removal. | Agreed for M-1 |
 | D6 | What happens to an edit displaced by another edit? | Make the displaced value inspectable and explicitly restorable; retain operations regardless. | M-1, before edit/conflict contract |
 | D7 | A widget/watch targets a Family whose access changed; where does my tap go? | Preserve the explicit target and action, explain the problem, and offer a deliberate private-copy route. Never redirect into the active Family silently. | M-1 targeting contract; UI in M1/M4 |
-| D8 | When does an unused invitation stop working? | Expire invitations, allow cancellation, and invalidate unused invitations when the creator loses manager authority. Choose the lifetime and race behavior explicitly. | M-1, before invitation protocol |
+| D8 | When does an unused invitation stop working? | **Decided:** seven days after committed creation, explicit cancellation by any active manager, or loss of the issuer's manager role, whichever occurs first. An already committed enrollment remains pending through later expiry or issuer removal; managers may remove that pending device explicitly. | Agreed for M-1 |
+
+D8 governs initial redemption, not the time needed for asynchronous key
+handoff. A preview never consumes the invitation. The relay's committed
+ordering decides a race: redemption committed before expiry, cancellation,
+or issuer-role loss is the one authorized enrollment; a later attempt is
+rejected. A committed pending enrollment does not disappear merely because
+seven days pass or its inviter is removed. A manager can separately remove
+the pending device before activation. The exact timestamp representation,
+clock source, and atomic checks belong in the protocol contract.
 
 The exact wording/layout may evolve without changing these promises. Do not
 present archive, pending-sync, access-ended, and independent-copy states as

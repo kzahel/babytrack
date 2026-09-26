@@ -429,7 +429,7 @@
     },
     {
       "id": "FS20",
-      "status": "proposed",
+      "status": "agreed",
       "requirements": [
         "U2",
         "U3",
@@ -446,7 +446,8 @@
       ],
       "variants": [
         "canceled before redemption",
-        "expired before redemption"
+        "expired seven days after committed creation before redemption",
+        "issuer lost manager authority before redemption"
       ],
       "decisions": [
         "D8"
@@ -454,7 +455,7 @@
     },
     {
       "id": "FS21",
-      "status": "proposed",
+      "status": "agreed",
       "requirements": [
         "U2",
         "U3",
@@ -467,12 +468,15 @@
       ],
       "expect": [
         "Enrollment committed while Alice invitation remained authorized is not silently undone by her later removal.",
-        "Under the proposed policy, Alice removal invalidates her still-unused invitation before any later redemption.",
+        "Alice removal or demotion invalidates her still-unused invitation before any later redemption.",
+        "A committed pending enrollment survives later issuer removal or invitation expiry unless a manager separately removes the pending device.",
         "Charlie receives a confirmed joined state or a clear unusable invitation state."
       ],
       "variants": [
         "enrollment commits first",
-        "issuer removal commits first"
+        "issuer removal commits first",
+        "issuer demotion commits first",
+        "pending device separately removed before activation"
       ],
       "decisions": [
         "D1",

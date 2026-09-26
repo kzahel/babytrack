@@ -49,8 +49,11 @@ closure; it does not maintain a second copy of those decisions.
   and removals are per Family-specific device, separate from any account.
   Replacement requires an active manager's fresh invitation or a saved-file
   restore into a new Family.
-- [ ] Resolve invitation lifecycle, displaced edits, and stale quick-log
-  targeting (D6-D8 in the Family sharing topic).
+- [x] Decide D8: unused invitation expires after seven days, can be
+  canceled by an active manager, and ends when its issuer loses manager
+  authority; an already committed enrollment remains pending.
+- [ ] Resolve displaced edits and stale quick-log targeting (D6-D7 in the
+  Family sharing topic).
 - [ ] State the exact security limit for removing a lost device, excluding
   all known devices of a departed person, or facing an actively malicious
   manager; define the remaining-manager replacement path and sole-manager
@@ -82,8 +85,8 @@ closure; it does not maintain a second copy of those decisions.
   authenticated retry by the same device, key handoff, and automatic
   asynchronous progress when a key holder and recipient sync at different
   times. Validate background-wake and delayed-wake status on each platform;
-  do not require a second manual approval. Settle expiry, cancellation, and
-  issuer-removal races (D8). Include concurrent redemption, preview, retry,
+  do not require a second manual approval. Implement D8 expiry, cancellation,
+  and issuer-removal races. Include concurrent redemption, preview, retry,
   replay, and leaked-link cases.
 - [ ] State what a malicious relay can hide or fork, what sequence numbers
   actually detect, and whether clients need an out-of-band history check.

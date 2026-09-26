@@ -150,9 +150,12 @@ specify how local storage partitions and backups enforce this boundary.
   authenticated resumption only by the same enrolled device. A fresh device
   needs a fresh invitation. Product decision D2 accepts that an unintended
   bearer may redeem a valid unused invitation first.
-- **Invite lifecycle.** Expiry, cancellation, and outstanding invitations
-  after their issuer loses manager authority are proposed in product D8.
-  Settle their ordering with enrollment and key delivery before implementation.
+- **Invite lifecycle.** D8 sets seven days for unused redemption, cancellation
+  by any active manager, and invalidation of unused invitations when the
+  issuer loses manager authority. A committed enrollment remains pending
+  through later expiry or issuer removal; an active manager may separately
+  remove that pending device. The wire contract must enforce these outcomes
+  against the ordered control head and define its clock source.
 - **Removal.** A manager can remove a holder. The removing device creates
   epoch e+1, grants it to every remaining holder, posts the keyring and the
   new authorization state, and appends a signed "removed" operation. The
@@ -282,7 +285,7 @@ checks are still required.
 ## M-1 candidate: authority and key handoff
 
 **Review proposal, not a settled wire contract.** This maps the agreed U1-U8,
-D1-D5, and FS cases to one implementable direction. D6-D8 remain product
+D1-D5, D8, and FS cases to one implementable direction. D6-D7 remain product
 choices. Only Family-specific devices receive grants and roles. No person-wide
 revocation or original-Family self-recovery is promised.
 The exact canonical encoding, domain separators, request authentication,
@@ -436,7 +439,7 @@ failure recovery, and vectors still belong in `docs/protocol/` before M0 code.
   cannot exercise manager authority while still keyless. A stale grant is
   retried against the new head/epoch; removal of its recipient or an epoch
   change leaves that grant unusable. The separate effect of removing the
-  invitation issuer remains part of D8.
+  invitation issuer follows D8; exact signed bytes remain protocol work.
 - If no holder is online, the UI says **joined, waiting for a Family key** and
   disables all shared actions until activation; it does not claim the data is
   available. Each step persists its state and idempotent retry identity. The
@@ -451,8 +454,8 @@ failure recovery, and vectors still belong in `docs/protocol/` before M0 code.
   verifying the grant/loading history, and ready. Availability can still
   delay the join indefinitely and cannot be solved by the relay because it
   lacks the key. FS51 owns this accepted UX; FS47 still tests the proposed
-  activation mechanism. Expiry, cancellation, and issuer-removal races at
-  enrollment remain D8 and must be settled before this design is accepted.
+  activation mechanism. D8 settles user-visible expiry, cancellation, and
+  issuer-removal outcomes; atomic wire checks still need review.
   An unintended first bearer remains the accepted D2 risk.
 - A private copy uses a local transaction: retain the original Family and
   its outbox, construct a new local-only Family with fresh Family/device IDs
@@ -554,9 +557,9 @@ only after review.
    pending stages. Review the candidate consumption, device-bound resumption,
    role binding, and key delivery without a reusable raw Family key in the
    link. Define and test each platform's background sync and delayed-wake
-   fallback without promising guaranteed wake delivery. Resolve D8 expiry,
-   cancellation, and issuer-removal races. Test concurrent redemption,
-   previewing, retries, and unintended-first-recipient cases.
+   fallback without promising guaranteed wake delivery. Encode D8 expiry,
+   cancellation, and issuer-removal races atomically. Test concurrent
+   redemption, previewing, retries, and unintended-first-recipient cases.
 3. **Encoding.** Confirm CBOR over protobuf once the core exists. The
    requirement is verbatim preservation of unknown fields.
 4. **Web key storage.** The web client keeps its holder keys in IndexedDB.

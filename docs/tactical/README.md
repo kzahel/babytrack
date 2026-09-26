@@ -9,8 +9,8 @@ tactical with its current status.
   protocol, data model, recovery, and MVP scope before M0 implementation.
   User-flow/trust contract and symbolic scenario catalog added; mutual
   removal, single-use direct invitations, device-scoped grants without
-  login, and portable backup into a new Family decided; remaining UX and
-  protocol decisions still open.
+  login, expiring invitations, and portable backup into a new Family decided;
+  remaining UX and protocol decisions still open.
 - [002: Repository scaffolding](002-repository-scaffold.md) — complete;
   Rust workspace, build checks, and read-only CI added and validated in an
   isolated source copy. Does not close M-1 or implement product behavior.

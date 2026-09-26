@@ -1,6 +1,4 @@
-//! Data-ready replay for the initial Family manager. Every projection is
-//! rebuilt from the durable, signed public log and manifest-bound objects.
-//! Other devices and durable key storage extend this path later.
+//! Data-ready replay from a durable signed log and manifest-bound objects.
 
 use std::collections::BTreeMap;
 
@@ -8,7 +6,9 @@ use crate::{
     batch,
     cbor::{self, Value},
     control_chain::{self, ControlChain},
-    crypto, membership,
+    crypto,
+    enrollment::EnrollmentAttempt,
+    grant, membership,
     projection::{self, Projection, VerifiedEpochKey},
     shared_history::{self, PublicHistorySession},
     sqlite_store::{self, FamilyHandle, PreparedBatch, SqliteStore},
@@ -20,6 +20,7 @@ pub enum Error {
     Cbor(cbor::Error),
     Control(control_chain::Error),
     Crypto(crypto::Error),
+    Grant(grant::Error),
     Membership(membership::Error),
     Projection(projection::Error),
     Public(shared_history::Error),
@@ -46,6 +47,11 @@ impl From<crypto::Error> for Error {
         Self::Crypto(value)
     }
 }
+impl From<grant::Error> for Error {
+    fn from(value: grant::Error) -> Self {
+        Self::Grant(value)
+    }
+}
 impl From<membership::Error> for Error {
     fn from(value: membership::Error) -> Self {
         Self::Membership(value)
@@ -67,7 +73,7 @@ impl From<sqlite_store::Error> for Error {
     }
 }
 
-pub struct ReadyManagerSession {
+pub struct ReadyFamilySession {
     family: FamilyHandle,
     projection: Projection,
     observed_cursor: u64,
@@ -87,7 +93,7 @@ pub enum NextUpload {
     Fresh(PreparedBatch),
 }
 
-impl ReadyManagerSession {
+impl ReadyFamilySession {
     /// Any missing, malformed, or mismatched object leaves the public pin
     /// intact but prevents a data-ready view. The caller supplies its local
     /// secrets; this method never obtains keys from the relay.
@@ -97,6 +103,48 @@ impl ReadyManagerSession {
         initial_epoch_key: [u8; 32],
         manager_agreement_private: [u8; 32],
     ) -> Result<Self, Error> {
+        Self::from_store_with_initial_key(
+            store,
+            family,
+            initial_epoch_key,
+            manager_agreement_private,
+            true,
+        )
+    }
+
+    /// Open the recipient's committed admission grant using only the
+    /// agreement key saved before its claim, then replay full history.
+    pub fn from_enrollment(
+        store: &SqliteStore,
+        enrollment: &EnrollmentAttempt,
+    ) -> Result<Self, Error> {
+        let family = enrollment.family();
+        let public = PublicHistorySession::resume(store, family)?;
+        let grant = public
+            .chain()
+            .initial_admission_grant(&family.device_id)
+            .ok_or(Error::Invalid("recipient has no committed admission grant"))?;
+        let objects: BTreeMap<_, _> = store.shared_objects(family)?.into_iter().collect();
+        let grant_object = objects
+            .get(&grant.grant_id())
+            .ok_or(Error::Invalid("recipient admission grant not downloaded"))?;
+        let agreement_private = enrollment.agreement_private();
+        let key = grant.open(grant_object, &agreement_private)?;
+        if key.epoch != 1 {
+            return Err(Error::Invalid(
+                "admission after rotation needs historical keyring delivery",
+            ));
+        }
+        Self::from_store_with_initial_key(store, family, key.bytes, agreement_private, false)
+    }
+
+    fn from_store_with_initial_key(
+        store: &SqliteStore,
+        family: FamilyHandle,
+        initial_epoch_key: [u8; 32],
+        manager_agreement_private: [u8; 32],
+        require_initial_manager: bool,
+    ) -> Result<Self, Error> {
         let public = PublicHistorySession::resume(store, family)?;
         let history = store
             .shared_history(family)?
@@ -104,7 +152,7 @@ impl ReadyManagerSession {
         let genesis =
             crate::control::verify_genesis(&history.genesis_bytes, &history.relay_public_key)
                 .map_err(control_chain::Error::Control)?;
-        if genesis.manager_device_id() != family.device_id {
+        if require_initial_manager && genesis.manager_device_id() != family.device_id {
             return Err(Error::Invalid("device is not the initial manager"));
         }
         let objects: BTreeMap<_, _> = store.shared_objects(family)?.into_iter().collect();
@@ -251,6 +299,19 @@ impl ReadyManagerSession {
             return Err(Error::Invalid("new outbox uses stale head or epoch"));
         }
         Ok(NextUpload::Fresh(prepared))
+    }
+
+    pub fn stage_enrolled_local(
+        &self,
+        store: &mut SqliteStore,
+        enrollment: &EnrollmentAttempt,
+    ) -> Result<NextUpload, Error> {
+        if enrollment.family() != self.family {
+            return Err(Error::Invalid(
+                "enrollment belongs to another device or Family",
+            ));
+        }
+        self.stage_next_local(store, &enrollment.signing_seed())
     }
 
     pub fn projection(&self) -> &Projection {

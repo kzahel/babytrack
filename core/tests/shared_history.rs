@@ -7,7 +7,7 @@ use babytrack_core::{
     crypto,
     operation::{Hlc, Kind, NewOperation, Operation, Scope},
     shared_history::PublicHistorySession,
-    shared_ready::{NextUpload, ReadyManagerSession},
+    shared_ready::{NextUpload, ReadyFamilySession},
     sqlite_store::{FamilyHandle, SqliteStore},
 };
 
@@ -121,7 +121,7 @@ fn interleaved_authority_and_data_keep_one_durable_pinned_cursor() {
         )
         .unwrap();
     let initially_ready =
-        ReadyManagerSession::from_store(&store, family, initial_key, manager_agreement).unwrap();
+        ReadyFamilySession::from_store(&store, family, initial_key, manager_agreement).unwrap();
     let old_pending = match initially_ready
         .stage_next_local(&mut store, &manager_seed)
         .unwrap()
@@ -197,7 +197,7 @@ fn interleaved_authority_and_data_keep_one_durable_pinned_cursor() {
             .is_err()
     );
     assert!(
-        ReadyManagerSession::from_store(&store, family, initial_key, manager_agreement).is_err()
+        ReadyFamilySession::from_store(&store, family, initial_key, manager_agreement).is_err()
     );
     let objects = fixture["objects_by_id_hex"].as_object().unwrap();
     let mut altered = bytes_from_hex(
@@ -228,7 +228,7 @@ fn interleaved_authority_and_data_keep_one_durable_pinned_cursor() {
         }
     }
     assert!(
-        ReadyManagerSession::from_store(&store, family, initial_key, manager_agreement).is_err()
+        ReadyFamilySession::from_store(&store, family, initial_key, manager_agreement).is_err()
     );
     session
         .accept_object(
@@ -238,7 +238,7 @@ fn interleaved_authority_and_data_keep_one_durable_pinned_cursor() {
         )
         .unwrap();
     let ready =
-        ReadyManagerSession::from_store(&store, family, initial_key, manager_agreement).unwrap();
+        ReadyFamilySession::from_store(&store, family, initial_key, manager_agreement).unwrap();
     assert_eq!(ready.observed_cursor(), 9);
     assert_eq!(ready.active_epoch(), 2);
     assert_eq!(ready.projection().last_cursor(), 9);
@@ -302,7 +302,7 @@ fn interleaved_authority_and_data_keep_one_durable_pinned_cursor() {
     drop(store);
     let store = SqliteStore::open(&path).unwrap();
     let ready_after_restart =
-        ReadyManagerSession::from_store(&store, family, initial_key, manager_agreement).unwrap();
+        ReadyFamilySession::from_store(&store, family, initial_key, manager_agreement).unwrap();
     assert_eq!(ready_after_restart.observed_cursor(), 9);
     assert!(
         ready_after_restart
@@ -423,7 +423,7 @@ fn own_acceptance_and_interleaved_control_clear_outbox_atomically() {
             100,
         )
         .unwrap();
-    let ready = ReadyManagerSession::from_store(&store, family, initial_key, agreement).unwrap();
+    let ready = ReadyFamilySession::from_store(&store, family, initial_key, agreement).unwrap();
     let pending = match ready.stage_next_local(&mut store, &manager_seed).unwrap() {
         NextUpload::Fresh(pending) => pending,
         NextUpload::RetryExact(_) => panic!("first upload must be fresh"),
@@ -481,7 +481,7 @@ fn own_acceptance_and_interleaved_control_clear_outbox_atomically() {
     drop(session);
     drop(store);
     let mut store = SqliteStore::open(&path).unwrap();
-    let ready = ReadyManagerSession::from_store(&store, family, initial_key, agreement).unwrap();
+    let ready = ReadyFamilySession::from_store(&store, family, initial_key, agreement).unwrap();
     assert_eq!(ready.projection().last_cursor(), 4);
     assert!(ready.projection().record(&family.family_id).is_some());
     assert!(ready.stage_next_local(&mut store, &manager_seed).is_err());

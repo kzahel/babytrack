@@ -211,10 +211,19 @@ The secret bundle is encrypted under an app-supplied local wrapping key;
 reopen reproduces the same signed bytes and public keys, while a wrong
 wrapping key fails. A synthetic relay-signed commit of the prepared claim
 passes public authority replay. Android still needs to supply the wrapping
-key through its platform key interface, and candidate retry/rebase after a
-definite stale-head response remains open.
+key through its platform key interface. Resume also rejects a committed
+claim for the same invitation whose exact signed candidate differs from the
+saved attempt. Candidate retry/rebase after a definite stale-head response
+remains open.
 The contiguous byte vector passes through both transitions. Producing
-transitions and a durable joining-device readiness session remain open.
+transitions remains open. A joining device can now use its saved agreement
+private key to open only its committed admission grant, then rebuild the
+same manifest-bound Family view as the manager. It stays keyless before the
+grant, projects the recipient batch after admission, and becomes unready
+after verified removal. Its saved signing key can stage local work only for
+the matching Family/device. This initial recipient path covers admission
+into epoch one; admission after a rotation still needs historical keyring
+delivery and validation.
 Public replay now also
 verifies the recipient's accepted signed batch at cursor 8, then the
 manager's active-removal transition at cursor 9. Removal increments the

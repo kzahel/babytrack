@@ -206,6 +206,42 @@ impl EnrollmentAttempt {
         {
             return Err(Error::Invalid("stored issue differs from pinned history"));
         }
+        for entry in &history.entries {
+            if entry.kind != 1 {
+                continue;
+            }
+            let committed = cbor::decode_with_limits(
+                &entry.committed_bytes,
+                cbor::Limits {
+                    max_bytes: 1024 * 1024,
+                    max_depth: 16,
+                },
+            )?;
+            let Value::Map(root) = committed else {
+                return Err(Error::Invalid("committed control not map"));
+            };
+            let Value::Map(unsigned) = &root[0].1 else {
+                return Err(Error::Invalid("committed unsigned control not map"));
+            };
+            if unsigned[5].1 != Value::Integer(4) {
+                continue;
+            }
+            let Value::Map(delta) = &unsigned[6].1 else {
+                return Err(Error::Invalid("committed claim delta not map"));
+            };
+            if delta[0].1 != Value::Bytes(row.invitation_id.to_vec()) {
+                continue;
+            }
+            let actual = cbor::encode(&Value::Map(vec![
+                (1, root[0].1.clone()),
+                (2, root[1].1.clone()),
+            ]))?;
+            if actual != row.candidate_bytes {
+                return Err(Error::Invalid(
+                    "invitation was claimed by a different candidate",
+                ));
+            }
+        }
         Ok(Self {
             family: row.family,
             invitation_id: row.invitation_id,
@@ -232,6 +268,12 @@ impl EnrollmentAttempt {
         Ok(hpke::public_key_from_private(
             &self.device_agreement_private,
         )?)
+    }
+    pub(crate) fn agreement_private(&self) -> [u8; 32] {
+        self.device_agreement_private
+    }
+    pub(crate) fn signing_seed(&self) -> [u8; 32] {
+        self.device_sign_seed
     }
 }
 
@@ -401,4 +443,149 @@ fn random_v4() -> Result<[u8; 16], Error> {
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{operation::Operation, shared_ready::ReadyFamilySession};
+    use std::{fs, time::SystemTime};
+
+    fn hex(hex: &str) -> Vec<u8> {
+        hex.as_bytes()
+            .chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn a_recipient_stays_keyless_until_grant_then_projects_history() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/vectors/contiguous-chain-v1.json"))
+                .unwrap();
+        let transitions = fixture["transitions"].as_array().unwrap();
+        let wire = |index: usize| hex(transitions[index]["committed_cbor_hex"].as_str().unwrap());
+        let family = FamilyHandle {
+            family_id: hex(fixture["test_only_inputs"]["family_id_hex"]
+                .as_str()
+                .unwrap())
+            .try_into()
+            .unwrap(),
+            device_id: hex(fixture["test_only_inputs"]["recipient_device_id_hex"]
+                .as_str()
+                .unwrap())
+            .try_into()
+            .unwrap(),
+        };
+        let relay_public: [u8; 32] =
+            hex("2543b92ff1095511476adc8369db6ddc933665a11978dda1404ee1066ca9559d")
+                .try_into()
+                .unwrap();
+        let bootstrap =
+            InvitationBootstrap::from_fragment(fixture["bootstrap"]["fragment"].as_str().unwrap())
+                .unwrap();
+        let Value::Map(claim) = cbor::decode(&wire(2)).unwrap() else {
+            unreachable!()
+        };
+        let candidate_bytes = cbor::encode(&Value::Map(vec![
+            (1, claim[0].1.clone()),
+            (2, claim[1].1.clone()),
+        ]))
+        .unwrap();
+        let enrollment = EnrollmentAttempt {
+            family,
+            invitation_id: bootstrap.invitation_id(),
+            bootstrap_fragment: bootstrap.to_fragment().unwrap(),
+            candidate_bytes,
+            device_sign_seed: hex(fixture["test_only_inputs"]["recipient_sign_seed_hex"]
+                .as_str()
+                .unwrap())
+            .try_into()
+            .unwrap(),
+            device_agreement_private: hex(
+                fixture["test_only_inputs"]["recipient_agreement_seed_hex"]
+                    .as_str()
+                    .unwrap(),
+            )
+            .try_into()
+            .unwrap(),
+        };
+        let nonce = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "babytrack-recipient-ready-{}-{nonce}.sqlite",
+            std::process::id()
+        ));
+        let mut store = SqliteStore::open(&path).unwrap();
+        store
+            .create_family(family.family_id, family.device_id)
+            .unwrap();
+        let mut public =
+            PublicHistorySession::begin(&mut store, family, &wire(0), relay_public).unwrap();
+        for index in 1..=4 {
+            public.accept_control(&mut store, &wire(index)).unwrap();
+        }
+        assert!(ReadyFamilySession::from_enrollment(&store, &enrollment).is_err());
+        for transition in transitions.iter().take(5) {
+            for object in transition["manifest"].as_array().unwrap() {
+                let id = object[1].as_str().unwrap();
+                public
+                    .accept_object(
+                        &mut store,
+                        hex(id).try_into().unwrap(),
+                        &hex(fixture["objects_by_id_hex"][id].as_str().unwrap()),
+                    )
+                    .unwrap();
+            }
+        }
+        public.accept_control(&mut store, &wire(5)).unwrap();
+        assert!(ReadyFamilySession::from_enrollment(&store, &enrollment).is_err());
+        for object in transitions[5]["manifest"].as_array().unwrap() {
+            let id = object[1].as_str().unwrap();
+            public
+                .accept_object(
+                    &mut store,
+                    hex(id).try_into().unwrap(),
+                    &hex(fixture["objects_by_id_hex"][id].as_str().unwrap()),
+                )
+                .unwrap();
+        }
+        let ready = ReadyFamilySession::from_enrollment(&store, &enrollment).unwrap();
+        assert_eq!(ready.observed_cursor(), 6);
+        assert_eq!(ready.active_epoch(), 1);
+        public.accept_control(&mut store, &wire(6)).unwrap();
+        for object in transitions[6]["manifest"].as_array().unwrap() {
+            let id = object[1].as_str().unwrap();
+            public
+                .accept_object(
+                    &mut store,
+                    hex(id).try_into().unwrap(),
+                    &hex(fixture["objects_by_id_hex"][id].as_str().unwrap()),
+                )
+                .unwrap();
+        }
+        let batch = &fixture["batch"];
+        public
+            .accept_batch(
+                &mut store,
+                &hex(batch["envelope_cbor_hex"].as_str().unwrap()),
+                &hex(batch["receipt_cbor_hex"].as_str().unwrap()),
+            )
+            .unwrap();
+        let ready = ReadyFamilySession::from_enrollment(&store, &enrollment).unwrap();
+        assert_eq!(ready.observed_cursor(), 8);
+        let operation = Operation::decode_bound(
+            &hex(batch["operation_cbor_hex"].as_str().unwrap()),
+            &family.family_id,
+            &family.device_id,
+        )
+        .unwrap();
+        assert!(ready.projection().record(&operation.record_id).is_some());
+        public.accept_control(&mut store, &wire(7)).unwrap();
+        assert!(ReadyFamilySession::from_enrollment(&store, &enrollment).is_err());
+        drop(store);
+        fs::remove_file(path).unwrap();
+    }
 }

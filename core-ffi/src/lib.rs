@@ -114,6 +114,26 @@ pub fn ed25519_public_key(signing_seed: Vec<u8>) -> Result<Vec<u8>, BindingError
     Ok(crypto::signing_public_key(&fixed(&signing_seed)?).to_vec())
 }
 
+/// Fixed-header byte path. A durable outbox must own nonce, batch ID, and
+/// device sequence allocation before this is used for real writes.
+#[uniffi::export]
+pub fn seal_one(
+    header_cbor: Vec<u8>,
+    operation_cbor: Vec<u8>,
+    epoch_key: Vec<u8>,
+    signing_seed: Vec<u8>,
+) -> Result<Vec<u8>, BindingError> {
+    let header = batch::Header::decode(&header_cbor).map_err(rejected)?;
+    Ok(batch::seal(
+        &header,
+        &[operation_cbor],
+        &fixed(&epoch_key)?,
+        &fixed(&signing_seed)?,
+    )
+    .map_err(rejected)?
+    .envelope_bytes)
+}
+
 fn fixed<const N: usize>(bytes: &[u8]) -> Result<[u8; N], BindingError> {
     bytes.try_into().map_err(|_| BindingError::InvalidBytes)
 }

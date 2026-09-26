@@ -95,6 +95,17 @@ impl From<operation::Error> for Error {
 }
 
 impl Header {
+    pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
+        let value = cbor::decode_with_limits(
+            bytes,
+            Limits {
+                max_bytes: 1024,
+                max_depth: 4,
+            },
+        )?;
+        Self::from_value(&value)
+    }
+
     fn value(&self) -> Value {
         Value::Map(vec![
             (

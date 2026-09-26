@@ -128,6 +128,7 @@ bytes, published unit conversions, hash, Ed25519, XChaCha, fixed HPKE
 decryption, a full batch byte vector, and encrypted minor/inert batches.
 Per-Family HLC boundary tests run there as well. The wasm smoke calls the
 shared core through JavaScript with fixed encrypted vectors. The native
-smoke calls it through Swift and Kotlin with the same selected vectors. `server`
-and `cli` still have no behavioral tests. Add gates for their behavior with
+smoke calls it through Swift and Kotlin with the same selected vectors. All
+four runtimes seal and open one fixed child event. `server` and `cli`
+still have no behavioral tests. Add gates for their behavior with
 M0 work.

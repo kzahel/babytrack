@@ -4,6 +4,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import uniffi.babytrack_core_ffi.NativeFamily
 import uniffi.babytrack_core_ffi.ed25519PublicKey
+import uniffi.babytrack_core_ffi.sealOne
 
 private fun bytes(hex: String): ByteArray = hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
 private fun ByteArray.hex(): String = joinToString("") { "%02x".format(it.toInt() and 255) }
@@ -21,9 +22,18 @@ fun main(args: Array<String>) {
     val epochKey = bytes(base.text("epoch_key_hex"))
     val signer = ed25519PublicKey(bytes(base.text("recipient_sign_seed_hex")))
     val childId = bytes("0183f9d0000070008000000000000011")
+    val minorInput = negative.getAsJsonArray("cases")
+        .first { it.asJsonObject.text("id") == "CROSSMINORBYTE01" }.asJsonObject.getAsJsonObject("input")
+    val sealedChild = sealOne(
+        bytes(minorInput.text("header_cbor_hex")),
+        bytes(minorInput.text("operation_hex")),
+        epochKey,
+        bytes(base.text("recipient_sign_seed_hex")),
+    )
+    check(sealedChild.hex() == minorInput.text("envelope_cbor_hex"))
 
     NativeFamily(familyId).use { family ->
-        check(family.applyEnvelope(envelope("CROSSMINORBYTE01"), relayId, epochKey, signer, 1uL))
+        check(family.applyEnvelope(sealedChild, relayId, epochKey, signer, 1uL))
         check(family.fieldCbor(childId, 1uL).hex() == "6442616279")
         check(family.fieldCbor(childId, 500uL).hex() == "f4")
         check(family.lastCursor() == 1uL)
@@ -33,7 +43,7 @@ fun main(args: Array<String>) {
         NativeFamily(familyId).use { replay ->
             check(!replay.applyEnvelope(envelope(id), relayId, epochKey, signer, 1uL))
             check(replay.inertCount() == 1uL)
-            check(replay.applyEnvelope(envelope("CROSSMINORBYTE01"), relayId, epochKey, signer, 2uL))
+            check(replay.applyEnvelope(sealedChild, relayId, epochKey, signer, 2uL))
         }
     }
 
@@ -59,10 +69,17 @@ fun main(args: Array<String>) {
     val genesis = fullCases.first { it.asJsonObject.text("id") == "GENESIS01" }.asJsonObject
     val fixed = fullCases.first { it.asJsonObject.text("id") == "BATCHBYTE01" }.asJsonObject
     val fixedSigner = ed25519PublicKey(bytes(genesis.getAsJsonObject("inputs").text("manager_sign_seed_hex")))
+    val sealed = sealOne(
+        bytes(fixed.getAsJsonObject("expect").text("header_cbor_hex")),
+        bytes(fixed.getAsJsonObject("inputs").text("operation_cbor_hex")),
+        bytes(fixed.getAsJsonObject("inputs").text("epoch_key_hex")),
+        bytes(genesis.getAsJsonObject("inputs").text("manager_sign_seed_hex")),
+    )
+    check(sealed.hex() == fixed.getAsJsonObject("expect").text("envelope_cbor_hex"))
     NativeFamily(familyId).use { afterControl ->
         afterControl.advanceControl(1uL)
         check(afterControl.applyEnvelope(
-            bytes(fixed.getAsJsonObject("expect").text("envelope_cbor_hex")),
+            sealed,
             relayId,
             bytes(fixed.getAsJsonObject("inputs").text("epoch_key_hex")),
             fixedSigner,

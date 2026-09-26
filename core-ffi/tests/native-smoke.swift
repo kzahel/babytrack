@@ -36,10 +36,19 @@ struct Smoke {
         let epochKey = bytes(string(base["epoch_key_hex"]!))
         let signer = try ed25519PublicKey(signingSeed: bytes(string(base["recipient_sign_seed_hex"]!)))
         let childId = bytes("0183f9d0000070008000000000000011")
+        let minorCase = object(cases.first { object($0)["id"] as? String == "CROSSMINORBYTE01" }!)
+        let minorInput = object(minorCase["input"]!)
+        let sealedChild = try sealOne(
+            headerCbor: bytes(string(minorInput["header_cbor_hex"]!)),
+            operationCbor: bytes(string(minorInput["operation_hex"]!)),
+            epochKey: epochKey,
+            signingSeed: bytes(string(base["recipient_sign_seed_hex"]!))
+        )
+        try expect(sealedChild == bytes(string(minorInput["envelope_cbor_hex"]!)))
 
         let family = try NativeFamily(familyId: familyId)
         try expect(try family.applyEnvelope(
-            envelope: envelope("CROSSMINORBYTE01"), relayId: relayId,
+            envelope: sealedChild, relayId: relayId,
             epochKey: epochKey, signerPublicKey: signer, cursor: 1
         ))
         try expect(try family.fieldCbor(recordId: childId, fieldId: 1) == bytes("6442616279"))
@@ -54,7 +63,7 @@ struct Smoke {
             ))
             try expect(try replay.inertCount() == 1)
             try expect(try replay.applyEnvelope(
-                envelope: envelope("CROSSMINORBYTE01"), relayId: relayId,
+                envelope: sealedChild, relayId: relayId,
                 epochKey: epochKey, signerPublicKey: signer, cursor: 2
             ))
         }
@@ -104,10 +113,17 @@ struct Smoke {
         let fixedBatch = object(fullCases.first { object($0)["id"] as? String == "BATCHBYTE01" }!)
         let fixedSigner = try ed25519PublicKey(signingSeed:
             bytes(string(object(genesis["inputs"]!)["manager_sign_seed_hex"]!)))
+        let sealed = try sealOne(
+            headerCbor: bytes(string(object(fixedBatch["expect"]!)["header_cbor_hex"]!)),
+            operationCbor: bytes(string(object(fixedBatch["inputs"]!)["operation_cbor_hex"]!)),
+            epochKey: bytes(string(object(fixedBatch["inputs"]!)["epoch_key_hex"]!)),
+            signingSeed: bytes(string(object(genesis["inputs"]!)["manager_sign_seed_hex"]!))
+        )
+        try expect(sealed == bytes(string(object(fixedBatch["expect"]!)["envelope_cbor_hex"]!)))
         let afterControl = try NativeFamily(familyId: familyId)
         try afterControl.advanceControl(cursor: 1)
         try expect(try afterControl.applyEnvelope(
-            envelope: bytes(string(object(fixedBatch["expect"]!)["envelope_cbor_hex"]!)),
+            envelope: sealed,
             relayId: relayId,
             epochKey: bytes(string(object(fixedBatch["inputs"]!)["epoch_key_hex"]!)),
             signerPublicKey: fixedSigner,

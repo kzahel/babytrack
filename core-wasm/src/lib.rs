@@ -88,3 +88,23 @@ fn debug_error(error: impl std::fmt::Debug) -> JsError {
 pub fn ed25519_public_key(signing_seed: &[u8]) -> Result<Vec<u8>, JsError> {
     Ok(crypto::signing_public_key(&fixed(signing_seed, "signing seed")?).to_vec())
 }
+
+/// Fixed-header byte path. The host must durably allocate nonce, batch ID,
+/// and device sequence before real writes and persist the returned envelope.
+#[wasm_bindgen]
+pub fn seal_one(
+    header_cbor: &[u8],
+    operation_cbor: &[u8],
+    epoch_key: &[u8],
+    signing_seed: &[u8],
+) -> Result<Vec<u8>, JsError> {
+    let header = batch::Header::decode(header_cbor).map_err(debug_error)?;
+    Ok(batch::seal(
+        &header,
+        &[operation_cbor.to_vec()],
+        &fixed(epoch_key, "epoch key")?,
+        &fixed(signing_seed, "signing seed")?,
+    )
+    .map_err(debug_error)?
+    .envelope_bytes)
+}

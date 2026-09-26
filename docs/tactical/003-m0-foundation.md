@@ -113,8 +113,11 @@ wasm-bindgen Node binding and runs the fixed encrypted Family and child batch,
 unknown minor field, four inert cases, and wrong key/signature checks through
 JavaScript. `bash scripts/check_native_smoke.sh` generates UniFFI bindings
 and runs the same selected encrypted cases through Kotlin/JNA and Swift on
-macOS. These are three binding proofs for a subset; the full vector suite,
-bidirectional write path, and real browser/IndexedDB gate remain open.
+macOS. All four runtimes seal the fixed child and Family operations to the
+exact expected encrypted envelope bytes, then verify, decrypt, and project
+them. The caller supplies the fixture's nonce, batch ID, and sequence;
+production allocation and retry ownership belong to the durable outbox.
+The full vector suite and real browser/IndexedDB gate remain open.
 
 Every agreed FS case gets a deterministic core/relay action binding with
 assertions for local state, shared state, pending outbox, visible status, and

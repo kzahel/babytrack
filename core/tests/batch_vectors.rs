@@ -57,6 +57,7 @@ fn fixed_batch_matches_every_wire_byte_and_opens() {
         sealed.header_bytes,
         hex_bytes(expected["header_cbor_hex"].as_str().unwrap())
     );
+    assert_eq!(Header::decode(&sealed.header_bytes), Ok(header.clone()));
     assert_eq!(sealed.plaintext_bytes, expected_plaintext);
     assert_eq!(
         sealed.aad,
@@ -159,6 +160,19 @@ fn newer_minor_envelope_preserves_unknown_child_field() {
     let signing_seed = bytes::<32>(base["recipient_sign_seed_hex"].as_str().unwrap());
     let signing_public = crypto::signing_public_key(&signing_seed);
     let envelope = hex_bytes(case["input"]["envelope_cbor_hex"].as_str().unwrap());
+    let header = Header::decode(&hex_bytes(
+        case["input"]["header_cbor_hex"].as_str().unwrap(),
+    ))
+    .unwrap();
+    let operation = hex_bytes(case["input"]["operation_hex"].as_str().unwrap());
+    let sealed = batch::seal(
+        &header,
+        std::slice::from_ref(&operation),
+        &epoch_key,
+        &signing_seed,
+    )
+    .unwrap();
+    assert_eq!(sealed.envelope_bytes, envelope);
     let opened = batch::open_verified(
         &envelope,
         &family_id,
@@ -170,8 +184,5 @@ fn newer_minor_envelope_preserves_unknown_child_field() {
     assert_eq!(opened.header.minor, 1);
     assert_eq!(opened.operations.len(), 1);
     assert_eq!(opened.operations[0].field_bytes(500), Some(vec![0xf4]));
-    assert_eq!(
-        opened.operations[0].canonical_bytes(),
-        hex_bytes(case["input"]["operation_hex"].as_str().unwrap())
-    );
+    assert_eq!(opened.operations[0].canonical_bytes(), operation);
 }

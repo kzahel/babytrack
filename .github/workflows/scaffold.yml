@@ -12,7 +12,7 @@ jobs:
   rust:
     name: Rust workspace
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4.2.2
       - name: Show pinned toolchain
@@ -27,6 +27,10 @@ jobs:
           cargo test --workspace --locked
       - name: Compile wasm boundary
         run: cargo check -p babytrack-core-wasm --target wasm32-unknown-unknown --locked
+      - name: Install wasm-bindgen CLI
+        run: cargo install --locked wasm-bindgen-cli --version 0.2.127
+      - name: Run wasm JavaScript byte smoke
+        run: bash scripts/check_wasm_smoke.sh
       - name: Verify dependency direction
         run: python3 scripts/check_workspace.py
       - name: Check crate licenses and dependencies

@@ -40,15 +40,16 @@ appear implemented.
 | `apps/ios/` | iOS/watchOS apps and extensions | M3 phone, M4 watch |
 
 The five Rust targets and root build files now exist. The core now contains
-a canonical CBOR codec, structural operation decoder, crypto/HPKE primitives,
-signed batch bytes, and vector tests;
-the other targets remain scaffold
-boundaries. The documentation,
+a canonical CBOR codec, operation decoder, crypto/HPKE primitives, signed
+batch bytes, in-memory projection, HLC, and vector tests. `core-wasm/` now
+calls the shared batch/projection path from JavaScript against fixed vectors;
+`core-ffi/`, `server/`, and `cli/` remain scaffold boundaries. The documentation,
 test, and platform paths marked for later milestones are future paths, not
 links to existing files. Scaffold targets compile without implementing their
 responsibilities. The CBOR vector tests cover only the first byte subset;
 other targets reporting zero cases are not evidence of protocol or product
-correctness.
+correctness. The Node wasm smoke is a binding proof, not a browser storage
+or IndexedDB test.
 
 The workspace uses package names such as `babytrack-core` rather than a Rust
 crate named `core`, and pins Rust 1.92.0. Path names above remain short.

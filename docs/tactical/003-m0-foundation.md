@@ -108,8 +108,11 @@ conversions. The core also generates a per-Family HLC with the published
 tie, future-stamp, counter-rollover, and maximum-wall behavior. Storage must
 persist its state with each local operation. The caller still owes
 receipt/authorization checks and an atomic
-log/projection transaction. The rest of slice 1 remains open: other byte
-vectors, bindings, and browser storage.
+log/projection transaction. `bash scripts/check_wasm_smoke.sh` builds the
+wasm-bindgen Node binding and runs the fixed encrypted Family and child batch,
+unknown minor field, four inert cases, and wrong key/signature checks through
+JavaScript. This is one binding proof; the full vector suite, native
+Swift/Kotlin bindings, and real browser/IndexedDB gate remain open.
 
 Every agreed FS case gets a deterministic core/relay action binding with
 assertions for local state, shared state, pending outbox, visible status, and

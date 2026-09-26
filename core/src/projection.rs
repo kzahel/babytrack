@@ -82,6 +82,10 @@ impl Projection {
         self.last_cursor
     }
 
+    pub fn family_id(&self) -> [u8; 16] {
+        self.family_id
+    }
+
     pub fn record(&self, id: &[u8; 16]) -> Option<&Record> {
         self.records.get(id)
     }

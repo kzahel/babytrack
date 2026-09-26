@@ -116,6 +116,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo check --workspace --locked
 cargo test --workspace --locked
 cargo check -p babytrack-core-wasm --target wasm32-unknown-unknown --locked
+bash scripts/check_wasm_smoke.sh
 python3 scripts/check_workspace.py
 cargo deny check advisories bans licenses sources
 ```
@@ -124,5 +125,7 @@ The M0 byte, operation, crypto, and in-memory replay components run
 `cargo test -p babytrack-core`; fixture tests cover CBOR, selected operation
 bytes, published unit conversions, hash, Ed25519, XChaCha, fixed HPKE
 decryption, a full batch byte vector, and encrypted minor/inert batches.
-Per-Family HLC boundary tests run there as well. Other targets
-still have no behavioral tests. Add gates for their behavior with M0 work.
+Per-Family HLC boundary tests run there as well. The wasm smoke calls the
+shared core through JavaScript with fixed encrypted vectors. `core-ffi`,
+`server`, and `cli` still have no behavioral tests. Add gates for their
+behavior with M0 work.

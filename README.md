@@ -8,8 +8,8 @@ native phone/watch apps and a web client.
 **Status: M0 implementation in progress.** The Rust core has a strict
 canonical CBOR codec, structural operation decoder, tested hash, signature,
 AEAD, and HPKE primitives, plus a signed encrypted batch byte proof and
-in-memory projection of valid and inert batches. It has no complete
-application, sharing, or relay behavior yet. Scenario files
+in-memory projection of valid and inert batches and a per-Family HLC. It has
+no complete application, sharing, or relay behavior yet. Scenario files
 still describe expected behavior; they are not passing product tests.
 
 ## Product and architecture

@@ -1,8 +1,8 @@
 # Records and operations v1
 
 Status: M-1 decided contract, September 2026; Rust canonical CBOR,
-operation decoding, published v1 field checks, and in-memory projection run
-selected fixed encrypted batches in M0. Durable projection, full vector
+operation decoding, published v1 field checks, HLC generation, and in-memory
+projection run selected fixed encrypted batches in M0. Durable projection, full vector
 coverage, and cross-language execution remain. This owns
 version 1 plaintext operation bytes and deterministic projection. The
 [event model](../topics/event-model.md) owns which values the product records;

@@ -124,5 +124,5 @@ The M0 byte, operation, crypto, and in-memory replay components run
 `cargo test -p babytrack-core`; fixture tests cover CBOR, selected operation
 bytes, published unit conversions, hash, Ed25519, XChaCha, fixed HPKE
 decryption, a full batch byte vector, and encrypted minor/inert batches.
-Other targets
+Per-Family HLC boundary tests run there as well. Other targets
 still have no behavioral tests. Add gates for their behavior with M0 work.

@@ -102,7 +102,10 @@ and INERTBYTE01/PRECREATEBYTE01/WRONGSCOPEBYTE01/PREFSBYTE01: unknown field
 500 retains its canonical bytes, valid replay rebuilds identically, and a
 signed malformed batch consumes its cursor without applying operations.
 Published v1 field checks include UNIT01-UNIT03 and exact rational
-conversions. The caller still owes receipt/authorization checks and an atomic
+conversions. The core also generates a per-Family HLC with the published
+tie, future-stamp, counter-rollover, and maximum-wall behavior. Storage must
+persist its state with each local operation. The caller still owes
+receipt/authorization checks and an atomic
 log/projection transaction. The rest of slice 1 remains open: other byte
 vectors, bindings, and browser storage.
 

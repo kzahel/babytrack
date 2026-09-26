@@ -192,7 +192,11 @@ fn admission_moves_proved_pending_device_to_active_and_repair_preserves_role() {
         .unwrap();
     let mut changed_membership = object_bytes(&fixture, admission_membership.object_id());
     *changed_membership.last_mut().unwrap() ^= 1;
-    assert!(admission_membership.verify(&changed_membership, &opened).is_err());
+    assert!(
+        admission_membership
+            .verify(&changed_membership, &opened)
+            .is_err()
+    );
     assert!(grant.open(&grant_object, &[0u8; 32]).is_err());
     let mut tampered_grant = grant_object.clone();
     *tampered_grant.last_mut().unwrap() ^= 1;
@@ -202,6 +206,19 @@ fn admission_moves_proved_pending_device_to_active_and_repair_preserves_role() {
         hex_bytes(transitions[5]["state_cbor_hex"].as_str().unwrap())
     );
     chain.apply_grant_repair(&wire(6)).unwrap();
+    let repair_grant = chain.latest_repair_grant(&recipient_id).unwrap();
+    let repair_object = hex_bytes(
+        fixture["objects_by_id_hex"]["963e4567e89b42d3a456426614174000"]
+            .as_str()
+            .unwrap(),
+    );
+    assert_eq!(
+        repair_grant
+            .open(&repair_object, &agreement_private)
+            .unwrap(),
+        opened
+    );
+    assert!(repair_grant.open(&repair_object, &[0u8; 32]).is_err());
     let repair_membership = chain
         .membership_check(&transition_id(&transitions[6]))
         .unwrap();

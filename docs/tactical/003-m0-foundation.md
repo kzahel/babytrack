@@ -208,8 +208,11 @@ encrypted membership object to its signed manifest and decrypts it only
 under the committed resulting epoch key. Its transition ID, prior head,
 resulting state hash, epoch, and delta must exactly repeat the public
 transition; the contiguous chain's objects pass, while tampering and an
-old epoch key fail. Core session enforcement of readiness and repair/rotation
-grant opening remain open.
+old epoch key fail. The addressed repair HPKE grant now binds its purpose,
+original admission, current recipient key version, transition context,
+object hash, and unchanged epoch commitment; the contiguous repair object
+opens to the same epoch key and a wrong private key fails. Core session
+enforcement of readiness and rotation grant/keyring opening remain open.
 `FamilySession` now consumes the fixed genesis and `BATCHBYTE01` acceptance
 through a core-owned path: it verifies the manager, head, epoch, sequence,
 object hash, cursor, and relay-signed receipt before projecting the first

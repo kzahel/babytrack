@@ -9,7 +9,7 @@ use crate::{
     cbor::{self, Value},
     control::{self, Genesis, array, exact_map, fixed, number, signed_number},
     crypto,
-    grant::{self, VerifiedAdmissionGrant},
+    grant::{self, VerifiedAdmissionGrant, VerifiedRepairGrant},
     handoff::{self, VerifiedChallenge},
     membership::{self, VerifiedMembership},
     projection::VerifiedEpochKey,
@@ -76,6 +76,7 @@ pub struct ControlChain {
     seen_challenge_ids: BTreeSet<[u8; 16]>,
     admissions: BTreeMap<[u8; 16], [u8; 16]>,
     admission_grants: BTreeMap<[u8; 16], VerifiedAdmissionGrant>,
+    repair_grants: BTreeMap<[u8; 16], VerifiedRepairGrant>,
     known_heads: BTreeMap<[u8; 32], u32>,
     next_sequences: BTreeMap<[u8; 16], u64>,
     seen_batch_ids: BTreeSet<[u8; 16]>,
@@ -120,6 +121,7 @@ impl ControlChain {
             seen_challenge_ids: BTreeSet::new(),
             admissions: BTreeMap::new(),
             admission_grants: BTreeMap::new(),
+            repair_grants: BTreeMap::new(),
             known_heads: BTreeMap::from([(genesis_head, 1)]),
             next_sequences: BTreeMap::new(),
             seen_batch_ids: BTreeSet::new(),
@@ -148,6 +150,10 @@ impl ControlChain {
 
     pub fn membership_check(&self, transition_id: &[u8; 16]) -> Option<&VerifiedMembership> {
         self.memberships.get(transition_id)
+    }
+
+    pub fn latest_repair_grant(&self, device_id: &[u8; 16]) -> Option<&VerifiedRepairGrant> {
+        self.repair_grants.get(device_id)
     }
 
     pub fn verify_current_epoch_key(&self, key: &[u8; 32]) -> Result<VerifiedEpochKey, Error> {
@@ -885,9 +891,35 @@ impl ControlChain {
             ));
         }
         let state = exact_map(&self.state, 7)?;
-        if find_row(&state[4].1, 5, 0, device_id)?.is_none() {
-            return Err(Error::Invalid("repair recipient no longer active"));
+        let recipient = find_row(&state[4].1, 5, 0, device_id)?
+            .ok_or(Error::Invalid("repair recipient no longer active"))?;
+        let agree_public = fixed::<32>(&recipient[2])?;
+        let key_version: u32 = number(&recipient[3])?
+            .try_into()
+            .map_err(|_| Error::Invalid("key version outside u32"))?;
+        let manifest = array(&unsigned[9].1, 2)?;
+        let grant_entry = array(&manifest[1], 4)?;
+        if number(&grant_entry[0])? != 4 {
+            return Err(Error::Invalid("repair grant manifest kind invalid"));
         }
+        let grant = VerifiedRepairGrant {
+            family_id: self.genesis.family_id(),
+            relay_id: self.genesis.relay_id(),
+            epoch: self
+                .current_epoch()?
+                .try_into()
+                .map_err(|_| Error::Invalid("epoch outside u32"))?,
+            epoch_commitment: self.current_commitment,
+            core_hash: fixed::<32>(&unsigned[10].1)?,
+            prior_head: fixed::<32>(&unsigned[3].1)?,
+            transition_id: fixed::<16>(&unsigned[4].1)?,
+            admission_id,
+            device_id,
+            agree_public,
+            key_version,
+            grant_id: fixed::<16>(&grant_entry[1])?,
+            object_hash: fixed::<32>(&grant_entry[2])?,
+        };
         let signatures = array(&root[1].1, 1)?;
         let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
         let active = find_row(&state[4].1, 5, 0, signer_id)?
@@ -904,6 +936,7 @@ impl ControlChain {
                 before_ms: None,
             },
         )?;
+        self.repair_grants.insert(device_id, grant);
         Ok(())
     }
 
@@ -1076,6 +1109,7 @@ impl ControlChain {
         self.current_commitment = new_commitment;
         self.challenges.clear();
         self.admission_grants.remove(&target_id);
+        self.repair_grants.remove(&target_id);
         Ok(())
     }
 

@@ -169,6 +169,19 @@ genesis and issue. A fresh recipient persists its own two keys and exact
 claim before POST; the relay accepts that dynamic two-signature claim and
 the recipient verifies the pending state. Challenge, proof, grant, further
 invites, and background delivery remain open for dynamic identities.
+The dynamic first join now continues through a persisted holder challenge,
+recipient proof, and atomic admission. The manager checks the verifier
+ciphertext and exact pending signature before building the grant. The
+recipient stays keyless until it downloads and opens the committed grant.
+In the integration test, a fresh recipient then appends a child record and
+uploads an encrypted signed batch; a separate manager store fetches the
+log entry and signed result and projects the same child. Candidate bytes,
+object bytes, and local keys survive restarts before the relevant POSTs.
+The current relay methods and builders cover only one manager and one
+first recipient at epoch one. The dynamic test exercises the authenticated
+relay storage boundary; HTTP batch delivery has separate coverage, while
+HTTP control transport, background polling, later invitations, removal,
+promotion of existing local records, and recovery remain open.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

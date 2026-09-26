@@ -6,12 +6,20 @@ pub mod batch;
 pub mod bootstrap;
 pub use babytrack_wire::cbor;
 pub mod control;
+#[cfg(not(target_arch = "wasm32"))]
+mod control_build;
 pub mod control_chain;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod creation;
 pub use babytrack_wire::crypto;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod enrollment;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod first_admission;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod first_challenge;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod first_proof;
 pub mod grant;
 pub mod handoff;
 pub mod hlc;

@@ -152,6 +152,16 @@ pub(crate) struct InviteIssueRow {
     pub secret_ciphertext: Vec<u8>,
 }
 
+pub(crate) struct PreparedControlRow {
+    pub family: FamilyHandle,
+    pub kind: u8,
+    pub transition_id: [u8; 16],
+    pub candidate_bytes: Vec<u8>,
+    pub objects_bytes: Vec<u8>,
+    pub secret_nonce: [u8; 24],
+    pub secret_ciphertext: Vec<u8>,
+}
+
 pub struct SqliteStore {
     connection: Connection,
 }
@@ -284,6 +294,18 @@ impl SqliteStore {
                candidate_bytes BLOB NOT NULL,
                secret_nonce BLOB NOT NULL CHECK(length(secret_nonce) = 24),
                secret_ciphertext BLOB NOT NULL,
+               FOREIGN KEY (family_id) REFERENCES families(family_id)
+             );
+             CREATE TABLE IF NOT EXISTS prepared_controls (
+               family_id BLOB NOT NULL CHECK(length(family_id) = 16),
+               kind INTEGER NOT NULL CHECK(kind > 0),
+               device_id BLOB NOT NULL CHECK(length(device_id) = 16),
+               transition_id BLOB NOT NULL CHECK(length(transition_id) = 16),
+               candidate_bytes BLOB NOT NULL,
+               objects_bytes BLOB NOT NULL,
+               secret_nonce BLOB NOT NULL CHECK(length(secret_nonce) = 24),
+               secret_ciphertext BLOB NOT NULL,
+               PRIMARY KEY (family_id, kind),
                FOREIGN KEY (family_id) REFERENCES families(family_id)
              );
              INSERT OR IGNORE INTO local_sync_state(family_id)
@@ -1086,6 +1108,70 @@ impl SqliteStore {
                     candidate_bytes: row.5,
                     secret_nonce: row.6.try_into().map_err(|_| Error::CorruptState)?,
                     secret_ciphertext: row.7,
+                })
+            })
+            .transpose()
+    }
+
+    pub(crate) fn save_prepared_control(&mut self, row: &PreparedControlRow) -> Result<(), Error> {
+        let tx = self.connection.transaction()?;
+        let _ = checked_family(&tx, row.family)?;
+        tx.execute(
+            "INSERT INTO prepared_controls
+             (family_id,kind,device_id,transition_id,candidate_bytes,objects_bytes,
+              secret_nonce,secret_ciphertext)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![
+                &row.family.family_id[..],
+                i64::from(row.kind),
+                &row.family.device_id[..],
+                &row.transition_id[..],
+                &row.candidate_bytes,
+                &row.objects_bytes,
+                &row.secret_nonce[..],
+                &row.secret_ciphertext,
+            ],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn prepared_control(
+        &self,
+        family: FamilyHandle,
+        kind: u8,
+    ) -> Result<Option<PreparedControlRow>, Error> {
+        let _ = checked_family(&self.connection, family)?;
+        self.connection
+            .query_row(
+                "SELECT device_id,transition_id,candidate_bytes,objects_bytes,
+                    secret_nonce,secret_ciphertext
+             FROM prepared_controls WHERE family_id=?1 AND kind=?2",
+                params![&family.family_id[..], i64::from(kind)],
+                |r| {
+                    Ok((
+                        r.get::<_, Vec<u8>>(0)?,
+                        r.get::<_, Vec<u8>>(1)?,
+                        r.get::<_, Vec<u8>>(2)?,
+                        r.get::<_, Vec<u8>>(3)?,
+                        r.get::<_, Vec<u8>>(4)?,
+                        r.get::<_, Vec<u8>>(5)?,
+                    ))
+                },
+            )
+            .optional()?
+            .map(|row| {
+                if row.0 != family.device_id {
+                    return Err(Error::WrongDevice);
+                }
+                Ok(PreparedControlRow {
+                    family,
+                    kind,
+                    transition_id: row.1.try_into().map_err(|_| Error::CorruptState)?,
+                    candidate_bytes: row.2,
+                    objects_bytes: row.3,
+                    secret_nonce: row.4.try_into().map_err(|_| Error::CorruptState)?,
+                    secret_ciphertext: row.5,
                 })
             })
             .transpose()

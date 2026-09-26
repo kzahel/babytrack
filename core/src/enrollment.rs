@@ -16,9 +16,11 @@ pub enum Error {
     Cbor(cbor::Error),
     Crypto(crypto::Error),
     Hpke(hpke::Error),
+    Handoff(crate::handoff::Error),
     History(shared_history::Error),
     Store(sqlite_store::Error),
     Random(getrandom::Error),
+    Wire(crate::sync_wire::Error),
     Invalid(&'static str),
 }
 impl From<bootstrap::Error> for Error {
@@ -44,6 +46,16 @@ impl From<crypto::Error> for Error {
 impl From<hpke::Error> for Error {
     fn from(value: hpke::Error) -> Self {
         Self::Hpke(value)
+    }
+}
+impl From<crate::handoff::Error> for Error {
+    fn from(value: crate::handoff::Error) -> Self {
+        Self::Handoff(value)
+    }
+}
+impl From<crate::sync_wire::Error> for Error {
+    fn from(value: crate::sync_wire::Error) -> Self {
+        Self::Wire(value)
     }
 }
 impl From<shared_history::Error> for Error {
@@ -269,11 +281,37 @@ impl EnrollmentAttempt {
             &self.device_agreement_private,
         )?)
     }
+    pub fn sign_get(&self, exact_path: &str) -> Result<crate::sync_wire::SignedRead, Error> {
+        use sha2::{Digest, Sha256};
+        let bootstrap = InvitationBootstrap::from_fragment(&self.bootstrap_fragment)?;
+        let relay_id: [u8; 32] = Sha256::digest(bootstrap.relay_public_key()).into();
+        Ok(crate::sync_wire::sign_get(
+            self.family.family_id,
+            relay_id,
+            self.family.device_id,
+            &self.device_sign_seed,
+            exact_path,
+        )?)
+    }
+    pub fn prove_challenge(
+        &self,
+        challenge: &crate::handoff::VerifiedChallenge,
+        hpke_object: &[u8],
+    ) -> Result<crate::handoff::PendingProof, Error> {
+        Ok(challenge.prepare_proof(
+            hpke_object,
+            &self.device_agreement_private,
+            &self.device_sign_seed,
+        )?)
+    }
     pub(crate) fn agreement_private(&self) -> [u8; 32] {
         self.device_agreement_private
     }
     pub(crate) fn signing_seed(&self) -> [u8; 32] {
         self.device_sign_seed
+    }
+    pub(crate) fn relay_public_key(&self) -> Result<[u8; 32], Error> {
+        Ok(InvitationBootstrap::from_fragment(&self.bootstrap_fragment)?.relay_public_key())
     }
 }
 

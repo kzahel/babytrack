@@ -16,6 +16,7 @@ use crate::{
 pub enum Error {
     Cbor(cbor::Error),
     Crypto(crypto::Error),
+    Chain(crate::control_chain::Error),
     Hpke(hpke::Error),
     Random(getrandom::Error),
     Store(sqlite_store::Error),
@@ -32,6 +33,11 @@ impl From<cbor::Error> for Error {
 impl From<crypto::Error> for Error {
     fn from(v: crypto::Error) -> Self {
         Self::Crypto(v)
+    }
+}
+impl From<crate::control_chain::Error> for Error {
+    fn from(v: crate::control_chain::Error) -> Self {
+        Self::Chain(v)
     }
 }
 impl From<hpke::Error> for Error {
@@ -253,6 +259,23 @@ impl ManagerCreation {
             &self.signing_seed,
             exact_path,
         )?)
+    }
+    pub fn verify_pending_proof(
+        &self,
+        store: &SqliteStore,
+        invitation_id: [u8; 16],
+        verifier_object: &[u8],
+        proof_signature: [u8; 64],
+    ) -> Result<(), Error> {
+        let public = PublicHistorySession::resume(store, self.family)?;
+        let key = public.chain().verify_initial_epoch_key(&self.epoch_key)?;
+        public.chain().verify_latest_holder_proof(
+            &invitation_id,
+            verifier_object,
+            &key,
+            &proof_signature,
+        )?;
+        Ok(())
     }
 
     /// A relay response is a hint. Verify its exact committed genesis and

@@ -1,6 +1,8 @@
 //! Core-owned verified replay of committed Family entries. This first slice
 //! handles genesis and its initial manager's epoch-one data batches.
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::sqlite_store::{self, FamilyHandle, PreparedBatch, SqliteStore};
 use crate::{
     batch::{self, Header},
     cbor::{self, Value},
@@ -17,6 +19,8 @@ pub enum Error {
     Crypto(crypto::Error),
     Projection(projection::Error),
     Invalid(&'static str),
+    #[cfg(not(target_arch = "wasm32"))]
+    Store(String),
 }
 
 impl From<cbor::Error> for Error {
@@ -44,7 +48,14 @@ impl From<projection::Error> for Error {
         Self::Projection(value)
     }
 }
+#[cfg(not(target_arch = "wasm32"))]
+impl From<sqlite_store::Error> for Error {
+    fn from(value: sqlite_store::Error) -> Self {
+        Self::Store(format!("{value:?}"))
+    }
+}
 
+#[derive(Clone)]
 pub struct FamilySession {
     genesis: Genesis,
     relay_public_key: [u8; 32],
@@ -77,6 +88,119 @@ impl FamilySession {
 
     pub fn projection(&self) -> &Projection {
         &self.projection
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn resume_from_store(
+        genesis_bytes: &[u8],
+        relay_public_key: [u8; 32],
+        epoch_key: [u8; 32],
+        store: &SqliteStore,
+        family: FamilyHandle,
+    ) -> Result<Self, Error> {
+        let mut session = Self::from_genesis(genesis_bytes, relay_public_key, epoch_key)?;
+        session.check_family_handle(family)?;
+        for accepted in store.accepted_local_batches(family)? {
+            let outcome =
+                session.apply_initial_batch(&accepted.envelope_bytes, &accepted.receipt_bytes)?;
+            if !matches!(outcome, Outcome::Applied) {
+                return Err(Error::Invalid("stored own batch became inert"));
+            }
+        }
+        Ok(session)
+    }
+
+    /// A validated local operation is staged by SQLite with a fresh nonce,
+    /// or returns an existing uncertain batch byte-for-byte.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn stage_next_local(
+        &self,
+        store: &mut SqliteStore,
+        family: FamilyHandle,
+        signing_seed: &[u8; 32],
+    ) -> Result<PreparedBatch, Error> {
+        self.check_family_handle(family)?;
+        if crypto::signing_public_key(signing_seed) != self.genesis.manager_sign_public_key() {
+            return Err(Error::Invalid(
+                "local signing key is not active manager key",
+            ));
+        }
+        let pending = store.stage_next_batch(
+            family,
+            self.genesis.relay_id(),
+            self.genesis.head_hash(),
+            1,
+            &self.epoch_key.bytes,
+            signing_seed,
+        )?;
+        if pending.sequence != self.next_manager_sequence {
+            return Err(Error::Invalid(
+                "outbox sequence differs from verified history",
+            ));
+        }
+        self.check_pending_metadata(&pending)?;
+        Ok(pending)
+    }
+
+    /// Confirm only after core verification. On a storage error, the in-memory
+    /// session is unchanged; the pending batch and its bytes remain durable.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn confirm_staged_local(
+        &mut self,
+        store: &mut SqliteStore,
+        family: FamilyHandle,
+        receipt_bytes: &[u8],
+    ) -> Result<(), Error> {
+        self.check_family_handle(family)?;
+        let pending = store
+            .pending_batch(family)?
+            .ok_or(Error::Invalid("no pending batch"))?;
+        self.check_pending_metadata(&pending)?;
+        let mut candidate = self.clone();
+        let outcome = candidate.apply_initial_batch(&pending.envelope_bytes, receipt_bytes)?;
+        if !matches!(outcome, Outcome::Applied) {
+            return Err(Error::Invalid("own staged batch is inert"));
+        }
+        store.record_verified_acceptance(
+            family,
+            &pending,
+            receipt_bytes,
+            candidate.projection.last_cursor(),
+        )?;
+        *self = candidate;
+        Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn check_family_handle(&self, family: FamilyHandle) -> Result<(), Error> {
+        if family.family_id != self.genesis.family_id()
+            || family.device_id != self.genesis.manager_device_id()
+        {
+            return Err(Error::Invalid(
+                "local Family handle differs from verified manager",
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn check_pending_metadata(&self, pending: &PreparedBatch) -> Result<(), Error> {
+        let signed = batch::verify_signed_envelope(
+            &pending.envelope_bytes,
+            &self.genesis.family_id(),
+            &self.genesis.relay_id(),
+            &self.genesis.manager_sign_public_key(),
+        )?;
+        self.check_header(signed.header())?;
+        if signed.header().batch_id != pending.batch_id
+            || signed.header().device_sequence != pending.sequence
+            || signed.object_hash() != pending.object_hash
+        {
+            return Err(Error::Invalid(
+                "stored outbox metadata differs from signed envelope",
+            ));
+        }
+        Ok(())
     }
     pub fn genesis(&self) -> &Genesis {
         &self.genesis

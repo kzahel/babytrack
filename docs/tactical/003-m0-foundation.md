@@ -147,13 +147,17 @@ and two-Family isolation. A reusable browser IndexedDB local-only journal
 now stores validated operation bytes and append indexes in one transaction;
 `WasmLocalFamily` replays through the shared Rust projection. The real
 Chromium smoke covers reload, duplicate rejection, and wrong-Family append
-rollback. Materialized projection, browser HLC, accepted shared entries,
-outbox, and private copy remain open. Native SQLite now also reserves a random
+rollback. Materialized projection, browser HLC, general shared replay,
+browser outbox, and private copy remain open. Native SQLite now also reserves a random
 batch ID and nonce and persists exact signed envelope bytes in one transaction.
 An uncertain retry returns those bytes after reopen even if the caller's
 current head/key has changed. The crate-private staging path awaits a
-core-owned authority session; verified acceptance, browser outbox, and
-rebatching remain open.
+core-owned authority session. The initial `FamilySession` now stages through
+that path only with its verified manager identity, head, epoch key, and
+signing key. A matching relay-signed acceptance moves the exact envelope and
+receipt to replayable SQLite history while clearing the outbox in one
+transaction; a bad receipt leaves it pending through restart. Later control
+epochs, browser outbox, and rebatching remain open.
 The decoder now enforces UUIDv4 Family/device/batch identities, UUIDv7
 operation/child/activity identities, and a positive batch epoch.
 The Rust core now verifies the fixed `GENESIS01` committed control object:

@@ -86,6 +86,11 @@ pub struct PreparedBatch {
     pub object_hash: [u8; 32],
 }
 
+pub(crate) struct AcceptedLocalBatch {
+    pub envelope_bytes: Vec<u8>,
+    pub receipt_bytes: Vec<u8>,
+}
+
 pub struct SqliteStore {
     connection: Connection,
 }
@@ -136,6 +141,17 @@ impl SqliteStore {
                batch_id BLOB NOT NULL CHECK(length(batch_id) = 16),
                PRIMARY KEY (family_id, batch_id),
                UNIQUE (family_id, epoch, nonce),
+               FOREIGN KEY (family_id) REFERENCES families(family_id)
+             );
+             CREATE TABLE IF NOT EXISTS accepted_local_batches (
+               family_id BLOB NOT NULL,
+               cursor INTEGER NOT NULL CHECK(cursor > 1),
+               to_index INTEGER NOT NULL CHECK(to_index > 0),
+               batch_id BLOB NOT NULL CHECK(length(batch_id) = 16),
+               envelope_bytes BLOB NOT NULL,
+               receipt_bytes BLOB NOT NULL,
+               PRIMARY KEY (family_id, cursor),
+               UNIQUE (family_id, batch_id),
                FOREIGN KEY (family_id) REFERENCES families(family_id)
              );
              INSERT OR IGNORE INTO local_sync_state(family_id)
@@ -363,6 +379,79 @@ impl SqliteStore {
     ) -> Result<Option<PreparedBatch>, Error> {
         let _ = checked_family(&self.connection, family)?;
         load_pending(&self.connection, family)
+    }
+
+    /// Only the core Family session calls this after independently verifying
+    /// the signed receipt and matching committed envelope. The exact evidence
+    /// and outbox advancement commit together, preserving crash replay.
+    pub(crate) fn record_verified_acceptance(
+        &mut self,
+        family: FamilyHandle,
+        pending: &PreparedBatch,
+        receipt_bytes: &[u8],
+        cursor: u64,
+    ) -> Result<(), Error> {
+        let transaction = self.connection.transaction()?;
+        let _ = checked_family(&transaction, family)?;
+        if load_pending(&transaction, family)?.as_ref() != Some(pending) {
+            return Err(Error::CorruptState);
+        }
+        let (accepted_index, next_sequence): (i64, i64) = transaction.query_row(
+            "SELECT accepted_index, next_sequence FROM local_sync_state WHERE family_id = ?1",
+            [family.family_id.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if accepted_index.checked_add(1) != i64::try_from(pending.from_index).ok()
+            || pending.to_index != pending.from_index
+            || next_sequence != i64::try_from(pending.sequence).map_err(|_| Error::CorruptState)?
+        {
+            return Err(Error::CorruptState);
+        }
+        let expected_cursor: i64 = transaction.query_row(
+            "SELECT COALESCE(MAX(cursor), 1) + 1 FROM accepted_local_batches WHERE family_id = ?1",
+            [family.family_id.as_slice()],
+            |row| row.get(0),
+        )?;
+        if expected_cursor != i64::try_from(cursor).map_err(|_| Error::CorruptState)? {
+            return Err(Error::CorruptState);
+        }
+        transaction.execute(
+            "INSERT INTO accepted_local_batches(family_id, cursor, to_index, batch_id, envelope_bytes, receipt_bytes)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![family.family_id.as_slice(), expected_cursor,
+                i64::try_from(pending.to_index).map_err(|_| Error::CorruptState)?,
+                pending.batch_id.as_slice(), &pending.envelope_bytes, receipt_bytes],
+        )?;
+        transaction.execute(
+            "UPDATE local_sync_state SET accepted_index = ?2, next_sequence = ?3 WHERE family_id = ?1",
+            params![family.family_id.as_slice(),
+                i64::try_from(pending.to_index).map_err(|_| Error::CorruptState)?,
+                next_sequence.checked_add(1).ok_or(Error::CorruptState)?],
+        )?;
+        transaction.execute(
+            "DELETE FROM local_outbox WHERE family_id = ?1",
+            [family.family_id.as_slice()],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn accepted_local_batches(
+        &self,
+        family: FamilyHandle,
+    ) -> Result<Vec<AcceptedLocalBatch>, Error> {
+        let _ = checked_family(&self.connection, family)?;
+        let mut statement = self.connection.prepare(
+            "SELECT envelope_bytes, receipt_bytes FROM accepted_local_batches
+             WHERE family_id = ?1 ORDER BY cursor",
+        )?;
+        let rows = statement.query_map([family.family_id.as_slice()], |row| {
+            Ok(AcceptedLocalBatch {
+                envelope_bytes: row.get(0)?,
+                receipt_bytes: row.get(1)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Error::Sqlite)
     }
 }
 

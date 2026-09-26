@@ -11,6 +11,7 @@ pub mod grant;
 pub mod handoff;
 pub mod hlc;
 pub mod hpke;
+pub mod membership;
 pub mod operation;
 pub mod projection;
 pub mod session;

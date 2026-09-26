@@ -11,6 +11,7 @@ use crate::{
     crypto,
     grant::{self, VerifiedAdmissionGrant},
     handoff::{self, VerifiedChallenge},
+    membership::{self, VerifiedMembership},
     projection::VerifiedEpochKey,
     session,
 };
@@ -23,6 +24,7 @@ pub enum Error {
     Batch(batch::Error),
     Handoff(handoff::Error),
     Grant(grant::Error),
+    Membership(membership::Error),
     Invalid(&'static str),
     UnsupportedKind,
 }
@@ -56,6 +58,11 @@ impl From<grant::Error> for Error {
         Self::Grant(value)
     }
 }
+impl From<membership::Error> for Error {
+    fn from(value: membership::Error) -> Self {
+        Self::Membership(value)
+    }
+}
 
 pub struct ControlChain {
     genesis: Genesis,
@@ -73,6 +80,7 @@ pub struct ControlChain {
     next_sequences: BTreeMap<[u8; 16], u64>,
     seen_batch_ids: BTreeSet<[u8; 16]>,
     current_commitment: [u8; 32],
+    memberships: BTreeMap<[u8; 16], VerifiedMembership>,
 }
 
 struct FinalizePlan<'a> {
@@ -116,6 +124,7 @@ impl ControlChain {
             next_sequences: BTreeMap::new(),
             seen_batch_ids: BTreeSet::new(),
             current_commitment: genesis_commitment,
+            memberships: BTreeMap::new(),
         })
     }
 
@@ -135,6 +144,10 @@ impl ControlChain {
 
     pub fn initial_admission_grant(&self, device_id: &[u8; 16]) -> Option<&VerifiedAdmissionGrant> {
         self.admission_grants.get(device_id)
+    }
+
+    pub fn membership_check(&self, transition_id: &[u8; 16]) -> Option<&VerifiedMembership> {
+        self.memberships.get(transition_id)
     }
 
     pub fn verify_current_epoch_key(&self, key: &[u8; 32]) -> Result<VerifiedEpochKey, Error> {
@@ -280,6 +293,8 @@ impl ControlChain {
         }
         let _object_id = fixed::<16>(&membership[1])?;
         let _object_hash = fixed::<32>(&membership[2])?;
+        let membership_check = membership_from_unsigned(self.genesis.family_id(), unsigned)?
+            .ok_or(Error::Invalid("invite issue missing membership object"))?;
         let signatures = array(&root[1].1, 1)?;
         let signature = array(&signatures[0], 2)?;
         if fixed::<16>(&signature[0])? != issuer_id {
@@ -326,6 +341,7 @@ impl ControlChain {
         self.last_global_cursor = expected_cursor;
         self.last_commit_ms = committed_ms;
         self.known_heads.insert(self.head_hash, epoch);
+        self.memberships.insert(transition_id, membership_check);
         self.issue_times.insert(invitation_id, committed_ms);
         Ok(())
     }
@@ -1115,6 +1131,7 @@ impl ControlChain {
             return Err(Error::Invalid("transition core hash mismatch"));
         }
         let manifest = array(&unsigned[9].1, manifest_kinds.len())?;
+        let membership_check = membership_from_unsigned(self.genesis.family_id(), unsigned)?;
         let mut prior_manifest: Option<(u64, [u8; 16])> = None;
         for (item, kind) in manifest.iter().zip(manifest_kinds) {
             let fields = array(item, 4)?;
@@ -1182,6 +1199,9 @@ impl ControlChain {
         self.last_global_cursor = expected_cursor;
         self.last_commit_ms = committed_ms;
         self.known_heads.insert(self.head_hash, epoch);
+        if let Some(check) = membership_check {
+            self.memberships.insert(check.transition_id, check);
+        }
         Ok(())
     }
 }
@@ -1220,4 +1240,33 @@ fn sort_rows_by_id(rows: &mut [Value]) {
         };
         left.cmp(right)
     });
+}
+
+fn membership_from_unsigned(
+    family_id: [u8; 16],
+    unsigned: &[(u64, Value)],
+) -> Result<Option<VerifiedMembership>, Error> {
+    let Value::Array(manifest) = &unsigned[9].1 else {
+        return Err(Error::Invalid("manifest not array"));
+    };
+    let Some(first) = manifest.first() else {
+        return Ok(None);
+    };
+    let entry = array(first, 4)?;
+    if number(&entry[0])? != 1 {
+        return Ok(None);
+    }
+    Ok(Some(VerifiedMembership {
+        family_id,
+        epoch: number(&unsigned[8].1)?
+            .try_into()
+            .map_err(|_| Error::Invalid("epoch outside u32"))?,
+        object_id: fixed::<16>(&entry[1])?,
+        object_hash: fixed::<32>(&entry[2])?,
+        core_hash: fixed::<32>(&unsigned[10].1)?,
+        transition_id: fixed::<16>(&unsigned[4].1)?,
+        prior_head: fixed::<32>(&unsigned[3].1)?,
+        state_hash: fixed::<32>(&unsigned[7].1)?,
+        delta: unsigned[6].1.clone(),
+    }))
 }

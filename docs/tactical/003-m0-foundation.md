@@ -202,7 +202,14 @@ transition. The recipient opens only the addressed HPKE object using its
 committed agreement key, checks purpose/suite/context and full object hash,
 and accepts an epoch key only when it matches the signed commitment. The
 contiguous join object's actual bytes pass; wrong keys and tampering fail.
-Membership ciphertext comparison and repair/rotation grants remain open.
+Repair and rotation grant opening remain open.
+For issue, admission, repair, and removal, the core now also binds each
+encrypted membership object to its signed manifest and decrypts it only
+under the committed resulting epoch key. Its transition ID, prior head,
+resulting state hash, epoch, and delta must exactly repeat the public
+transition; the contiguous chain's objects pass, while tampering and an
+old epoch key fail. Core session enforcement of readiness and repair/rotation
+grant opening remain open.
 `FamilySession` now consumes the fixed genesis and `BATCHBYTE01` acceptance
 through a core-owned path: it verifies the manager, head, epoch, sequence,
 object hash, cursor, and relay-signed receipt before projecting the first

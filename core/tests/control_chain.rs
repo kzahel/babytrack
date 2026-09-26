@@ -103,6 +103,21 @@ fn holder_challenge_and_pending_proof_follow_the_latest_public_chain() {
     let wire = |index: usize| hex_bytes(transitions[index]["committed_cbor_hex"].as_str().unwrap());
     let mut chain = ControlChain::from_genesis(&wire(0), relay_public).unwrap();
     chain.apply_invite_issue(&wire(1)).unwrap();
+    let epoch_one = bytes::<32>(
+        fixture["test_only_inputs"]["epoch_1_key_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let verified_issue_key = chain.verify_current_epoch_key(&epoch_one).unwrap();
+    let issue_membership = chain
+        .membership_check(&transition_id(&transitions[1]))
+        .unwrap();
+    issue_membership
+        .verify(
+            &object_bytes(&fixture, issue_membership.object_id()),
+            &verified_issue_key,
+        )
+        .unwrap();
     chain.apply_invite_claim(&wire(2)).unwrap();
     assert!(chain.apply_key_proof(&wire(4)).is_err());
     assert_eq!(chain.last_global_cursor(), 3);
@@ -166,6 +181,18 @@ fn admission_moves_proved_pending_device_to_active_and_repair_preserves_role() {
         opened,
         chain.verify_current_epoch_key(&expected_key).unwrap()
     );
+    let admission_membership = chain
+        .membership_check(&transition_id(&transitions[5]))
+        .unwrap();
+    admission_membership
+        .verify(
+            &object_bytes(&fixture, admission_membership.object_id()),
+            &opened,
+        )
+        .unwrap();
+    let mut changed_membership = object_bytes(&fixture, admission_membership.object_id());
+    *changed_membership.last_mut().unwrap() ^= 1;
+    assert!(admission_membership.verify(&changed_membership, &opened).is_err());
     assert!(grant.open(&grant_object, &[0u8; 32]).is_err());
     let mut tampered_grant = grant_object.clone();
     *tampered_grant.last_mut().unwrap() ^= 1;
@@ -175,6 +202,15 @@ fn admission_moves_proved_pending_device_to_active_and_repair_preserves_role() {
         hex_bytes(transitions[5]["state_cbor_hex"].as_str().unwrap())
     );
     chain.apply_grant_repair(&wire(6)).unwrap();
+    let repair_membership = chain
+        .membership_check(&transition_id(&transitions[6]))
+        .unwrap();
+    repair_membership
+        .verify(
+            &object_bytes(&fixture, repair_membership.object_id()),
+            &opened,
+        )
+        .unwrap();
     assert_eq!(chain.last_global_cursor(), 7);
     assert_eq!(
         chain.state_bytes().unwrap(),
@@ -191,6 +227,29 @@ fn admission_moves_proved_pending_device_to_active_and_repair_preserves_role() {
     assert_eq!(chain.last_global_cursor(), 8);
     assert!(chain.apply_public_batch(&envelope, &receipt).is_err());
     chain.apply_remove_active(&wire(7)).unwrap();
+    let epoch_two = bytes::<32>(
+        fixture["test_only_inputs"]["epoch_2_key_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let rotated_key = chain.verify_current_epoch_key(&epoch_two).unwrap();
+    let removal_membership = chain
+        .membership_check(&transition_id(&transitions[7]))
+        .unwrap();
+    removal_membership
+        .verify(
+            &object_bytes(&fixture, removal_membership.object_id()),
+            &rotated_key,
+        )
+        .unwrap();
+    assert!(
+        removal_membership
+            .verify(
+                &object_bytes(&fixture, removal_membership.object_id()),
+                &opened
+            )
+            .is_err()
+    );
     assert_eq!(chain.last_global_cursor(), 9);
     assert_eq!(
         chain.state_bytes().unwrap(),
@@ -332,6 +391,22 @@ fn committed_challenge_objects_prove_both_pending_keys_without_granting_data_acc
 }
 fn bytes<const N: usize>(hex: &str) -> [u8; N] {
     hex_bytes(hex).try_into().unwrap()
+}
+
+fn transition_id(case: &serde_json::Value) -> [u8; 16] {
+    let unsigned = cbor::decode(&hex_bytes(case["unsigned_cbor_hex"].as_str().unwrap())).unwrap();
+    let Value::Map(fields) = unsigned else {
+        unreachable!()
+    };
+    let Value::Bytes(id) = &fields[4].1 else {
+        unreachable!()
+    };
+    id.as_slice().try_into().unwrap()
+}
+
+fn object_bytes(fixture: &serde_json::Value, id: [u8; 16]) -> Vec<u8> {
+    let hex: String = id.iter().map(|byte| format!("{byte:02x}")).collect();
+    hex_bytes(fixture["objects_by_id_hex"][hex.as_str()].as_str().unwrap())
 }
 
 #[test]

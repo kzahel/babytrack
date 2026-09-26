@@ -18,7 +18,8 @@ documents contradict, reconcile them or ask; do not silently pick one.
 
 Status: M0 implementation in progress. The Rust core has canonical CBOR,
 structural operation decoding, and first cryptographic primitives including
-HPKE with byte vectors; no full application or relay behavior exists yet.
+HPKE with byte vectors and a signed batch byte proof; no full application or
+relay behavior exists yet.
 `babytrack` is a code name.
 
 The working tree may contain concurrent human or agent changes. Do not revert,
@@ -121,5 +122,6 @@ cargo deny check advisories bans licenses sources
 
 The M0 byte, operation, and crypto components run
 `cargo test -p babytrack-core`; fixture tests cover CBOR, selected operation
-bytes, hash, Ed25519, XChaCha, and fixed HPKE decryption. Other targets
+bytes, hash, Ed25519, XChaCha, fixed HPKE decryption, and a full batch byte
+vector. Other targets
 still have no behavioral tests. Add gates for their behavior with M0 work.

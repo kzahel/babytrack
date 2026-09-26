@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod batch;
 pub mod cbor;
 pub mod crypto;
 pub mod hpke;

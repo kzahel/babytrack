@@ -7,9 +7,9 @@ native phone/watch apps and a web client.
 
 **Status: M0 implementation in progress.** The Rust core has a strict
 canonical CBOR codec, structural operation decoder, tested hash, signature,
-AEAD, and HPKE primitives, and executable byte vectors. It has no complete
-application, sharing, or relay behavior yet. Scenario files still describe
-expected behavior; they are not passing product tests.
+AEAD, and HPKE primitives, plus a signed encrypted batch byte proof. It has
+no complete application, sharing, or relay behavior yet. Scenario files
+still describe expected behavior; they are not passing product tests.
 
 ## Product and architecture
 
@@ -86,10 +86,11 @@ Install `cargo-deny` 0.20.2 for the last command. The Rust core's
 `core/tests/operation_vectors.rs` checks selected operation bytes and binding
 failures. `core/tests/crypto_vectors.rs` checks hash, Ed25519, and XChaCha
 known answers and tampering. `core/tests/hpke_vectors.rs` opens the fixed HPKE
-ciphertext and tests sender round trips. Run them with
-`cargo test -p babytrack-core`.
-The other vectors, bindings, and product flows are not executable yet;
-compilation does not establish protocol correctness.
+ciphertext and tests sender round trips. `core/tests/batch_vectors.rs` matches
+every byte of `BATCHBYTE01` and opens the result. Run them with
+`cargo test -p babytrack-core`. The other vectors, bindings, and product
+flows are not executable yet; compilation does not establish protocol
+correctness.
 
 Reference repositories are listed in [references.yaml](references.yaml).
 Run `scripts/sync_references.py [name ...]` to populate gitignored

@@ -81,6 +81,9 @@ pub struct ControlChain {
     issue_times: BTreeMap<[u8; 16], i64>,
     challenges: BTreeMap<[u8; 16], VerifiedChallenge>,
     seen_challenge_ids: BTreeSet<[u8; 16]>,
+    seen_device_ids: BTreeSet<[u8; 16]>,
+    seen_transition_ids: BTreeSet<[u8; 16]>,
+    seen_object_ids: BTreeSet<[u8; 16]>,
     admissions: BTreeMap<[u8; 16], [u8; 16]>,
     admission_grants: BTreeMap<[u8; 16], VerifiedAdmissionGrant>,
     repair_grants: BTreeMap<[u8; 16], VerifiedRepairGrant>,
@@ -118,6 +121,17 @@ impl ControlChain {
         ]);
         let genesis_head = genesis.head_hash();
         let genesis_commitment = genesis.epoch_key_commitment();
+        let manager_device_id = genesis.manager_device_id();
+        let genesis_transition_id = genesis.transition_id();
+        let Value::Array(genesis_manifest) = &unsigned[9].1 else {
+            return Err(Error::Invalid("genesis manifest not array"));
+        };
+        let mut genesis_objects = BTreeSet::new();
+        for entry in genesis_manifest {
+            if !genesis_objects.insert(fixed::<16>(&array(entry, 4)?[1])?) {
+                return Err(Error::Invalid("genesis object ID reused"));
+            }
+        }
         Ok(Self {
             head_hash: genesis_head,
             last_global_cursor: 1,
@@ -128,6 +142,9 @@ impl ControlChain {
             issue_times: BTreeMap::new(),
             challenges: BTreeMap::new(),
             seen_challenge_ids: BTreeSet::new(),
+            seen_device_ids: BTreeSet::from([manager_device_id]),
+            seen_transition_ids: BTreeSet::from([genesis_transition_id]),
+            seen_object_ids: genesis_objects,
             admissions: BTreeMap::new(),
             admission_grants: BTreeMap::new(),
             repair_grants: BTreeMap::new(),
@@ -255,6 +272,7 @@ impl ControlChain {
         )?;
         let root = exact_map(&object, 4)?;
         let unsigned = exact_map(&root[0].1, 11)?;
+        let (new_transition_id, new_object_ids) = self.check_new_control_ids(unsigned)?;
         if number(&unsigned[0].1)? != 1
             || number(&unsigned[5].1)? != 2
             || number(&unsigned[8].1)? != self.current_epoch()?
@@ -399,6 +417,7 @@ impl ControlChain {
         self.known_heads.insert(self.head_hash, epoch);
         self.memberships.insert(transition_id, membership_check);
         self.issue_times.insert(invitation_id, committed_ms);
+        self.remember_control_ids(new_transition_id, new_object_ids);
         Ok(())
     }
 
@@ -412,6 +431,7 @@ impl ControlChain {
         )?;
         let root = exact_map(&object, 4)?;
         let unsigned = exact_map(&root[0].1, 11)?;
+        let (new_transition_id, new_object_ids) = self.check_new_control_ids(unsigned)?;
         if number(&unsigned[0].1)? != 1
             || number(&unsigned[5].1)? != 4
             || number(&unsigned[8].1)? != self.current_epoch()?
@@ -427,6 +447,9 @@ impl ControlChain {
         let delta = exact_map(&unsigned[6].1, 7)?;
         let invitation_id = fixed::<16>(&delta[0].1)?;
         let device_id = fixed::<16>(&delta[1].1)?;
+        if self.seen_device_ids.contains(&device_id) {
+            return Err(Error::Invalid("claim reuses a historical device ID"));
+        }
         let sign_public = fixed::<32>(&delta[2].1)?;
         let agree_public = fixed::<32>(&delta[3].1)?;
         let key_version = number(&delta[4].1)?;
@@ -632,6 +655,8 @@ impl ControlChain {
         self.last_global_cursor = expected_cursor;
         self.last_commit_ms = committed_ms;
         self.known_heads.insert(self.head_hash, epoch);
+        self.seen_device_ids.insert(device_id);
+        self.remember_control_ids(new_transition_id, new_object_ids);
         Ok(())
     }
 
@@ -1223,6 +1248,34 @@ impl ControlChain {
         Ok(number(&exact_map(&self.state, 7)?[3].1)?)
     }
 
+    fn check_new_control_ids(
+        &self,
+        unsigned: &[(u64, Value)],
+    ) -> Result<([u8; 16], Vec<[u8; 16]>), Error> {
+        let transition_id = fixed::<16>(&unsigned[4].1)?;
+        if self.seen_transition_ids.contains(&transition_id) {
+            return Err(Error::Invalid("transition ID reused"));
+        }
+        let Value::Array(manifest) = &unsigned[9].1 else {
+            return Err(Error::Invalid("manifest not array"));
+        };
+        let mut object_ids = Vec::with_capacity(manifest.len());
+        let mut within_transition = BTreeSet::new();
+        for item in manifest {
+            let object_id = fixed::<16>(&array(item, 4)?[1])?;
+            if self.seen_object_ids.contains(&object_id) || !within_transition.insert(object_id) {
+                return Err(Error::Invalid("object ID reused"));
+            }
+            object_ids.push(object_id);
+        }
+        Ok((transition_id, object_ids))
+    }
+
+    fn remember_control_ids(&mut self, transition_id: [u8; 16], object_ids: Vec<[u8; 16]>) {
+        self.seen_transition_ids.insert(transition_id);
+        self.seen_object_ids.extend(object_ids);
+    }
+
     fn check_unsigned(
         &self,
         unsigned: &[(u64, Value)],
@@ -1256,6 +1309,7 @@ impl ControlChain {
             manifest_kinds,
             before_ms,
         } = plan;
+        let (new_transition_id, new_object_ids) = self.check_new_control_ids(unsigned)?;
         if fixed::<32>(&unsigned[7].1)? != crypto::hash("auth-state", &cbor::encode(&next_state)?)?
         {
             return Err(Error::Invalid("resulting authority state hash mismatch"));
@@ -1342,6 +1396,7 @@ impl ControlChain {
         if let Some(check) = membership_check {
             self.memberships.insert(check.transition_id, check);
         }
+        self.remember_control_ids(new_transition_id, new_object_ids);
         Ok(())
     }
 }

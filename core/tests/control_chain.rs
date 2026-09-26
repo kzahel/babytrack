@@ -1,7 +1,7 @@
 use babytrack_core::{
     batch::{self, Header},
     cbor::{self, Value},
-    control_chain::ControlChain,
+    control_chain::{ControlChain, Error as ControlError},
     crypto,
 };
 
@@ -10,6 +10,81 @@ fn hex_bytes(hex: &str) -> Vec<u8> {
         .chunks_exact(2)
         .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
         .collect()
+}
+
+#[test]
+fn historical_control_object_and_device_ids_cannot_be_reused() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../tests/vectors/contiguous-chain-v1.json")).unwrap();
+    let transitions = fixture["transitions"].as_array().unwrap();
+    let wire = |index: usize| hex_bytes(transitions[index]["committed_cbor_hex"].as_str().unwrap());
+    let relay_public =
+        bytes::<32>("2543b92ff1095511476adc8369db6ddc933665a11978dda1404ee1066ca9559d");
+    let mut chain = ControlChain::from_genesis(&wire(0), relay_public).unwrap();
+
+    let mut reused_transition = cbor::decode(&wire(1)).unwrap();
+    if let Value::Map(root) = &mut reused_transition
+        && let Value::Map(unsigned) = &mut root[0].1
+    {
+        unsigned[4].1 = Value::Bytes(transition_id(&transitions[0]).to_vec());
+    }
+    assert_eq!(
+        chain.apply_invite_issue(&cbor::encode(&reused_transition).unwrap()),
+        Err(ControlError::Invalid("transition ID reused"))
+    );
+
+    let mut reused_object = cbor::decode(&wire(1)).unwrap();
+    if let Value::Map(root) = &mut reused_object
+        && let Value::Map(unsigned) = &mut root[0].1
+        && let Value::Array(manifest) = &mut unsigned[9].1
+        && let Value::Array(entry) = &mut manifest[0]
+    {
+        entry[1] = Value::Bytes(hex_bytes(
+            transitions[0]["manifest"][0][1].as_str().unwrap(),
+        ));
+    }
+    assert_eq!(
+        chain.apply_invite_issue(&cbor::encode(&reused_object).unwrap()),
+        Err(ControlError::Invalid("object ID reused"))
+    );
+    assert_eq!(chain.last_global_cursor(), 1);
+
+    chain.apply_invite_issue(&wire(1)).unwrap();
+    let mut reused_device = cbor::decode(&wire(2)).unwrap();
+    if let Value::Map(root) = &mut reused_device
+        && let Value::Map(unsigned) = &mut root[0].1
+        && let Value::Map(delta) = &mut unsigned[6].1
+    {
+        delta[1].1 = Value::Bytes(hex_bytes(
+            fixture["test_only_inputs"]["manager_device_id_hex"]
+                .as_str()
+                .unwrap(),
+        ));
+    }
+    assert_eq!(
+        chain.apply_invite_claim(&cbor::encode(&reused_device).unwrap()),
+        Err(ControlError::Invalid("claim reuses a historical device ID"))
+    );
+    chain.apply_invite_claim(&wire(2)).unwrap();
+
+    let mut duplicate_object = cbor::decode(&wire(3)).unwrap();
+    if let Value::Map(root) = &mut duplicate_object
+        && let Value::Map(unsigned) = &mut root[0].1
+        && let Value::Array(manifest) = &mut unsigned[9].1
+    {
+        let first_id = match &manifest[0] {
+            Value::Array(first) => first[1].clone(),
+            _ => unreachable!(),
+        };
+        if let Value::Array(second) = &mut manifest[1] {
+            second[1] = first_id;
+        }
+    }
+    assert_eq!(
+        chain.apply_holder_challenge(&cbor::encode(&duplicate_object).unwrap()),
+        Err(ControlError::Invalid("object ID reused"))
+    );
+    assert_eq!(chain.last_global_cursor(), 3);
 }
 
 #[test]

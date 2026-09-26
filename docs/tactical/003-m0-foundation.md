@@ -221,6 +221,12 @@ that key. Every earlier numbered key must be present once and match its
 pinned commitment. The contiguous removal objects pass; a removed device
 or tampered keyring fails. Durable rotated-key storage and full session
 readiness remain open.
+The public rotated-key path now also verifies the encrypted membership
+object and cannot use the initial-epoch commitment shortcut. Opening a
+keyring rejects a raw key repeated from an earlier epoch. Incremental
+authority replay records historical transition, manifest object, and device
+IDs and rejects reuse, including object reuse across kinds. These registries
+must still be rebuilt from a durable verified log on restart.
 `FamilySession` now consumes the fixed genesis and `BATCHBYTE01` acceptance
 through a core-owned path: it verifies the manager, head, epoch, sequence,
 object hash, cursor, and relay-signed receipt before projecting the first

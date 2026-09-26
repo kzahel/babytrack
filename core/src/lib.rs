@@ -1,3 +1,5 @@
-//! Shared core build boundary. Product APIs begin in M0.
+//! Shared data and protocol behavior used by every client.
 
 #![forbid(unsafe_code)]
+
+pub mod cbor;

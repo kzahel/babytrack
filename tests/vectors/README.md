@@ -1,8 +1,9 @@
 # M-1 protocol vectors
 
 These are normative version-1 inputs and expected results. M0 binds each
-case to Rust, Swift, Kotlin, wasm, and relay runners; no runner or passing
-result is implied here. Hex is lowercase bytes, IDs are fixed 16-byte hex,
+case to Rust, Swift, Kotlin, wasm, and relay runners. The Rust core currently
+runs CB01-CB06 in `records-v1.json`; no other passing result is implied here.
+Hex is lowercase bytes, IDs are fixed 16-byte hex,
 and each case starts from its stated state. Rejection means no state, cursor,
 sequence, or outbox mutation unless the expected result says otherwise.
 

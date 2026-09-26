@@ -1,6 +1,6 @@
 # 003: M0 executable foundation
 
-Status: ready after completed [001 M-1 design closure](001-pre-m0-design.md).
+Status: in progress after completed [001 M-1 design closure](001-pre-m0-design.md).
 This workstream
 turns the [versioned contracts](../protocol/README.md) and
 [scenario catalog](../scenarios/README.md) into shared core, relay, and CLI
@@ -84,6 +84,11 @@ multiple Families; the adversarial review has no unresolved violation of an
 agreed product promise.
 
 ## Test placement and CI
+
+The first Rust byte-codec increment implements strict canonical CBOR and runs
+CB01-CB06 from `tests/vectors/records-v1.json` with
+`cargo test -p babytrack-core`. The rest of slice 1 remains open: versioned
+operation decoding, all byte fixtures, crypto, bindings, and browser storage.
 
 Every agreed FS case gets a deterministic core/relay action binding with
 assertions for local state, shared state, pending outbox, visible status, and

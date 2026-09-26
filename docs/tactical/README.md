@@ -11,5 +11,6 @@ tactical with its current status.
 - [002: Repository scaffolding](002-repository-scaffold.md) — complete;
   Rust workspace, build checks, and read-only CI added and validated in an
   isolated source copy. Does not close M-1 or implement product behavior.
-- [003: M0 executable foundation](003-m0-foundation.md) — ready; ordered
-  byte, storage, relay, membership, and recovery slices with gates.
+- [003: M0 executable foundation](003-m0-foundation.md) — in progress;
+  Rust canonical CBOR and its first byte vectors run; binding, storage,
+  relay, membership, and recovery gates remain.

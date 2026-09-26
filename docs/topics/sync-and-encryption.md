@@ -1,6 +1,7 @@
 # Sync and encryption
 
-Status: M-1 design decided, September 2026; M0 implementation and executed
+Status: M-1 design decided, September 2026; M0 has started with Rust
+canonical CBOR and its first byte vectors. Most implementation and executed
 validation remain. The normative v1 byte and state-machine rules are in
 [records](../protocol/records-v1.md),
 [sharing](../protocol/sharing-v1.md), and
@@ -263,6 +264,11 @@ relay behavior is detectable. Honest-relay cutover and client authorization
 checks are still required.
 
 ## Validation
+
+The Rust core now executes CB01-CB06 from `tests/vectors/records-v1.json`
+with `cargo test -p babytrack-core`. This covers the generic canonical CBOR
+subset only; operation schema, other vectors, cross-language agreement, and
+the protocol/security gates below remain open.
 
 - Property tests: random operations delivered in random orders to several
   replicas always converge to identical state.

@@ -1,7 +1,8 @@
 # Records and operations v1
 
-Status: M-1 decided contract, September 2026; implementation and cross-language
-execution remain M0 work. This owns
+Status: M-1 decided contract, September 2026; Rust canonical CBOR and
+CB01-CB06 tests have begun in M0. Operation decoding and cross-language
+execution remain. This owns
 version 1 plaintext operation bytes and deterministic projection. The
 [event model](../topics/event-model.md) owns which values the product records;
 [sharing v1](sharing-v1.md) owns encryption and authorization. All limits are

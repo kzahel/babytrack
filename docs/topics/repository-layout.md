@@ -1,7 +1,8 @@
 # Repository layout and scaffolding
 
-Status: scaffold implemented, September 2026. Validation is recorded in
-[002](../tactical/002-repository-scaffold.md). No product code exists.
+Status: scaffold implemented, September 2026; M0 byte-codec work has begun
+in `core/`. Scaffold validation is recorded in
+[002](../tactical/002-repository-scaffold.md).
 Owns directory placement, dependency direction, and when scaffolding is
 introduced. The [MVP plan](../mvp-plan.md) owns stack and milestone scope.
 
@@ -38,11 +39,14 @@ appear implemented.
 | `apps/web/` | Svelte product UI | M2; M0 browser proof belongs to test infrastructure |
 | `apps/ios/` | iOS/watchOS apps and extensions | M3 phone, M4 watch |
 
-The five Rust targets and root build files now exist. The documentation,
+The five Rust targets and root build files now exist. The core now contains
+a canonical CBOR codec and vector tests; the other targets remain scaffold
+boundaries. The documentation,
 test, and platform paths marked for later milestones are future paths, not
 links to existing files. Scaffold targets compile without implementing their
-responsibilities. Tests reporting zero cases are not evidence of protocol or
-product correctness.
+responsibilities. The CBOR vector tests cover only the first byte subset;
+other targets reporting zero cases are not evidence of protocol or product
+correctness.
 
 The workspace uses package names such as `babytrack-core` rather than a Rust
 crate named `core`, and pins Rust 1.92.0. Path names above remain short.

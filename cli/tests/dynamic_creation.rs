@@ -74,6 +74,16 @@ fn v7(tag: u8) -> [u8; 16] {
 
 #[tokio::test]
 async fn existing_local_family_promotes_and_shares_with_durable_keys() {
+    dynamic_flow(false).await;
+}
+
+#[tokio::test]
+async fn manager_batch_interleaves_before_invite_and_recipient_joins() {
+    dynamic_flow(true).await;
+}
+
+async fn dynamic_flow(early_batch: bool) {
+    let shift = if early_batch { 1 } else { 0 };
     let dir = tempfile::tempdir().unwrap();
     let local_path = dir.path().join("manager.db");
     let relay_path = dir.path().join("relay.db");
@@ -207,6 +217,40 @@ async fn existing_local_family_promotes_and_shares_with_durable_keys() {
             .observed_cursor(),
         1
     );
+    // The durable outbox is sealed against genesis before any invite exists.
+    // It must remain uploadable after every join control advances the head.
+    let genesis_ready = resumed.confirm(&mut local, committed).unwrap();
+    let staged_manager_batch = match resumed
+        .stage_next_local(&genesis_ready, &mut local)
+        .unwrap()
+    {
+        NextUpload::Fresh(batch) => batch,
+        NextUpload::RetryExact(_) => panic!("manager batch was already pending"),
+    };
+    assert_eq!(staged_manager_batch.from_index, 2);
+    let early_receipt = if early_batch {
+        let batch_path = format!("/v1/families/{}/batches", lower_hex(&family.family_id));
+        let response = http_bytes(
+            &app,
+            Method::POST,
+            &batch_path,
+            staged_manager_batch.envelope_bytes.clone(),
+        )
+        .await;
+        let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(receipt) = &fields[1].1 else {
+            panic!()
+        };
+        let mut public = PublicHistorySession::resume(&local, family).unwrap();
+        public
+            .accept_batch(&mut local, &staged_manager_batch.envelope_bytes, receipt)
+            .unwrap();
+        Some(receipt.clone())
+    } else {
+        None
+    };
 
     let issue = FirstInviteIssue::prepare(&mut local, &resumed, &wrapping_key, 1).unwrap();
     let issue_candidate = issue.candidate_bytes().to_vec();
@@ -270,11 +314,21 @@ async fn existing_local_family_promotes_and_shares_with_durable_keys() {
     let recipient_path = dir.path().join("recipient.db");
     let recipient_wrap = [0x8b; 32];
     let mut recipient_store = SqliteStore::open(&recipient_path).unwrap();
-    let enrollment = EnrollmentAttempt::prepare(
+    let prior_batches: Vec<(&[u8], &[u8])> = early_receipt
+        .as_ref()
+        .map(|receipt| {
+            vec![(
+                staged_manager_batch.envelope_bytes.as_slice(),
+                receipt.as_slice(),
+            )]
+        })
+        .unwrap_or_default();
+    let enrollment = EnrollmentAttempt::prepare_with_batches(
         &mut recipient_store,
         &received_link,
         &page.entries[0].committed_bytes,
         &page.entries[1].committed_bytes,
+        &prior_batches,
         &recipient_wrap,
     )
     .unwrap();
@@ -295,7 +349,7 @@ async fn existing_local_family_promotes_and_shares_with_durable_keys() {
     public
         .accept_control(&mut recipient_store, committed_claim)
         .unwrap();
-    assert_eq!(public.cursor(), 3);
+    assert_eq!(public.cursor(), 3 + shift);
     assert!(
         relay
             .control_page_authenticated(family.family_id, 0, &path, &auth.bytes)
@@ -333,16 +387,17 @@ async fn existing_local_family_promotes_and_shares_with_durable_keys() {
     };
     challenge.confirm(&mut local, committed_challenge).unwrap();
     let pending_path = format!(
-        "/v1/families/{}/control?after=3",
-        lower_hex(&family.family_id)
+        "/v1/families/{}/control?after={}",
+        lower_hex(&family.family_id),
+        3 + shift
     );
     let read = resumed_enrollment.sign_get(&pending_path).unwrap();
     let page = ControlPage::decode(
         &relay
-            .control_page_authenticated(family.family_id, 3, &pending_path, &read.bytes)
+            .control_page_authenticated(family.family_id, 3 + shift, &pending_path, &read.bytes)
             .unwrap(),
         family.family_id,
-        3,
+        3 + shift,
     )
     .unwrap();
     assert_eq!(page.entries.len(), 1);
@@ -412,16 +467,17 @@ async fn existing_local_family_promotes_and_shares_with_durable_keys() {
         .confirm(&mut recipient_store, committed_proof)
         .unwrap();
     let proof_path = format!(
-        "/v1/families/{}/control?after=4",
-        lower_hex(&family.family_id)
+        "/v1/families/{}/control?after={}",
+        lower_hex(&family.family_id),
+        4 + shift
     );
     let read = resumed.sign_get(&proof_path).unwrap();
     let page = ControlPage::decode(
         &relay
-            .control_page_authenticated(family.family_id, 4, &proof_path, &read.bytes)
+            .control_page_authenticated(family.family_id, 4 + shift, &proof_path, &read.bytes)
             .unwrap(),
         family.family_id,
-        4,
+        4 + shift,
     )
     .unwrap();
     assert_eq!(page.entries.len(), 1);
@@ -481,16 +537,17 @@ async fn existing_local_family_promotes_and_shares_with_durable_keys() {
     let mut recipient_public =
         PublicHistorySession::resume(&recipient_store, enrollment.family()).unwrap();
     let admission_path = format!(
-        "/v1/families/{}/control?after=5",
-        lower_hex(&family.family_id)
+        "/v1/families/{}/control?after={}",
+        lower_hex(&family.family_id),
+        5 + shift
     );
     let read = resumed_enrollment.sign_get(&admission_path).unwrap();
     let page = ControlPage::decode(
         &relay
-            .control_page_authenticated(family.family_id, 5, &admission_path, &read.bytes)
+            .control_page_authenticated(family.family_id, 5 + shift, &admission_path, &read.bytes)
             .unwrap(),
         family.family_id,
-        5,
+        5 + shift,
     )
     .unwrap();
     assert_eq!(page.entries.len(), 1);
@@ -527,7 +584,7 @@ async fn existing_local_family_promotes_and_shares_with_durable_keys() {
             .unwrap();
     }
     let ready = ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).unwrap();
-    assert_eq!(ready.observed_cursor(), 6);
+    assert_eq!(ready.observed_cursor(), 6 + shift);
     assert_eq!(ready.active_epoch(), 1);
     assert!(ready.projection().record(&pre_child_id).is_some());
 
@@ -590,15 +647,19 @@ async fn existing_local_family_promotes_and_shares_with_durable_keys() {
         .unwrap();
     let recipient_ready =
         ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).unwrap();
-    assert_eq!(recipient_ready.observed_cursor(), 7);
-    let log_path = format!("/v1/families/{}/log?after=6", lower_hex(&family.family_id));
+    assert_eq!(recipient_ready.observed_cursor(), 7 + shift);
+    let log_path = format!(
+        "/v1/families/{}/log?after={}",
+        lower_hex(&family.family_id),
+        6 + shift
+    );
     let read = resumed.sign_get(&log_path).unwrap();
     let log = LogPage::decode(
         &relay
-            .log_page_authenticated(family.family_id, 6, &log_path, &read.bytes)
+            .log_page_authenticated(family.family_id, 6 + shift, &log_path, &read.bytes)
             .unwrap(),
         family.family_id,
-        6,
+        6 + shift,
     )
     .unwrap();
     assert_eq!(log.entries.len(), 1);
@@ -623,7 +684,7 @@ async fn existing_local_family_promotes_and_shares_with_durable_keys() {
         )
         .unwrap();
     let manager_ready = resumed.confirm(&mut local, committed).unwrap();
-    assert_eq!(manager_ready.observed_cursor(), 7);
+    assert_eq!(manager_ready.observed_cursor(), 7 + shift);
     assert_eq!(
         manager_ready.projection().record(&pre_child_id),
         recipient_ready.projection().record(&pre_child_id)
@@ -632,14 +693,50 @@ async fn existing_local_family_promotes_and_shares_with_durable_keys() {
         manager_ready.projection().record(&child_id),
         recipient_ready.projection().record(&child_id)
     );
+    let late_child_id = v7(0x24);
+    if early_batch {
+        assert_eq!(
+            manager_ready.projection().record(&post_child_id),
+            recipient_ready.projection().record(&post_child_id)
+        );
+        local
+            .append_local(
+                family,
+                NewOperation {
+                    family_id: family.family_id,
+                    operation_id: v7(0x25),
+                    record_id: late_child_id,
+                    scope: Scope::Child,
+                    kind: Kind::Create,
+                    author_device_id: family.device_id,
+                    hlc: Hlc {
+                        wall_ms: 1_700_000_002_000,
+                        counter: 0,
+                        device_id: family.device_id,
+                    },
+                    record_type: Some("child".to_owned()),
+                    child_id: None,
+                    fields: Some(vec![(1, Value::Text("Later".to_owned()))]),
+                },
+                1_700_000_002_000,
+            )
+            .unwrap();
+    }
     let manager_batch = match resumed
         .stage_next_local(&manager_ready, &mut local)
         .unwrap()
     {
-        NextUpload::Fresh(batch) => batch,
-        NextUpload::RetryExact(_) => panic!("post-watermark record was already pending"),
+        NextUpload::RetryExact(batch) if !early_batch => batch,
+        NextUpload::Fresh(batch) if early_batch => batch,
+        _ => panic!("manager outbox stage differs from expected path"),
     };
-    assert_eq!(manager_batch.from_index, 2);
+    assert_eq!(manager_batch.from_index, if early_batch { 3 } else { 2 });
+    if !early_batch {
+        assert_eq!(
+            manager_batch.envelope_bytes,
+            staged_manager_batch.envelope_bytes
+        );
+    }
     let response = http_bytes(
         &app,
         Method::POST,
@@ -667,9 +764,15 @@ async fn existing_local_family_promotes_and_shares_with_durable_keys() {
     let manager_ready = resumed.confirm(&mut local, committed).unwrap();
     let recipient_ready =
         ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).unwrap();
-    assert_eq!(manager_ready.observed_cursor(), 8);
+    assert_eq!(manager_ready.observed_cursor(), 8 + shift);
     assert_eq!(
         manager_ready.projection().record(&post_child_id),
         recipient_ready.projection().record(&post_child_id)
     );
+    if early_batch {
+        assert_eq!(
+            manager_ready.projection().record(&late_child_id),
+            recipient_ready.projection().record(&late_child_id)
+        );
+    }
 }

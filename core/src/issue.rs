@@ -82,7 +82,14 @@ impl FirstInviteIssue {
             return Ok(existing);
         }
         let public = PublicHistorySession::resume(store, family)?;
-        if public.cursor() != 1 {
+        let history = store
+            .shared_history(family)?
+            .ok_or(Error::Invalid("genesis absent"))?;
+        if history.entries.iter().any(|entry| entry.kind == 1)
+            || public.head_hash()
+                != ControlChain::from_genesis(&history.genesis_bytes, creation.relay_public_key())?
+                    .head_hash()
+        {
             return Err(Error::Invalid("first invitation requires genesis head"));
         }
         let invitation_id = random_v4()?;
@@ -252,12 +259,17 @@ impl FirstInviteIssue {
             .shared_history(self.family)?
             .ok_or(Error::Invalid("genesis absent"))?;
         let mut public = PublicHistorySession::resume(store, self.family)?;
-        if public.cursor() == 1 {
+        if history
+            .entries
+            .iter()
+            .all(|entry| entry.committed_bytes != committed_issue)
+        {
             public.accept_control(store, committed_issue)?;
         } else if history
             .entries
-            .first()
-            .is_none_or(|entry| entry.kind != 1 || entry.committed_bytes != committed_issue)
+            .iter()
+            .find(|entry| entry.kind == 1)
+            .is_none_or(|entry| entry.committed_bytes != committed_issue)
         {
             return Err(Error::Invalid(
                 "committed first issue differs from pinned history",
@@ -268,12 +280,24 @@ impl FirstInviteIssue {
         creation
             .confirm(store, &history.genesis_bytes)
             .map_err(|_| Error::Invalid("membership object did not verify"))?;
-        Ok(InvitationBootstrap::from_committed_issue(
+        let prior_batches: Vec<(&[u8], &[u8])> = history
+            .entries
+            .iter()
+            .take_while(|entry| entry.kind == 2)
+            .map(|entry| {
+                (
+                    entry.committed_bytes.as_slice(),
+                    entry.receipt_bytes.as_slice(),
+                )
+            })
+            .collect();
+        Ok(InvitationBootstrap::from_committed_issue_with_batches(
             relay_origin,
             creation.relay_public_key(),
             &history.genesis_bytes,
             committed_issue,
             self.invitation_seed,
+            &prior_batches,
         )?)
     }
 }

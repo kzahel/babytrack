@@ -94,13 +94,8 @@ impl FirstChallenge {
             }
             return Ok(existing);
         }
-        let chain = PublicHistorySession::resume(store, family)?;
-        if chain.cursor() != 3 {
-            return Err(Error::Invalid(
-                "challenge requires committed claim at cursor three",
-            ));
-        }
-        let pending = pending_row(chain.chain(), invitation_id, pending_device_id)?;
+        let chain = shared_history::first_join_chain(store, family, manager.relay_public_key(), 3)?;
+        let pending = pending_row(&chain, invitation_id, pending_device_id)?;
         let transition_id = random_v4()?;
         let challenge_id = random_v4()?;
         let hpke_id = random_v4()?;
@@ -108,7 +103,7 @@ impl FirstChallenge {
         let secret = random::<32>()?;
         let verifier_nonce = random::<24>()?;
         let context = context(
-            chain.chain(),
+            &chain,
             invitation_id,
             pending_device_id,
             pending.claim_hash,
@@ -148,7 +143,7 @@ impl FirstChallenge {
         ]))?;
         let objects = vec![(2, hpke_id, hpke_object), (3, verifier_id, verifier_object)];
         let candidate_bytes = build_candidate(
-            chain.chain(),
+            &chain,
             manager,
             invitation_id,
             pending_device_id,
@@ -272,20 +267,19 @@ impl FirstChallenge {
         if candidate != self.candidate_bytes {
             return Err(Error::Invalid("challenge candidate mismatch"));
         }
+        let history = store
+            .shared_history(self.family)?
+            .ok_or(Error::Invalid("shared history missing"))?;
+        let committed_prior = history
+            .entries
+            .iter()
+            .filter(|entry| entry.kind == 1)
+            .nth(2);
         let mut public = PublicHistorySession::resume(store, self.family)?;
-        if public.cursor() == 3 {
+        if committed_prior.is_none() {
             public.accept_control(store, committed)?;
-        } else {
-            let history = store
-                .shared_history(self.family)?
-                .ok_or(Error::Invalid("shared history missing"))?;
-            if history
-                .entries
-                .get(2)
-                .is_none_or(|entry| entry.kind != 1 || entry.committed_bytes != committed)
-            {
-                return Err(Error::Invalid("committed challenge differs from history"));
-            }
+        } else if committed_prior.is_some_and(|entry| entry.committed_bytes != committed) {
+            return Err(Error::Invalid("committed challenge differs from history"));
         }
         for (_, id, bytes) in &self.objects {
             public.accept_object(store, *id, bytes)?;
@@ -416,20 +410,12 @@ fn base_chain(
     family: FamilyHandle,
     relay_public: [u8; 32],
 ) -> Result<ControlChain, Error> {
-    let history = store
-        .shared_history(family)?
-        .ok_or(Error::Invalid("genesis missing"))?;
-    let mut chain = ControlChain::from_genesis(&history.genesis_bytes, relay_public)?;
-    for entry in history.entries.iter().take(2) {
-        if entry.kind != 1 {
-            return Err(Error::Invalid("initial join history not controls"));
-        }
-        chain.apply_control(&entry.committed_bytes)?;
-    }
-    if chain.last_global_cursor() != 3 {
-        return Err(Error::Invalid("claim history missing"));
-    }
-    Ok(chain)
+    Ok(shared_history::first_join_chain(
+        store,
+        family,
+        relay_public,
+        3,
+    )?)
 }
 fn objects_bytes(objects: &[ChallengeObject]) -> Result<Vec<u8>, Error> {
     Ok(cbor::encode(&Value::Array(

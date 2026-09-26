@@ -1157,6 +1157,8 @@
         "restart during history upload",
         "relay omits or substitutes a manifested chunk",
         "new local operation while promotion is staged",
+        "manager batch sealed at genesis retries exact bytes after join controls advance",
+        "manager batch commits before invitation and occupies a global cursor between genesis and issue; recipient verifies it before claiming",
         "unknown event fields"
       ]
     },

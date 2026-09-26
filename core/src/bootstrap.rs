@@ -59,6 +59,24 @@ impl InvitationBootstrap {
         issue_bytes: &[u8],
         invitation_sign_seed: [u8; 32],
     ) -> Result<Self, Error> {
+        Self::from_committed_issue_with_batches(
+            relay_origin,
+            relay_public_key,
+            genesis_bytes,
+            issue_bytes,
+            invitation_sign_seed,
+            &[],
+        )
+    }
+
+    pub fn from_committed_issue_with_batches(
+        relay_origin: &str,
+        relay_public_key: [u8; 32],
+        genesis_bytes: &[u8],
+        issue_bytes: &[u8],
+        invitation_sign_seed: [u8; 32],
+        prior_batches: &[(&[u8], &[u8])],
+    ) -> Result<Self, Error> {
         validate_origin(relay_origin)?;
         let genesis = control::verify_genesis(genesis_bytes, &relay_public_key)?;
         let issue = cbor::decode_with_limits(
@@ -99,7 +117,7 @@ impl InvitationBootstrap {
             invitation_sign_seed,
             issue_signed_hash: crypto::hash("control-signed", &cbor::encode(&signed)?)?,
         };
-        descriptor.verify_issue(genesis_bytes, issue_bytes)?;
+        descriptor.verify_issue_with_batches(genesis_bytes, issue_bytes, prior_batches)?;
         Ok(descriptor)
     }
 
@@ -218,11 +236,23 @@ impl InvitationBootstrap {
         genesis_bytes: &[u8],
         issue_bytes: &[u8],
     ) -> Result<ControlChain, Error> {
+        self.verify_issue_with_batches(genesis_bytes, issue_bytes, &[])
+    }
+
+    pub fn verify_issue_with_batches(
+        &self,
+        genesis_bytes: &[u8],
+        issue_bytes: &[u8],
+        prior_batches: &[(&[u8], &[u8])],
+    ) -> Result<ControlChain, Error> {
         let genesis = control::verify_genesis(genesis_bytes, &self.relay_public_key)?;
         if genesis.family_id() != self.family_id || genesis.head_hash() != self.genesis_head {
             return Err(Error::Invalid("linked genesis differs from verified bytes"));
         }
         let mut chain = ControlChain::from_genesis(genesis_bytes, self.relay_public_key)?;
+        for (envelope, receipt) in prior_batches {
+            chain.apply_public_batch(envelope, receipt)?;
+        }
         let issue = cbor::decode_with_limits(
             issue_bytes,
             cbor::Limits {

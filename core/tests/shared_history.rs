@@ -428,6 +428,7 @@ fn own_acceptance_and_interleaved_control_clear_outbox_atomically() {
         NextUpload::Fresh(pending) => pending,
         NextUpload::RetryExact(_) => panic!("first upload must be fresh"),
     };
+    let batch_head = session.head_hash();
     session.accept_control(&mut store, &wire(2)).unwrap();
     let receipt_body = Value::Map(vec![
         (1, Value::Integer(1)),
@@ -437,7 +438,7 @@ fn own_acceptance_and_interleaved_control_clear_outbox_atomically() {
         (5, Value::Bytes(pending.object_hash.to_vec())),
         (6, Value::Bool(true)),
         (7, Value::Integer(4)),
-        (8, Value::Bytes(session.head_hash().to_vec())),
+        (8, Value::Bytes(batch_head.to_vec())),
         (9, Value::Integer(1)),
         (10, Value::Null),
         (11, Value::Integer(2)),

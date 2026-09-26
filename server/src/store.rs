@@ -404,6 +404,7 @@ impl RelayStore {
             return Err(Error::Invalid("Family not promoted"));
         }
         let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
+        let controls = control_count(&self.db, path_family)?;
         let head: [u8; 32] = head
             .ok_or(Error::Invalid("Family head absent"))?
             .try_into()
@@ -411,16 +412,7 @@ impl RelayStore {
         let issue = authority::verify_first_invite_issue(
             &candidate_bytes,
             &genesis,
-            if cursor == 1 {
-                head
-            } else {
-                let committed: Vec<u8> = self.db.query_row(
-                    "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=1",
-                    params![&path_family[..]],
-                    |r| r.get(0),
-                )?;
-                crypto::hash("control-head", &committed)?
-            },
+            crypto::hash("control-head", &control_at(&self.db, path_family, 0)?)?,
         )?;
         if issue.family_id != path_family
             || issue.manifest.object_id != path_object
@@ -431,12 +423,8 @@ impl RelayStore {
         {
             return Err(Error::Invalid("issue stage differs from path or manifest"));
         }
-        if cursor >= 2 {
-            let first_issue: Vec<u8> = self.db.query_row(
-                "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=2 AND kind=1",
-                params![&path_family[..]],
-                |r| r.get(0),
-            )?;
+        if controls >= 2 {
+            let first_issue = control_at(&self.db, path_family, 1)?;
             let existing: Option<Vec<u8>> = self.db.query_row(
                 "SELECT object_bytes FROM committed_objects WHERE family_id=?1 AND object_id=?2 AND transition_id=?3",
                 params![&path_family[..],&object_id[..],&issue.transition_id[..]], |r| r.get(0),
@@ -448,7 +436,10 @@ impl RelayStore {
             }
             return Err(Error::Invalid("issue already committed with other bytes"));
         }
-        if cursor != 1 {
+        if controls != 1
+            || cursor < 1
+            || head != crypto::hash("control-head", &control_at(&self.db, path_family, 0)?)?
+        {
             return Err(Error::Invalid("first issue only"));
         }
         let tx = self.db.transaction()?;
@@ -497,23 +488,20 @@ impl RelayStore {
             params![&path_family[..]], |r| Ok((r.get::<_,Vec<u8>>(0)?,r.get::<_,i64>(1)?,r.get::<_,Vec<u8>>(2)?,r.get::<_,Vec<u8>>(3)?)),
         )?;
         let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
+        let controls = control_count(&self.db, path_family)?;
         let genesis_head = crypto::hash("control-head", &genesis_committed)?;
         let issue = authority::verify_first_invite_issue(candidate_bytes, &genesis, genesis_head)?;
         if issue.family_id != path_family {
             return Err(Error::Invalid("issue path Family mismatch"));
         }
-        if cursor >= 2 {
-            let committed: Vec<u8> = self.db.query_row(
-                "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=2",
-                params![&path_family[..]],
-                |r| r.get(0),
-            )?;
+        if controls >= 2 {
+            let committed = control_at(&self.db, path_family, 1)?;
             if control_candidate(&committed)? == candidate_bytes {
                 return Ok(receipt::control_commit_response(&committed)?);
             }
             return Err(Error::Invalid("first issue already differs"));
         }
-        if cursor != 1 || head != genesis_head {
+        if controls != 1 || head != genesis_head {
             return Err(Error::Invalid("issue prior head stale"));
         }
         let genesis_time = control_commit_time(&genesis_committed)?;
@@ -545,17 +533,24 @@ impl RelayStore {
         {
             return Err(Error::Invalid("issue membership object changed"));
         }
-        let committed =
-            receipt::commit_control(candidate_bytes, &self.relay_seed, 2, committed_ms)?;
+        let next_cursor = cursor
+            .checked_add(1)
+            .ok_or(Error::Invalid("cursor overflow"))?;
+        let committed = receipt::commit_control(
+            candidate_bytes,
+            &self.relay_seed,
+            next_cursor as u64,
+            committed_ms,
+        )?;
         let next_head = crypto::hash("control-head", &committed)?;
         tx.execute("INSERT INTO committed_objects(family_id,object_id,kind,object_hash,object_bytes,transition_id) VALUES(?1,?2,1,?3,?4,?5)",
             params![&path_family[..],&issue.manifest.object_id[..],&hash,&bytes,&issue.transition_id[..]])?;
         tx.execute(
-            "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,2,1,?2)",
-            params![&path_family[..], &committed],
+            "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,?2,1,?3)",
+            params![&path_family[..], next_cursor, &committed],
         )?;
-        let updated = tx.execute("UPDATE families SET cursor=2,head_hash=?2 WHERE family_id=?1 AND cursor=1 AND head_hash=?3",
-            params![&path_family[..],&next_head[..],&genesis_head[..]])?;
+        let updated = tx.execute("UPDATE families SET cursor=?2,head_hash=?3 WHERE family_id=?1 AND cursor=?4 AND head_hash=?5",
+            params![&path_family[..],next_cursor,&next_head[..],cursor,&genesis_head[..]])?;
         if updated != 1 {
             return Err(Error::Invalid("issue compare-and-swap failed"));
         }
@@ -582,12 +577,9 @@ impl RelayStore {
             params![&path_family[..]],|r|Ok((r.get::<_,Vec<u8>>(0)?,r.get::<_,i64>(1)?,r.get::<_,Vec<u8>>(2)?,r.get::<_,Vec<u8>>(3)?)),
         )?;
         let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
+        let controls = control_count(&self.db, path_family)?;
         let genesis_head = crypto::hash("control-head", &genesis_committed)?;
-        let issue_committed: Vec<u8> = self.db.query_row(
-            "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=2 AND kind=1",
-            params![&path_family[..]],
-            |r| r.get(0),
-        )?;
+        let issue_committed = control_at(&self.db, path_family, 1)?;
         let issue_candidate = control_candidate(&issue_committed)?;
         let issue = authority::verify_first_invite_issue(&issue_candidate, &genesis, genesis_head)?;
         let issue_head = crypto::hash("control-head", &issue_committed)?;
@@ -595,12 +587,8 @@ impl RelayStore {
         if claim.family_id != path_family {
             return Err(Error::Invalid("claim Family path mismatch"));
         }
-        if cursor == 3 {
-            let committed: Vec<u8> = self.db.query_row(
-                "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=3",
-                params![&path_family[..]],
-                |r| r.get(0),
-            )?;
+        if controls >= 3 {
+            let committed = control_at(&self.db, path_family, 2)?;
             if control_candidate(&committed)? == candidate_bytes {
                 return Ok(receipt::control_commit_response(&committed)?);
             }
@@ -608,7 +596,7 @@ impl RelayStore {
                 "invitation already claimed by another candidate",
             ));
         }
-        if cursor != 2 || head != issue_head {
+        if controls != 2 || head != issue_head {
             return Err(Error::Invalid("claim head stale"));
         }
         let issue_time = control_commit_time(&issue_committed)?;
@@ -618,16 +606,23 @@ impl RelayStore {
         if committed_ms < issue_time || committed_ms >= expiry {
             return Err(Error::Invalid("claim expired or relay time moved backward"));
         }
-        let committed =
-            receipt::commit_control(candidate_bytes, &self.relay_seed, 3, committed_ms)?;
+        let next_cursor = cursor
+            .checked_add(1)
+            .ok_or(Error::Invalid("cursor overflow"))?;
+        let committed = receipt::commit_control(
+            candidate_bytes,
+            &self.relay_seed,
+            next_cursor as u64,
+            committed_ms,
+        )?;
         let next_head = crypto::hash("control-head", &committed)?;
         let tx = self.db.transaction()?;
         tx.execute(
-            "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,3,1,?2)",
-            params![&path_family[..], &committed],
+            "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,?2,1,?3)",
+            params![&path_family[..], next_cursor, &committed],
         )?;
-        let updated=tx.execute("UPDATE families SET cursor=3,head_hash=?2 WHERE family_id=?1 AND cursor=2 AND head_hash=?3",
-            params![&path_family[..],&next_head[..],&issue_head[..]])?;
+        let updated=tx.execute("UPDATE families SET cursor=?2,head_hash=?3 WHERE family_id=?1 AND cursor=?4 AND head_hash=?5",
+            params![&path_family[..],next_cursor,&next_head[..],cursor,&issue_head[..]])?;
         if updated != 1 {
             return Err(Error::Invalid("claim compare-and-swap failed"));
         }
@@ -661,12 +656,8 @@ impl RelayStore {
         {
             return Err(Error::Invalid("challenge object path or bytes mismatch"));
         }
-        if prefix.cursor >= 4 {
-            let committed: Vec<u8> = self.db.query_row(
-                "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=4",
-                params![&path_family[..]],
-                |r| r.get(0),
-            )?;
+        if prefix.controls >= 4 {
+            let committed = control_at(&self.db, path_family, 3)?;
             let existing:Option<Vec<u8>>=self.db.query_row(
                 "SELECT object_bytes FROM committed_objects WHERE family_id=?1 AND object_id=?2 AND transition_id=?3",
                 params![&path_family[..],&object_id[..],&challenge.transition_id[..]],|r|r.get(0),
@@ -678,7 +669,7 @@ impl RelayStore {
             }
             return Err(Error::Invalid("challenge already committed differently"));
         }
-        if prefix.cursor != 3 || prefix.head != prefix.claim_head {
+        if prefix.controls != 3 || prefix.head != prefix.claim_head {
             return Err(Error::Invalid("challenge head stale"));
         }
         let tx = self.db.transaction()?;
@@ -730,18 +721,14 @@ impl RelayStore {
             &prefix.claim,
             prefix.claim_head,
         )?;
-        if prefix.cursor >= 4 {
-            let committed: Vec<u8> = self.db.query_row(
-                "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=4",
-                params![&path_family[..]],
-                |r| r.get(0),
-            )?;
+        if prefix.controls >= 4 {
+            let committed = control_at(&self.db, path_family, 3)?;
             if control_candidate(&committed)? == candidate_bytes {
                 return Ok(receipt::control_commit_response(&committed)?);
             }
             return Err(Error::Invalid("challenge already committed differently"));
         }
-        if prefix.cursor != 3
+        if prefix.controls != 3
             || prefix.head != prefix.claim_head
             || committed_ms < prefix.claim_time
         {
@@ -771,15 +758,23 @@ impl RelayStore {
             tx.execute("INSERT INTO committed_objects(family_id,object_id,kind,object_hash,object_bytes,transition_id) VALUES(?1,?2,?3,?4,?5,?6)",
                 params![&path_family[..],&entry.object_id[..],kind,&hash,&bytes,&challenge.transition_id[..]])?;
         }
-        let committed =
-            receipt::commit_control(candidate_bytes, &self.relay_seed, 4, committed_ms)?;
+        let next_cursor = prefix
+            .cursor
+            .checked_add(1)
+            .ok_or(Error::Invalid("cursor overflow"))?;
+        let committed = receipt::commit_control(
+            candidate_bytes,
+            &self.relay_seed,
+            next_cursor as u64,
+            committed_ms,
+        )?;
         let next_head = crypto::hash("control-head", &committed)?;
         tx.execute(
-            "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,4,1,?2)",
-            params![&path_family[..], &committed],
+            "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,?2,1,?3)",
+            params![&path_family[..], next_cursor, &committed],
         )?;
-        let updated=tx.execute("UPDATE families SET cursor=4,head_hash=?2 WHERE family_id=?1 AND cursor=3 AND head_hash=?3",
-            params![&path_family[..],&next_head[..],&prefix.claim_head[..]])?;
+        let updated=tx.execute("UPDATE families SET cursor=?2,head_hash=?3 WHERE family_id=?1 AND cursor=?4 AND head_hash=?5",
+            params![&path_family[..],next_cursor,&next_head[..],prefix.cursor,&prefix.claim_head[..]])?;
         if updated != 1 {
             return Err(Error::Invalid("challenge compare-and-swap failed"));
         }
@@ -804,14 +799,10 @@ impl RelayStore {
         committed_ms: i64,
     ) -> Result<Vec<u8>, Error> {
         let prefix = load_join_prefix(&self.db, self.relay_public, path_family)?;
-        if prefix.cursor < 4 {
+        if prefix.controls < 4 {
             return Err(Error::Invalid("challenge not committed"));
         }
-        let challenge_committed: Vec<u8> = self.db.query_row(
-            "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=4",
-            params![&path_family[..]],
-            |r| r.get(0),
-        )?;
+        let challenge_committed = control_at(&self.db, path_family, 3)?;
         let challenge = authority::verify_first_challenge(
             &control_candidate(&challenge_committed)?,
             &prefix.genesis,
@@ -828,33 +819,37 @@ impl RelayStore {
             &challenge,
             challenge_head,
         )?;
-        if prefix.cursor >= 5 {
-            let committed: Vec<u8> = self.db.query_row(
-                "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=5",
-                params![&path_family[..]],
-                |r| r.get(0),
-            )?;
+        if prefix.controls >= 5 {
+            let committed = control_at(&self.db, path_family, 4)?;
             if control_candidate(&committed)? == candidate_bytes {
                 return Ok(receipt::control_commit_response(&committed)?);
             }
             return Err(Error::Invalid("proof already committed differently"));
         }
-        if prefix.cursor != 4
+        if prefix.controls != 4
             || prefix.head != challenge_head
             || committed_ms < control_commit_time(&challenge_committed)?
         {
             return Err(Error::Invalid("proof head or relay time invalid"));
         }
-        let committed =
-            receipt::commit_control(candidate_bytes, &self.relay_seed, 5, committed_ms)?;
+        let next_cursor = prefix
+            .cursor
+            .checked_add(1)
+            .ok_or(Error::Invalid("cursor overflow"))?;
+        let committed = receipt::commit_control(
+            candidate_bytes,
+            &self.relay_seed,
+            next_cursor as u64,
+            committed_ms,
+        )?;
         let next_head = crypto::hash("control-head", &committed)?;
         let tx = self.db.transaction()?;
         tx.execute(
-            "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,5,1,?2)",
-            params![&path_family[..], &committed],
+            "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,?2,1,?3)",
+            params![&path_family[..], next_cursor, &committed],
         )?;
-        let updated=tx.execute("UPDATE families SET cursor=5,head_hash=?2 WHERE family_id=?1 AND cursor=4 AND head_hash=?3",
-            params![&path_family[..],&next_head[..],&challenge_head[..]])?;
+        let updated=tx.execute("UPDATE families SET cursor=?2,head_hash=?3 WHERE family_id=?1 AND cursor=?4 AND head_hash=?5",
+            params![&path_family[..],next_cursor,&next_head[..],prefix.cursor,&challenge_head[..]])?;
         if updated != 1 {
             return Err(Error::Invalid("proof compare-and-swap failed"));
         }
@@ -890,12 +885,8 @@ impl RelayStore {
         {
             return Err(Error::Invalid("admission object path or bytes mismatch"));
         }
-        if prefix.join.cursor >= 6 {
-            let committed: Vec<u8> = self.db.query_row(
-                "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=6",
-                params![&path_family[..]],
-                |r| r.get(0),
-            )?;
+        if prefix.join.controls >= 6 {
+            let committed = control_at(&self.db, path_family, 5)?;
             let existing:Option<Vec<u8>>=self.db.query_row(
                 "SELECT object_bytes FROM committed_objects WHERE family_id=?1 AND object_id=?2 AND transition_id=?3",
                 params![&path_family[..],&object_id[..],&admission.transition_id[..]],|r|r.get(0),
@@ -907,7 +898,7 @@ impl RelayStore {
             }
             return Err(Error::Invalid("admission already committed differently"));
         }
-        if prefix.join.cursor != 5 || prefix.join.head != prefix.proof_head {
+        if prefix.join.controls != 5 || prefix.join.head != prefix.proof_head {
             return Err(Error::Invalid("admission head stale"));
         }
         let tx = self.db.transaction()?;
@@ -961,18 +952,14 @@ impl RelayStore {
             &prefix.proof,
             prefix.proof_head,
         )?;
-        if prefix.join.cursor >= 6 {
-            let committed: Vec<u8> = self.db.query_row(
-                "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=6",
-                params![&path_family[..]],
-                |r| r.get(0),
-            )?;
+        if prefix.join.controls >= 6 {
+            let committed = control_at(&self.db, path_family, 5)?;
             if control_candidate(&committed)? == candidate_bytes {
                 return Ok(receipt::control_commit_response(&committed)?);
             }
             return Err(Error::Invalid("admission already committed differently"));
         }
-        if prefix.join.cursor != 5
+        if prefix.join.controls != 5
             || prefix.join.head != prefix.proof_head
             || committed_ms < prefix.proof_time
         {
@@ -1002,15 +989,24 @@ impl RelayStore {
             tx.execute("INSERT INTO committed_objects(family_id,object_id,kind,object_hash,object_bytes,transition_id) VALUES(?1,?2,?3,?4,?5,?6)",
                 params![&path_family[..],&entry.object_id[..],kind,&hash,&bytes,&admission.transition_id[..]])?;
         }
-        let committed =
-            receipt::commit_control(candidate_bytes, &self.relay_seed, 6, committed_ms)?;
+        let next_cursor = prefix
+            .join
+            .cursor
+            .checked_add(1)
+            .ok_or(Error::Invalid("cursor overflow"))?;
+        let committed = receipt::commit_control(
+            candidate_bytes,
+            &self.relay_seed,
+            next_cursor as u64,
+            committed_ms,
+        )?;
         let next_head = crypto::hash("control-head", &committed)?;
         tx.execute(
-            "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,6,1,?2)",
-            params![&path_family[..], &committed],
+            "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,?2,1,?3)",
+            params![&path_family[..], next_cursor, &committed],
         )?;
-        let updated=tx.execute("UPDATE families SET cursor=6,head_hash=?2 WHERE family_id=?1 AND cursor=5 AND head_hash=?3",
-            params![&path_family[..],&next_head[..],&prefix.proof_head[..]])?;
+        let updated=tx.execute("UPDATE families SET cursor=?2,head_hash=?3 WHERE family_id=?1 AND cursor=?4 AND head_hash=?5",
+            params![&path_family[..],next_cursor,&next_head[..],prefix.join.cursor,&prefix.proof_head[..]])?;
         if updated != 1 {
             return Err(Error::Invalid("admission compare-and-swap failed"));
         }
@@ -1029,59 +1025,67 @@ impl RelayStore {
     }
 
     /// Accept an epoch-one batch from the initial manager or first admitted
-    /// recipient. Later membership and rotation transitions are still closed.
+    /// recipient. The manager remains authorized throughout the join, so its
+    /// durable outbox may refer to any committed first-cohort control ancestor.
     pub fn commit_initial_cohort_batch(
         &mut self,
         path_family: [u8; 16],
         envelope_bytes: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        let prefix = load_proved_prefix(&self.db, self.relay_public, path_family)?;
-        if prefix.join.cursor < 6 {
-            return Err(Error::Invalid("initial recipient not admitted"));
-        }
-        let later_controls: i64 = self.db.query_row(
-            "SELECT COUNT(*) FROM entries WHERE family_id=?1 AND kind=1 AND cursor>6",
-            params![&path_family[..]],
-            |r| r.get(0),
-        )?;
-        if later_controls != 0 {
+        let controls = control_count(&self.db, path_family)?;
+        if !(1..=6).contains(&controls) {
             return Err(Error::Invalid("initial-cohort batch authority superseded"));
         }
-        let admitted: Vec<u8> = self.db.query_row(
-            "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=6 AND kind=1",
+        let (genesis_bytes, genesis_committed): (Vec<u8>, Vec<u8>) = self.db.query_row(
+            "SELECT candidate_bytes,committed_bytes FROM families WHERE family_id=?1 AND active=1",
             params![&path_family[..]],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
-        let admission = authority::verify_first_admission(
-            &control_candidate(&admitted)?,
-            &prefix.join.genesis,
-            &prefix.join.issue,
-            &prefix.join.claim,
-            &prefix.challenge,
-            &prefix.proof,
-            prefix.proof_head,
-        )?;
+        let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
         let author = batch_authority::claimed_author(envelope_bytes)?;
-        let signer = if author == prefix.join.genesis.manager_id {
-            prefix.join.genesis.manager_signing_key
-        } else if author == admission.recipient_id {
+        let signer = if author == genesis.manager_id {
+            genesis.manager_signing_key
+        } else if controls == 6 {
+            let prefix = load_proved_prefix(&self.db, self.relay_public, path_family)?;
+            let admitted = control_at(&self.db, path_family, 5)?;
+            let admission = authority::verify_first_admission(
+                &control_candidate(&admitted)?,
+                &prefix.join.genesis,
+                &prefix.join.issue,
+                &prefix.join.claim,
+                &prefix.challenge,
+                &prefix.proof,
+                prefix.proof_head,
+            )?;
+            if author != admission.recipient_id {
+                return Err(Error::Invalid("batch author not active"));
+            }
             prefix.join.claim.signing_public
         } else {
             return Err(Error::Invalid("batch author not active"));
         };
-        let batch = batch_authority::verify(
-            envelope_bytes,
-            path_family,
-            prefix.join.genesis.relay_id,
-            signer,
-        )?;
+        let batch = batch_authority::verify(envelope_bytes, path_family, genesis.relay_id, signer)?;
         if batch.family_id != path_family
-            || batch.relay_id != prefix.join.genesis.relay_id
+            || batch.relay_id != genesis.relay_id
             || batch.author_id != author
             || batch.epoch != 1
-            || batch.control_head != prefix.join.head
         {
             return Err(Error::Invalid("batch authority or epoch mismatch"));
+        }
+        let genesis_head = crypto::hash("control-head", &genesis_committed)?;
+        let known_ancestor = if author == genesis.manager_id {
+            let mut found = false;
+            for ordinal in 0..controls {
+                let committed = control_at(&self.db, path_family, ordinal)?;
+                found |= crypto::hash("control-head", &committed)? == batch.control_head;
+            }
+            found
+        } else {
+            crypto::hash("control-head", &control_at(&self.db, path_family, 5)?)?
+                == batch.control_head
+        };
+        if !known_ancestor || (controls == 1 && batch.control_head != genesis_head) {
+            return Err(Error::Invalid("batch control head not authorized ancestor"));
         }
         let tx = self.db.transaction()?;
         let prior: Option<(Vec<u8>, Vec<u8>)> = tx.query_row(
@@ -1095,17 +1099,11 @@ impl RelayStore {
             }
             return Ok(receipt::batch_commit_response(&old_receipt)?);
         }
-        let (cursor, head): (i64, Vec<u8>) = tx.query_row(
-            "SELECT cursor,head_hash FROM families WHERE family_id=?1 AND active=1",
+        let cursor: i64 = tx.query_row(
+            "SELECT cursor FROM families WHERE family_id=?1 AND active=1",
             params![&path_family[..]],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| r.get(0),
         )?;
-        let head: [u8; 32] = head
-            .try_into()
-            .map_err(|_| Error::Invalid("Family head length"))?;
-        if cursor < 6 || head != batch.control_head {
-            return Err(Error::Invalid("batch stale head"));
-        }
         let last: Option<i64> = tx.query_row(
             "SELECT MAX(sequence) FROM batch_results WHERE family_id=?1 AND author_id=?2",
             params![&path_family[..], &author[..]],
@@ -1364,22 +1362,18 @@ impl RelayStore {
         exact_path: &str,
         auth_bytes: &[u8],
     ) -> Result<ControlReader, Error> {
-        let saved: Option<(Vec<u8>,i64,Vec<u8>)> = self
+        let saved: Option<(Vec<u8>,Vec<u8>)> = self
             .db
             .query_row(
-                "SELECT candidate_bytes,cursor,committed_bytes FROM families WHERE family_id=?1 AND active=1",
+                "SELECT candidate_bytes,committed_bytes FROM families WHERE family_id=?1 AND active=1",
                 params![&family_id[..]],
-                |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
+                |r| Ok((r.get(0)?,r.get(1)?)),
             )
             .optional()?;
-        let (genesis_bytes, cursor, genesis_committed) =
+        let (genesis_bytes, genesis_committed) =
             saved.ok_or(Error::Invalid("Family not active"))?;
-        let later_controls: i64 = self.db.query_row(
-            "SELECT COUNT(*) FROM entries WHERE family_id=?1 AND kind=1 AND cursor>6",
-            params![&family_id[..]],
-            |r| r.get(0),
-        )?;
-        if later_controls != 0 {
+        let controls = control_count(&self.db, family_id)?;
+        if !(1..=6).contains(&controls) {
             return Err(Error::Invalid("initial-cohort reader authority superseded"));
         }
         let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
@@ -1387,33 +1381,25 @@ impl RelayStore {
         let (reader, signing_key) = if signer == genesis.manager_id {
             (ControlReader::Manager, genesis.manager_signing_key)
         } else {
-            if cursor < 2 {
+            if controls < 2 {
                 return Err(Error::Invalid("reader has no committed issue"));
             }
             let genesis_head = crypto::hash("control-head", &genesis_committed)?;
-            let issue_committed: Vec<u8> = self.db.query_row(
-                "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=2",
-                params![&family_id[..]],
-                |r| r.get(0),
-            )?;
+            let issue_committed = control_at(&self.db, family_id, 1)?;
             let issue = authority::verify_first_invite_issue(
                 &control_candidate(&issue_committed)?,
                 &genesis,
                 genesis_head,
             )?;
-            if signer == issue.invitation_id && cursor == 2 {
+            if signer == issue.invitation_id && controls == 2 {
                 (
                     ControlReader::Invitation {
                         issue_object: issue.manifest.object_id,
                     },
                     issue.invite_public,
                 )
-            } else if cursor >= 3 {
-                let claim_committed: Vec<u8> = self.db.query_row(
-                    "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=3",
-                    params![&family_id[..]],
-                    |r| r.get(0),
-                )?;
+            } else if controls >= 3 {
+                let claim_committed = control_at(&self.db, family_id, 2)?;
                 let issue_head = crypto::hash("control-head", &issue_committed)?;
                 let claim = authority::verify_first_claim(
                     &control_candidate(&claim_committed)?,
@@ -1424,13 +1410,9 @@ impl RelayStore {
                 if signer != claim.device_id {
                     return Err(Error::Invalid("reader not pending device"));
                 }
-                if cursor >= 6 {
+                if controls >= 6 {
                     let proved = load_proved_prefix(&self.db, self.relay_public, family_id)?;
-                    let admitted: Vec<u8> = self.db.query_row(
-                        "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=6",
-                        params![&family_id[..]],
-                        |r| r.get(0),
-                    )?;
+                    let admitted = control_at(&self.db, family_id, 5)?;
                     let admission = authority::verify_first_admission(
                         &control_candidate(&admitted)?,
                         &proved.join.genesis,
@@ -1445,12 +1427,8 @@ impl RelayStore {
                     }
                     (ControlReader::Active, claim.signing_public)
                 } else {
-                    let challenge_object = if cursor >= 4 {
-                        let challenge_committed: Vec<u8> = self.db.query_row(
-                            "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=4",
-                            params![&family_id[..]],
-                            |r| r.get(0),
-                        )?;
+                    let challenge_object = if controls >= 4 {
+                        let challenge_committed = control_at(&self.db, family_id, 3)?;
                         let challenge = authority::verify_first_challenge(
                             &control_candidate(&challenge_committed)?,
                             &genesis,
@@ -1570,6 +1548,24 @@ fn control_candidate(committed: &[u8]) -> Result<Vec<u8>, Error> {
     ]))?)
 }
 
+// Join transitions have a fixed order, but data batches occupy the same global
+// cursor space. Locate a control by its ordinal rather than assuming its cursor.
+fn control_at(db: &Connection, family: [u8; 16], ordinal: i64) -> Result<Vec<u8>, Error> {
+    Ok(db.query_row(
+        "SELECT committed_bytes FROM entries WHERE family_id=?1 AND kind=1 ORDER BY cursor LIMIT 1 OFFSET ?2",
+        params![&family[..], ordinal],
+        |r| r.get(0),
+    )?)
+}
+
+fn control_count(db: &Connection, family: [u8; 16]) -> Result<i64, Error> {
+    Ok(db.query_row(
+        "SELECT COUNT(*) FROM entries WHERE family_id=?1 AND kind=1",
+        params![&family[..]],
+        |r| r.get(0),
+    )?)
+}
+
 struct JoinPrefix {
     genesis: authority::GenesisCandidate,
     issue: authority::IssueCandidate,
@@ -1577,6 +1573,7 @@ struct JoinPrefix {
     claim_head: [u8; 32],
     claim_time: i64,
     cursor: i64,
+    controls: i64,
     head: [u8; 32],
 }
 fn load_join_prefix(
@@ -1588,27 +1585,20 @@ fn load_join_prefix(
         "SELECT candidate_bytes,committed_bytes,cursor,head_hash FROM families WHERE family_id=?1 AND active=1",
         params![&family[..]],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)),
     )?;
-    if cursor < 3 {
+    let controls = control_count(db, family)?;
+    if controls < 3 {
         return Err(Error::Invalid("claim not committed"));
     }
     let genesis = authority::verify_genesis_candidate(&genesis_bytes, &relay_public)?;
     let genesis_head = crypto::hash("control-head", &genesis_committed)?;
-    let issue_committed: Vec<u8> = db.query_row(
-        "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=2",
-        params![&family[..]],
-        |r| r.get(0),
-    )?;
+    let issue_committed = control_at(db, family, 1)?;
     let issue = authority::verify_first_invite_issue(
         &control_candidate(&issue_committed)?,
         &genesis,
         genesis_head,
     )?;
     let issue_head = crypto::hash("control-head", &issue_committed)?;
-    let claim_committed: Vec<u8> = db.query_row(
-        "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=3",
-        params![&family[..]],
-        |r| r.get(0),
-    )?;
+    let claim_committed = control_at(db, family, 2)?;
     let claim = authority::verify_first_claim(
         &control_candidate(&claim_committed)?,
         &genesis,
@@ -1623,6 +1613,7 @@ fn load_join_prefix(
         claim_head,
         claim_time: control_commit_time(&claim_committed)?,
         cursor,
+        controls,
         head: head
             .try_into()
             .map_err(|_| Error::Invalid("Family head length"))?,
@@ -1642,14 +1633,10 @@ fn load_proved_prefix(
     family: [u8; 16],
 ) -> Result<ProvedPrefix, Error> {
     let join = load_join_prefix(db, relay_public, family)?;
-    if join.cursor < 5 {
+    if join.controls < 5 {
         return Err(Error::Invalid("proof not committed"));
     }
-    let challenge_committed: Vec<u8> = db.query_row(
-        "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=4",
-        params![&family[..]],
-        |r| r.get(0),
-    )?;
+    let challenge_committed = control_at(db, family, 3)?;
     let challenge = authority::verify_first_challenge(
         &control_candidate(&challenge_committed)?,
         &join.genesis,
@@ -1658,11 +1645,7 @@ fn load_proved_prefix(
         join.claim_head,
     )?;
     let challenge_head = crypto::hash("control-head", &challenge_committed)?;
-    let proof_committed: Vec<u8> = db.query_row(
-        "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=5",
-        params![&family[..]],
-        |r| r.get(0),
-    )?;
+    let proof_committed = control_at(db, family, 4)?;
     let proof = authority::verify_first_proof(
         &control_candidate(&proof_committed)?,
         &join.genesis,

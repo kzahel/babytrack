@@ -78,12 +78,10 @@ impl FirstProof {
         if store.prepared_control(family, 5)?.is_some() {
             return Self::resume(store, enrollment, local_wrapping_key);
         }
-        let public = PublicHistorySession::resume(store, family)?;
-        if public.cursor() != 4 {
-            return Err(Error::Invalid("proof requires committed challenge"));
-        }
+        let public =
+            shared_history::first_join_chain(store, family, enrollment.relay_public_key()?, 4)?;
         let transition_id = random_v4()?;
-        let (candidate_bytes, signature) = build(store, public.chain(), enrollment, transition_id)?;
+        let (candidate_bytes, signature) = build(store, &public, enrollment, transition_id)?;
         let secret_nonce = random::<24>()?;
         let secret_ciphertext = crypto::seal_with_nonce(
             local_wrapping_key,
@@ -166,20 +164,19 @@ impl FirstProof {
         if candidate != self.candidate_bytes {
             return Err(Error::Invalid("proof candidate mismatch"));
         }
+        let history = store
+            .shared_history(self.family)?
+            .ok_or(Error::Invalid("shared history absent"))?;
+        let committed_prior = history
+            .entries
+            .iter()
+            .filter(|entry| entry.kind == 1)
+            .nth(3);
         let mut public = PublicHistorySession::resume(store, self.family)?;
-        if public.cursor() == 4 {
+        if committed_prior.is_none() {
             public.accept_control(store, committed)?;
-        } else {
-            let history = store
-                .shared_history(self.family)?
-                .ok_or(Error::Invalid("shared history absent"))?;
-            if history
-                .entries
-                .get(3)
-                .is_none_or(|entry| entry.kind != 1 || entry.committed_bytes != committed)
-            {
-                return Err(Error::Invalid("proof differs from pinned history"));
-            }
+        } else if committed_prior.is_some_and(|entry| entry.committed_bytes != committed) {
+            return Err(Error::Invalid("proof differs from pinned history"));
         }
         Ok(())
     }
@@ -246,20 +243,12 @@ fn chain_through_challenge(
     family: FamilyHandle,
     relay_public: [u8; 32],
 ) -> Result<ControlChain, Error> {
-    let history = store
-        .shared_history(family)?
-        .ok_or(Error::Invalid("genesis missing"))?;
-    let mut chain = ControlChain::from_genesis(&history.genesis_bytes, relay_public)?;
-    for entry in history.entries.iter().take(3) {
-        if entry.kind != 1 {
-            return Err(Error::Invalid("initial join history not controls"));
-        }
-        chain.apply_control(&entry.committed_bytes)?;
-    }
-    if chain.last_global_cursor() != 4 {
-        return Err(Error::Invalid("challenge history missing"));
-    }
-    Ok(chain)
+    Ok(shared_history::first_join_chain(
+        store,
+        family,
+        relay_public,
+        4,
+    )?)
 }
 fn secret_aad(
     family: FamilyHandle,

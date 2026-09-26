@@ -35,7 +35,7 @@ slice.
 | Next demonstrable proof | Fresh random-key manager and recipient stores complete invite, claim, challenge, proof, grant, encrypted promotion of existing records, and subsequent encrypted child batches through HTTP writes and authenticated relay reads. Next: broaden membership/removal and exercise transport loss and polling. |
 | Next dependent slice | Extend local-only portable backup to shared current state and pending work, implement private copy, and complete browser outbox before the M0 exit gate. |
 | Next independent review | The required early M0 authority review follows implemented invite, grant, and rotation. |
-| Open advisory | The [first-cohort review](003-m0-foundation.md#advisory-first-cohort-sync-review) found two eventual-sync blockers: same-epoch ancestor batches can wedge during join, and definite batch rejections lack signed durable results. Earlier byte/crypto findings remain tracked in 003. Full membership authority, later epochs, and browser outbox remain before shared sync. |
+| Open advisory | The [first-cohort review](003-m0-foundation.md#advisory-first-cohort-sync-review) found two eventual-sync blockers. The ancestor batch and interleaved join path now pass a real-relay regression; definite batch rejections still lack signed durable results. Earlier byte/crypto findings remain tracked in 003. Full membership authority, later epochs, and browser outbox remain before shared sync. |
 | CI signal today | Read-only Rust, native-binding, and browser jobs are required on every push/PR. Local checks passed; a remote Actions result has not been verified here. |
 
 Update this card when the active slice changes. Do not copy fine-grained

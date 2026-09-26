@@ -478,6 +478,15 @@ FAIL** for first-cohort eventual sync, not the formal early M0 gate.
 | High: a manager batch durably staged against genesis can be rejected before admission and then forever rejected for a stale exact head, despite the same epoch and continued authority. | Blocker. Let manager batches commit from genesis, verify a known same-epoch ancestor and continuous authorization, and remove fixed join cursor positions. Add FS49/BATCH06 with a batch staged before joining and controls interleaved with batches. |
 | Medium: identifiable definite batch rejections return unsigned HTTP 409 and have no durable result. A cloned credential's conflicting sequence can leave an exact outbox item stuck. | Blocker. Persist signed rejection receipts and expose exact retries/results; after verified competing acceptance, retain the operation but archive/resequence its old envelope. Bind BATCH02/BATCH04 and lost-response variants. |
 
+The high finding is now covered by two real-relay HTTP paths in
+`cli/tests/dynamic_creation.rs`: a genesis-sealed manager outbox survives the
+whole join and uploads exact bytes afterward, and a manager batch commits at
+cursor 2 before the invitation, shifts every later control cursor, and is
+verified by the recipient before its claim. Relay authority indexes controls
+by order, accepts a continuously authorized manager's same-epoch ancestor,
+and the core replays interleaved entries before preparing later controls.
+The medium rejection finding remains open.
+
 The reviewer found no key/plaintext disclosure to relay storage, keyless
 admission, forged device authorship, or deletion of committed local
 operations in this subset. It called out unexecuted multi-chunk boundaries,

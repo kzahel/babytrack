@@ -312,3 +312,28 @@ impl PublicHistorySession {
         Ok(())
     }
 }
+
+/// Replay the complete local prefix, including data entries between join
+/// controls, before building the next first-cohort transition.
+pub fn first_join_chain(
+    store: &SqliteStore,
+    family: FamilyHandle,
+    relay_public: [u8; 32],
+    expected_controls: usize,
+) -> Result<ControlChain, Error> {
+    let history = store
+        .shared_history(family)?
+        .ok_or(Error::Invalid("genesis missing"))?;
+    if history.relay_public_key != relay_public
+        || history
+            .entries
+            .iter()
+            .filter(|entry| entry.kind == 1)
+            .count()
+            + 1
+            != expected_controls
+    {
+        return Err(Error::Invalid("first join control prefix differs"));
+    }
+    Ok(PublicHistorySession::resume(store, family)?.chain().clone())
+}

@@ -86,6 +86,24 @@ impl EnrollmentAttempt {
         issue_bytes: &[u8],
         local_wrapping_key: &[u8; 32],
     ) -> Result<Self, Error> {
+        Self::prepare_with_batches(
+            store,
+            bootstrap,
+            genesis_bytes,
+            issue_bytes,
+            &[],
+            local_wrapping_key,
+        )
+    }
+
+    pub fn prepare_with_batches(
+        store: &mut SqliteStore,
+        bootstrap: &InvitationBootstrap,
+        genesis_bytes: &[u8],
+        issue_bytes: &[u8],
+        prior_batches: &[(&[u8], &[u8])],
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
         if store.enrollment_attempt(bootstrap.family_id())?.is_some() {
             let existing = Self::resume(store, bootstrap.family_id(), local_wrapping_key)?;
             if existing.bootstrap_fragment != bootstrap.to_fragment()? {
@@ -95,7 +113,8 @@ impl EnrollmentAttempt {
             }
             return Ok(existing);
         }
-        let chain = bootstrap.verify_issue(genesis_bytes, issue_bytes)?;
+        let chain =
+            bootstrap.verify_issue_with_batches(genesis_bytes, issue_bytes, prior_batches)?;
         let family = FamilyHandle {
             family_id: bootstrap.family_id(),
             device_id: random_v4()?,
@@ -139,9 +158,10 @@ impl EnrollmentAttempt {
             genesis_bytes,
             bootstrap.relay_public_key_internal(),
         )?;
-        if public.cursor() == 1 {
-            public.accept_control(store, issue_bytes)?;
+        for (envelope, receipt) in prior_batches {
+            public.accept_batch(store, envelope, receipt)?;
         }
+        public.accept_control(store, issue_bytes)?;
         Self::resume(store, family.family_id, local_wrapping_key)
     }
 
@@ -182,7 +202,25 @@ impl EnrollmentAttempt {
         {
             return Err(Error::Invalid("stored enrollment context mismatch"));
         }
-        let chain = bootstrap.verify_issue(&row.genesis_bytes, &row.issue_bytes)?;
+        let history = store
+            .shared_history(row.family)?
+            .ok_or(Error::Invalid("shared history absent after enrollment"))?;
+        let prior_batches: Vec<(&[u8], &[u8])> = history
+            .entries
+            .iter()
+            .take_while(|entry| entry.kind == 2)
+            .map(|entry| {
+                (
+                    entry.committed_bytes.as_slice(),
+                    entry.receipt_bytes.as_slice(),
+                )
+            })
+            .collect();
+        let chain = bootstrap.verify_issue_with_batches(
+            &row.genesis_bytes,
+            &row.issue_bytes,
+            &prior_batches,
+        )?;
         let device_sign_seed = fixed(&parts[2])?;
         let device_agreement_private = fixed(&parts[3])?;
         let enrollment_nonce = fixed(&parts[4])?;
@@ -205,16 +243,14 @@ impl EnrollmentAttempt {
             &row.genesis_bytes,
             bootstrap.relay_public_key_internal(),
         )?;
-        if public.cursor() == 1 {
+        if public.cursor() < chain.last_global_cursor() {
             public.accept_control(store, &row.issue_bytes)?;
         }
-        let history = store
-            .shared_history(row.family)?
-            .ok_or(Error::Invalid("shared history absent after enrollment"))?;
         if history
             .entries
-            .first()
-            .is_none_or(|first| first.kind != 1 || first.committed_bytes != row.issue_bytes)
+            .iter()
+            .find(|entry| entry.kind == 1)
+            .is_none_or(|first| first.committed_bytes != row.issue_bytes)
         {
             return Err(Error::Invalid("stored issue differs from pinned history"));
         }

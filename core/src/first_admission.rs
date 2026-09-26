@@ -96,26 +96,19 @@ impl FirstAdmission {
             }
             return Ok(existing);
         }
-        let public = PublicHistorySession::resume(store, family)?;
-        if public.cursor() != 5 {
-            return Err(Error::Invalid("admission requires committed key proof"));
-        }
+        let public =
+            shared_history::first_join_chain(store, family, manager.relay_public_key(), 5)?;
         verify_committed_proof(store, manager, invitation_id)?;
-        let pending = pending_row(public.chain(), invitation_id, recipient_id)?;
+        let pending = pending_row(&public, invitation_id, recipient_id)?;
         let transition_id = random_v4()?;
         let membership_id = random_v4()?;
         let grant_id = random_v4()?;
         let membership_nonce = random::<24>()?;
-        let (delta, next_state, commitment) = admission_state(
-            public.chain(),
-            manager,
-            invitation_id,
-            recipient_id,
-            &pending,
-        )?;
+        let (delta, next_state, commitment) =
+            admission_state(&public, manager, invitation_id, recipient_id, &pending)?;
         let core_hash = control_build::core_hash(
             family,
-            public.chain().relay_id(),
+            public.relay_id(),
             public.head_hash(),
             transition_id,
             6,
@@ -193,7 +186,7 @@ impl FirstAdmission {
         ];
         let candidate_bytes = control_build::candidate(
             family,
-            public.chain().relay_id(),
+            public.relay_id(),
             public.head_hash(),
             transition_id,
             6,
@@ -330,13 +323,14 @@ impl FirstAdmission {
             .shared_history(self.family)?
             .ok_or(Error::Invalid("shared history absent"))?;
         let mut public = PublicHistorySession::resume(store, self.family)?;
-        if public.cursor() == 5 {
-            public.accept_control(store, committed)?;
-        } else if history
+        let committed_prior = history
             .entries
-            .get(4)
-            .is_none_or(|entry| entry.kind != 1 || entry.committed_bytes != committed)
-        {
+            .iter()
+            .filter(|entry| entry.kind == 1)
+            .nth(4);
+        if committed_prior.is_none() {
+            public.accept_control(store, committed)?;
+        } else if committed_prior.is_some_and(|entry| entry.committed_bytes != committed) {
             return Err(Error::Invalid("admission differs from pinned history"));
         }
         for (_, id, bytes) in &self.objects {
@@ -447,7 +441,9 @@ fn verify_committed_proof(
         .ok_or(Error::Invalid("shared history absent"))?;
     let proof = history
         .entries
-        .get(3)
+        .iter()
+        .filter(|entry| entry.kind == 1)
+        .nth(3)
         .ok_or(Error::Invalid("proof not committed"))?;
     if proof.kind != 1 {
         return Err(Error::Invalid("proof entry not control"));
@@ -480,20 +476,12 @@ fn chain_through_proof(
     family: FamilyHandle,
     relay_public: [u8; 32],
 ) -> Result<ControlChain, Error> {
-    let history = store
-        .shared_history(family)?
-        .ok_or(Error::Invalid("genesis missing"))?;
-    let mut chain = ControlChain::from_genesis(&history.genesis_bytes, relay_public)?;
-    for entry in history.entries.iter().take(4) {
-        if entry.kind != 1 {
-            return Err(Error::Invalid("initial join history not controls"));
-        }
-        chain.apply_control(&entry.committed_bytes)?;
-    }
-    if chain.last_global_cursor() != 5 {
-        return Err(Error::Invalid("proof history missing"));
-    }
-    Ok(chain)
+    Ok(shared_history::first_join_chain(
+        store,
+        family,
+        relay_public,
+        5,
+    )?)
 }
 fn objects_bytes(objects: &[AdmissionObject]) -> Result<Vec<u8>, Error> {
     Ok(cbor::encode(&Value::Array(

@@ -1310,7 +1310,7 @@ impl ControlChain {
             || receipt.batch_id != header.batch_id
             || receipt.object_hash != signed.object_hash()
             || receipt.cursor != expected_cursor
-            || receipt.control_head != self.head_hash
+            || receipt.control_head != header.control_head
             || receipt.device_sequence != expected_sequence
             || receipt.next_expected_sequence
                 != expected_sequence

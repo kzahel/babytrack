@@ -196,6 +196,110 @@ fn admission_moves_proved_pending_device_to_active_and_repair_preserves_role() {
     );
     assert_eq!(chain.last_global_cursor(), 9);
 }
+
+#[test]
+fn committed_challenge_objects_prove_both_pending_keys_without_granting_data_access() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../tests/vectors/contiguous-chain-v1.json")).unwrap();
+    let transitions = fixture["transitions"].as_array().unwrap();
+    let relay_public =
+        bytes::<32>("2543b92ff1095511476adc8369db6ddc933665a11978dda1404ee1066ca9559d");
+    let wire = |index: usize| hex_bytes(transitions[index]["committed_cbor_hex"].as_str().unwrap());
+    let mut chain = ControlChain::from_genesis(&wire(0), relay_public).unwrap();
+    chain.apply_invite_issue(&wire(1)).unwrap();
+    chain.apply_invite_claim(&wire(2)).unwrap();
+    chain.apply_holder_challenge(&wire(3)).unwrap();
+    let invitation_id = bytes::<16>("623e4567e89b42d3a456426614174000");
+    let challenge = chain.latest_challenge(&invitation_id).unwrap();
+    let objects = &fixture["objects_by_id_hex"];
+    let hpke_object = hex_bytes(
+        objects["363e4567e89b42d3a456426614174000"]
+            .as_str()
+            .unwrap(),
+    );
+    let verifier_object = hex_bytes(
+        objects["373e4567e89b42d3a456426614174000"]
+            .as_str()
+            .unwrap(),
+    );
+    let agree_seed = bytes::<32>(
+        fixture["test_only_inputs"]["recipient_agreement_seed_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let sign_seed = bytes::<32>(
+        fixture["test_only_inputs"]["recipient_sign_seed_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let proof = challenge
+        .prepare_proof(&hpke_object, &agree_seed, &sign_seed)
+        .unwrap();
+    let proof_control = cbor::decode(&wire(4)).unwrap();
+    let Value::Map(root) = &proof_control else {
+        unreachable!()
+    };
+    let Value::Map(unsigned) = &root[0].1 else {
+        unreachable!()
+    };
+    let Value::Map(delta) = &unsigned[6].1 else {
+        unreachable!()
+    };
+    assert_eq!(delta[3].1, Value::Bytes(proof.signature.to_vec()));
+    assert!(
+        challenge
+            .prepare_proof(&hpke_object, &[0u8; 32], &sign_seed)
+            .is_err()
+    );
+    let mut tampered = hpke_object.clone();
+    *tampered.last_mut().unwrap() ^= 1;
+    assert!(
+        challenge
+            .prepare_proof(&tampered, &agree_seed, &sign_seed)
+            .is_err()
+    );
+    chain.apply_key_proof(&wire(4)).unwrap();
+    let proof_state = cbor::decode(&chain.state_bytes().unwrap()).unwrap();
+    let Value::Map(state) = proof_state else {
+        unreachable!()
+    };
+    let Value::Array(pending) = &state[5].1 else {
+        unreachable!()
+    };
+    let Value::Array(row) = &pending[0] else {
+        unreachable!()
+    };
+    assert_eq!(row[8], Value::Bytes(proof.proof_hash.to_vec()));
+    let key = bytes::<32>(
+        fixture["test_only_inputs"]["epoch_1_key_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let verified_key = chain.verify_current_epoch_key(&key).unwrap();
+    assert!(
+        chain
+            .verify_latest_holder_proof(
+                &invitation_id,
+                &verifier_object,
+                &verified_key,
+                &proof.signature
+            )
+            .is_ok()
+    );
+    let mut wrong_proof = proof.signature;
+    wrong_proof[0] ^= 1;
+    assert!(
+        chain
+            .verify_latest_holder_proof(
+                &invitation_id,
+                &verifier_object,
+                &verified_key,
+                &wrong_proof
+            )
+            .is_err()
+    );
+    assert!(chain.verify_current_epoch_key(&[0u8; 32]).is_err());
+}
 fn bytes<const N: usize>(hex: &str) -> [u8; N] {
     hex_bytes(hex).try_into().unwrap()
 }

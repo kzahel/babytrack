@@ -190,6 +190,13 @@ epoch, keeps a manager, cancels affected unused invites, clears pending
 challenge/proof state, and rejects a fresh old-key write from the removed
 device. The rotation keyring and recipient grants still need cryptographic
 checks before epoch-two data can be used.
+The committed holder-challenge manifest now yields an opaque challenge
+context in the core. The pending device checks the addressed HPKE object's
+hash, claimed agreement/signing keys, context, and committed secret hash
+before signing the proof. A holder checks the verifier object's hash,
+committed epoch key, challenge hash, pending signature, and committed proof
+hash. The contiguous chain's actual object bytes pass; wrong keys and
+tampered bytes fail. Grant-object readiness remains open.
 `FamilySession` now consumes the fixed genesis and `BATCHBYTE01` acceptance
 through a core-owned path: it verifies the manager, head, epoch, sequence,
 object hash, cursor, and relay-signed receipt before projecting the first

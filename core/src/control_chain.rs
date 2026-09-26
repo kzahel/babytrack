@@ -8,7 +8,10 @@ use crate::{
     batch,
     cbor::{self, Value},
     control::{self, Genesis, array, exact_map, fixed, number, signed_number},
-    crypto, session,
+    crypto,
+    handoff::{self, VerifiedChallenge},
+    projection::VerifiedEpochKey,
+    session,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,6 +20,7 @@ pub enum Error {
     Cbor(cbor::Error),
     Crypto(crypto::Error),
     Batch(batch::Error),
+    Handoff(handoff::Error),
     Invalid(&'static str),
     UnsupportedKind,
 }
@@ -40,6 +44,11 @@ impl From<batch::Error> for Error {
         Self::Batch(value)
     }
 }
+impl From<handoff::Error> for Error {
+    fn from(value: handoff::Error) -> Self {
+        Self::Handoff(value)
+    }
+}
 
 pub struct ControlChain {
     genesis: Genesis,
@@ -49,19 +58,13 @@ pub struct ControlChain {
     last_global_cursor: u64,
     last_commit_ms: i64,
     issue_times: BTreeMap<[u8; 16], i64>,
-    challenges: BTreeMap<[u8; 16], ChallengeRecord>,
+    challenges: BTreeMap<[u8; 16], VerifiedChallenge>,
     seen_challenge_ids: BTreeSet<[u8; 16]>,
     admissions: BTreeMap<[u8; 16], [u8; 16]>,
     known_heads: BTreeMap<[u8; 32], u32>,
     next_sequences: BTreeMap<[u8; 16], u64>,
     seen_batch_ids: BTreeSet<[u8; 16]>,
     current_commitment: [u8; 32],
-}
-
-struct ChallengeRecord {
-    device_id: [u8; 16],
-    challenge_id: [u8; 16],
-    challenge_hash: [u8; 32],
 }
 
 struct FinalizePlan<'a> {
@@ -115,6 +118,49 @@ impl ControlChain {
     }
     pub fn state_bytes(&self) -> Result<Vec<u8>, Error> {
         Ok(cbor::encode(&self.state)?)
+    }
+
+    pub fn latest_challenge(&self, invitation_id: &[u8; 16]) -> Option<&VerifiedChallenge> {
+        self.challenges.get(invitation_id)
+    }
+
+    pub fn verify_current_epoch_key(&self, key: &[u8; 32]) -> Result<VerifiedEpochKey, Error> {
+        let epoch = u32::try_from(self.current_epoch()?)
+            .map_err(|_| Error::Invalid("epoch outside u32"))?;
+        let bytes = cbor::encode(&Value::Array(vec![
+            Value::Bytes(self.genesis.family_id().to_vec()),
+            Value::Integer(epoch.into()),
+            Value::Bytes(key.to_vec()),
+        ]))?;
+        if crypto::hash("epoch-key", &bytes)? != self.current_commitment {
+            return Err(Error::Invalid(
+                "key differs from committed epoch commitment",
+            ));
+        }
+        Ok(VerifiedEpochKey {
+            family_id: self.genesis.family_id(),
+            epoch,
+            bytes: *key,
+        })
+    }
+
+    pub fn verify_latest_holder_proof(
+        &self,
+        invitation_id: &[u8; 16],
+        verifier_object: &[u8],
+        key: &VerifiedEpochKey,
+        proof_signature: &[u8; 64],
+    ) -> Result<(), Error> {
+        let challenge = self
+            .challenges
+            .get(invitation_id)
+            .ok_or(Error::Invalid("no latest challenge"))?;
+        let state = exact_map(&self.state, 7)?;
+        let pending = find_row(&state[5].1, 9, 0, *invitation_id)?
+            .ok_or(Error::Invalid("proof no longer pending"))?;
+        let committed_hash = fixed::<32>(&pending[8])?;
+        challenge.verify_holder_proof(verifier_object, key, proof_signature, &committed_hash)?;
+        Ok(())
     }
 
     pub fn apply_invite_issue(&mut self, bytes: &[u8]) -> Result<(), Error> {
@@ -529,6 +575,48 @@ impl ControlChain {
         if fixed::<16>(&pending[1])? != device_id {
             return Err(Error::Invalid("challenge device mismatch"));
         }
+        let claim_hash = fixed::<32>(&pending[6])?;
+        let agree_public = fixed::<32>(&pending[3])?;
+        let sign_public = fixed::<32>(&pending[2])?;
+        let key_version: u32 = number(&pending[4])?
+            .try_into()
+            .map_err(|_| Error::Invalid("key version outside u32"))?;
+        let epoch: u32 = self
+            .current_epoch()?
+            .try_into()
+            .map_err(|_| Error::Invalid("epoch outside u32"))?;
+        let context_bytes = cbor::encode(&Value::Array(vec![
+            Value::Bytes(self.genesis.family_id().to_vec()),
+            Value::Bytes(self.genesis.relay_id().to_vec()),
+            Value::Bytes(invitation_id.to_vec()),
+            Value::Bytes(device_id.to_vec()),
+            Value::Bytes(claim_hash.to_vec()),
+            Value::Bytes(challenge_id.to_vec()),
+            Value::Bytes(agree_public.to_vec()),
+            Value::Integer(key_version.into()),
+            Value::Bytes(self.head_hash.to_vec()),
+        ]))?;
+        let manifest = array(&unsigned[9].1, 2)?;
+        let hpke_entry = array(&manifest[0], 4)?;
+        let verifier_entry = array(&manifest[1], 4)?;
+        if number(&hpke_entry[0])? != 2 || number(&verifier_entry[0])? != 3 {
+            return Err(Error::Invalid("challenge object manifest kinds invalid"));
+        }
+        let challenge_record = VerifiedChallenge {
+            family_id: self.genesis.family_id(),
+            epoch,
+            device_id,
+            challenge_id,
+            context_bytes,
+            challenge_hash,
+            hpke_object_id: fixed::<16>(&hpke_entry[1])?,
+            hpke_object_hash: fixed::<32>(&hpke_entry[2])?,
+            verifier_object_id: fixed::<16>(&verifier_entry[1])?,
+            verifier_object_hash: fixed::<32>(&verifier_entry[2])?,
+            pending_sign_public: sign_public,
+            pending_agree_public: agree_public,
+            pending_key_version: key_version,
+        };
         let signatures = array(&root[1].1, 1)?;
         let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
         let active = find_row(&state[4].1, 5, 0, signer_id)?
@@ -564,14 +652,7 @@ impl ControlChain {
                 before_ms: None,
             },
         )?;
-        self.challenges.insert(
-            invitation_id,
-            ChallengeRecord {
-                device_id,
-                challenge_id,
-                challenge_hash,
-            },
-        );
+        self.challenges.insert(invitation_id, challenge_record);
         self.seen_challenge_ids.insert(challenge_id);
         Ok(())
     }

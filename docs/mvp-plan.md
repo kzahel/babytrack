@@ -24,7 +24,9 @@ One Rust core shared by every client, with native UI on each platform.
   cases belong to [sync](topics/sync-and-encryption.md) and
   [event model](topics/event-model.md).
 - **Family behavior.** Local-only by default, explicit sharing, independent
-  multiple Families, manager/member roles, offline work, and private copies.
+  multiple Families, device-scoped manager/member roles, offline work, and
+  private copies. Local logging and sharing require no account; licensing or
+  paid-service accounts, if introduced, never authorize or decrypt a Family.
   [Family sharing and trust](topics/family-sharing-and-trust.md) owns those
   promises, removal races, single-use invitations, portable backups, and
   remaining UX choices. Live Family/child/history merging is outside the
@@ -93,13 +95,12 @@ those details.
 | Unknown types/fields preserved on edit and re-encryption; versioned batches and API | [Sync encoding](topics/sync-and-encryption.md#encoding-and-versioning) and [event preservation](topics/event-model.md#unknown-types-and-fields) |
 | Full file backup/restore with optional protection, readable analysis export, importer identity | [Event import/export](topics/event-model.md#import-and-export) |
 
-- **Key-backup platforms.** Other devices and an optional 24-word recovery
-  phrase are independent shared-Family key-recovery paths while ciphertext
-  remains available. iCloud Keychain synchronizable items and Android Block
-  Store are conditional conveniences. Block Store cloud backup requires its
-  end-to-end encryption check to succeed. F-Droid has no Block Store.
-  Data-file restore and original-Family authority recovery remain distinct;
-  see the owning topics for guarantees and open decisions.
+- **Device loss and backup.** A manager grants each Family-specific device
+  separately. A surviving manager can invite a replacement device. The MVP
+  has no recovery phrase, platform key-backup grant, or account path into the
+  original Family. A complete saved file restores its records into a new
+  independent Family; records saved only on lost devices may be lost. See
+  [Family sharing](topics/family-sharing-and-trust.md) for the guarantees.
 - **Locale.** Externalize all user-facing strings from the first screen;
   launch is English only. Amounts, weights, and lengths use metric storage.
 - **Abuse.** The accountless hosted relay needs per-Family storage quotas and
@@ -113,14 +114,15 @@ implementation can be swapped without touching app code. This applies on
 every platform, and it is what makes the later F-Droid build a matter of
 adding implementations rather than refactoring.
 
-- **Interfaces.** Push registration and delivery, key backup, device
-  integrity, and the watch link each get a small interface in a module with
-  no vendor dependencies. App code depends only on these.
+- **Interfaces.** Push registration and delivery, device integrity, and the
+  watch link each get a small interface in a module with no vendor
+  dependencies. App code depends only on these. Portable file backup uses
+  user-chosen storage and never carries original-Family credentials.
 - **Implementations in their own modules.** On Android, M1 ships one
-  implementation per interface: FCM for push, Block Store for key backup, the
-  Data Layer API for the Wear OS link. Each lives in its own Gradle module and
-  is wired in at a single composition point. iOS does the same with APNs,
-  iCloud Keychain, and WatchConnectivity.
+  implementation per interface: FCM for push and the Data Layer API for the
+  Wear OS link. Each lives in its own Gradle module and is wired in at a
+  single composition point. iOS does the same with APNs and
+  WatchConnectivity.
 - **Server side.** The server's push sender is an interface too, with APNs
   and FCM implementations first and UnifiedPush added later.
 - **Boundary check.** From M1, CI fails if any module other than the
@@ -329,8 +331,8 @@ touches an app store until M5.
    Play internal testing, and TestFlight betas, then public launch.
 
 MVP features: feeding, sleep, diapers, pumping, growth with WHO percentiles,
-medication, multiple children and caregivers, import and export. Voice and
-paid extras come after launch.
+medication, multiple children and caregivers, import and export. Freezer milk
+inventory, voice, and paid extras come after launch.
 
 ## Open decisions
 

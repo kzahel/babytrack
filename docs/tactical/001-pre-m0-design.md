@@ -45,20 +45,25 @@ closure; it does not maintain a second copy of those decisions.
 - [x] Decide full portable file backup and restore, with optional protection,
   into a fresh local Family. Recreating the original shared group is not
   required; readable analysis exports remain available.
-- [ ] Resolve user-visible invitation lifecycle, original-Family recovery
-  authority, person/device removal, displaced edits, and stale quick-log
-  targeting (D4-D8 in the Family sharing topic).
-- [ ] State the exact security limit for removal of a lost device, departed
-  member, or actively malicious manager, and how manager authority is
-  restored after device loss.
+- [x] Decide D4-D5: no self-service original-Family recovery; grants, roles,
+  and removals are per Family-specific device, separate from any account.
+  Replacement requires an active manager's fresh invitation or a saved-file
+  restore into a new Family.
+- [ ] Resolve invitation lifecycle, displaced edits, and stale quick-log
+  targeting (D6-D8 in the Family sharing topic).
+- [ ] State the exact security limit for removing a lost device, excluding
+  all known devices of a departed person, or facing an actively malicious
+  manager; define the remaining-manager replacement path and sole-manager
+  loss outcome.
 - [x] Exclude automatic family and child merging from the MVP while keeping
   backdated logging and competitor CSV import.
 - [x] Allow multiple Families in one app, with independent child histories
   and per-Family roles; use "Family" in the UI, not "sync group."
 - [ ] Specify the Family switcher and target Family/child behavior for logging,
   timers, widgets, notifications, watches, import/export, and invitations.
+- [x] Exclude freezer milk inventory from the MVP.
 - [ ] Reconcile first-class watch and widget promises with the proposal's
-  possible paid unlock. Decide whether freezer inventory is in the MVP.
+  possible paid unlock.
 - [ ] Write concrete launch and dogfooding gates for two caregivers, offline
   logging, recovery, and export. Mark other surfaces as launch gates or
   explicitly later work.
@@ -82,13 +87,14 @@ closure; it does not maintain a second copy of those decisions.
   replay, and leaked-link cases.
 - [ ] State what a malicious relay can hide or fork, what sequence numbers
   actually detect, and whether clients need an out-of-band history check.
-- [ ] Define recovery identity and key rotation after a lost device or
-  phrase. Specify fallback when platform backup is unavailable, delayed, or
-  not end-to-end encrypted.
+- [ ] Specify the lost-device and replacement flows under D4-D5: a new
+  installation cannot reuse old authority; a remaining manager may invite
+  it; without one, only locally held data or a saved full file can seed a
+  new Family. Make the backup status and data-loss boundary explicit.
 - [ ] Specify the decided full-file backup/restore contract: readable and
   optionally protected forms, saved record state, metadata, versioning,
   credentials excluded, atomic restore into a new Family, and failure cases.
-  A saved key or phrase alone cannot reconstruct missing records.
+  Relay ciphertext or a lost device's key cannot reconstruct missing records.
 - [ ] Define the revoked client's notice and private-copy path. The new
   family needs fresh identity and keys and must carry forward pending local
   entries without silently merging with the original.
@@ -109,8 +115,7 @@ closure; it does not maintain a second copy of those decisions.
 - [ ] State the exact meaning of last-writer-wins, including simultaneous
   edits to one field, clock skew, tombstones, and a way to inspect or restore
   an overwritten edit if the product promises no loss.
-- [ ] Decide whether breastfeeding segments need independent operations;
-  settle freezer inventory if it remains in the MVP.
+- [ ] Decide whether breastfeeding segments need independent operations.
 - [ ] Specify stable importer identity across overlapping exports and the
   round-trip contract for state versus full operation history.
 - [ ] Confirm time-zone and day-boundary behavior with travel examples and
@@ -144,7 +149,7 @@ closure; it does not maintain a second copy of those decisions.
 
 ## Decision lookup
 
-- Product choices: [D4-D8](../topics/family-sharing-and-trust.md#remaining-ux-choices).
+- Product decision status: [D4-D8](../topics/family-sharing-and-trust.md#m-1-ux-decision-status).
 - Protocol choices: [sync open questions](../topics/sync-and-encryption.md#open-questions).
 - Record/format choices: [event-model open questions](../topics/event-model.md#open-questions).
 - Relevant cases: [scenario index](../scenarios/README.md).

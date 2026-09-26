@@ -13,7 +13,7 @@ Read the relevant cases and their owning decisions, not the whole catalog.
 | Concern | Case IDs | Decision owner |
 |---|---|---|
 | Offline start and first sharing | FS01-FS03, FS49 | [Family sharing](../topics/family-sharing-and-trust.md) U1-U4; [sync](../topics/sync-and-encryption.md#local-shared-and-detached-families) promotion candidate |
-| Roles and competing access changes | FS04-FS12 | Family sharing U3-U4, D1 |
+| Roles, device grants, and competing access changes | FS04-FS12, FS52 | Family sharing U3-U4, D1, D4-D5 |
 | Pending work and independent copies | FS13-FS18, FS34, FS48 | Family sharing U1, U5; [sync](../topics/sync-and-encryption.md#m-1-candidate-authority-and-key-handoff) retry candidate |
 | Invitations, redemption, and automatic handoff | FS19-FS21, FS35-FS39, FS47, FS51 | Family sharing D2, D8; sync key-handoff candidate |
 | Family/child targeting | FS22-FS25 | Family sharing U6, D7 |
@@ -63,7 +63,7 @@ trust.
 | Shared access changes coherently | Verified membership history and relay commit boundary | FS04-FS12, FS21 |
 | Continuing privately is independent | New Family identity/keys, preserved local work, explicit UI destination | FS13-FS16, FS34 |
 | Family/child context stays correct | Core scoping and platform action adapters | FS22-FS25 |
-| Recovery claims match reality | Backup format, recovery authorization, status UI | FS26-FS30, FS40-FS45 |
+| Recovery claims match reality | Backup format, device invitation, saved-point status UI | FS26-FS30, FS40-FS45 |
 | Accepted limits are honestly represented | Threat model, freshness/status wording, adversarial fixtures | FS17, FS31-FS32, FS46 |
 
 The sync and event topics must map these obligations to concrete rules before

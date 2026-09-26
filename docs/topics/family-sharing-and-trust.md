@@ -20,9 +20,11 @@ technical difficulty. Bring back the concrete user-visible tradeoff.
 - **U2: Sharing is explicit.** First sharing includes existing history.
   Joining on first launch does not create an unwanted empty Family.
 - **U3: Roles govern the shared space.** Members read and write; managers
-  also manage access. No owner hierarchy or quorum. Any manager may request
-  another manager's removal or demotion. The shared Family retains a manager.
-  Conflicting requests need a defined outcome; see D1 below.
+  also manage access. Grants and roles belong to Family-specific devices,
+  not global users or accounts. No owner hierarchy or quorum. Any manager
+  device may request another manager device's removal or demotion. The shared
+  Family retains an active manager device. Conflicting requests need a
+  defined outcome; see D1 below.
 - **U4: Online confirmation governs shared access.** Local recording remains
   available offline. A membership request is not a completed access change
   until confirmed by the shared system. A timeout is not proof of failure.
@@ -37,11 +39,12 @@ technical difficulty. Bring back the concrete user-visible tradeoff.
   are scoped per Family. A timer retains its original Family and child.
   Quick logging identifies its target; switching Families does not retarget
   an already-started action.
-- **U7: Recovery needs records and access.** A phrase alone cannot recreate
-  lost local-only records. Platform backup is conditional convenience.
-  Do not describe a Family as recoverable without a usable recovery path.
-  A complete file backup can restore saved data into a new local Family;
-  restoring the original shared group is not required for that path. File
+- **U7: Recovery needs saved records.** A complete file backup can restore
+  its saved data into a new local Family with fresh identity and keys. There
+  is no self-service credential that restores original-Family access or
+  missing records after the last authorized device is lost. Another active
+  manager may send a fresh invitation to a replacement device. Do not
+  describe a Family as recoverable without a usable saved copy. File
   protection is optional, and ordinary readable exports remain available.
 - **U8: The app does not arbitrate relationships.** An authorized manager may
   act against another manager. A reader can retain, export, or disclose data
@@ -58,18 +61,41 @@ technical difficulty. Bring back the concrete user-visible tradeoff.
 | Relay hides or forks history | Sync can be disrupted and not every stale view is detectable. Do not promise universal fork detection or global agreement against a malicious relay. |
 | Relay hides a removal from an authorized writer | Data the writer still encrypts with an old key is not protected from someone who already holds that key. The broad phrase "all data created after removal is protected" is not a guarantee. |
 | Every copy of records is lost | Keys alone cannot recover them. A relay is not an unconditional backup guarantee. |
+| The sole manager device is lost | Other devices may keep read/write access, but cannot invite or remove devices without manager authority. They can make independent copies from data they hold. Members cannot remotely revoke the lost manager credential. |
 | Hosted web code is compromised | Malicious delivered code can compromise that browser's access. Encrypted server storage does not solve this. |
 
 These limits do not permit silent data loss, accepting forged authority, or
-claiming a failed/unknown action succeeded. Exact local device protection,
-recovery authority, and cryptographic verification remain M-1 work.
+claiming a failed/unknown action succeeded. Exact local device protection
+and cryptographic verification remain M-1 work.
+
+## Device access without login
+
+Each installation creates its own Family-specific device signing and key
+agreement identity. A manager grants a role to that identity through one
+invitation; another phone or browser installation needs its own invitation.
+"Device" means this credential, not a verified physical device or person.
+If its private keys are copied, both copies may appear as the same device;
+revoking that credential removes both. The MVP must protect local keys but
+cannot promise hardware identity on every platform.
+The relay sees opaque device authorization metadata, never a global account
+identity or readable caregiver name. Display names and device labels help
+people recognize access but are not proof that two devices belong to one
+person. Managers grant, demote, and remove devices individually. The access
+UI says **Remove device** and lists each enrolled device; it does not promise
+one-tap person-wide revocation. A person who controls another still-authorized
+device retains that device's access, and a manager can invite a replacement.
+
+No login is required for local logging, sharing, or Family access. A future
+account for licensing or paid services is separate from Family membership:
+it cannot authorize a device, restore a role, or decrypt Family data.
 
 ## D1: Two managers try to remove each other
 
 Decision: **agreed**. The first valid removal committed by the relay takes
-effect in the original Family. Private copies remain optional for both
-people. This fixes the user-visible outcome; the exact atomic rotation
-mechanism remains owned by the sync topic.
+effect in the original Family. The race concerns the two named manager
+devices. Other devices held by either person are not implicitly removed.
+Private copies remain optional for both devices. This fixes the user-visible
+outcome; the exact atomic rotation mechanism remains owned by the sync topic.
 
 Example with Alice and Bob as the only managers:
 
@@ -158,8 +184,8 @@ The new Family has fresh identity and keys. The restorer can continue
 logging, choose to share it, and invite caregivers again. File restore does
 not reinstate membership or manager rights in the original Family, import
 its device credentials, or silently replace or merge any existing Family.
-An old backup cannot bypass removal from a shared Family. Family-file
-backup is distinct from the separate key-backup/recovery mechanism.
+An old backup cannot bypass removal from a shared Family. File backup is the
+MVP's portable recovery path; it never carries original-Family authority.
 
 The [event model](event-model.md#import-and-export) owns the complete file
 contract. It must round-trip the saved record state, including children,
@@ -178,14 +204,15 @@ rules, make child mapping and duplicate/conflicting-record handling explicit,
 and preview changes before writing. This is not live Family/membership merge
 and is not an MVP dependency. Do not promise such a tool exists yet.
 
-## Remaining UX choices
+## M-1 UX decision status
 
-These are recommendations for discussion, not decisions hidden in fixtures.
+Decided rows are product requirements. The other rows remain proposals for
+discussion, not decisions hidden in fixtures.
 
-| ID | User question | Recommended direction | Must settle |
+| ID | User question | Current direction | State |
 |---|---|---|---|
-| D4 | Can I recover access to the original shared Family? | File restore already guarantees a new independent Family with saved data. Specify the separate original-Family recovery policy without inferring manager rights from decryption; settle sole-manager loss and concurrent old/new devices. | M-1, before recovery protocol |
-| D5 | Am I removing a person or one lost device? | Distinguish those actions. Removing a person must account for their devices and recovery paths. Exact identity model remains open. | M-1, before membership protocol |
+| D4 | Can I recover access to the original shared Family? | **Decided:** no self-service original-Family recovery from a phrase, platform backup, file, or paid account. A still-active manager can invite a replacement device. Otherwise use an existing local copy or saved full file to create a new Family; unsaved records may be lost. | Agreed for M-1 |
+| D5 | Am I removing a person or one device? | **Decided:** grants and removal are per Family-specific device. Show enrolled devices and revoke each one explicitly; labels do not establish person identity or person-wide removal. | Agreed for M-1 |
 | D6 | What happens to an edit displaced by another edit? | Make the displaced value inspectable and explicitly restorable; retain operations regardless. | M-1, before edit/conflict contract |
 | D7 | A widget/watch targets a Family whose access changed; where does my tap go? | Preserve the explicit target and action, explain the problem, and offer a deliberate private-copy route. Never redirect into the active Family silently. | M-1 targeting contract; UI in M1/M4 |
 | D8 | When does an unused invitation stop working? | Expire invitations, allow cancellation, and invalidate unused invitations when the creator loses manager authority. Choose the lifetime and race behavior explicitly. | M-1, before invitation protocol |

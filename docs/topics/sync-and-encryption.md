@@ -19,15 +19,16 @@ must implement that contract and its scenarios.
   explicit policy for exposing the displaced value.
 - The server stores and relays ciphertext only. It cannot read events,
   children's names, or anything else a family logs.
-- After a removal commits, the removed member receives no new epoch key and
+- After a removal commits, the removed device receives no new epoch key and
   cannot read entries encrypted under later epochs. Data already on their
   device remains. An honest relay rejects old-epoch uploads after cutover;
   a malicious relay hiding the change from a stale writer can expose that
   writer's old-key ciphertext to a removed holder of that key.
-- A shared family can recover from phone loss when another complete copy or
-  relay history plus a valid key recovery path remains. Local-only families
-  need a separate data backup; a recovery phrase alone cannot recreate lost
-  records.
+- A lost device cannot restore its old Family authorization from a recovery
+  credential. A still-active manager can invite a replacement device. A
+  locally held copy or complete file backup can instead establish a new
+  independent Family with the records it actually contains; loss of every
+  copy and backup can mean permanent data loss.
 - Clients on different app versions interoperate without dropping data.
 - One app can participate in several independent Families without a global
   account; a removal or sync failure in one does not affect the others.
@@ -61,23 +62,21 @@ Working direction; edge cases below remain open for M-1.
 
 ## Keys
 
-Working direction, subject to the M-1 authority and recovery decisions.
+Working direction, subject to the remaining M-1 protocol decisions.
 
 - **Epoch keys.** Batches are encrypted with a random 256-bit epoch key using
   XChaCha20-Poly1305. The associated data binds the family id, epoch number,
   protocol version, batch id, and device id, so a ciphertext cannot be
   replayed into another family or epoch.
-- **Key holders.** Devices, platform backups, and recovery phrases can hold
-  grants to epoch keys. Devices have signing and agreement keypairs and can
-  act in the shared family. Platform-backup and recovery-phrase holders are
-  for restoring access, not for issuing ordinary requests or inheriting a
-  manager role automatically; D4-D5 must specify whether and how a restored
-  device is authorized. Possessing or decrypting a recovery grant is not an
-  authorization-state entry. Backup private material lives in iCloud Keychain
-  (synchronizable) or Block Store; recovery material derives from 24 words.
+- **Key holders.** Authorized Family-specific devices hold grants to epoch
+  keys. Each has its own signing and agreement keypairs and acts only under
+  its own recorded role. The MVP has no recovery-phrase or platform-backup
+  key holder and no credential that can reinstate old membership. A new
+  installation obtains authority only through a fresh device invitation.
 - **Membership** is recorded inside the encrypted log as signed operations:
-  a device joined (with its public keys, role, and a display name), changed
-  role, or was removed. Clients verify signatures and the signer's authority
+  a device joined (with its public keys and role), changed role, or was
+  removed. Readable caregiver and device labels stay encrypted and are not
+  authority claims. Clients verify signatures and the signer's authority
   against their own membership view. The two product roles are manager
   (read/write plus membership management) and member (read/write only).
 - **Grants.** A new epoch key is wrapped for each current holder with HPKE
@@ -130,8 +129,8 @@ specify how local storage partitions and backups enforce this boundary.
   response must not be presented as a completed change. Both managers may
   explicitly make independent copies, and unaffected members stay in the
   original Family. See the product contract's D1 and scenarios FS07-FS12.
-- **Removed or departed.** Once the client learns that its membership has
-  ended, it clearly says that sync for this family has stopped. It does not
+- **Removed or departed.** Once the client learns that its device membership
+  has ended, it clearly says that sync for this family has stopped. It does not
   erase local history. The user may keep the old copy as an archive or
   continue privately from a copy with a new family identity and keys. That
   copy starts local-only and can be shared as a separate family later; it
@@ -159,22 +158,25 @@ specify how local storage partitions and backups enforce this boundary.
   new authorization state, and appends a signed "removed" operation. The
   relay rejects subsequent requests from the removed holder. M-1 defines
   how that holder learns of removal without access to the new epoch.
-- **Recovery for shared families.** A new device that has the recovery phrase
-  or restores the platform backup may derive or load recovery material and
-  fetch an addressed grant and ciphertext history. That does not yet make the
-  new device an authorized member or manager. Enrollment of the replacement,
-  the disposition of the old device/credential, and restoration of any role
-  remain open in D4-D5. A protocol must not describe that path as recovery of
-  original-Family access until those decisions are made.
+- **Replacement after loss.** An old grant, file, or account cannot authorize
+  a fresh installation that lacks the enrolled device's private signing key.
+  A copied private key may impersonate that same device; revoking its device
+  credential revokes all copies. If another manager device remains active,
+  it can invite a fresh device with an explicit role. If no manager can act,
+  original-Family authority cannot be restored through the MVP. Other member
+  devices may keep reading and writing, but cannot revoke the lost manager
+  key or invite a replacement. A local copy or saved full file can seed a
+  new independent Family. Relay ciphertext alone is not a usable backup for
+  a fresh device.
 - **File backup and independent restore.** Product D3 requires a complete
   restorable data file with optional password protection. This applies to
   local-only and shared Families. Restore creates a new local-only Family
   with fresh identity and keys, saved records, and no original membership or
   device credentials. It works without the original relay or manager. The
   person can share the new Family and reinvite caregivers; recreating the
-  old shared group is not required for this recovery path. A key or phrase
-  without a record copy is insufficient after device loss. The event topic
-  specifies the file contract; original-Family key recovery remains separate.
+  old shared group is not required for this path. No key or phrase without a
+  record copy can restore missing records. The event topic specifies the
+  file contract.
 
 ## Server API
 
@@ -258,11 +260,13 @@ checks are still required.
   and the server rejects its requests.
 - Role tests: a member cannot change membership; a manager can remove a
   manager; removing or demoting the last manager is rejected.
-- Recovery tests: once D4-D5 settle the authority policy, each accepted key
-  recovery path is tested with available relay history, delayed/unavailable
-  backup, and revoked credentials. Until then, no test may imply that a phrase
-  or platform backup restores membership, manager authority, or missing
-  records merely because it decrypts an old grant.
+- Device-loss tests: a new installation without the enrolled private key
+  cannot claim a lost device's role using its old grant, a file, or an
+  unrelated account. A copied device key acts as that same device until its
+  credential is revoked. A remaining manager
+  may invite it explicitly; if none remains, original-Family access is not
+  restored. Removing one device does not silently remove another device
+  held by the same person.
 - File loss-recovery tests: readable and protected backups restore saved
   data into a new independent Family without original shared access. An old
   backup never reinstates revoked membership. Also verify that no-backup
@@ -278,9 +282,9 @@ checks are still required.
 ## M-1 candidate: authority and key handoff
 
 **Review proposal, not a settled wire contract.** This maps the agreed U1-U8,
-D1-D3, and FS cases to one implementable direction. D4-D8 remain product
-choices; in particular this candidate cannot promise person-wide revocation
-or original-Family recovery until D4-D5 settle their identities and holders.
+D1-D5, and FS cases to one implementable direction. D6-D8 remain product
+choices. Only Family-specific devices receive grants and roles. No person-wide
+revocation or original-Family self-recovery is promised.
 The exact canonical encoding, domain separators, request authentication,
 failure recovery, and vectors still belong in `docs/protocol/` before M0 code.
 
@@ -491,19 +495,21 @@ failure recovery, and vectors still belong in `docs/protocol/` before M0 code.
   chunk sizing and whether the manifest uses a flat list or tree are wire
   choices, not new product decisions.
 
-### Recovery boundary left open
+### Device authority and loss boundary
 
-D4-D5 still decide what a person, device, and recovery holder mean. This
-candidate therefore does not place a recovery phrase or platform backup in
-the active authorization set, let it sign requests, or infer its former role.
-It may decrypt an addressed recovery envelope, but enrolling a replacement
-device and disposing of old devices/credentials must follow the future D4-D5
-policy. Two implementable alternatives remain: require an active manager to
-authorize the replacement (strong revocation, but no original-Family recovery
-for a lost sole manager), or make a recovery credential a bearer capability
-for a specified role (sole-manager recovery, but theft or an unrevoked old
-copy can restore that authority). File restore into a new local Family remains
-available independently under D3.
+D4-D5 settle the MVP authority unit: one Family-specific device. The control
+chain authorizes that device's signing and agreement keys and role. It has no
+person-wide principal, account credential, platform-backup holder, or recovery
+phrase holder. A replacement is a new device enrolled by an active manager;
+it never inherits the lost device's signing key, sequence, or role from a
+backup. If the lost device was the only manager and no other active manager
+can act, the original Family cannot enroll a replacement. File restore into
+a new local Family remains available under D3, subject to what was saved.
+An authorized person using another enrolled device retains that device's
+access until it too is revoked. A manager must inspect and remove every
+device they intend to exclude; matching encrypted display names are not
+cryptographic proof of common ownership. A future license or paid-service
+account has no role in this control chain.
 
 ### Multiple-Family isolation
 
@@ -537,12 +543,12 @@ only after review.
 
 ## Open questions
 
-1. **Role identity and recovery.** Any manager may invite, remove, or change
-   another manager's role as long as one manager remains. Decide whether a
-   signed role grant applies to a person or an individual device and how
-   manager authority is recovered after losing a device (D4-D5). A manager
-   acting maliciously can still win a rotation race; the design accepts this
-   limit.
+1. **Device authorization.** D4-D5 settle grants and roles per device,
+   with no self-service original-Family recovery. Specify the exact
+   authorization-state encoding and negative cases for a fresh installation
+   trying to reuse a lost device's grant. Specify per-platform private-key
+   storage and the cloned-credential limit. A manager acting maliciously can
+   still win a rotation race; the design accepts this limit.
 2. **Single-use direct join.** D2 decides direct join without a second
    manual approval and accepts asynchronous automatic handoff with visible
    pending stages. Review the candidate consumption, device-bound resumption,
@@ -567,11 +573,10 @@ only after review.
 7. **Malicious relay visibility.** Decide whether a client needs an
    out-of-band history comparison or whether stale and forked views are an
    explicitly accepted limitation. Sequence gaps alone are insufficient.
-8. **Recovery guarantee.** Platform backup may be unavailable or delayed;
-   Android Block Store cloud backup is end-to-end encrypted only when its
-   [availability check](https://developer.android.com/identity/block-store)
-   succeeds. Decide what recovery state the UI reports and which fallback
-   must be confirmed before a family relies on it.
+8. **Backup truthfulness.** Specify how the UI reports the last completed
+   full-file backup, its saved point, and the loss of unsaved records. Do not
+   imply original-Family membership or relay-only ciphertext is recoverable
+   after every authorized device is lost.
 9. **Concurrent same-field edits and clock skew.** Specify whether the UI
    exposes displaced values from the log, and bound or handle future-dated
    HLC stamps so one clock does not dominate later edits indefinitely.

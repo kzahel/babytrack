@@ -17,16 +17,18 @@ medication, temperature, and notes; see the
 [event model](docs/topics/event-model.md) for scope and remaining choices.
 
 Each Family is an independent space for children, entries, and sharing.
-Local logging works offline without an account. People can join several
-Families, retain locally held data after shared access ends, and continue
-with an independent copy. Invitations permit one direct join without a
-second manual approval; joining, syncing, and confirming shared access
-changes require connectivity.
+Local logging and Family sharing work without an account. Each device has its
+own Family grant; a future license or paid-service account has no Family
+authority. People can join several Families, retain locally held data after
+shared access ends, and continue with an independent copy. Invitations permit
+one direct join without a second manual approval; joining, syncing, and
+confirming shared access changes require connectivity.
 
 Readable exports support analysis elsewhere. Full file backups, optionally
 password-protected, restore saved data into a new local Family; they do not
-restore access to the original group. Detailed behavior and remaining
-choices live in the [Family sharing contract](docs/topics/family-sharing-and-trust.md).
+restore access to the original group. A remaining manager can invite a lost
+device's replacement. Detailed behavior and remaining choices live in the
+[Family sharing contract](docs/topics/family-sharing-and-trust.md).
 
 One Rust core owns the model, storage, merge, crypto, sync, and import/export.
 Native clients own UI and platform adapters. The server relays encrypted

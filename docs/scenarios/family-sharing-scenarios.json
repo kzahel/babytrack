@@ -566,13 +566,13 @@
       "requirements": [
         "U7"
       ],
-      "given": "The sole local-only device is lost; only a recovery phrase remains and no record backup exists.",
+      "given": "The sole local-only device is lost and no saved record backup exists.",
       "actions": [
         "Attempt recovery."
       ],
       "expect": [
         "The app does not claim missing records were recovered.",
-        "It explains that the phrase is not a record backup."
+        "It explains that records held only on the lost device cannot be restored."
       ]
     },
     {
@@ -607,23 +607,25 @@
     },
     {
       "id": "FS28",
-      "status": "proposed",
+      "status": "agreed",
       "requirements": [
         "U3",
         "U7"
       ],
-      "given": "The only manager lost their only device; relay history and an authorized recovery credential remain.",
+      "given": "The only manager lost their only authorized device; ciphertext history remains on the relay.",
       "actions": [
-        "Recover on a fresh device."
+        "Try to join the original Family on a fresh installation.",
+        "If a complete file backup exists, restore it."
       ],
       "expect": [
-        "Manager authority follows the explicit recovery policy.",
-        "Decryption ability alone is not treated as proof of manager role.",
-        "The old device and recovery credentials receive an explicit retained/revoked disposition."
+        "A fresh installation without the old device's private key cannot claim its manager authority or decrypt relay history by account, phrase, or file restore.",
+        "If a complete file was saved, it restores only saved records into a new local Family with fresh keys and no original membership.",
+        "Without a saved copy, the app does not claim the lost records are recoverable."
       ],
       "variants": [
-        "old device never returns",
-        "old device reconnects later"
+        "saved full file exists",
+        "no saved file exists",
+        "old device reconnects with its own still-authorized keys"
       ],
       "decisions": [
         "D4",
@@ -632,24 +634,26 @@
     },
     {
       "id": "FS29",
-      "status": "proposed",
+      "status": "agreed",
       "requirements": [
         "U3",
         "U5",
         "U7"
       ],
-      "given": "A removed caregiver retains an old platform backup or recovery phrase.",
+      "given": "Bob's device is removed from shared Family A; Bob holds an old full file backup and another device may also be enrolled.",
       "actions": [
-        "Try to restore access to the original shared Family."
+        "Restore the file on a fresh installation.",
+        "If Bob has another enrolled device, inspect its separate authorization."
       ],
       "expect": [
-        "Revoked credentials do not silently restore shared membership.",
-        "Locally held old records remain usable independently."
+        "The file restores saved data only into a new Family and cannot reinstate the removed device in A.",
+        "An independently enrolled device retains its own A access until that device is explicitly removed.",
+        "A display-name match or a paid-service account does not revoke or restore another device."
       ],
       "variants": [
-        "restore backup",
-        "use old phrase",
-        "reconnect another previously enrolled device"
+        "no other device enrolled",
+        "another device enrolled with a member role",
+        "another device enrolled with a manager role"
       ],
       "decisions": [
         "D4",
@@ -662,18 +666,18 @@
       "requirements": [
         "U7"
       ],
-      "given": "Platform key backup is unavailable or its required protection check fails.",
+      "given": "The last completed full-file backup predates recent entries, or no backup exists.",
       "actions": [
-        "Inspect recovery status."
+        "Inspect backup status before losing the device."
       ],
       "expect": [
-        "The app does not claim platform recovery is ready.",
-        "It explains which independently usable recovery paths exist, if any."
+        "The app identifies the last completed saved point or says no backup is known.",
+        "It does not claim unsaved entries or original-Family authority are recoverable from a file, account, or relay ciphertext alone."
       ],
       "variants": [
-        "backup unavailable",
-        "backup delayed",
-        "required encryption check fails"
+        "no saved file",
+        "older completed file",
+        "interrupted file write"
       ]
     },
     {
@@ -792,7 +796,7 @@
       ],
       "expect": [
         "The used invitation cannot grant another enrollment, even with the same display name.",
-        "The second device needs a fresh invitation or a separately authorized recovery/linking path."
+        "The second device needs a fresh invitation from an active manager."
       ],
       "variants": [
         "same intended caregiver on another device",
@@ -1200,6 +1204,33 @@
       ],
       "decisions": [
         "D2"
+      ]
+    },
+    {
+      "id": "FS52",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U3"
+      ],
+      "given": "Alice uses two installations in Family A and has no global account; each installation was separately invited and has its own role and keys. A fresh third installation has neither device's private keys.",
+      "actions": [
+        "A manager removes Alice's first device.",
+        "Use Alice's second device and try to use a fresh installation with the same display name or paid-service account."
+      ],
+      "expect": [
+        "Only the first device loses A access at the committed cutover; the second retains its independently granted role.",
+        "The fresh installation has no A access until an active manager issues it a new invitation.",
+        "A matching label or unrelated account does not grant, combine, or revoke Family device authority."
+      ],
+      "variants": [
+        "second device is a member",
+        "second device is a manager",
+        "no paid-service account exists"
+      ],
+      "decisions": [
+        "D4",
+        "D5"
       ]
     }
   ]

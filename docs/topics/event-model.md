@@ -58,6 +58,8 @@ feeding segments, is a single field.
 
 Growth percentiles are computed from WHO tables when shown, never stored.
 Wake-window hints are computed from sleep events on the device.
+Freezer milk inventory is outside the MVP; pumping records do not imply a
+stock ledger or `stash.add`/`stash.use` operations.
 
 ## Timers
 
@@ -169,32 +171,29 @@ deleting a child affects its activity history before encoding is frozen.
 
 ## Open questions
 
-1. **Freezer inventory.** The proposal lists pumping with a freezer
-   inventory. Decide whether it is in the MVP. If so, stored milk is modelled
-   as `stash.add` and `stash.use` events.
-2. **Breastfeeding segments.** Segments are one field, so two caregivers
+1. **Breastfeeding segments.** Segments are one field, so two caregivers
    editing the same feed at once keep only one edit. Accept that, or make
    each segment its own event linked by `group`.
-3. **Day start.** Some families think of the day as starting at a fixed
+2. **Day start.** Some families think of the day as starting at a fixed
    morning hour so night sleep is not split. Decide whether to offer a
    configurable day start.
-4. **Diaper detail.** Whether to record colour and consistency in the MVP.
+3. **Diaper detail.** Whether to record colour and consistency in the MVP.
    Keep it out while medical content stays out.
-5. **Metadata envelope.** Decide whether family settings and children are
+4. **Metadata envelope.** Decide whether family settings and children are
    distinct record types with their own fields, while sharing the operation
    log and merge machinery. They cannot use the required child id and
    activity start time above without inventing false values.
-6. **Import identity.** "Source app and source row" must mean a stable
+5. **Import identity.** "Source app and source row" must mean a stable
    source record identifier or content-derived identity, not a line number:
    overlapping exports can reorder rows. Specify how repeated imports and
    genuinely changed source records behave.
-7. **Full backup format.** D3 decides portable file restore into a new local
+6. **Full backup format.** D3 decides portable file restore into a new local
    Family with optional protection. Specify JSON Lines envelopes and versions,
    required metadata, unknown fields, units, deletion semantics, and whether
    full edit history is included beyond the required saved record state.
    Specify the protection wrapper and validation/failure behavior. CSV remains
    an analysis export, not a substitute for the full backup contract.
-8. **Daily reports while travelling.** Current-viewer time zone makes two
+7. **Daily reports while travelling.** Current-viewer time zone makes two
    caregivers in different zones see different daily totals. Decide whether
    that is intended or whether family reports use a stable family zone.
 

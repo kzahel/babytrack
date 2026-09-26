@@ -55,9 +55,9 @@ them true, and keep the tactical index status current.
   updates the owning topics and scenarios; once present, update the exact
   contract in `docs/protocol/` and cross-language vectors in `tests/vectors/`
   in the same change. `docs/scenarios/` currently contains symbolic cases.
-- Vendor services (push, key backup, device integrity, watch link) are
-  reached only through app-owned interfaces. Google Play services and
-  Firebase may appear only in their implementation modules.
+- Vendor services (push, device integrity, watch link, and any later key
+  backup) are reached only through app-owned interfaces. Google Play
+  services and Firebase may appear only in their implementation modules.
 - No app store, publishing, or hosting work before M5.
 - Keep medical advice and clinical content out of the MVP.
 

@@ -250,6 +250,9 @@ are symbolic until M0 gives them executable actions and assertions.
 
 ### Security review gates
 
+Use the [independent security review runbook](security-review-runbook.md) to
+launch, monitor, and record the separate Daybreak Blue review at each gate.
+
 - **Before security implementation:** review the
   [product contract](topics/family-sharing-and-trust.md) and scenarios first,
   then the protocol mapping. Resolve D4-D8 at their stated

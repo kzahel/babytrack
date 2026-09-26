@@ -74,7 +74,8 @@ outcome retains its local outbox until accepted evidence is retrieved.
   handling, signed removal proof, and one private-copy transaction. Run both
   manager-removal orders, third caregiver, pending work, forged denial,
   cloned credential, and malicious fork (FS04-FS12, FS34, FS52-FS58).
-- [ ] Run the independent implemented-protocol review from the MVP plan.
+- [ ] Run the independent implemented-protocol review from the MVP plan using
+  the [review runbook](../security-review-runbook.md).
   Map each finding to a scenario/vector and fix any access or retention
   blocker before M1 uses real Family data.
 

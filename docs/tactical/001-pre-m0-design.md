@@ -175,6 +175,8 @@ closure; it does not maintain a second copy of those decisions.
 
 ## Adversarial review record
 
+Repeat later reviews with the [security review runbook](../security-review-runbook.md).
+
 Fixed protocol revision: `1571b77` on `main`. The independent Daybreak Blue
 high-thinking sessions used the local Yep Anywhere API in read-only plan
 mode. They assumed an honest relay for one ordered CAS history, single-use

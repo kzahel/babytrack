@@ -6,6 +6,10 @@ active tactical for the area being changed. Read [the MVP plan](docs/mvp-plan.md
 for milestone, scope, architectural, or cross-cutting work. The background
 proposal and unrelated topics/scenarios are not mandatory context.
 
+At each security gate in the MVP plan, use the
+[independent security review runbook](docs/security-review-runbook.md) to
+launch and record the separate reviewer.
+
 Each concern has one authoritative home: product promises and technical
 decisions in their owning topics, scope/milestones in the plan, work status
 in tacticals, exact protocol formats in future `docs/protocol/`, and test

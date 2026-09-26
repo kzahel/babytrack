@@ -183,8 +183,9 @@ multi-caregiver sync.
 
 ## Open questions
 
-Stack and sync design are settled in [docs/mvp-plan.md](docs/mvp-plan.md):
-a shared Rust core and an append-only operation log. Still open:
+Stack, sync design, and key recovery are settled in
+[docs/mvp-plan.md](docs/mvp-plan.md): a shared Rust core, an append-only
+operation log, and platform keychain backup with an optional recovery phrase.
+Still open:
 
-- Key recovery UX.
-- Name.
+- Final name. `babytrack` is the code name until publishing.

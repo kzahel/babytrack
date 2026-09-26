@@ -22,9 +22,8 @@ One Rust core shared by every client, with native UI on each platform.
 - **Crypto.** One symmetric family key. Op batches are encrypted with
   XChaCha20-Poly1305. A separate auth key derived with HKDF from the family
   secret authenticates writes to the server, so the server never holds a key
-  that decrypts anything. The invite QR code or link carries the secret.
-  Recovery is a 24-word phrase. Removing a caregiver rotates to a new family
-  key and re-invites the rest, which is acceptable for the MVP.
+  that decrypts anything. The invite QR code or link carries the secret. Key
+  epochs, rotation, and recovery are specified under Requirements.
 - **Server (Rust, axum).** A dumb relay: an ordered log of encrypted blobs per
   family. Clients pull everything since a cursor, get live updates over a
   WebSocket, and receive empty wake pushes sent directly through APNs and FCM.
@@ -56,6 +55,56 @@ apps/android/  Gradle project: phone and Wear OS modules
 apps/web/      Svelte client
 spec/          Protocol spec and cross-language test vectors
 ```
+
+## Requirements
+
+Agreed September 2026. The first group shapes the sync protocol and must be
+in place in M0, because changing it after clients exist is expensive.
+
+### Protocol (M0)
+
+- **Key epochs and caregiver removal.** Family keys are versioned by epoch
+  and every encrypted batch records the epoch it was sealed with. Removing a
+  caregiver creates a new epoch key and re-grants it to the remaining
+  devices. Old epochs stay readable to members who hold them. The removal UI
+  can be minimal at first, but the protocol supports it from day one.
+- **Forward compatibility.** Caregivers will run different app versions.
+  Clients preserve event types and fields they do not understand and pass
+  them through unchanged on edit and re-encryption, so an old client never
+  silently drops data written by a newer one. Every batch and the sync API
+  carry a protocol version.
+- **Time.** Events store a UTC instant plus the UTC offset where they were
+  logged. The day boundary for daily summaries follows the offset of the
+  device showing them. The exact rule for travel is written into the spec
+  with test vectors.
+- **Units and locale.** Amounts, weights, and lengths are stored in metric
+  and converted for display. All user-facing strings are externalized from
+  the first screen, even though launch is English only.
+- **Key backup and recovery.** The family key is backed up automatically by
+  the platform's end-to-end encrypted store: iCloud Keychain (synchronizable
+  item) on iOS and Block Store on Android. Every other caregiver device is
+  also a backup. The 24-word recovery phrase is optional, offered at setup
+  and prompted again after the first week of data.
+- **Abuse limits.** The server has no accounts, so the hosted service
+  enforces per-family storage quotas and per-family and per-IP rate limits.
+  App Attest and Play Integrity are added only if abuse appears.
+
+### Before publishing
+
+Publishing is deliberately far off. These must be done before the first
+public release, not before development.
+
+- Final name, then bundle and application IDs (see Open decisions).
+- Publishing identity (personal or company) for both stores, privacy
+  policy, GDPR position, and App Store privacy labels. The server holds push
+  tokens and IP addresses even though it cannot read data.
+- A written threat model that states what the server can see: which
+  families exist, when they write, and how much.
+- Web client trust: a hosted web client cannot fully guarantee E2EE because
+  the server supplies the code that handles the key. Mitigate with a strict
+  Content Security Policy and self-hosting, and state the limitation in the
+  docs.
+- Check employment agreement terms on side projects and IP.
 
 ## References
 
@@ -140,6 +189,9 @@ paid extras come after launch.
 
 - Which phone platform first. iOS is suggested because the category's revenue
   is there, but the platform used for daily dogfooding matters more.
-- Hosting: a small Hetzner VPS or Fly.io.
-- Whether the recovery phrase is mandatory or optional during setup.
-- Name.
+- Hosting: a small Hetzner VPS or Fly.io. Deferred until publishing.
+- Final name. `babytrack` is the code name for local development and is
+  used for crate, package, and bundle IDs. The final name must be chosen
+  before the first App Store Connect or Play Console upload, because the
+  bundle ID and application ID are permanent from then on. The display name
+  can change at any time.

@@ -12,5 +12,5 @@ tactical with its current status.
   Rust workspace, build checks, and read-only CI added and validated in an
   isolated source copy. Does not close M-1 or implement product behavior.
 - [003: M0 executable foundation](003-m0-foundation.md) — in progress;
-  Rust canonical CBOR, structural operation bytes, and first crypto vectors
+  Rust canonical CBOR, structural operation bytes, and first crypto/HPKE cases
   run; binding, storage, relay, membership, and recovery gates remain.

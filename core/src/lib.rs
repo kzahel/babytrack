@@ -4,4 +4,5 @@
 
 pub mod cbor;
 pub mod crypto;
+pub mod hpke;
 pub mod operation;

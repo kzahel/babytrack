@@ -4,7 +4,9 @@ These are normative version-1 inputs and expected results. M0 binds each
 case to Rust, Swift, Kotlin, wasm, and relay runners. The Rust core currently
 runs CB01-CB06 in `records-v1.json` and selected operation-byte assertions
 from `full-wire-v1.json` and `negative-batch-v1.json`. Hash, Ed25519, and
-XChaCha cases in `crypto-v1.json` also run; no other passing result is implied.
+XChaCha cases in `crypto-v1.json` also run; `HPKE01` is checked for fixed
+decryption and sender round trip, with fixed seal bytes still open. No other
+passing result is implied.
 Hex is lowercase bytes, IDs are fixed 16-byte hex,
 and each case starts from its stated state. Rejection means no state, cursor,
 sequence, or outbox mutation unless the expected result says otherwise.

@@ -269,8 +269,9 @@ checks are still required.
 The Rust core now executes CB01-CB06 from `tests/vectors/records-v1.json`
 and selected operation bytes from `full-wire-v1.json` and
 `negative-batch-v1.json` with `cargo test -p babytrack-core`. This covers
-canonical CBOR, structural operation checks, and SHA-256/Ed25519/XChaCha
-known answers; complete field validity, HPKE, full batch bytes, cross-language
+canonical CBOR, structural operation checks, SHA-256/Ed25519/XChaCha
+known answers, and fixed HPKE decryption; complete field validity, exact
+HPKE sender bytes, full batch bytes, cross-language
 agreement, and the protocol/security gates below remain open.
 
 - Property tests: random operations delivered in random orders to several

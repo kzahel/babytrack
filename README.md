@@ -1,7 +1,7 @@
 # babytrack: product and business opportunity proposal
 
 Working name. A free, open source (MIT), end-to-end encrypted baby tracker with
-first-party hosted sync, native apps on both stores, a web client, and watch
+first-party hosted sync, native apps on both stores and F-Droid, a web client, and watch
 apps for Apple Watch and Wear OS. Self-hostable in one command.
 
 Status: proposal, September 2026. Nothing built yet.

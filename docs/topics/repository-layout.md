@@ -45,6 +45,9 @@ batch bytes, in-memory projection, HLC, and vector tests. `core-wasm/` now
 calls the shared batch/projection path from JavaScript against fixed vectors.
 `core-ffi/` exposes that path through UniFFI and passes selected Swift and
 Kotlin encrypted vectors; `server/` and `cli/` remain scaffold boundaries.
+The native core has a local-only SQLite journal. `core-wasm/web/` contains
+an IndexedDB local-only journal adapter that calls Rust wasm validation and
+projection; accepted shared history and outboxes remain future work.
 The documentation, test, and platform paths marked for later milestones are future paths, not
 links to existing files. Scaffold targets compile without implementing their
 responsibilities. The CBOR vector tests cover only the first byte subset;

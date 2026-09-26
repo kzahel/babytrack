@@ -133,8 +133,9 @@ shared core through JavaScript with fixed encrypted vectors. The native
 smoke calls it through Swift and Kotlin with the same selected vectors. All
 four runtimes seal and open one fixed child event. `server` and `cli`
 still have no behavioral tests. The Playwright Chromium smoke exercises wasm
-and IndexedDB with fixture data across reload and rollback. Add gates for
-the remaining behavior with M0 work. `core/tests/sqlite_store.rs` covers
+and IndexedDB with fixture data across reload and rollback. Its local
+journal adapter also exercises validated operation append, duplicate
+rejection, Family isolation, and reload. Add gates for the remaining
+behavior with M0 work. `core/tests/sqlite_store.rs` covers
 native local-only append, restart replay, HLC transaction, and Family
-isolation; accepted shared history, outbox, and production browser storage
-are not implemented yet.
+isolation; accepted shared history and outbox are not implemented yet.

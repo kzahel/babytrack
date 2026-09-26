@@ -4,13 +4,60 @@
 
 use babytrack_core::{
     batch, crypto,
-    projection::{Outcome, Projection},
+    operation::Operation,
+    projection::{LocalProjection, Outcome, Projection},
 };
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct WasmFamily {
     projection: Projection,
+}
+
+#[wasm_bindgen]
+pub struct WasmLocalFamily {
+    projection: LocalProjection,
+    family_id: [u8; 16],
+    device_id: [u8; 16],
+}
+
+#[wasm_bindgen]
+impl WasmLocalFamily {
+    #[wasm_bindgen(constructor)]
+    pub fn new(family_id: &[u8], device_id: &[u8]) -> Result<Self, JsError> {
+        let family_id = fixed(family_id, "Family ID")?;
+        Ok(Self {
+            projection: LocalProjection::new(family_id),
+            family_id,
+            device_id: fixed(device_id, "device ID")?,
+        })
+    }
+
+    pub fn append_operation(
+        &mut self,
+        operation_bytes: &[u8],
+        index: u64,
+    ) -> Result<Vec<u8>, JsError> {
+        let operation = Operation::decode_bound(operation_bytes, &self.family_id, &self.device_id)
+            .map_err(debug_error)?;
+        self.projection
+            .append(&operation, index)
+            .map_err(debug_error)?;
+        Ok(operation.operation_id.to_vec())
+    }
+
+    pub fn last_append_index(&self) -> u64 {
+        self.projection.last_append_index()
+    }
+
+    pub fn field_cbor(&self, record_id: &[u8], field_id: u64) -> Result<Vec<u8>, JsError> {
+        let record_id = fixed(record_id, "record ID")?;
+        Ok(self
+            .projection
+            .record(&record_id)
+            .and_then(|record| record.field(field_id))
+            .map_or_else(Vec::new, |field| field.canonical_bytes.clone()))
+    }
 }
 
 #[wasm_bindgen]

@@ -13,8 +13,8 @@ tactical with its current status.
   isolated source copy. Does not close M-1 or implement product behavior.
 - [003: M0 executable foundation](003-m0-foundation.md) — in progress;
   Rust canonical CBOR, operation, crypto/HPKE, batch bytes, and local-only
-  projection and SQLite journal cases run; full binding, storage, relay,
-  membership, and recovery gates remain.
+  projection, SQLite, and browser local journal cases run; full binding,
+  storage, relay, membership, and recovery gates remain.
 - [004: Autonomous delivery tracker](004-delivery-tracker.md) — active
   coordination; tracks the next M0 proof, security-review handoffs, CI
   growth, and progress toward a usable M1 Android UI. Detailed completion

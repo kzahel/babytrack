@@ -138,15 +138,19 @@ rebuilds to the same state in `cargo test -p babytrack-core`. Durable storage
 has begun: native `SqliteStore` atomically appends local-only operation bytes,
 their index, and HLC state; reopen rebuilds the projection from the journal.
 `core/tests/sqlite_store.rs` covers failed append, duplicate ID, restart,
-and two-Family isolation. Materialized projection, accepted shared entries,
-outbox, production browser IndexedDB, and private copy remain open.
+and two-Family isolation. A reusable browser IndexedDB local-only journal
+now stores validated operation bytes and append indexes in one transaction;
+`WasmLocalFamily` replays through the shared Rust projection. The real
+Chromium smoke covers reload, duplicate rejection, and wrong-Family append
+rollback. Materialized projection, browser HLC, accepted shared entries,
+outbox, and private copy remain open.
 The decoder now enforces UUIDv4 Family/device/batch identities, UUIDv7
 operation/child/activity identities, and a positive batch epoch.
 `bash scripts/check_browser_smoke.sh` launches Playwright's isolated Chromium
 shell, loads the wasm binding, and checks IndexedDB reload, an aborted
 multi-store transaction, and Family-scoped keys and rows. It uses fixture
-keys and a small test adapter; the production browser store and complete
-cross-language vector suite remain open.
+keys for encrypted batches and the reusable local-only journal adapter;
+complete browser sync storage and cross-language vector coverage remain open.
 
 Every agreed FS case gets a deterministic core/relay action binding with
 assertions for local state, shared state, pending outbox, visible status, and

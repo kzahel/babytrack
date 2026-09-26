@@ -14,6 +14,7 @@ const input = {
   relayHex: '03396219237f75a64f12aeb7f39723abf400b160c364980a765dac24aeba2464',
   keyHex: fixtures.base.epoch_key_hex,
   seedHex: fixtures.base.recipient_sign_seed_hex,
+  deviceHex: fixtures.base.recipient_id_hex,
   headerHex: minor.header_cbor_hex,
   operationHex: minor.operation_hex,
   envelopeHex: minor.envelope_cbor_hex,
@@ -27,6 +28,11 @@ const server = http.createServer((request, response) => {
     return;
   }
   const name = request.url.slice(1);
+  if (name === 'local-store.js') {
+    response.writeHead(200, { 'Content-Type': 'text/javascript' });
+    fs.createReadStream(path.join(__dirname, '../../core-wasm/web/local-store.js')).pipe(response);
+    return;
+  }
   if (!['babytrack_core_wasm.js', 'babytrack_core_wasm_bg.wasm'].includes(name)) {
     response.writeHead(404).end();
     return;
@@ -158,8 +164,63 @@ async function run() {
       return { absent: absent === undefined, field: Array.from(field.bytes), wrongKeyRejected };
     }, input);
     assert.deepEqual(rolledBack, { absent: true, field: [0xf4], wrongKeyRejected: true });
+
+    const localFirst = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { LocalStore } = await import('/local-store.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+      const store = await LocalStore.open(wasm, 'babytrack-local-journal-smoke');
+      await store.createFamily(data.familyHex, data.deviceHex);
+      await store.createFamily(data.otherFamilyHex, data.deviceHex);
+      const index = await store.append(data.familyHex, bytes(data.operationHex));
+      let duplicateRejected = false;
+      try { await store.append(data.familyHex, bytes(data.operationHex)); }
+      catch { duplicateRejected = true; }
+      let rejected = false;
+      try { await store.append(data.otherFamilyHex, bytes(data.operationHex)); }
+      catch { rejected = true; }
+      const projection = await store.load(data.familyHex);
+      const result = {
+        index,
+        name: Array.from(projection.field_cbor(bytes(data.recordHex), 1n)),
+        unknown: Array.from(projection.field_cbor(bytes(data.recordHex), 500n)),
+        rejected, duplicateRejected,
+      };
+      projection.free();
+      store.close();
+      return result;
+    }, input);
+    assert.deepEqual(localFirst, {
+      index: 1, name: [0x64, 0x42, 0x61, 0x62, 0x79], unknown: [0xf4],
+      rejected: true, duplicateRejected: true,
+    });
+
+    await page.reload();
+    const localReload = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { LocalStore } = await import('/local-store.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+      const store = await LocalStore.open(wasm, 'babytrack-local-journal-smoke');
+      const primary = await store.load(data.familyHex);
+      const other = await store.load(data.otherFamilyHex);
+      const result = {
+        primaryIndex: primary.last_append_index().toString(),
+        otherIndex: other.last_append_index().toString(),
+        name: Array.from(primary.field_cbor(bytes(data.recordHex), 1n)),
+        otherName: Array.from(other.field_cbor(bytes(data.recordHex), 1n)),
+      };
+      primary.free();
+      other.free();
+      store.close();
+      return result;
+    }, input);
+    assert.deepEqual(localReload, {
+      primaryIndex: '1', otherIndex: '0', name: [0x64, 0x42, 0x61, 0x62, 0x79], otherName: [],
+    });
     await context.close();
-    console.log('browser wasm + IndexedDB reload, rollback, and Family key isolation: OK');
+    console.log('browser wasm + IndexedDB batch and local journal reload, rollback, and Family isolation: OK');
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));

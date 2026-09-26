@@ -1,4 +1,10 @@
-//! Fresh keys, promoted local history, and exact signed bytes survive restart.
+//! Fresh keys, promoted history, and exact signed bytes cross the relay HTTP boundary.
+
+use axum::{
+    Router,
+    body::{Body, to_bytes},
+    http::{Method, Request, StatusCode, header::CONTENT_TYPE},
+};
 
 use babytrack_core::{
     bootstrap::InvitationBootstrap,
@@ -16,7 +22,39 @@ use babytrack_core::{
     sqlite_store::{FamilyHandle, SqliteStore},
     sync_wire::{BatchResult, ControlPage, LogPage, OpaqueObject},
 };
-use babytrack_server::RelayStore;
+use babytrack_server::{RelayStore, test_router};
+use tower::ServiceExt;
+
+async fn http_bytes(app: &Router, method: Method, path: &str, body: Vec<u8>) -> Vec<u8> {
+    let request = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(CONTENT_TYPE, "application/cbor")
+        .body(Body::from(body))
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    to_bytes(response.into_body(), 4 * 1024 * 1024)
+        .await
+        .unwrap()
+        .to_vec()
+}
+
+async fn stage_objects(app: &Router, family: [u8; 16], bodies: &[([u8; 16], Vec<u8>)]) {
+    for (id, body) in bodies {
+        let path = format!(
+            "/v1/families/{}/objects/{}",
+            lower_hex(&family),
+            lower_hex(id)
+        );
+        http_bytes(app, Method::POST, &path, body.clone()).await;
+    }
+}
+
+async fn commit_control(app: &Router, family: [u8; 16], candidate: &[u8]) -> Vec<u8> {
+    let path = format!("/v1/families/{}/control", lower_hex(&family));
+    http_bytes(app, Method::POST, &path, candidate.to_vec()).await
+}
 
 fn lower_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -34,8 +72,8 @@ fn v7(tag: u8) -> [u8; 16] {
     id
 }
 
-#[test]
-fn existing_local_family_promotes_and_shares_with_durable_keys() {
+#[tokio::test]
+async fn existing_local_family_promotes_and_shares_with_durable_keys() {
     let dir = tempfile::tempdir().unwrap();
     let local_path = dir.path().join("manager.db");
     let relay_path = dir.path().join("relay.db");
@@ -122,20 +160,19 @@ fn existing_local_family_promotes_and_shares_with_durable_keys() {
     assert_eq!(resumed.stage_bodies().unwrap(), genesis_stages);
 
     let mut relay = RelayStore::open(&relay_path, relay_seed).unwrap();
-    for (id, body) in &genesis_stages {
-        relay
-            .stage_genesis_object(family.family_id, *id, body)
-            .unwrap();
-    }
+    let app = test_router(&relay_path, relay_seed).unwrap();
+    stage_objects(&app, family.family_id, &genesis_stages).await;
     assert!(
         relay
             .committed_object(family.family_id, object_id)
             .unwrap()
             .is_none()
     );
-    let response = relay
-        .commit_genesis(family.family_id, &candidate, 1_700_000_000_000)
-        .unwrap();
+    let response = commit_control(&app, family.family_id, &candidate).await;
+    assert_eq!(
+        commit_control(&app, family.family_id, &candidate).await,
+        response
+    );
     let Value::Map(fields) = cbor::decode(&response).unwrap() else {
         panic!()
     };
@@ -186,12 +223,13 @@ fn existing_local_family_promotes_and_shares_with_durable_keys() {
     let resumed = ManagerCreation::resume(&local, family, &wrapping_key).unwrap();
     let issue = FirstInviteIssue::resume(&local, &resumed, &wrapping_key).unwrap();
     assert_eq!(issue.stage_body().unwrap(), issue_stage);
-    relay
-        .stage_first_issue_object(family.family_id, issue.object_id(), &issue_stage)
-        .unwrap();
-    let response = relay
-        .commit_first_issue(family.family_id, &issue_candidate, 1_700_000_000_001)
-        .unwrap();
+    stage_objects(
+        &app,
+        family.family_id,
+        &[(issue.object_id(), issue_stage.clone())],
+    )
+    .await;
+    let response = commit_control(&app, family.family_id, &issue_candidate).await;
     let Value::Map(fields) = cbor::decode(&response).unwrap() else {
         panic!()
     };
@@ -246,9 +284,7 @@ fn existing_local_family_promotes_and_shares_with_durable_keys() {
     let resumed_enrollment =
         EnrollmentAttempt::resume(&mut recipient_store, family.family_id, &recipient_wrap).unwrap();
     assert_eq!(resumed_enrollment.claim_candidate(), claim_candidate);
-    let response = relay
-        .commit_first_claim(family.family_id, &claim_candidate, 1_700_000_000_002)
-        .unwrap();
+    let response = commit_control(&app, family.family_id, &claim_candidate).await;
     let Value::Map(fields) = cbor::decode(&response).unwrap() else {
         panic!()
     };
@@ -287,14 +323,8 @@ fn existing_local_family_promotes_and_shares_with_durable_keys() {
     let challenge = FirstChallenge::resume(&local, &resumed, &wrapping_key).unwrap();
     assert_eq!(challenge.candidate_bytes(), challenge_candidate);
     assert_eq!(challenge.stage_bodies().unwrap(), staged);
-    for (id, body) in &staged {
-        relay
-            .stage_first_challenge_object(family.family_id, *id, body)
-            .unwrap();
-    }
-    let response = relay
-        .commit_first_challenge(family.family_id, &challenge_candidate, 1_700_000_000_003)
-        .unwrap();
+    stage_objects(&app, family.family_id, &staged).await;
+    let response = commit_control(&app, family.family_id, &challenge_candidate).await;
     let Value::Map(fields) = cbor::decode(&response).unwrap() else {
         panic!()
     };
@@ -371,9 +401,7 @@ fn existing_local_family_promotes_and_shares_with_durable_keys() {
         EnrollmentAttempt::resume(&mut recipient_store, family.family_id, &recipient_wrap).unwrap();
     let proof = FirstProof::resume(&recipient_store, &resumed_enrollment, &recipient_wrap).unwrap();
     assert_eq!(proof.candidate_bytes(), proof_candidate);
-    let response = relay
-        .commit_first_proof(family.family_id, &proof_candidate, 1_700_000_000_004)
-        .unwrap();
+    let response = commit_control(&app, family.family_id, &proof_candidate).await;
     let Value::Map(fields) = cbor::decode(&response).unwrap() else {
         panic!()
     };
@@ -439,14 +467,8 @@ fn existing_local_family_promotes_and_shares_with_durable_keys() {
     let admission = FirstAdmission::resume(&local, &resumed, &wrapping_key).unwrap();
     assert_eq!(admission.candidate_bytes(), admission_candidate);
     assert_eq!(admission.stage_bodies().unwrap(), admission_stage);
-    for (id, body) in &admission_stage {
-        relay
-            .stage_first_admission_object(family.family_id, *id, body)
-            .unwrap();
-    }
-    let response = relay
-        .commit_first_admission(family.family_id, &admission_candidate, 1_700_000_000_005)
-        .unwrap();
+    stage_objects(&app, family.family_id, &admission_stage).await;
+    let response = commit_control(&app, family.family_id, &admission_candidate).await;
     let Value::Map(fields) = cbor::decode(&response).unwrap() else {
         panic!()
     };
@@ -539,9 +561,24 @@ fn existing_local_family_promotes_and_shares_with_durable_keys() {
         NextUpload::Fresh(batch) => batch,
         NextUpload::RetryExact(_) => panic!("first upload was already pending"),
     };
-    let response = relay
-        .commit_initial_cohort_batch(family.family_id, &batch.envelope_bytes)
-        .unwrap();
+    let batch_path = format!("/v1/families/{}/batches", lower_hex(&family.family_id));
+    let response = http_bytes(
+        &app,
+        Method::POST,
+        &batch_path,
+        batch.envelope_bytes.clone(),
+    )
+    .await;
+    assert_eq!(
+        http_bytes(
+            &app,
+            Method::POST,
+            &batch_path,
+            batch.envelope_bytes.clone()
+        )
+        .await,
+        response
+    );
     let Value::Map(fields) = cbor::decode(&response).unwrap() else {
         panic!()
     };
@@ -603,9 +640,13 @@ fn existing_local_family_promotes_and_shares_with_durable_keys() {
         NextUpload::RetryExact(_) => panic!("post-watermark record was already pending"),
     };
     assert_eq!(manager_batch.from_index, 2);
-    let response = relay
-        .commit_initial_cohort_batch(family.family_id, &manager_batch.envelope_bytes)
-        .unwrap();
+    let response = http_bytes(
+        &app,
+        Method::POST,
+        &batch_path,
+        manager_batch.envelope_bytes.clone(),
+    )
+    .await;
     let Value::Map(fields) = cbor::decode(&response).unwrap() else {
         panic!()
     };

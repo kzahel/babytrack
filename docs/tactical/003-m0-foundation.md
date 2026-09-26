@@ -178,10 +178,12 @@ uploads an encrypted signed batch; a separate manager store fetches the
 log entry and signed result and projects the same child. Candidate bytes,
 object bytes, and local keys survive restarts before the relevant POSTs.
 The current relay methods and builders cover only one manager and one
-first recipient at epoch one. The dynamic test exercises the authenticated
-relay storage boundary; HTTP batch delivery has separate coverage, while
-HTTP control transport, background polling, later invitations, removal,
-and recovery remain open.
+first recipient at epoch one. The dynamic test now sends every staged
+control object, signed transition, and batch through the Axum HTTP routes,
+then verifies signed reads through the relay store boundary. Exact HTTP
+genesis and batch retries return the first result. Full HTTP read delivery,
+lost-response and disconnected-client transport campaigns, background
+polling, later invitations, removal, and recovery remain open.
 Existing local records now promote as encrypted, manifest-bound chunks at a
 fixed watermark. The manager stores exact chunk and genesis bytes before
 upload, and a recipient verifies every chunk under its granted epoch key

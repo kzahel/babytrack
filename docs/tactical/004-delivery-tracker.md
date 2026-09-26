@@ -32,7 +32,7 @@ slice.
 | Field | Current answer |
 |---|---|
 | Active implementation owner | [003 M0 foundation](003-m0-foundation.md), slices 2 and 3; slice 1 cross-language gate is still open. |
-| Next demonstrable proof | A fresh empty Family now prepares and confirms random-key genesis; the fixed join/grant and a locally staged encrypted batch reach two client stores. Next: nonempty-history promotion and dynamic invite, challenge, and admission from real client state. |
+| Next demonstrable proof | Fresh random-key genesis, a committed invitation link, and a fresh recipient claim now run across separate stores; fixture grant and encrypted batch replay still work. Next: dynamic challenge/proof/admission and nonempty-history promotion. |
 | Next dependent slice | Complete local copy/backup and browser outbox before the M0 exit gate. |
 | Next independent review | The required early M0 authority review follows implemented invite, grant, and rotation. |
 | Open advisory | The [byte/crypto preflight](003-m0-foundation.md#advisory-bytecrypto-preflight) returned FAIL for fixture-shaped production exports, nonce/retry ownership, local validity, and signed-but-undecryptable replay. Fixture exports are gated; the initial manager path now stages and confirms native batches with replayable evidence. Full membership authority, later epochs, and browser outbox remain before shared sync. |

@@ -160,6 +160,15 @@ restart. That test exposed and fixed a builder mismatch: the promotion ID
 names the manifest object and result path, while the signed genesis has a
 distinct transition ID. Nonempty local history
 still requires encrypted promotion chunks before this path can activate.
+The same fresh manager can now prepare a first invitation with a random
+bearer seed and encrypted membership object, durably saving exact signed
+bytes and the wrapped seed before upload. A dynamic end-to-end test restarts
+the manager, commits that issue through the relay, verifies its membership
+copy, creates a link only after commit, and uses the link credential to fetch
+genesis and issue. A fresh recipient persists its own two keys and exact
+claim before POST; the relay accepts that dynamic two-signature claim and
+the recipient verifies the pending state. Challenge, proof, grant, further
+invites, and background delivery remain open for dynamic identities.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

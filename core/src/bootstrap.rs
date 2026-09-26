@@ -176,6 +176,24 @@ impl InvitationBootstrap {
     pub fn relay_origin(&self) -> &str {
         &self.relay_origin
     }
+    pub fn relay_public_key(&self) -> [u8; 32] {
+        self.relay_public_key
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn sign_get(
+        &self,
+        exact_path: &str,
+    ) -> Result<crate::sync_wire::SignedRead, crate::sync_wire::Error> {
+        use sha2::{Digest, Sha256};
+        let relay_id: [u8; 32] = Sha256::digest(self.relay_public_key).into();
+        crate::sync_wire::sign_get(
+            self.family_id,
+            relay_id,
+            self.invitation_id,
+            &self.invitation_sign_seed,
+            exact_path,
+        )
+    }
     pub fn family_id(&self) -> [u8; 16] {
         self.family_id
     }

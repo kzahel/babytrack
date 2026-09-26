@@ -141,6 +141,17 @@ pub(crate) struct ManagerCreationRow {
     pub secret_ciphertext: Vec<u8>,
 }
 
+pub(crate) struct InviteIssueRow {
+    pub family: FamilyHandle,
+    pub invitation_id: [u8; 16],
+    pub transition_id: [u8; 16],
+    pub object_id: [u8; 16],
+    pub object_bytes: Vec<u8>,
+    pub candidate_bytes: Vec<u8>,
+    pub secret_nonce: [u8; 24],
+    pub secret_ciphertext: Vec<u8>,
+}
+
 pub struct SqliteStore {
     connection: Connection,
 }
@@ -255,6 +266,18 @@ impl SqliteStore {
                device_id BLOB NOT NULL CHECK(length(device_id) = 16),
                relay_public_key BLOB NOT NULL CHECK(length(relay_public_key) = 32),
                promotion_id BLOB NOT NULL CHECK(length(promotion_id) = 16),
+               transition_id BLOB NOT NULL CHECK(length(transition_id) = 16),
+               object_id BLOB NOT NULL CHECK(length(object_id) = 16),
+               object_bytes BLOB NOT NULL,
+               candidate_bytes BLOB NOT NULL,
+               secret_nonce BLOB NOT NULL CHECK(length(secret_nonce) = 24),
+               secret_ciphertext BLOB NOT NULL,
+               FOREIGN KEY (family_id) REFERENCES families(family_id)
+             );
+             CREATE TABLE IF NOT EXISTS first_invite_issues (
+               family_id BLOB PRIMARY KEY CHECK(length(family_id) = 16),
+               device_id BLOB NOT NULL CHECK(length(device_id) = 16),
+               invitation_id BLOB NOT NULL CHECK(length(invitation_id) = 16),
                transition_id BLOB NOT NULL CHECK(length(transition_id) = 16),
                object_id BLOB NOT NULL CHECK(length(object_id) = 16),
                object_bytes BLOB NOT NULL,
@@ -996,6 +1019,73 @@ impl SqliteStore {
                 candidate_bytes: row.6,
                 secret_nonce: row.7.try_into().map_err(|_| Error::CorruptState)?,
                 secret_ciphertext: row.8,
+                })
+            })
+            .transpose()
+    }
+
+    pub(crate) fn save_first_invite_issue(&mut self, row: &InviteIssueRow) -> Result<(), Error> {
+        let transaction = self.connection.transaction()?;
+        let _ = checked_family(&transaction, row.family)?;
+        transaction.execute(
+            "INSERT INTO first_invite_issues
+             (family_id,device_id,invitation_id,transition_id,object_id,object_bytes,
+              candidate_bytes,secret_nonce,secret_ciphertext)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            params![
+                &row.family.family_id[..],
+                &row.family.device_id[..],
+                &row.invitation_id[..],
+                &row.transition_id[..],
+                &row.object_id[..],
+                &row.object_bytes,
+                &row.candidate_bytes,
+                &row.secret_nonce[..],
+                &row.secret_ciphertext,
+            ],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn first_invite_issue(
+        &self,
+        family: FamilyHandle,
+    ) -> Result<Option<InviteIssueRow>, Error> {
+        let _ = checked_family(&self.connection, family)?;
+        self.connection
+            .query_row(
+                "SELECT device_id,invitation_id,transition_id,object_id,object_bytes,
+                    candidate_bytes,secret_nonce,secret_ciphertext
+             FROM first_invite_issues WHERE family_id=?1",
+                [&family.family_id[..]],
+                |r| {
+                    Ok((
+                        r.get::<_, Vec<u8>>(0)?,
+                        r.get::<_, Vec<u8>>(1)?,
+                        r.get::<_, Vec<u8>>(2)?,
+                        r.get::<_, Vec<u8>>(3)?,
+                        r.get::<_, Vec<u8>>(4)?,
+                        r.get::<_, Vec<u8>>(5)?,
+                        r.get::<_, Vec<u8>>(6)?,
+                        r.get::<_, Vec<u8>>(7)?,
+                    ))
+                },
+            )
+            .optional()?
+            .map(|row| {
+                if row.0 != family.device_id {
+                    return Err(Error::WrongDevice);
+                }
+                Ok(InviteIssueRow {
+                    family,
+                    invitation_id: row.1.try_into().map_err(|_| Error::CorruptState)?,
+                    transition_id: row.2.try_into().map_err(|_| Error::CorruptState)?,
+                    object_id: row.3.try_into().map_err(|_| Error::CorruptState)?,
+                    object_bytes: row.4,
+                    candidate_bytes: row.5,
+                    secret_nonce: row.6.try_into().map_err(|_| Error::CorruptState)?,
+                    secret_ciphertext: row.7,
                 })
             })
             .transpose()

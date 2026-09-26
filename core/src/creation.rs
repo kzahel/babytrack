@@ -222,6 +222,15 @@ impl ManagerCreation {
     pub fn signing_public_key(&self) -> [u8; 32] {
         crypto::signing_public_key(&self.signing_seed)
     }
+    pub(crate) fn signing_seed(&self) -> [u8; 32] {
+        self.signing_seed
+    }
+    pub(crate) fn epoch_key(&self) -> [u8; 32] {
+        self.epoch_key
+    }
+    pub(crate) fn relay_public_key(&self) -> [u8; 32] {
+        self.relay_public_key
+    }
     pub fn stage_body(&self) -> Result<Vec<u8>, Error> {
         let Value::Map(candidate) = cbor::decode(&self.candidate_bytes)? else {
             return Err(Error::Invalid("stored candidate not map"));

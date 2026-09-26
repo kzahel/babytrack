@@ -9,7 +9,7 @@ use babytrack_wire::{
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::{authority, receipt};
+use crate::{authority, read_auth, receipt};
 
 #[derive(Debug)]
 #[allow(dead_code)] // Detailed errors are mapped to protocol responses by routes.
@@ -18,6 +18,7 @@ pub(crate) enum Error {
     Cbor(cbor::Error),
     Crypto(crypto::Error),
     Authority(authority::Error),
+    ReadAuth(read_auth::Error),
     Receipt(receipt::Error),
     Invalid(&'static str),
 }
@@ -39,6 +40,11 @@ impl From<crypto::Error> for Error {
 impl From<authority::Error> for Error {
     fn from(v: authority::Error) -> Self {
         Self::Authority(v)
+    }
+}
+impl From<read_auth::Error> for Error {
+    fn from(v: read_auth::Error) -> Self {
+        Self::ReadAuth(v)
     }
 }
 impl From<receipt::Error> for Error {
@@ -88,6 +94,11 @@ impl RelayStore {
              CREATE TABLE IF NOT EXISTS entries (
                family_id BLOB NOT NULL, cursor INTEGER NOT NULL, kind INTEGER NOT NULL,
                committed_bytes BLOB NOT NULL, PRIMARY KEY (family_id, cursor)
+             );
+             CREATE TABLE IF NOT EXISTS read_requests (
+               family_id BLOB NOT NULL, signer_id BLOB NOT NULL,
+               request_id BLOB NOT NULL, request_hash BLOB NOT NULL,
+               PRIMARY KEY (family_id, signer_id, request_id)
              );",
         )?;
         let relay_public = crypto::signing_public_key(&relay_seed);
@@ -114,7 +125,12 @@ impl RelayStore {
         self.relay_public
     }
 
-    pub fn stage_genesis_object(&mut self, body: &[u8]) -> Result<Vec<u8>, Error> {
+    pub fn stage_genesis_object(
+        &mut self,
+        path_family: [u8; 16],
+        path_object: [u8; 16],
+        body: &[u8],
+    ) -> Result<Vec<u8>, Error> {
         let value = cbor::decode_with_limits(
             body,
             cbor::Limits {
@@ -143,6 +159,11 @@ impl RelayStore {
             .try_into()
             .map_err(|_| Error::Invalid("object kind range"))?;
         let object_id = fixed::<16>(&fields[4].1)?;
+        if candidate.family_id != path_family || object_id != path_object {
+            return Err(Error::Invalid(
+                "stage path differs from signed candidate or object",
+            ));
+        }
         let Value::Bytes(object_bytes) = &fields[5].1 else {
             return Err(Error::Invalid("object not bytes"));
         };
@@ -206,10 +227,14 @@ impl RelayStore {
 
     pub fn commit_genesis(
         &mut self,
+        path_family: [u8; 16],
         candidate_bytes: &[u8],
         committed_ms: i64,
     ) -> Result<Vec<u8>, Error> {
         let candidate = authority::verify_genesis_candidate(candidate_bytes, &self.relay_public)?;
+        if candidate.family_id != path_family {
+            return Err(Error::Invalid("commit path differs from signed candidate"));
+        }
         let reservation = crypto::hash("genesis-reservation", candidate_bytes)?;
         let tx = self.db.transaction()?;
         let saved: Option<SavedReservation> = tx.query_row(
@@ -291,6 +316,84 @@ impl RelayStore {
             )
             .optional()?)
     }
+
+    pub fn promotion_result_authenticated(
+        &mut self,
+        family_id: [u8; 16],
+        promotion_id: [u8; 16],
+        exact_path: &str,
+        auth_bytes: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        let expected_path = format!(
+            "/v1/families/{}/promotions/{}",
+            lower_hex(&family_id),
+            lower_hex(&promotion_id)
+        );
+        if exact_path != expected_path {
+            return Err(Error::Invalid("promotion path is not canonical"));
+        }
+        let saved: Option<(Vec<u8>, i64, Option<Vec<u8>>)> = self
+            .db
+            .query_row(
+                "SELECT candidate_bytes,active,committed_bytes FROM families WHERE family_id=?1",
+                params![&family_id[..]],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        let Some((candidate_bytes, active, committed)) = saved else {
+            return Err(Error::Invalid("Family has no genesis reservation"));
+        };
+        let candidate = authority::verify_genesis_candidate(&candidate_bytes, &self.relay_public)?;
+        if candidate.manifest.first().map(|entry| entry.object_id) != Some(promotion_id) {
+            return Err(Error::Invalid("promotion ID mismatch"));
+        }
+        let verified = read_auth::verify_get(
+            auth_bytes,
+            family_id,
+            candidate.relay_id,
+            candidate.manager_id,
+            candidate.manager_signing_key,
+            exact_path,
+        )?;
+        let tx = self.db.transaction()?;
+        let old: Option<Vec<u8>> = tx.query_row(
+            "SELECT request_hash FROM read_requests WHERE family_id=?1 AND signer_id=?2 AND request_id=?3",
+            params![&family_id[..], &verified.signer_id[..], &verified.request_id[..]], |r| r.get(0),
+        ).optional()?;
+        if let Some(hash) = old {
+            if hash != verified.request_hash {
+                return Err(Error::Invalid("request ID reused with different bytes"));
+            }
+        } else {
+            tx.execute(
+                "INSERT INTO read_requests(family_id,signer_id,request_id,request_hash) VALUES(?1,?2,?3,?4)",
+                params![&family_id[..], &verified.signer_id[..], &verified.request_id[..], &verified.request_hash[..]],
+            )?;
+        }
+        tx.commit()?;
+        let body = cbor::encode(&Value::Map(vec![
+            (1, Value::Integer(1)),
+            (
+                2,
+                if active == 1 {
+                    Value::Bytes(committed.ok_or(Error::Invalid("active genesis missing bytes"))?)
+                } else {
+                    Value::Null
+                },
+            ),
+        ]))?;
+        Ok(body)
+    }
+}
+
+fn lower_hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &byte in bytes {
+        out.push(DIGITS[(byte >> 4) as usize] as char);
+        out.push(DIGITS[(byte & 15) as usize] as char);
+    }
+    out
 }
 
 fn fixed<const N: usize>(value: &Value) -> Result<[u8; N], Error> {
@@ -344,6 +447,10 @@ mod tests {
         let object_id: [u8; 16] = hex(api["inputs"]["promotion_id_hex"].as_str().unwrap())
             .try_into()
             .unwrap();
+        let promotion_path = api["inputs"]["promotion_result_path"].as_str().unwrap();
+        let promotion_auth = hex(api["inputs"]["promotion_result_read_auth_cbor_hex"]
+            .as_str()
+            .unwrap());
         let expected_stage = hex(api["expect"]["stage_response_cbor_hex"].as_str().unwrap());
         let expected_commit = hex(api["expect"]["commit_response_cbor_hex"].as_str().unwrap());
         let Value::Map(response) = cbor::decode(&expected_commit).unwrap() else {
@@ -366,28 +473,68 @@ mod tests {
         let mut store = RelayStore::open(&path, seed).unwrap();
         assert!(
             store
-                .commit_genesis(&candidate, time.try_into().unwrap())
+                .commit_genesis(family, &candidate, time.try_into().unwrap())
                 .is_err()
         );
-        assert_eq!(store.stage_genesis_object(&stage).unwrap(), expected_stage);
+        assert_eq!(
+            store
+                .stage_genesis_object(family, object_id, &stage)
+                .unwrap(),
+            expected_stage
+        );
         drop(store);
         let mut store = RelayStore::open(&path, seed).unwrap();
-        assert_eq!(store.stage_genesis_object(&stage).unwrap(), expected_stage);
+        assert_eq!(
+            store
+                .stage_genesis_object(family, object_id, &stage)
+                .unwrap(),
+            expected_stage
+        );
         assert!(store.genesis_result(family).unwrap().is_none());
         assert!(store.committed_object(family, object_id).unwrap().is_none());
+        let pending_result = store
+            .promotion_result_authenticated(family, object_id, promotion_path, &promotion_auth)
+            .unwrap();
+        assert_eq!(
+            cbor::decode(&pending_result).unwrap(),
+            Value::Map(vec![(1, Value::Integer(1)), (2, Value::Null)])
+        );
         assert_eq!(
             store
-                .commit_genesis(&candidate, time.try_into().unwrap())
+                .commit_genesis(family, &candidate, time.try_into().unwrap())
                 .unwrap(),
             expected_commit
         );
         assert_eq!(
             store
-                .commit_genesis(&candidate, i64::try_from(time).unwrap() + 100)
+                .commit_genesis(family, &candidate, i64::try_from(time).unwrap() + 100)
                 .unwrap(),
             expected_commit
         );
-        assert_eq!(store.stage_genesis_object(&stage).unwrap(), expected_stage);
+        assert_eq!(
+            store
+                .stage_genesis_object(family, object_id, &stage)
+                .unwrap(),
+            expected_stage
+        );
+        assert_eq!(
+            store
+                .promotion_result_authenticated(family, object_id, promotion_path, &promotion_auth)
+                .unwrap(),
+            hex(api["expect"]["promotion_result_response_cbor_hex"]
+                .as_str()
+                .unwrap())
+        );
+        assert!(
+            store
+                .promotion_result_authenticated(
+                    family,
+                    object_id,
+                    &format!("{promotion_path}/"),
+                    &promotion_auth
+                )
+                .is_err()
+        );
         drop(store);
         let store = RelayStore::open(&path, seed).unwrap();
         assert_eq!(store.genesis_result(family).unwrap().unwrap(), *committed);

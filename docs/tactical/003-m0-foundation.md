@@ -75,6 +75,15 @@ return the first bytes. The genesis API fixture passes through staging,
 restart, commit, another retry, and reopen; changing the relay signing key
 on reopen fails. This internal store is not yet an HTTP relay, and it does
 not accept subsequent controls or batches.
+The first Axum development routes now expose genesis object staging,
+genesis commit, and a signed manager-only promotion-result read. Routes
+require canonical lowercase path IDs, exact path/body Family and object
+binding, canonical CBOR media type, and an exact signed GET path. A router
+test sends the published promotion bytes through HTTP, checks pending and
+committed results, and rejects a cross-Family path and bad read signature.
+The dev binary takes a SQLite path, an existing raw 32-byte relay seed file,
+and a bind address. Invitation, normal object, log, batch, and WebSocket
+routes remain unavailable until their public authority and ACL checks exist.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

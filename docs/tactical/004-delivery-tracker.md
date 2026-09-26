@@ -21,18 +21,19 @@ Hosting, app-store work, and public release remain M5 work.
 
 ## Current work card
 
-Baseline audited at `c024a42` (2026-09-26): M-1 design and the repository
-scaffold are complete. M0 is in progress. Canonical bytes, selected crypto
-and operation vectors, an in-memory projection, four-runtime encrypted-event
-smokes, and a browser IndexedDB fixture smoke run locally. The full vector
-suite, durable production storage, real relay, membership flow, and product
-UI remain open; the current passing checks do not close an M0 slice.
+M0 remains in progress. Canonical bytes, selected crypto and operation
+vectors, an in-memory projection, four-runtime encrypted-event smokes,
+browser IndexedDB fixture smoke, native signed-history replay, and the
+first genesis-only development relay routes run locally. The full vector
+suite, complete local storage, shared control and batch sync, recovery,
+and product UI remain open; the current passing checks do not close an M0
+slice.
 
 | Field | Current answer |
 |---|---|
-| Active implementation owner | [003 M0 foundation](003-m0-foundation.md), slice 1 |
-| Next demonstrable proof | Complete the same encrypted event and negative vectors independently in Rust, Swift, Kotlin, and wasm. |
-| Next dependent slice | Atomic local log, projection, outbox, native SQLite, browser IndexedDB, and portable backup. |
+| Active implementation owner | [003 M0 foundation](003-m0-foundation.md), slices 2 and 3; slice 1 cross-language gate is still open. |
+| Next demonstrable proof | Commit an invitation and fetch it through the real relay from an independent device store, then admit and sync a signed batch. |
+| Next dependent slice | Complete local copy/backup and browser outbox before the M0 exit gate. |
 | Next independent review | The required early M0 authority review follows implemented invite, grant, and rotation. |
 | Open advisory | The [byte/crypto preflight](003-m0-foundation.md#advisory-bytecrypto-preflight) returned FAIL for fixture-shaped production exports, nonce/retry ownership, local validity, and signed-but-undecryptable replay. Fixture exports are gated; the initial manager path now stages and confirms native batches with replayable evidence. Full membership authority, later epochs, and browser outbox remain before shared sync. |
 | CI signal today | Read-only Rust, native-binding, and browser jobs are required on every push/PR. Local checks passed; a remote Actions result has not been verified here. |

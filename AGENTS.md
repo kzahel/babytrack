@@ -19,8 +19,10 @@ documents contradict, reconcile them or ask; do not silently pick one.
 Status: M0 implementation in progress. The Rust core has canonical CBOR,
 structural operation decoding, and first cryptographic primitives including
 HPKE with byte vectors and a signed batch byte proof. A native local-only
-SQLite journal is under construction; no full application or relay behavior
-exists yet.
+SQLite journal and signed shared-history replay are under construction.
+The development relay implements only signed genesis promotion and its
+authenticated result read; it cannot yet sync controls or batches. No full
+application exists yet.
 `babytrack` is a code name.
 
 The working tree may contain concurrent human or agent changes. Do not revert,

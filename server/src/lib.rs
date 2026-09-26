@@ -3,6 +3,9 @@
 #![forbid(unsafe_code)]
 
 mod authority;
+mod http;
+pub use http::serve;
+mod read_auth;
 mod receipt;
 mod store;
 

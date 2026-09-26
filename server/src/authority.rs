@@ -33,6 +33,7 @@ pub(crate) struct GenesisCandidate {
     pub transition_id: [u8; 16],
     pub manager_id: [u8; 16],
     pub manager_signing_key: [u8; 32],
+    pub manager_row: Value,
     pub manifest: Vec<ManifestEntry>,
 }
 
@@ -154,7 +155,127 @@ pub(crate) fn verify_genesis_candidate(
         transition_id,
         manager_id,
         manager_signing_key,
+        manager_row: delta[0].1.clone(),
         manifest: entries,
+    })
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)] // Used by the first post-genesis control transaction.
+pub(crate) struct IssueCandidate {
+    pub family_id: [u8; 16],
+    pub transition_id: [u8; 16],
+    pub invitation_id: [u8; 16],
+    pub manifest: ManifestEntry,
+}
+
+#[allow(dead_code)] // Used by the first post-genesis control transaction.
+pub(crate) fn verify_first_invite_issue(
+    candidate_bytes: &[u8],
+    genesis: &GenesisCandidate,
+    current_head: [u8; 32],
+) -> Result<IssueCandidate, Error> {
+    let value = cbor::decode_with_limits(
+        candidate_bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?;
+    let root = exact_map(&value, 2)?;
+    let unsigned = exact_map(&root[0].1, 11)?;
+    if number(&unsigned[0].1)? != 1
+        || fixed::<16>(&unsigned[1].1)? != genesis.family_id
+        || fixed::<32>(&unsigned[2].1)? != genesis.relay_id
+        || fixed::<32>(&unsigned[3].1)? != current_head
+        || number(&unsigned[5].1)? != 2
+        || number(&unsigned[8].1)? != 1
+    {
+        return Err(Error::Invalid(
+            "issue version, Family, relay, parent, kind, or epoch",
+        ));
+    }
+    let transition_id = fixed::<16>(&unsigned[4].1)?;
+    if transition_id == genesis.transition_id {
+        return Err(Error::Invalid("issue transition ID reused"));
+    }
+    let delta = exact_map(&unsigned[6].1, 4)?;
+    let invitation_id = fixed::<16>(&delta[0].1)?;
+    let issuer = fixed::<16>(&delta[1].1)?;
+    let _invite_public = fixed::<32>(&delta[2].1)?;
+    let role = number(&delta[3].1)?;
+    if issuer != genesis.manager_id || (role != 1 && role != 2) {
+        return Err(Error::Invalid("issue signer or role invalid"));
+    }
+    let invitation_row = Value::Array(vec![
+        Value::Bytes(invitation_id.to_vec()),
+        Value::Bytes(issuer.to_vec()),
+        delta[2].1.clone(),
+        Value::Integer(role.into()),
+        Value::Bytes(transition_id.to_vec()),
+        Value::Integer(1),
+    ]);
+    let resulting = Value::Map(vec![
+        (1, Value::Integer(1)),
+        (2, Value::Bytes(genesis.family_id.to_vec())),
+        (3, Value::Bytes(genesis.relay_id.to_vec())),
+        (4, Value::Integer(1)),
+        (5, Value::Array(vec![genesis.manager_row.clone()])),
+        (6, Value::Array(vec![])),
+        (7, Value::Array(vec![invitation_row])),
+    ]);
+    if fixed::<32>(&unsigned[7].1)? != crypto::hash("auth-state", &cbor::encode(&resulting)?)? {
+        return Err(Error::Invalid("issue state hash mismatch"));
+    }
+    let core = Value::Array(
+        unsigned[..9]
+            .iter()
+            .map(|(_, value)| value.clone())
+            .collect(),
+    );
+    if fixed::<32>(&unsigned[10].1)? != crypto::hash("transition-core", &cbor::encode(&core)?)? {
+        return Err(Error::Invalid("issue core hash mismatch"));
+    }
+    let manifest = array(&unsigned[9].1, 1)?;
+    let entry = array(&manifest[0], 4)?;
+    let kind: u16 = number(&entry[0])?
+        .try_into()
+        .map_err(|_| Error::Invalid("kind range"))?;
+    let object_id = fixed::<16>(&entry[1])?;
+    let object_hash = fixed::<32>(&entry[2])?;
+    let object_len: u32 = number(&entry[3])?
+        .try_into()
+        .map_err(|_| Error::Invalid("length range"))?;
+    if kind != 1
+        || object_len > 1024 * 1024
+        || genesis
+            .manifest
+            .iter()
+            .any(|prior| prior.object_id == object_id)
+    {
+        return Err(Error::Invalid("issue membership manifest invalid"));
+    }
+    let signatures = array(&root[1].1, 1)?;
+    let signature = array(&signatures[0], 2)?;
+    if fixed::<16>(&signature[0])? != issuer {
+        return Err(Error::Invalid("issue signature signer invalid"));
+    }
+    crypto::verify_cbor(
+        "control-transition",
+        &cbor::encode(&root[0].1)?,
+        &genesis.manager_signing_key,
+        &fixed::<64>(&signature[1])?,
+    )?;
+    Ok(IssueCandidate {
+        family_id: genesis.family_id,
+        transition_id,
+        invitation_id,
+        manifest: ManifestEntry {
+            kind,
+            object_id,
+            object_hash,
+            object_len,
+        },
     })
 }
 
@@ -237,5 +358,49 @@ mod tests {
         let mut changed = candidate.clone();
         *changed.last_mut().unwrap() ^= 1;
         assert!(verify_genesis_candidate(&changed, &relay_key).is_err());
+    }
+
+    #[test]
+    fn first_issue_requires_manager_and_current_genesis_head() {
+        let genesis_api: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/api-genesis-v1.json").unwrap(),
+        )
+        .unwrap();
+        let issue_api: Json =
+            serde_json::from_str(&std::fs::read_to_string("../tests/vectors/api-v1.json").unwrap())
+                .unwrap();
+        let chain: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/contiguous-chain-v1.json").unwrap(),
+        )
+        .unwrap();
+        let seed: [u8; 32] = hex(chain["test_only_inputs"]["relay_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let genesis_bytes = hex(genesis_api["inputs"]["commit_candidate_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let genesis =
+            verify_genesis_candidate(&genesis_bytes, &crypto::signing_public_key(&seed)).unwrap();
+        let genesis_response = hex(genesis_api["expect"]["commit_response_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let Value::Map(response) = cbor::decode(&genesis_response).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(committed) = &response[1].1 else {
+            panic!()
+        };
+        let head = crypto::hash("control-head", committed).unwrap();
+        let issue_bytes = hex(issue_api["inputs"]["commit_body_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let issue = verify_first_invite_issue(&issue_bytes, &genesis, head).unwrap();
+        assert_eq!(issue.manifest.kind, 1);
+        assert!(verify_first_invite_issue(&issue_bytes, &genesis, [0; 32]).is_err());
+        let mut changed = issue_bytes.clone();
+        *changed.last_mut().unwrap() ^= 1;
+        assert!(verify_first_invite_issue(&changed, &genesis, head).is_err());
     }
 }

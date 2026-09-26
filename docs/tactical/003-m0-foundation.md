@@ -84,6 +84,14 @@ committed results, and rejects a cross-Family path and bad read signature.
 The dev binary takes a SQLite path, an existing raw 32-byte relay seed file,
 and a bind address. Invitation, normal object, log, batch, and WebSocket
 routes remain unavailable until their public authority and ACL checks exist.
+The relay independently verifies the first manager-issued invitation against
+its promoted genesis head: manager signature and role, fixed invitation
+role/key, resulting public state/core hashes, and membership-object
+manifest. SQLite stages that exact candidate, rejects a missing object,
+then commits the membership object, receipt, head, and cursor 2 atomically.
+The published invitation API bytes pass through a restart and exact retries.
+The corresponding HTTP invitation routes and authenticated reads are the
+next slice; claims and later authority transitions remain closed.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

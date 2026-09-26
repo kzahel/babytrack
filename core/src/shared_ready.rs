@@ -5,16 +5,18 @@
 use std::collections::BTreeMap;
 
 use crate::{
+    batch,
     cbor::{self, Value},
     control_chain::{self, ControlChain},
     crypto, membership,
-    projection::{self, Projection},
+    projection::{self, Projection, VerifiedEpochKey},
     shared_history::{self, PublicHistorySession},
-    sqlite_store::{self, FamilyHandle, SqliteStore},
+    sqlite_store::{self, FamilyHandle, PreparedBatch, SqliteStore},
 };
 
 #[derive(Debug)]
 pub enum Error {
+    Batch(batch::Error),
     Cbor(cbor::Error),
     Control(control_chain::Error),
     Crypto(crypto::Error),
@@ -23,6 +25,11 @@ pub enum Error {
     Public(shared_history::Error),
     Store(sqlite_store::Error),
     Invalid(&'static str),
+}
+impl From<batch::Error> for Error {
+    fn from(value: batch::Error) -> Self {
+        Self::Batch(value)
+    }
 }
 impl From<cbor::Error> for Error {
     fn from(value: cbor::Error) -> Self {
@@ -61,9 +68,23 @@ impl From<sqlite_store::Error> for Error {
 }
 
 pub struct ReadyManagerSession {
+    family: FamilyHandle,
     projection: Projection,
     observed_cursor: u64,
+    observed_head: [u8; 32],
+    relay_id: [u8; 32],
     active_epoch: u32,
+    current_key: VerifiedEpochKey,
+    signing_public: [u8; 32],
+    next_sequence: u64,
+}
+
+pub enum NextUpload {
+    /// Keep querying or retrying these exact signed bytes until a verified
+    /// acceptance or signed rejection resolves the outcome.
+    RetryExact(PreparedBatch),
+    /// Fresh ID and nonce reserved together with the signed envelope.
+    Fresh(PreparedBatch),
 }
 
 impl ReadyManagerSession {
@@ -171,11 +192,65 @@ impl ReadyManagerSession {
             ));
         }
         let active_epoch = *keys.keys().next_back().unwrap();
+        let current_key = keys
+            .remove(&active_epoch)
+            .ok_or(Error::Invalid("ready epoch key missing"))?;
+        let signing_public = chain.active_signing_public(family.device_id)?;
+        let next_sequence = chain.next_sequence_for(family.device_id)?;
         Ok(Self {
+            family,
             projection,
             observed_cursor: public.cursor(),
+            observed_head: public.head_hash(),
+            relay_id: chain.relay_id(),
             active_epoch,
+            current_key,
+            signing_public,
+            next_sequence,
         })
+    }
+
+    pub fn stage_next_local(
+        &self,
+        store: &mut SqliteStore,
+        signing_seed: &[u8; 32],
+    ) -> Result<NextUpload, Error> {
+        if crypto::signing_public_key(signing_seed) != self.signing_public {
+            return Err(Error::Invalid("signing seed differs from active device"));
+        }
+        let existed = store.pending_batch(self.family)?.is_some();
+        let prepared = store.stage_next_batch(
+            self.family,
+            self.relay_id,
+            self.observed_head,
+            self.active_epoch,
+            &self.current_key.bytes,
+            signing_seed,
+        )?;
+        let signed = batch::verify_signed_envelope(
+            &prepared.envelope_bytes,
+            &self.family.family_id,
+            &self.relay_id,
+            &self.signing_public,
+        )?;
+        let header = signed.header();
+        if header.author_device_id != self.family.device_id
+            || header.batch_id != prepared.batch_id
+            || signed.object_hash() != prepared.object_hash
+            || header.device_sequence != self.next_sequence
+            || prepared.sequence != self.next_sequence
+        {
+            return Err(Error::Invalid(
+                "local outbox differs from verified authority",
+            ));
+        }
+        if existed {
+            return Ok(NextUpload::RetryExact(prepared));
+        }
+        if header.control_head != self.observed_head || header.epoch != self.active_epoch {
+            return Err(Error::Invalid("new outbox uses stale head or epoch"));
+        }
+        Ok(NextUpload::Fresh(prepared))
     }
 
     pub fn projection(&self) -> &Projection {

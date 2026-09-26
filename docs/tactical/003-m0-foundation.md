@@ -151,13 +151,19 @@ rollback. Materialized projection, browser HLC, general shared replay,
 browser outbox, and private copy remain open. Native SQLite now also reserves a random
 batch ID and nonce and persists exact signed envelope bytes in one transaction.
 An uncertain retry returns those bytes after reopen even if the caller's
-current head/key has changed. The crate-private staging path awaits a
-core-owned authority session. The initial `FamilySession` now stages through
+current head/key has changed. The initial `FamilySession` stages through
 that path only with its verified manager identity, head, epoch key, and
 signing key. A matching relay-signed acceptance moves the exact envelope and
 receipt to replayable SQLite history while clearing the outbox in one
-transaction; a bad receipt leaves it pending through restart. Later control
-epochs, browser outbox, and rebatching remain open.
+transaction; a bad receipt leaves it pending through restart. The newer
+manager-ready session stages against its fully checked current head, key,
+and signing identity. It reports an exact retry while a prior batch is
+uncertain, even after rotation. A signed stale-epoch rejection matching the
+newly pinned head archives the old bytes and receipt without removing the
+local operation; the next stage reserves a new nonce and batch ID at the
+same sequence. Restart retries the replacement bytes exactly. General
+accepted-batch/outbox atomicity, browser outbox, and removed-device private
+copy remain open.
 The decoder now enforces UUIDv4 Family/device/batch identities, UUIDv7
 operation/child/activity identities, and a positive batch epoch.
 The Rust core now verifies the fixed `GENESIS01` committed control object:

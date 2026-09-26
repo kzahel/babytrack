@@ -3,19 +3,27 @@
 //! separate and must not be inferred from its cursor.
 
 use crate::{
+    batch,
     cbor::{self, Value},
     control_chain::{self, ControlChain},
-    crypto,
+    crypto, session,
     sqlite_store::{self, FamilyHandle, SqliteStore, VerifiedSharedEntry},
 };
 
 #[derive(Debug)]
 pub enum Error {
+    Batch(batch::Error),
     Control(control_chain::Error),
     Cbor(cbor::Error),
     Crypto(crypto::Error),
+    Session(session::Error),
     Store(sqlite_store::Error),
     Invalid(&'static str),
+}
+impl From<batch::Error> for Error {
+    fn from(value: batch::Error) -> Self {
+        Self::Batch(value)
+    }
 }
 impl From<control_chain::Error> for Error {
     fn from(value: control_chain::Error) -> Self {
@@ -30,6 +38,11 @@ impl From<cbor::Error> for Error {
 impl From<crypto::Error> for Error {
     fn from(value: crypto::Error) -> Self {
         Self::Crypto(value)
+    }
+}
+impl From<session::Error> for Error {
+    fn from(value: session::Error) -> Self {
+        Self::Session(value)
     }
 }
 impl From<sqlite_store::Error> for Error {
@@ -226,6 +239,59 @@ impl PublicHistorySession {
             },
         )?;
         self.chain = candidate;
+        Ok(())
+    }
+
+    /// A signed stale-epoch rejection at the already verified new head ends
+    /// uncertainty for this exact envelope. The local operation stays in the
+    /// journal so the ready session can stage fresh nonce/ID bytes.
+    pub fn reject_stale_pending(
+        &self,
+        store: &mut SqliteStore,
+        receipt_bytes: &[u8],
+    ) -> Result<(), Error> {
+        let pending = store
+            .pending_batch(self.family)?
+            .ok_or(Error::Invalid("no uncertain local batch"))?;
+        let signer = self.chain.active_signing_public(self.family.device_id)?;
+        let signed = batch::verify_signed_envelope(
+            &pending.envelope_bytes,
+            &self.family.family_id,
+            &self.chain.relay_id(),
+            &signer,
+        )?;
+        if signed.header().batch_id != pending.batch_id
+            || signed.object_hash() != pending.object_hash
+            || signed.header().device_sequence != pending.sequence
+            || signed.header().author_device_id != self.family.device_id
+            || signed.header().epoch >= self.chain.epoch()?
+            || self.chain.next_sequence_for(self.family.device_id)? != pending.sequence
+        {
+            return Err(Error::Invalid("pending batch is not a stale local epoch"));
+        }
+        let history = store
+            .shared_history(self.family)?
+            .ok_or(Error::Invalid("Family has no shared genesis"))?;
+        let receipt = session::verify_rejected_receipt(receipt_bytes, &history.relay_public_key)?;
+        if receipt.reason != 1
+            || receipt.family_id != self.family.family_id
+            || receipt.relay_id != self.chain.relay_id()
+            || receipt.batch_id != pending.batch_id
+            || receipt.object_hash != pending.object_hash
+            || receipt.cursor != self.cursor()
+            || receipt.control_head != self.head_hash()
+            || receipt.device_sequence != pending.sequence
+            || receipt.next_expected_sequence != pending.sequence
+        {
+            return Err(Error::Invalid("rejection differs from pinned stale batch"));
+        }
+        store.record_verified_stale_rejection(
+            self.family,
+            &pending,
+            receipt_bytes,
+            self.cursor(),
+            self.head_hash(),
+        )?;
         Ok(())
     }
 }

@@ -277,10 +277,81 @@ pub(crate) struct AcceptedReceipt {
     pub(crate) next_expected_sequence: u64,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) struct RejectedReceipt {
+    pub(crate) family_id: [u8; 16],
+    pub(crate) relay_id: [u8; 32],
+    pub(crate) batch_id: [u8; 16],
+    pub(crate) object_hash: [u8; 32],
+    pub(crate) cursor: u64,
+    pub(crate) control_head: [u8; 32],
+    pub(crate) device_sequence: u64,
+    pub(crate) reason: u16,
+    pub(crate) next_expected_sequence: u64,
+}
+
+struct DecodedBatchReceipt {
+    family_id: [u8; 16],
+    relay_id: [u8; 32],
+    batch_id: [u8; 16],
+    object_hash: [u8; 32],
+    accepted: bool,
+    cursor: u64,
+    control_head: [u8; 32],
+    device_sequence: u64,
+    reason: Option<u16>,
+    next_expected_sequence: u64,
+}
+
 pub(crate) fn verify_accepted_receipt(
     bytes: &[u8],
     relay_public_key: &[u8; 32],
 ) -> Result<AcceptedReceipt, Error> {
+    let receipt = decode_batch_receipt(bytes, relay_public_key)?;
+    if !receipt.accepted || receipt.reason.is_some() {
+        return Err(Error::Invalid("receipt is not an acceptance"));
+    }
+    Ok(AcceptedReceipt {
+        family_id: receipt.family_id,
+        relay_id: receipt.relay_id,
+        batch_id: receipt.batch_id,
+        object_hash: receipt.object_hash,
+        cursor: receipt.cursor,
+        control_head: receipt.control_head,
+        device_sequence: receipt.device_sequence,
+        next_expected_sequence: receipt.next_expected_sequence,
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn verify_rejected_receipt(
+    bytes: &[u8],
+    relay_public_key: &[u8; 32],
+) -> Result<RejectedReceipt, Error> {
+    let receipt = decode_batch_receipt(bytes, relay_public_key)?;
+    let reason = receipt
+        .reason
+        .ok_or(Error::Invalid("receipt is not a rejection"))?;
+    if receipt.accepted {
+        return Err(Error::Invalid("receipt is not a rejection"));
+    }
+    Ok(RejectedReceipt {
+        family_id: receipt.family_id,
+        relay_id: receipt.relay_id,
+        batch_id: receipt.batch_id,
+        object_hash: receipt.object_hash,
+        cursor: receipt.cursor,
+        control_head: receipt.control_head,
+        device_sequence: receipt.device_sequence,
+        reason,
+        next_expected_sequence: receipt.next_expected_sequence,
+    })
+}
+
+fn decode_batch_receipt(
+    bytes: &[u8],
+    relay_public_key: &[u8; 32],
+) -> Result<DecodedBatchReceipt, Error> {
     let value = cbor::decode_with_limits(
         bytes,
         cbor::Limits {
@@ -296,8 +367,8 @@ pub(crate) fn verify_accepted_receipt(
         return Err(Error::Invalid("receipt body must be map"));
     };
     exact_keys(body, 11)?;
-    if number(&body[0].1)? != 1 || body[5].1 != Value::Bool(true) || body[9].1 != Value::Null {
-        return Err(Error::Invalid("receipt is not a version-one acceptance"));
+    if number(&body[0].1)? != 1 {
+        return Err(Error::Invalid("receipt version mismatch"));
     }
     let signature = fixed::<64>(&outer[1].1)?;
     crypto::verify_cbor(
@@ -306,17 +377,30 @@ pub(crate) fn verify_accepted_receipt(
         relay_public_key,
         &signature,
     )?;
-    let receipt = AcceptedReceipt {
+    let Value::Bool(accepted) = body[5].1 else {
+        return Err(Error::Invalid("receipt acceptance is not boolean"));
+    };
+    let reason = match body[9].1 {
+        Value::Null => None,
+        Value::Integer(value) if (1..=5).contains(&value) => Some(value as u16),
+        _ => return Err(Error::Invalid("receipt reason invalid")),
+    };
+    if accepted != reason.is_none() {
+        return Err(Error::Invalid("receipt acceptance and reason disagree"));
+    }
+    let receipt = DecodedBatchReceipt {
         family_id: fixed(&body[1].1)?,
         relay_id: fixed(&body[2].1)?,
         batch_id: fixed(&body[3].1)?,
         object_hash: fixed(&body[4].1)?,
+        accepted,
         cursor: number(&body[6].1)?,
         control_head: fixed(&body[7].1)?,
         device_sequence: number(&body[8].1)?,
+        reason,
         next_expected_sequence: number(&body[10].1)?,
     };
-    if receipt.cursor == 0 || receipt.device_sequence == 0 {
+    if receipt.cursor == 0 || receipt.device_sequence == 0 || receipt.next_expected_sequence == 0 {
         return Err(Error::Invalid("receipt cursor or sequence is zero"));
     }
     Ok(receipt)

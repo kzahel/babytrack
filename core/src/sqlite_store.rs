@@ -169,6 +169,15 @@ impl SqliteStore {
                UNIQUE (family_id, epoch, nonce),
                FOREIGN KEY (family_id) REFERENCES families(family_id)
              );
+             CREATE TABLE IF NOT EXISTS rejected_local_batches (
+               family_id BLOB NOT NULL,
+               batch_id BLOB NOT NULL CHECK(length(batch_id) = 16),
+               envelope_bytes BLOB NOT NULL,
+               receipt_bytes BLOB NOT NULL,
+               rejected_at_cursor INTEGER NOT NULL CHECK(rejected_at_cursor >= 1),
+               PRIMARY KEY (family_id, batch_id),
+               FOREIGN KEY (family_id) REFERENCES families(family_id)
+             );
              CREATE TABLE IF NOT EXISTS accepted_local_batches (
                family_id BLOB NOT NULL,
                cursor INTEGER NOT NULL CHECK(cursor > 1),
@@ -634,6 +643,60 @@ impl SqliteStore {
                 entry.receipt_bytes
             ],
         )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn record_verified_stale_rejection(
+        &mut self,
+        family: FamilyHandle,
+        pending: &PreparedBatch,
+        receipt_bytes: &[u8],
+        pinned_cursor: u64,
+        pinned_head: [u8; 32],
+    ) -> Result<(), Error> {
+        let transaction = self.connection.transaction()?;
+        let _ = checked_family(&transaction, family)?;
+        if load_pending(&transaction, family)?.as_ref() != Some(pending) {
+            return Err(Error::CorruptState);
+        }
+        let (current_cursor, current_head): (i64, Vec<u8>) = transaction.query_row(
+            "SELECT pinned_cursor, pinned_head FROM shared_roots WHERE family_id = ?1",
+            [family.family_id.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if current_cursor != i64::try_from(pinned_cursor).map_err(|_| Error::CorruptState)?
+            || current_head != pinned_head
+        {
+            return Err(Error::CorruptState);
+        }
+        let next_sequence: i64 = transaction.query_row(
+            "SELECT next_sequence FROM local_sync_state WHERE family_id = ?1",
+            [family.family_id.as_slice()],
+            |row| row.get(0),
+        )?;
+        if next_sequence != i64::try_from(pending.sequence).map_err(|_| Error::CorruptState)? {
+            return Err(Error::CorruptState);
+        }
+        transaction.execute(
+            "INSERT INTO rejected_local_batches
+             (family_id, batch_id, envelope_bytes, receipt_bytes, rejected_at_cursor)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                family.family_id.as_slice(),
+                pending.batch_id.as_slice(),
+                &pending.envelope_bytes,
+                receipt_bytes,
+                i64::try_from(pinned_cursor).map_err(|_| Error::CorruptState)?
+            ],
+        )?;
+        let deleted = transaction.execute(
+            "DELETE FROM local_outbox WHERE family_id = ?1 AND batch_id = ?2",
+            params![family.family_id.as_slice(), pending.batch_id.as_slice()],
+        )?;
+        if deleted != 1 {
+            return Err(Error::CorruptState);
+        }
         transaction.commit()?;
         Ok(())
     }

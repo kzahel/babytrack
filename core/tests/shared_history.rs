@@ -3,9 +3,11 @@
 use std::{fs, path::PathBuf, time::SystemTime};
 
 use babytrack_core::{
-    operation::Operation,
+    cbor::{self, Value},
+    crypto,
+    operation::{Hlc, Kind, NewOperation, Operation, Scope},
     shared_history::PublicHistorySession,
-    shared_ready::ReadyManagerSession,
+    shared_ready::{NextUpload, ReadyManagerSession},
     sqlite_store::{FamilyHandle, SqliteStore},
 };
 
@@ -64,6 +66,76 @@ fn interleaved_authority_and_data_keep_one_durable_pinned_cursor() {
         PublicHistorySession::begin(&mut store, family, &wire(0), relay_public).unwrap();
     assert_eq!(session.cursor(), 1);
     let original_head = session.head_hash();
+    let initial_key = bytes::<32>(
+        fixture["test_only_inputs"]["epoch_1_key_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let manager_agreement = bytes::<32>(
+        fixture["test_only_inputs"]["manager_agreement_seed_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let manager_seed = bytes::<32>(
+        fixture["test_only_inputs"]["manager_sign_seed_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let relay_seed = bytes::<32>(
+        fixture["test_only_inputs"]["relay_sign_seed_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let genesis_object_id = transitions[0]["manifest"][0][1].as_str().unwrap();
+    session
+        .accept_object(
+            &mut store,
+            bytes(genesis_object_id),
+            &bytes_from_hex(
+                fixture["objects_by_id_hex"][genesis_object_id]
+                    .as_str()
+                    .unwrap(),
+            ),
+        )
+        .unwrap();
+    store
+        .append_local(
+            family,
+            NewOperation {
+                family_id: family.family_id,
+                operation_id: bytes("0183f9d0000070008000000000000044"),
+                record_id: family.family_id,
+                scope: Scope::Family,
+                kind: Kind::Create,
+                author_device_id: family.device_id,
+                hlc: Hlc {
+                    wall_ms: 0,
+                    counter: 0,
+                    device_id: family.device_id,
+                },
+                record_type: Some("family".to_owned()),
+                child_id: None,
+                fields: Some(vec![]),
+            },
+            100,
+        )
+        .unwrap();
+    let initially_ready =
+        ReadyManagerSession::from_store(&store, family, initial_key, manager_agreement).unwrap();
+    let old_pending = match initially_ready
+        .stage_next_local(&mut store, &manager_seed)
+        .unwrap()
+    {
+        NextUpload::Fresh(pending) => pending,
+        NextUpload::RetryExact(_) => panic!("first stage must reserve new bytes"),
+    };
+    match initially_ready
+        .stage_next_local(&mut store, &manager_seed)
+        .unwrap()
+    {
+        NextUpload::RetryExact(pending) => assert_eq!(pending, old_pending),
+        NextUpload::Fresh(_) => panic!("uncertain retry must keep exact bytes"),
+    }
 
     // Invalid signed bytes never advance the durable pin.
     let mut bad_issue = wire(1);
@@ -124,16 +196,6 @@ fn interleaved_authority_and_data_keep_one_durable_pinned_cursor() {
             .accept_batch(&mut store, &envelope, &receipt)
             .is_err()
     );
-    let initial_key = bytes::<32>(
-        fixture["test_only_inputs"]["epoch_1_key_hex"]
-            .as_str()
-            .unwrap(),
-    );
-    let manager_agreement = bytes::<32>(
-        fixture["test_only_inputs"]["manager_agreement_seed_hex"]
-            .as_str()
-            .unwrap(),
-    );
     assert!(
         ReadyManagerSession::from_store(&store, family, initial_key, manager_agreement).is_err()
     );
@@ -191,6 +253,51 @@ fn interleaved_authority_and_data_keep_one_durable_pinned_cursor() {
     )
     .unwrap();
     assert!(ready.projection().record(&operation.record_id).is_some());
+    match ready.stage_next_local(&mut store, &manager_seed).unwrap() {
+        NextUpload::RetryExact(pending) => assert_eq!(pending, old_pending),
+        NextUpload::Fresh(_) => panic!("rotation cannot silently replace an uncertain batch"),
+    }
+    let rejection_body = Value::Map(vec![
+        (1, Value::Integer(1)),
+        (2, Value::Bytes(family.family_id.to_vec())),
+        (3, Value::Bytes(session.chain().relay_id().to_vec())),
+        (4, Value::Bytes(old_pending.batch_id.to_vec())),
+        (5, Value::Bytes(old_pending.object_hash.to_vec())),
+        (6, Value::Bool(false)),
+        (7, Value::Integer(session.cursor().into())),
+        (8, Value::Bytes(session.head_hash().to_vec())),
+        (9, Value::Integer(old_pending.sequence.into())),
+        (10, Value::Integer(1)),
+        (11, Value::Integer(old_pending.sequence.into())),
+    ]);
+    let rejection_signature = crypto::sign_cbor(
+        "batch-receipt",
+        &cbor::encode(&rejection_body).unwrap(),
+        &relay_seed,
+    )
+    .unwrap();
+    let rejection = cbor::encode(&Value::Map(vec![
+        (1, rejection_body),
+        (2, Value::Bytes(rejection_signature.to_vec())),
+    ]))
+    .unwrap();
+    let mut bad_rejection = rejection.clone();
+    *bad_rejection.last_mut().unwrap() ^= 1;
+    assert!(
+        session
+            .reject_stale_pending(&mut store, &bad_rejection)
+            .is_err()
+    );
+    session
+        .reject_stale_pending(&mut store, &rejection)
+        .unwrap();
+    let replacement = match ready.stage_next_local(&mut store, &manager_seed).unwrap() {
+        NextUpload::Fresh(pending) => pending,
+        NextUpload::RetryExact(_) => panic!("signed rejection must permit a fresh batch"),
+    };
+    assert_eq!(replacement.sequence, old_pending.sequence);
+    assert_ne!(replacement.batch_id, old_pending.batch_id);
+    assert_ne!(replacement.envelope_bytes, old_pending.envelope_bytes);
     drop(session);
     drop(store);
     let store = SqliteStore::open(&path).unwrap();
@@ -203,6 +310,14 @@ fn interleaved_authority_and_data_keep_one_durable_pinned_cursor() {
             .record(&operation.record_id)
             .is_some()
     );
+    let mut store = store;
+    match ready_after_restart
+        .stage_next_local(&mut store, &manager_seed)
+        .unwrap()
+    {
+        NextUpload::RetryExact(pending) => assert_eq!(pending, replacement),
+        NextUpload::Fresh(_) => panic!("replacement retry changed bytes after restart"),
+    }
     drop(store);
 
     // Deleting an earlier row while leaving the high-water pin cannot make

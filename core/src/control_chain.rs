@@ -168,6 +168,21 @@ impl ControlChain {
     pub fn relay_id(&self) -> [u8; 32] {
         self.genesis.relay_id()
     }
+    pub fn epoch(&self) -> Result<u32, Error> {
+        self.current_epoch()?
+            .try_into()
+            .map_err(|_| Error::Invalid("epoch outside u32"))
+    }
+    pub fn active_signing_public(&self, device_id: [u8; 16]) -> Result<[u8; 32], Error> {
+        let state = exact_map(&self.state, 7)?;
+        let row = find_row(&state[4].1, 5, 0, device_id)?
+            .ok_or(Error::Invalid("device is not active"))?;
+        Ok(fixed::<32>(&row[1])?)
+    }
+    pub fn next_sequence_for(&self, device_id: [u8; 16]) -> Result<u64, Error> {
+        let _ = self.active_signing_public(device_id)?;
+        Ok(self.next_sequences.get(&device_id).copied().unwrap_or(1))
+    }
     pub fn last_global_cursor(&self) -> u64 {
         self.last_global_cursor
     }

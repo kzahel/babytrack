@@ -12,8 +12,9 @@ in tacticals, exact protocol formats in future `docs/protocol/`, and test
 expectations in scenario/vector files. Summaries link to the owner. If two
 documents contradict, reconcile them or ask; do not silently pick one.
 
-Status: design and repository preparation, before M0. No application code
-exists yet. `babytrack` is a code name.
+Status: design and repository preparation, before M0. The Rust crates are
+empty build boundaries; no application behavior exists yet. `babytrack` is a
+code name.
 
 The working tree may contain concurrent human or agent changes. Do not revert,
 reformat, or tidy unrelated work.
@@ -99,5 +100,19 @@ For example `AI-Assisted-by: Claude Code / claude-opus-5-5`.
 
 ## Validation
 
-No build or test gates exist yet. Record the commands for each area here as
-M0 creates them.
+The scaffold gate uses pinned Rust 1.92.0 with rustfmt, Clippy, and the
+`wasm32-unknown-unknown` target; Python 3; and `cargo-deny` 0.20.2. Run from
+the repository root:
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo check --workspace --locked
+cargo test --workspace --locked
+cargo check -p babytrack-core-wasm --target wasm32-unknown-unknown --locked
+python3 scripts/check_workspace.py
+cargo deny check advisories bans licenses sources
+```
+
+The five crates have zero tests today. These checks establish only scaffold
+buildability and dependency boundaries. Add behavioral gates with M0 work.

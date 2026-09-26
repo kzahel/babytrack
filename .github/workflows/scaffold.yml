@@ -1,0 +1,47 @@
+name: Scaffold checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust workspace
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Show pinned toolchain
+        run: rustup show active-toolchain
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Build and test native targets
+        run: |
+          cargo check --workspace --locked
+          cargo test --workspace --locked
+      - name: Compile wasm boundary
+        run: cargo check -p babytrack-core-wasm --target wasm32-unknown-unknown --locked
+      - name: Verify dependency direction
+        run: python3 scripts/check_workspace.py
+      - name: Check crate licenses and dependencies
+        uses: EmbarkStudios/cargo-deny-action@v2.1.1
+        with:
+          rust-version: "1.92.0"
+          command: check
+          command-arguments: bans licenses sources advisories
+
+  required:
+    name: Required checks
+    if: always()
+    needs: rust
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require the scaffold job
+        run: test '${{ needs.rust.result }}' = success

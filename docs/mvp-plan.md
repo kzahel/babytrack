@@ -62,8 +62,8 @@ One Rust core shared by every client, with native UI on each platform.
 
 The [layout topic](topics/repository-layout.md) owns the current and future
 directory map and dependency boundaries. [002](tactical/002-repository-scaffold.md)
-plans a minimal build foundation before product behavior; it has not started
-executable work. M-1 still gates implementation of unsettled protocol/data
+records the completed build scaffold without product behavior. M-1 still
+gates implementation of unsettled protocol/data
 contracts. No empty platform projects or future-directory placeholders are
 required to show the intended layout.
 
@@ -277,15 +277,14 @@ publishing jobs run only from protected tags or environments.
 - **release (M5):** fastlane uploads to TestFlight and Play on version tags,
   and a reproducibility check for the F-Droid build.
 - **dependencies:** Dependabot version and security updates in
-  `.github/dependabot.yml`. The current file anticipates future manifests;
-  002 must activate entries only when their manifests/workflows exist and
-  add later platforms as they arrive.
+  `.github/dependabot.yml`. The current file covers Cargo and GitHub Actions;
+  add later platforms as their manifests arrive.
 
 ## Milestones
 
 M-1 is design work only. The separate 002 scaffolding plan describes build
-preparation without product/protocol behavior; only its documentation slice
-is complete. M1 to M4 use developer builds on physical devices only. Nothing
+preparation without product/protocol behavior; its scaffold is complete.
+M1 to M4 use developer builds on physical devices only. Nothing
 touches an app store until M5.
 
 0. **M-1, design closure.** Resolve the local-to-shared lifecycle, role

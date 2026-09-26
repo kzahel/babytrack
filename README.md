@@ -6,8 +6,9 @@ native phone/watch apps and a web client.
 `babytrack` is a working name.
 
 **Status: design and repository preparation, before M0 implementation.**
-There is no application, relay, build, or runnable product test suite yet.
-The scenario files describe expected behavior; they are not passing tests.
+The Rust workspace compiles, but it has no application or relay behavior and
+no runnable product tests. The scenario files describe expected behavior;
+they are not passing tests.
 
 ## Product and architecture
 
@@ -53,10 +54,30 @@ Then follow the task-specific links; do not load all documentation by default.
 ## Repository today
 
 `docs/topics/` holds decisions; `docs/tactical/` holds work plans;
-`docs/scenarios/` holds symbolic acceptance cases. `scripts/` currently
-contains reference-repository tooling. Code and executable test directories
-will be added by the [scaffolding workstream](docs/tactical/002-repository-scaffold.md)
-and later milestones when they have concrete contents.
+`docs/scenarios/` holds symbolic acceptance cases. The workspace has empty
+build targets in `core/`, `core-ffi/`, `core-wasm/`, `server/`, and `cli/`.
+Only the client-facing targets depend on `core/`. The
+[layout topic](docs/topics/repository-layout.md) maps future components;
+[002](docs/tactical/002-repository-scaffold.md) records scaffold validation.
+
+Install the pinned Rust toolchain through rustup, including the Clippy,
+rustfmt, and `wasm32-unknown-unknown` components/target named in
+`rust-toolchain.toml`. Python 3 is needed for the dependency-boundary check.
+From the repository root, run:
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo check --workspace --locked
+cargo test --workspace --locked
+cargo check -p babytrack-core-wasm --target wasm32-unknown-unknown --locked
+python3 scripts/check_workspace.py
+cargo deny check advisories bans licenses sources
+```
+
+Install `cargo-deny` 0.20.2 for the last command. All five crates currently
+report zero unit and documentation tests; compilation and these checks do
+not establish product or protocol correctness.
 
 Reference repositories are listed in [references.yaml](references.yaml).
 Run `scripts/sync_references.py [name ...]` to populate gitignored

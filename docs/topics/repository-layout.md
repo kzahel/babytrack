@@ -1,6 +1,6 @@
 # Repository layout and scaffolding
 
-Status: planned layout, September 2026. Executable scaffolding is planned in
+Status: scaffold implemented, September 2026. Validation is recorded in
 [002](../tactical/002-repository-scaffold.md). No product code exists.
 Owns directory placement, dependency direction, and when scaffolding is
 introduced. The [MVP plan](../mvp-plan.md) owns stack and milestone scope.
@@ -21,7 +21,7 @@ The former root `spec/` held only symbolic cases. Those now live in
 survive the move. Do not create empty directories to make a future tree
 appear implemented.
 
-## Planned implementation layout
+## Implementation layout
 
 | Path | Responsibility | Introduced |
 |---|---|---|
@@ -38,14 +38,14 @@ appear implemented.
 | `apps/web/` | Svelte product UI | M2; M0 browser proof belongs to test infrastructure |
 | `apps/ios/` | iOS/watchOS apps and extensions | M3 phone, M4 watch |
 
-These are future paths, not links to existing files. A scaffold target can
-compile without implementing its responsibilities. Tests reporting zero
-cases are not evidence of protocol or product correctness.
+The five Rust targets and root build files now exist. The documentation,
+test, and platform paths marked for later milestones are future paths, not
+links to existing files. Scaffold targets compile without implementing their
+responsibilities. Tests reporting zero cases are not evidence of protocol or
+product correctness.
 
-Use package names such as `babytrack-core` rather than a Rust crate named
-`core`. Path names above remain short. Pin concrete tool and dependency
-versions during scaffolding after checking compatibility; this document
-does not guess them in advance.
+The workspace uses package names such as `babytrack-core` rather than a Rust
+crate named `core`, and pins Rust 1.92.0. Path names above remain short.
 
 ## Dependency boundaries
 
@@ -67,8 +67,8 @@ does not guess them in advance.
 
 The scaffold proves a clean checkout can build the selected targets and run
 documented checks. M0 separately proves real Swift/Kotlin/wasm calls,
-storage, crypto, and relay behavior. Follow 002 for commands and gates as
-they are introduced; there are no working build commands to copy yet.
+storage, crypto, and relay behavior. Follow 002 and the root README for the
+current commands and results.
 
 Creating all platform projects and placeholders now was considered and
 deferred: it would introduce manifests, toolchains, and maintenance before

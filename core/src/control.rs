@@ -61,6 +61,9 @@ impl Genesis {
     pub fn transition_id(&self) -> [u8; 16] {
         self.transition_id
     }
+    pub fn epoch_key_commitment(&self) -> [u8; 32] {
+        self.epoch_key_commitment
+    }
     pub fn head_hash(&self) -> [u8; 32] {
         self.head_hash
     }

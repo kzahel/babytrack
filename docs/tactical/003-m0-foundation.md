@@ -177,8 +177,13 @@ the seven-day expiry; a boundary test exercises the final millisecond and
 the exact expiry. Public chain replay now also checks a holder's challenge
 and the pending device's proof against the latest pending row, committed
 hashes, signatures, and cursor. Their HPKE/verifier objects and proof secret
-still need validation before a holder signs admission. Grant, rotation, and
-object decryption remain open.
+still need validation before a holder signs admission. Public admission
+now atomically replaces a
+proved pending device with its active row at the invitation's fixed role
+and commitment; repair names that admission and leaves authority unchanged.
+The contiguous byte vector passes through both transitions. Validating the
+HPKE grant and encrypted membership objects, producing these transitions,
+and rotating after removal remain open.
 `FamilySession` now consumes the fixed genesis and `BATCHBYTE01` acceptance
 through a core-owned path: it verifies the manager, head, epoch, sequence,
 object hash, cursor, and relay-signed receipt before projecting the first

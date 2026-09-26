@@ -44,6 +44,7 @@ pub struct ControlChain {
     issue_times: BTreeMap<[u8; 16], i64>,
     challenges: BTreeMap<[u8; 16], ChallengeRecord>,
     seen_challenge_ids: BTreeSet<[u8; 16]>,
+    admissions: BTreeMap<[u8; 16], [u8; 16]>,
 }
 
 struct ChallengeRecord {
@@ -85,6 +86,7 @@ impl ControlChain {
             issue_times: BTreeMap::new(),
             challenges: BTreeMap::new(),
             seen_challenge_ids: BTreeSet::new(),
+            admissions: BTreeMap::new(),
         })
     }
 
@@ -619,6 +621,131 @@ impl ControlChain {
         Ok(())
     }
 
+    pub fn apply_admit_grant(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        let object = cbor::decode_with_limits(
+            bytes,
+            cbor::Limits {
+                max_bytes: 1024 * 1024,
+                max_depth: 16,
+            },
+        )?;
+        let root = exact_map(&object, 4)?;
+        let unsigned = exact_map(&root[0].1, 11)?;
+        self.check_unsigned(unsigned, 6, 1)?;
+        let transition_id = fixed::<16>(&unsigned[4].1)?;
+        let delta = exact_map(&unsigned[6].1, 4)?;
+        let invitation_id = fixed::<16>(&delta[0].1)?;
+        let device_id = fixed::<16>(&delta[1].1)?;
+        let role = number(&delta[2].1)?;
+        let commitment = fixed::<32>(&delta[3].1)?;
+        if commitment != self.genesis.epoch_key_commitment() {
+            return Err(Error::Invalid(
+                "admission key commitment differs from active epoch",
+            ));
+        }
+        let state = exact_map(&self.state, 7)?;
+        let pending = find_row(&state[5].1, 9, 0, invitation_id)?
+            .ok_or(Error::Invalid("admission invitation not pending"))?;
+        if fixed::<16>(&pending[1])? != device_id
+            || number(&pending[5])? != role
+            || !matches!(pending[8], Value::Bytes(ref bytes) if bytes.len() == 32)
+        {
+            return Err(Error::Invalid(
+                "admission needs the fixed role and committed proof",
+            ));
+        }
+        let sign_public = fixed::<32>(&pending[2])?;
+        let agree_public = fixed::<32>(&pending[3])?;
+        let key_version = number(&pending[4])?;
+        let signatures = array(&root[1].1, 1)?;
+        let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
+        let active = find_row(&state[4].1, 5, 0, signer_id)?
+            .ok_or(Error::Invalid("grant signer not active"))?;
+        let signer_key = fixed::<32>(&active[1])?;
+        if find_row(&state[4].1, 5, 0, device_id)?.is_some() {
+            return Err(Error::Invalid("recipient already active"));
+        }
+        let mut next_state = self.state.clone();
+        let Value::Map(map) = &mut next_state else {
+            unreachable!()
+        };
+        let Value::Array(next_pending) = &mut map[5].1 else {
+            unreachable!()
+        };
+        next_pending.retain(|row| {
+            !array(row, 9).is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(invitation_id))
+        });
+        let Value::Array(next_active) = &mut map[4].1 else {
+            unreachable!()
+        };
+        next_active.push(Value::Array(vec![
+            Value::Bytes(device_id.to_vec()),
+            Value::Bytes(sign_public.to_vec()),
+            Value::Bytes(agree_public.to_vec()),
+            Value::Integer(key_version.into()),
+            Value::Integer(role.into()),
+        ]));
+        sort_rows_by_id(next_active);
+        self.finalize(
+            bytes,
+            root,
+            unsigned,
+            FinalizePlan {
+                next_state,
+                expected_signers: &[(signer_id, signer_key)],
+                manifest_kinds: &[1, 4],
+                before_ms: None,
+            },
+        )?;
+        self.admissions.insert(device_id, transition_id);
+        Ok(())
+    }
+
+    pub fn apply_grant_repair(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        let object = cbor::decode_with_limits(
+            bytes,
+            cbor::Limits {
+                max_bytes: 1024 * 1024,
+                max_depth: 16,
+            },
+        )?;
+        let root = exact_map(&object, 4)?;
+        let unsigned = exact_map(&root[0].1, 11)?;
+        self.check_unsigned(unsigned, 10, 1)?;
+        let delta = exact_map(&unsigned[6].1, 3)?;
+        let device_id = fixed::<16>(&delta[0].1)?;
+        let admission_id = fixed::<16>(&delta[1].1)?;
+        let commitment = fixed::<32>(&delta[2].1)?;
+        if self.admissions.get(&device_id) != Some(&admission_id)
+            || commitment != self.genesis.epoch_key_commitment()
+        {
+            return Err(Error::Invalid(
+                "repair recipient, admission, or epoch commitment mismatch",
+            ));
+        }
+        let state = exact_map(&self.state, 7)?;
+        if find_row(&state[4].1, 5, 0, device_id)?.is_none() {
+            return Err(Error::Invalid("repair recipient no longer active"));
+        }
+        let signatures = array(&root[1].1, 1)?;
+        let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
+        let active = find_row(&state[4].1, 5, 0, signer_id)?
+            .ok_or(Error::Invalid("repair signer not active"))?;
+        let signer_key = fixed::<32>(&active[1])?;
+        self.finalize(
+            bytes,
+            root,
+            unsigned,
+            FinalizePlan {
+                next_state: self.state.clone(),
+                expected_signers: &[(signer_id, signer_key)],
+                manifest_kinds: &[1, 4],
+                before_ms: None,
+            },
+        )?;
+        Ok(())
+    }
+
     fn check_unsigned(
         &self,
         unsigned: &[(u64, Value)],
@@ -749,4 +876,22 @@ fn find_row(
         }
     }
     Ok(None)
+}
+
+fn sort_rows_by_id(rows: &mut [Value]) {
+    rows.sort_by(|left, right| {
+        let Value::Array(left) = left else {
+            unreachable!()
+        };
+        let Value::Array(right) = right else {
+            unreachable!()
+        };
+        let Value::Bytes(left) = &left[0] else {
+            unreachable!()
+        };
+        let Value::Bytes(right) = &right[0] else {
+            unreachable!()
+        };
+        left.cmp(right)
+    });
 }

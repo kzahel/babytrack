@@ -24,7 +24,7 @@ Hosting, app-store work, and public release remain M5 work.
 M0 remains in progress. Canonical bytes, selected crypto and operation
 vectors, an in-memory projection, four-runtime encrypted-event smokes,
 browser IndexedDB fixture smoke, native signed-history replay, and the
-genesis, invitation, claim, challenge, and proof development relay routes run locally. The full vector
+genesis, invitation, claim, challenge, proof, and admission development relay routes run locally. The full vector
 suite, complete local storage, shared control and batch sync, recovery,
 and product UI remain open; the current passing checks do not close an M0
 slice.
@@ -32,7 +32,7 @@ slice.
 | Field | Current answer |
 |---|---|
 | Active implementation owner | [003 M0 foundation](003-m0-foundation.md), slices 2 and 3; slice 1 cross-language gate is still open. |
-| Next demonstrable proof | Fetch the committed join transcript into an independent device store, then deliver a verified grant and one signed batch through the real relay. |
+| Next demonstrable proof | Fetch the committed join transcript and grant into an independent recipient store, then exchange one signed batch through the real relay. |
 | Next dependent slice | Complete local copy/backup and browser outbox before the M0 exit gate. |
 | Next independent review | The required early M0 authority review follows implemented invite, grant, and rotation. |
 | Open advisory | The [byte/crypto preflight](003-m0-foundation.md#advisory-bytecrypto-preflight) returned FAIL for fixture-shaped production exports, nonce/retry ownership, local validity, and signed-but-undecryptable replay. Fixture exports are gated; the initial manager path now stages and confirms native batches with replayable evidence. Full membership authority, later epochs, and browser outbox remain before shared sync. |

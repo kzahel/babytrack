@@ -64,6 +64,7 @@ type SavedReservation = (Vec<u8>, Vec<u8>, i64, Option<Vec<u8>>);
 
 enum ControlReader {
     Manager,
+    Active,
     Invitation { issue_object: [u8; 16] },
     Pending { challenge_object: Option<[u8; 16]> },
 }
@@ -97,6 +98,10 @@ impl RelayStore {
                candidate_bytes BLOB NOT NULL
              );
              CREATE TABLE IF NOT EXISTS staged_challenges (
+               family_id BLOB PRIMARY KEY, transition_id BLOB NOT NULL,
+               candidate_bytes BLOB NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS staged_admissions (
                family_id BLOB PRIMARY KEY, transition_id BLOB NOT NULL,
                candidate_bytes BLOB NOT NULL
              );
@@ -841,6 +846,172 @@ impl RelayStore {
         Ok(receipt::control_commit_response(&committed)?)
     }
 
+    pub fn stage_first_admission_object(
+        &mut self,
+        path_family: [u8; 16],
+        path_object: [u8; 16],
+        body: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        let (candidate_bytes, kind, object_id, object_bytes) = stage_parts(body)?;
+        let prefix = load_proved_prefix(&self.db, self.relay_public, path_family)?;
+        let admission = authority::verify_first_admission(
+            &candidate_bytes,
+            &prefix.join.genesis,
+            &prefix.join.issue,
+            &prefix.join.claim,
+            &prefix.challenge,
+            &prefix.proof,
+            prefix.proof_head,
+        )?;
+        let listed = admission
+            .manifest
+            .iter()
+            .find(|entry| entry.kind == kind && entry.object_id == object_id)
+            .ok_or(Error::Invalid("admission object absent from manifest"))?;
+        if object_id != path_object
+            || listed.object_hash != crypto::hash("object", &object_bytes)?
+            || listed.object_len as usize != object_bytes.len()
+        {
+            return Err(Error::Invalid("admission object path or bytes mismatch"));
+        }
+        if prefix.join.cursor >= 6 {
+            let committed: Vec<u8> = self.db.query_row(
+                "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=6",
+                params![&path_family[..]],
+                |r| r.get(0),
+            )?;
+            let existing:Option<Vec<u8>>=self.db.query_row(
+                "SELECT object_bytes FROM committed_objects WHERE family_id=?1 AND object_id=?2 AND transition_id=?3",
+                params![&path_family[..],&object_id[..],&admission.transition_id[..]],|r|r.get(0),
+            ).optional()?;
+            if control_candidate(&committed)? == candidate_bytes
+                && existing.as_deref() == Some(&object_bytes)
+            {
+                return Ok(receipt::object_stage_response(&object_bytes)?);
+            }
+            return Err(Error::Invalid("admission already committed differently"));
+        }
+        if prefix.join.cursor != 5 || prefix.join.head != prefix.proof_head {
+            return Err(Error::Invalid("admission head stale"));
+        }
+        let tx = self.db.transaction()?;
+        let prior: Option<Vec<u8>> = tx
+            .query_row(
+                "SELECT candidate_bytes FROM staged_admissions WHERE family_id=?1",
+                params![&path_family[..]],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(saved) = prior {
+            if saved != candidate_bytes {
+                return Err(Error::Invalid("another admission staged"));
+            }
+        } else {
+            tx.execute("INSERT INTO staged_admissions(family_id,transition_id,candidate_bytes) VALUES(?1,?2,?3)",
+                params![&path_family[..],&admission.transition_id[..],&candidate_bytes])?;
+        }
+        let prior: Option<Vec<u8>> = tx
+            .query_row(
+                "SELECT object_bytes FROM staged_objects WHERE family_id=?1 AND object_id=?2",
+                params![&path_family[..], &object_id[..]],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(saved) = prior {
+            if saved != object_bytes {
+                return Err(Error::Invalid("admission object ID collision"));
+            }
+        } else {
+            tx.execute("INSERT INTO staged_objects(family_id,object_id,kind,object_hash,object_bytes) VALUES(?1,?2,?3,?4,?5)",
+                params![&path_family[..],&object_id[..],i64::from(kind),&listed.object_hash[..],&object_bytes])?;
+        }
+        tx.commit()?;
+        Ok(receipt::object_stage_response(&object_bytes)?)
+    }
+
+    pub fn commit_first_admission(
+        &mut self,
+        path_family: [u8; 16],
+        candidate_bytes: &[u8],
+        committed_ms: i64,
+    ) -> Result<Vec<u8>, Error> {
+        let prefix = load_proved_prefix(&self.db, self.relay_public, path_family)?;
+        let admission = authority::verify_first_admission(
+            candidate_bytes,
+            &prefix.join.genesis,
+            &prefix.join.issue,
+            &prefix.join.claim,
+            &prefix.challenge,
+            &prefix.proof,
+            prefix.proof_head,
+        )?;
+        if prefix.join.cursor >= 6 {
+            let committed: Vec<u8> = self.db.query_row(
+                "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=6",
+                params![&path_family[..]],
+                |r| r.get(0),
+            )?;
+            if control_candidate(&committed)? == candidate_bytes {
+                return Ok(receipt::control_commit_response(&committed)?);
+            }
+            return Err(Error::Invalid("admission already committed differently"));
+        }
+        if prefix.join.cursor != 5
+            || prefix.join.head != prefix.proof_head
+            || committed_ms < prefix.proof_time
+        {
+            return Err(Error::Invalid("admission head or relay time invalid"));
+        }
+        let tx = self.db.transaction()?;
+        let staged:Option<Vec<u8>>=tx.query_row("SELECT candidate_bytes FROM staged_admissions WHERE family_id=?1 AND transition_id=?2",
+            params![&path_family[..],&admission.transition_id[..]],|r|r.get(0)).optional()?;
+        if staged.as_deref() != Some(candidate_bytes) {
+            return Err(Error::Invalid("admission candidate not staged"));
+        }
+        for entry in &admission.manifest {
+            let staged:Option<(i64,Vec<u8>,Vec<u8>)>=tx.query_row(
+                "SELECT kind,object_hash,object_bytes FROM staged_objects WHERE family_id=?1 AND object_id=?2",
+                params![&path_family[..],&entry.object_id[..]],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
+            ).optional()?;
+            let Some((kind, hash, bytes)) = staged else {
+                return Err(Error::Invalid("admission object missing"));
+            };
+            if kind != i64::from(entry.kind)
+                || hash != entry.object_hash
+                || bytes.len() != entry.object_len as usize
+                || crypto::hash("object", &bytes)? != entry.object_hash
+            {
+                return Err(Error::Invalid("admission staged bytes changed"));
+            }
+            tx.execute("INSERT INTO committed_objects(family_id,object_id,kind,object_hash,object_bytes,transition_id) VALUES(?1,?2,?3,?4,?5,?6)",
+                params![&path_family[..],&entry.object_id[..],kind,&hash,&bytes,&admission.transition_id[..]])?;
+        }
+        let committed =
+            receipt::commit_control(candidate_bytes, &self.relay_seed, 6, committed_ms)?;
+        let next_head = crypto::hash("control-head", &committed)?;
+        tx.execute(
+            "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,6,1,?2)",
+            params![&path_family[..], &committed],
+        )?;
+        let updated=tx.execute("UPDATE families SET cursor=6,head_hash=?2 WHERE family_id=?1 AND cursor=5 AND head_hash=?3",
+            params![&path_family[..],&next_head[..],&prefix.proof_head[..]])?;
+        if updated != 1 {
+            return Err(Error::Invalid("admission compare-and-swap failed"));
+        }
+        tx.execute(
+            "DELETE FROM staged_admissions WHERE family_id=?1",
+            params![&path_family[..]],
+        )?;
+        for entry in &admission.manifest {
+            tx.execute(
+                "DELETE FROM staged_objects WHERE family_id=?1 AND object_id=?2",
+                params![&path_family[..], &entry.object_id[..]],
+            )?;
+        }
+        tx.commit()?;
+        Ok(receipt::control_commit_response(&committed)?)
+    }
+
     pub fn promotion_result_authenticated(
         &mut self,
         family_id: [u8; 16],
@@ -951,7 +1122,7 @@ impl RelayStore {
         }
         let reader = self.verify_control_reader(family_id, exact_path, auth_bytes)?;
         match reader {
-            ControlReader::Manager => {}
+            ControlReader::Manager | ControlReader::Active => {}
             ControlReader::Invitation { issue_object } if issue_object == object_id => {}
             ControlReader::Pending {
                 challenge_object: Some(id),
@@ -1032,27 +1203,49 @@ impl RelayStore {
                 if signer != claim.device_id {
                     return Err(Error::Invalid("reader not pending device"));
                 }
-                let challenge_object = if cursor >= 4 {
-                    let challenge_committed: Vec<u8> = self.db.query_row(
-                        "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=4",
+                if cursor >= 6 {
+                    let proved = load_proved_prefix(&self.db, self.relay_public, family_id)?;
+                    let admitted: Vec<u8> = self.db.query_row(
+                        "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=6",
                         params![&family_id[..]],
                         |r| r.get(0),
                     )?;
-                    let challenge = authority::verify_first_challenge(
-                        &control_candidate(&challenge_committed)?,
-                        &genesis,
-                        &issue,
-                        &claim,
-                        crypto::hash("control-head", &claim_committed)?,
+                    let admission = authority::verify_first_admission(
+                        &control_candidate(&admitted)?,
+                        &proved.join.genesis,
+                        &proved.join.issue,
+                        &proved.join.claim,
+                        &proved.challenge,
+                        &proved.proof,
+                        proved.proof_head,
                     )?;
-                    Some(challenge.manifest[0].object_id)
+                    if admission.recipient_id != signer {
+                        return Err(Error::Invalid("reader not admitted device"));
+                    }
+                    (ControlReader::Active, claim.signing_public)
                 } else {
-                    None
-                };
-                (
-                    ControlReader::Pending { challenge_object },
-                    claim.signing_public,
-                )
+                    let challenge_object = if cursor >= 4 {
+                        let challenge_committed: Vec<u8> = self.db.query_row(
+                            "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=4",
+                            params![&family_id[..]],
+                            |r| r.get(0),
+                        )?;
+                        let challenge = authority::verify_first_challenge(
+                            &control_candidate(&challenge_committed)?,
+                            &genesis,
+                            &issue,
+                            &claim,
+                            crypto::hash("control-head", &claim_committed)?,
+                        )?;
+                        Some(challenge.manifest[0].object_id)
+                    } else {
+                        None
+                    };
+                    (
+                        ControlReader::Pending { challenge_object },
+                        claim.signing_public,
+                    )
+                }
             } else {
                 return Err(Error::Invalid("reader has no control access"));
             }
@@ -1212,6 +1405,58 @@ fn load_join_prefix(
         head: head
             .try_into()
             .map_err(|_| Error::Invalid("Family head length"))?,
+    })
+}
+
+struct ProvedPrefix {
+    join: JoinPrefix,
+    challenge: authority::ChallengeCandidate,
+    proof: authority::ProofCandidate,
+    proof_head: [u8; 32],
+    proof_time: i64,
+}
+fn load_proved_prefix(
+    db: &Connection,
+    relay_public: [u8; 32],
+    family: [u8; 16],
+) -> Result<ProvedPrefix, Error> {
+    let join = load_join_prefix(db, relay_public, family)?;
+    if join.cursor < 5 {
+        return Err(Error::Invalid("proof not committed"));
+    }
+    let challenge_committed: Vec<u8> = db.query_row(
+        "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=4",
+        params![&family[..]],
+        |r| r.get(0),
+    )?;
+    let challenge = authority::verify_first_challenge(
+        &control_candidate(&challenge_committed)?,
+        &join.genesis,
+        &join.issue,
+        &join.claim,
+        join.claim_head,
+    )?;
+    let challenge_head = crypto::hash("control-head", &challenge_committed)?;
+    let proof_committed: Vec<u8> = db.query_row(
+        "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=5",
+        params![&family[..]],
+        |r| r.get(0),
+    )?;
+    let proof = authority::verify_first_proof(
+        &control_candidate(&proof_committed)?,
+        &join.genesis,
+        &join.issue,
+        &join.claim,
+        &challenge,
+        challenge_head,
+    )?;
+    let proof_head = crypto::hash("control-head", &proof_committed)?;
+    Ok(ProvedPrefix {
+        join,
+        challenge,
+        proof,
+        proof_head,
+        proof_time: control_commit_time(&proof_committed)?,
     })
 }
 fn control_commit_time(committed: &[u8]) -> Result<i64, Error> {
@@ -1792,6 +2037,107 @@ mod tests {
                 .commit_first_proof(family, &proof_candidate, proof_time + 1)
                 .unwrap(),
             receipt::control_commit_response(&proof_committed).unwrap()
+        );
+        let admission_transition = &chain["transitions"][5];
+        let admission_unsigned = cbor::decode(&hex(admission_transition["unsigned_cbor_hex"]
+            .as_str()
+            .unwrap()))
+        .unwrap();
+        let admission_signatures = cbor::decode(&hex(admission_transition["signatures_cbor_hex"]
+            .as_str()
+            .unwrap()))
+        .unwrap();
+        let admission_candidate = cbor::encode(&Value::Map(vec![
+            (1, admission_unsigned.clone()),
+            (2, admission_signatures.clone()),
+        ]))
+        .unwrap();
+        let admission_committed = hex(admission_transition["committed_cbor_hex"].as_str().unwrap());
+        let admission_time = control_commit_time(&admission_committed).unwrap();
+        assert!(
+            store
+                .commit_first_admission(family, &admission_candidate, admission_time)
+                .is_err()
+        );
+        let mut admission_ids = Vec::new();
+        for (index, entry) in admission_transition["manifest"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+        {
+            let kind = entry[0].as_u64().unwrap();
+            let id_text = entry[1].as_str().unwrap();
+            let id: [u8; 16] = hex(id_text).try_into().unwrap();
+            let object_bytes = hex(chain["objects_by_id_hex"][id_text].as_str().unwrap());
+            let stage = cbor::encode(&Value::Map(vec![
+                (1, Value::Integer(1)),
+                (2, admission_unsigned.clone()),
+                (3, admission_signatures.clone()),
+                (4, Value::Integer(kind.into())),
+                (5, Value::Bytes(id.to_vec())),
+                (6, Value::Bytes(object_bytes)),
+            ]))
+            .unwrap();
+            store
+                .stage_first_admission_object(family, id, &stage)
+                .unwrap();
+            admission_ids.push(id);
+            if index == 0 {
+                assert!(
+                    store
+                        .commit_first_admission(family, &admission_candidate, admission_time)
+                        .is_err()
+                );
+            }
+        }
+        assert_eq!(
+            store
+                .commit_first_admission(family, &admission_candidate, admission_time)
+                .unwrap(),
+            receipt::control_commit_response(&admission_committed).unwrap()
+        );
+        assert_eq!(
+            store
+                .commit_first_admission(family, &admission_candidate, admission_time + 1)
+                .unwrap(),
+            receipt::control_commit_response(&admission_committed).unwrap()
+        );
+        let grant_path = format!(
+            "/v1/families/{}/objects/{}",
+            lower_hex(&family),
+            lower_hex(&admission_ids[1])
+        );
+        let grant_read = signed_get(
+            family,
+            genesis_parsed.relay_id,
+            claim_parsed.device_id,
+            recipient_seed,
+            &grant_path,
+            [9; 16],
+        );
+        assert!(
+            store
+                .object_authenticated(family, admission_ids[1], &grant_path, &grant_read)
+                .is_ok()
+        );
+        let verifier_after_grant = signed_get(
+            family,
+            genesis_parsed.relay_id,
+            claim_parsed.device_id,
+            recipient_seed,
+            &verifier_path,
+            [10; 16],
+        );
+        assert!(
+            store
+                .object_authenticated(
+                    family,
+                    challenge_ids[1].0,
+                    &verifier_path,
+                    &verifier_after_grant
+                )
+                .is_ok()
         );
     }
 }

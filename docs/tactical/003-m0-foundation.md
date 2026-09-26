@@ -118,9 +118,13 @@ Admission, grant delivery, and batch data remain closed.
 The relay's public admission validator now matches the next signed
 contiguous vector: proved pending identity, fixed invited role, unchanged
 epoch commitment, manager signature, resulting active membership state,
-and distinct membership/grant object manifests. Durable staging and the
-admission HTTP route remain the next slice; no key is available through
-the relay until that commit exists.
+and distinct membership/grant object manifests. SQLite stages both
+ciphertexts and commits them with cursor 6 in one transaction; the HTTP
+test verifies exact fixture bytes. After admission, the recipient credential
+can fetch the grant and other committed objects. The recipient client still
+needs to pull this real relay history into an independent store, open the
+grant, and verify data readiness. Repair, rotation, and batch writes remain
+closed at the relay.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

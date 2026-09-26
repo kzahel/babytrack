@@ -74,9 +74,12 @@ closure; it does not maintain a second copy of those decisions.
   removal, including whether they can be re-encrypted by a remaining holder
   and whether a removed holder's late writes are rejected.
 - [ ] Specify the decided single-use direct-join protocol: atomic enrollment,
-  authenticated retry by the same device, key handoff, and background inviter
-  availability. Settle expiry, cancellation, and issuer-removal races (D8).
-  Include concurrent redemption, preview, retry, replay, and leaked-link cases.
+  authenticated retry by the same device, key handoff, and automatic
+  asynchronous progress when a key holder and recipient sync at different
+  times. Validate background-wake and delayed-wake status on each platform;
+  do not require a second manual approval. Settle expiry, cancellation, and
+  issuer-removal races (D8). Include concurrent redemption, preview, retry,
+  replay, and leaked-link cases.
 - [ ] State what a malicious relay can hide or fork, what sequence numbers
   actually detect, and whether clients need an out-of-band history check.
 - [ ] Define recovery identity and key rotation after a lost device or

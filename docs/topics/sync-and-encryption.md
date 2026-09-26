@@ -71,8 +71,9 @@ Working direction, subject to the M-1 authority and recovery decisions.
   grants to epoch keys. Devices have signing and agreement keypairs and can
   act in the shared family. Platform-backup and recovery-phrase holders are
   for restoring access, not for issuing ordinary requests or inheriting a
-  manager role automatically; M-1 must specify how a restored device is
-  authorized. Backup private material lives in iCloud Keychain
+  manager role automatically; D4-D5 must specify whether and how a restored
+  device is authorized. Possessing or decrypting a recovery grant is not an
+  authorization-state entry. Backup private material lives in iCloud Keychain
   (synchronizable) or Block Store; recovery material derives from 24 words.
 - **Membership** is recorded inside the encrypted log as signed operations:
   a device joined (with its public keys, role, and a display name), changed
@@ -159,10 +160,12 @@ specify how local storage partitions and backups enforce this boundary.
   relay rejects subsequent requests from the removed holder. M-1 defines
   how that holder learns of removal without access to the new epoch.
 - **Recovery for shared families.** A new device that has the recovery phrase
-  or restores the platform backup derives or loads that holder's keypairs,
-  fetches its grant and ciphertext history, and joins as a new device.
-  Rotating the phrase or backup is a removal of the old holder plus a new
-  join. The mechanism for restoring manager authority is still open.
+  or restores the platform backup may derive or load recovery material and
+  fetch an addressed grant and ciphertext history. That does not yet make the
+  new device an authorized member or manager. Enrollment of the replacement,
+  the disposition of the old device/credential, and restoration of any role
+  remain open in D4-D5. A protocol must not describe that path as recovery of
+  original-Family access until those decisions are made.
 - **File backup and independent restore.** Product D3 requires a complete
   restorable data file with optional password protection. This applies to
   local-only and shared Families. Restore creates a new local-only Family
@@ -180,10 +183,13 @@ spec:
 
 - register a local family for sharing (family-id rule and initial manager
   authorization fixed in M-1);
+- stage idempotent encrypted promotion chunks and atomically activate their
+  signed manifest;
 - append a batch (idempotent by batch id; server assigns a sequence number);
 - list batches after a sequence number;
 - put and get grants and the keyring for an epoch;
-- rotate the epoch and update opaque membership authorization atomically;
+- commit invitation creation/redemption, grant activation, and epoch rotation
+  with opaque membership authorization atomically;
 - a WebSocket for live notification of new batches;
 - register a push token and send empty wake pushes on new batches.
 
@@ -252,8 +258,11 @@ checks are still required.
   and the server rejects its requests.
 - Role tests: a member cannot change membership; a manager can remove a
   manager; removing or demoting the last manager is rejected.
-- Recovery tests: phrase and platform backup both restore full history on a
-  fresh device.
+- Recovery tests: once D4-D5 settle the authority policy, each accepted key
+  recovery path is tested with available relay history, delayed/unavailable
+  backup, and revoked credentials. Until then, no test may imply that a phrase
+  or platform backup restores membership, manager authority, or missing
+  records merely because it decrypts an old grant.
 - File loss-recovery tests: readable and protected backups restore saved
   data into a new independent Family without original shared access. An old
   backup never reinstates revoked membership. Also verify that no-backup
@@ -266,53 +275,291 @@ checks are still required.
   with both race orders and lost-response/restart cases. Resolve proposed
   cases before claiming M-1 closure; these are not executable tests yet.
 
-## M-1 candidate: removal cutover
+## M-1 candidate: authority and key handoff
 
-The product's first-valid-commit outcome for competing removals is decided.
-The following mechanism is still a candidate to test. Sign every batch with
-its device key. Bind a manager-authorized rotation to the prior epoch and
-membership state, and commit the grants and membership change atomically
-with a compare-and-swap on the server. Reject uploads sealed under the old
-epoch after that cutover. A remaining device that was offline keeps its own
-pending operations locally, fetches its new grant, and uploads those same
-operations in a new-epoch batch; the removed device cannot do that. An
-unpublished old-epoch write by the removed device would not join the family
-history after cutover. Tests must cover this case without silently losing
-pending writes by remaining members.
+**Review proposal, not a settled wire contract.** This maps the agreed U1-U8,
+D1-D3, and FS cases to one implementable direction. D4-D8 remain product
+choices; in particular this candidate cannot promise person-wide revocation
+or original-Family recovery until D4-D5 settle their identities and holders.
+The exact canonical encoding, domain separators, request authentication,
+failure recovery, and vectors still belong in `docs/protocol/` before M0 code.
 
-This cutover serializes concurrent rotations but does not by itself enforce
-roles. The current product direction is two roles and a basic system for
-cooperating caregivers. The relay could hold opaque device public keys and
-role grants, checking manager signatures for membership actions without
-seeing family content. Clients must verify the same signatures rather than
-trusting the relay's claim. This trusts the relay for ordering and
-availability, though not for data confidentiality. Any manager can remove
-another manager, subject to the at-least-one-manager rule. A malicious
-manager may still act first; the product does not try to prevent a person
-with an existing local copy from making an independent fork.
+### Authority and commit order
+
+- Each shared Family starts with a manager device's signing and agreement
+  public keys and a signed genesis authorization state. A public, ordered
+  control chain contains only opaque device/holder IDs, their public keys and
+  roles, epoch and state version, invitation commitments/status, and hashes
+  of encrypted objects. Names, records, and data keys stay encrypted.
+  Genesis also commits to the first random epoch key. Existing clients pin
+  genesis and their latest accepted head, reject rollback or a sibling of
+  that head, and verify every transition. A first-joining client pins the
+  Family ID, relay endpoint, genesis hash, invitation ID, invited role, and
+  hash of the manager-signed invitation from the fragment bootstrap
+  descriptor; the fragment's invitation secret authenticates that descriptor
+  but is not a Family key. This prevents a relay from replacing the Family,
+  genesis, role, or invitation transcript during first contact. It does not
+  make a relay-created fork from a previously valid head universally
+  detectable; that remains the accepted threat-model limit.
+- A manager signs a transition over Family ID, prior state hash/version,
+  a unique transition ID, intended new state and epoch, and the complete
+  manifest of encrypted objects. Creating an invitation is itself such a
+  transition: the current manager commits its ID, public key, exact role, and
+  signed invitation hash before distributing the descriptor. An authorized
+  invitation redemption is a narrow exception to a current-manager signature:
+  the committed invitation delegates exactly one pending enrollment and its
+  later activation at the fixed role. The invitation key and new device both
+  sign a redemption transcript bound to the Family, current head, invitation,
+  role, device signing and agreement keys, and their key versions. A current
+  key holder and that same device later authorize only the grant/activation
+  steps described below; neither may change the delegated role or another
+  membership entry. The relay accepts a transition only if its expected prior
+  hash/version is current, signatures and roles are valid, the last manager
+  remains, and all required objects are present. Only active managers count
+  for the last-manager invariant; a pending invited manager cannot be used to
+  remove or demote the last active one. One durable compare-and-swap commits
+  its new state, encrypted membership operation, any rotation grants and
+  keyring, and resulting cursor.
+  A timeout is resolved by querying the signed transition ID and verifying
+  the exact committed state hash and objects; it is never treated as proof of
+  failure or success. A losing manager request is not automatically replayed:
+  it must still be authorized and have the same meaning against the winning
+  state before its device signs a replacement. In the D1 race, the removed or
+  demoted manager cannot do so.
+- Every ordinary batch has a stable `(author device ID, operation ID)` for
+  each operation, separate from record ID, HLC, batch ID, and epoch. The
+  decrypted operation author must match the signed batch author. The device
+  signs a canonical envelope containing Family ID, state hash/version, epoch,
+  protocol version, batch ID, its device ID and sequence, and the ciphertext
+  hash. The relay
+  requires the referenced authoring state to be an ancestor of its current
+  head, the envelope epoch to equal the current epoch, and the device still to
+  be active with write authority at the atomic commit position. Thus an
+  unrelated invitation transition need not invalidate Charlie's offline
+  batch, while a batch from Charlie received after Charlie's removal is
+  rejected even though its authoring state was once valid. Clients verify the
+  same signature, ancestry, epoch, and authorization at the batch's committed
+  position; they deduplicate operation IDs when the same pending operation is
+  rebatched.
+  HLC still chooses field winners; it is not an operation identity or an
+  authorization clock. A retry of an accepted batch returns its first result.
+  A device with an unknown upload result first queries or pulls by its stable
+  batch ID; it does not sign a different batch using the same device sequence
+  while that result is unknown. Re-encryption after a definite old-state
+  rejection uses a new batch ID and the next admissible device sequence while
+  retaining operation IDs. Exact committed-sequence allocation and rejection
+  receipts must be fixed in the wire contract so a normal rejected attempt is
+  not mistaken for a relay-hidden committed batch.
+
+### Rotation, grants, and offline work
+
+- For removal or demotion that changes key access, the manager generates a
+  fresh random epoch key. First it commits to that key in a transition core
+  containing a domain-separated key commitment, Family, prior state, new
+  epoch, and intended new authorization state. It uses the core hash as HPKE
+  context while wrapping the new key separately to each remaining authorized
+  key recipient and encrypting the earlier-key keyring under the new key. The
+  signed manifest binds the transition ID and core, crypto suite, recipient
+  holder/device IDs and agreement-key versions, and hashes of **every** grant,
+  keyring, and encrypted membership operation. The keyring contains numbered
+  earlier epoch keys; after decrypting it, a client checks every key against
+  the corresponding commitment in its pinned chain and rejects omissions or
+  substitutions. This two-stage construction avoids a circular hash.
+  A recipient checks the entire signed manifest and control chain, decrypts
+  only its addressed grant, checks the new-key commitment and prior-key
+  continuity, then activates the epoch. A relay that substitutes, omits, or
+  replays an HPKE ciphertext or keyring cannot make an authorized recipient
+  accept the substituted key.
+- The cutover transaction rejects later uploads under the old epoch and any
+  upload from a device no longer active at the current state. Batches committed
+  before it remain historical input, including writes from a device
+  subsequently removed. A remaining offline device retains pending
+  operations, fetches and verifies the new state and grant, checks each
+  pending operation's ID against committed results, then re-encrypts only
+  uncommitted operations in a new batch without changing their IDs or HLCs.
+  If the old upload response was lost, pulling its committed IDs prevents a
+  duplicate; a crash resumes from the durable local outbox. A removed device
+  cannot publish pending work to the original
+  Family, but keeps it locally and may explicitly copy it into a fresh one.
+  A malicious relay hiding the rotation from a stale writer still has the
+  documented old-key disclosure limit; this candidate does not claim to
+  prevent it. A deliberately malicious authorized manager can still destroy
+  shared availability by issuing destructive data operations or a malformed
+  rotation; the no-owner/no-quorum product does not protect against hostile
+  co-managers. Other clients must reject unverifiable keys, preserve their
+  local data, and report the Family blocked rather than silently discarding
+  history. Preventing that manager attack would require a different product
+  authority decision.
+
+### Direct invitation and private copy
+
+- A manager creates a signed, single-use invitation naming Family, invitation
+  ID, exact role, invitation public key, issuance head, and bootstrap
+  descriptor hash. Its private signing key is the bootstrap secret in the
+  link fragment; the authenticated descriptor carries the non-secret anchors
+  needed above. The link contains no Family key or offline-decryptable key
+  envelope. Before contacting the relay, the new device durably creates its
+  own Family-scoped keys and enrollment nonce. It signs the exact redemption
+  together with the invitation key. The relay atomically consumes the
+  invitation and commits that device and fixed role as **pending key
+  activation**. Previewing does not consume it. A different device cannot
+  take over a consumed invitation, and only the enrolled device credential,
+  not the link alone, can authenticate a result lookup after a lost response.
+  The pending enrollment is the one successful use even if data delivery is
+  still outstanding.
+- Single-use is enforced within one non-forked control chain. A malicious
+  relay can present sibling chains in which the same invitation was consumed
+  differently, just as it can fork manager removals; this is part of the
+  already accepted lack of global agreement against a malicious relay, not a
+  claim that two redemptions can commit on the honest relay's one current
+  head.
+- **Only after that commit**, any active authorized device holding the current
+  epoch key may automatically create the pending device's grant without a
+  second human approval. Its signed grant transcript binds Family and current
+  control head, epoch and key commitment, enrollment and invitation IDs,
+  fixed role, sender device, recipient device and agreement-key version, HPKE
+  suite/context, a random activation-token commitment, and ciphertext hash.
+  The relay first commits the grant while the enrollment remains pending. The
+  newcomer verifies that transcript, decrypts the grant, keyring, and token,
+  checks every epoch commitment, and returns the token in a request signed by
+  its enrolled device key. Activation is a second ordered compare-and-swap:
+  the relay rechecks that sender and recipient are current, the grant and
+  enrollment are still pending, and the epoch has not changed, then marks
+  that exact device active. Revealing the one-time token does not reveal a
+  data key; recipient request authentication prevents the granting holder
+  from activating a device it does not control. Only then does the client
+  enable shared reads, writes, or membership actions. Thus an invited manager
+  cannot exercise manager authority while still keyless. A stale grant is
+  retried against the new head/epoch; removal of its recipient or an epoch
+  change leaves that grant unusable. The separate effect of removing the
+  invitation issuer remains part of D8.
+- If no holder is online, the UI says **joined, waiting for a Family key** and
+  disables all shared actions until activation; it does not claim the data is
+  available. Each step persists its state and idempotent retry identity. The
+  relay retains pending enrollment, grant, and activation results so the
+  recipient and key holder may connect at different times. The apps try to
+  advance the next eligible step during ordinary sync and on empty wake
+  pushes, including when platform background execution is available. A user
+  need not deliberately reopen either app between normally delivered wakes.
+  On a delayed or unavailable wake, the status stays pending and sync resumes
+  on the next opportunity; there is no guaranteed completion deadline. The
+  visible stages distinguish enrollment pending, waiting for a key holder,
+  verifying the grant/loading history, and ready. Availability can still
+  delay the join indefinitely and cannot be solved by the relay because it
+  lacks the key. FS51 owns this accepted UX; FS47 still tests the proposed
+  activation mechanism. Expiry, cancellation, and issuer-removal races at
+  enrollment remain D8 and must be settled before this design is accepted.
+  An unintended first bearer remains the accepted D2 risk.
+- A private copy uses a local transaction: retain the original Family and
+  its outbox, construct a new local-only Family with fresh Family/device IDs
+  and keys from locally held data operations **including pending work**, and
+  publish the new Family only when its log and projection commit together.
+  Membership, relay, device, grant, invitation, and recovery credentials are
+  never copied. Replayed source operations receive new IDs and the copying
+  device's new-Family authorship; provenance remains non-authoritative local
+  metadata. Copying cannot invent records a stale device never received, and
+  it never moves another caregiver or silently redirects an action targeting
+  the original Family. A still-authorized holder may also make this copy.
+  Exact conflict-history retention and stale quick-log presentation remain
+  D6-D7.
+
+### Local-to-shared promotion
+
+- A local Family starts with a random globally unique Family ID, per-Family
+  device keys, and stable record and operation IDs, all of which remain when
+  it becomes shared. Promotion does not rewrite the live local log or turn it
+  into a second Family. In one local transaction the client records a
+  promotion ID, a log watermark, the signed genesis/epoch commitment, and a
+  manifest of encrypted immutable history chunks through that watermark.
+  New local operations continue normally above the watermark in the durable
+  outbox.
+- The relay creates a non-joinable staging Family keyed by that promotion ID.
+  Chunk upload is idempotent and each hash, count, and covered operation-ID
+  range is bound by the signed promotion manifest. Only after every manifest
+  object is present does one compare-and-swap activate genesis and its base
+  history. Invitations and ordinary sync are unavailable while staged. The
+  client verifies an activation result by promotion ID and committed manifest
+  hash, then atomically records shared state locally; operations above the
+  watermark upload through the ordinary outbox. A crash or lost response
+  resumes the same staging record. A definite pre-activation failure leaves
+  the local Family authoritative and shareable by a new attempt; an unknown
+  result remains pending until queried and is never shown as confirmed.
+- A joining client verifies the promotion manifest and obtains every declared
+  chunk before calling the initial history complete. A malicious relay may
+  withhold a chunk or an entire valid fork, as already accepted, but cannot
+  substitute a different chunk or make an incomplete manifest verify. Exact
+  chunk sizing and whether the manifest uses a flat list or tree are wire
+  choices, not new product decisions.
+
+### Recovery boundary left open
+
+D4-D5 still decide what a person, device, and recovery holder mean. This
+candidate therefore does not place a recovery phrase or platform backup in
+the active authorization set, let it sign requests, or infer its former role.
+It may decrypt an addressed recovery envelope, but enrolling a replacement
+device and disposing of old devices/credentials must follow the future D4-D5
+policy. Two implementable alternatives remain: require an active manager to
+authorize the replacement (strong revocation, but no original-Family recovery
+for a lost sole manager), or make a recovery credential a bearer capability
+for a specified role (sole-manager recovery, but theft or an unrevoked old
+copy can restore that authority). File restore into a new local Family remains
+available independently under D3.
+
+### Multiple-Family isolation
+
+- Every durable log, projection, record reference, outbox item, control head,
+  grant, recovery object, sync cursor, and pending transition is keyed by its
+  Family ID. Storage transactions and typed core handles reject a reference or
+  key from another Family before encryption or projection. Each Family has
+  independent device signing/agreement keys and epoch keys; there is no global
+  signing identity or fallback key lookup.
+- Every signed or encrypted protocol transcript includes Family ID and relay
+  endpoint identity in its domain-separated context. The invitation fragment
+  selects and authenticates that exact pair without changing the app's active
+  Family or any existing Family. Relay routing, push wakeups, export/backup,
+  removal, retry, and private-copy state operate on an explicit Family handle.
+  Removing or blocking one Family stops only its own outbox and authority;
+  another Family's cursor, timers, keys, and pending work remain unchanged.
+- Exact database constraints, backup container paths, and cross-Family
+  negative vectors still belong in the wire/storage contract. Network and
+  push metadata can correlate Families on one device as the threat model
+  already states; cryptographic isolation is not anonymity.
+
+This proposal needs negative vectors for grant/keyring substitution and
+replay, cross-Family/cross-holder grants, bootstrap-anchor substitution,
+keyless-manager actions, manager races and crash boundaries, forged batch
+device IDs, accepted-before-cutover/lost-response rebatching, role or device
+substitution in invitations, no-holder-online delivery, staged-promotion
+interruption/incompleteness, recovery-holder non-authority, multi-Family
+storage scoping, and private-copy interruption. The symbolic FS cases cover
+user-visible outcomes; exact byte contracts and cross-language vectors follow
+only after review.
 
 ## Open questions
 
 1. **Role identity and recovery.** Any manager may invite, remove, or change
    another manager's role as long as one manager remains. Decide whether a
    signed role grant applies to a person or an individual device and how
-   manager authority is recovered after losing a device. A manager acting
-   maliciously can still win a rotation race; the design accepts this limit.
+   manager authority is recovered after losing a device (D4-D5). A manager
+   acting maliciously can still win a rotation race; the design accepts this
+   limit.
 2. **Single-use direct join.** D2 decides direct join without a second
-   manual approval. Specify atomic consumption, device-bound authenticated
-   resumption, role binding, and key delivery without a reusable raw Family
-   key in the link. Determine background inviter availability requirements.
-   Resolve D8 expiry, cancellation, and issuer-removal races. Test concurrent
-   redemption, previewing, retries, and unintended-first-recipient cases.
+   manual approval and accepts asynchronous automatic handoff with visible
+   pending stages. Review the candidate consumption, device-bound resumption,
+   role binding, and key delivery without a reusable raw Family key in the
+   link. Define and test each platform's background sync and delayed-wake
+   fallback without promising guaranteed wake delivery. Resolve D8 expiry,
+   cancellation, and issuer-removal races. Test concurrent redemption,
+   previewing, retries, and unintended-first-recipient cases.
 3. **Encoding.** Confirm CBOR over protobuf once the core exists. The
    requirement is verbatim preservation of unknown fields.
 4. **Web key storage.** The web client keeps its holder keys in IndexedDB.
    Decide whether to require a passphrase to unlock them on shared
    computers.
-5. **Batch authorship.** Membership operations are signed, but ordinary
-   batches are not yet specified as signed by the device. Decide whether
-   every batch must carry a device signature and how membership at its epoch
-   is checked.
+5. **Batch authorship.** Review the candidate signed-batch envelope,
+   operation identity, unknown-result rule, and device-sequence allocation
+   above; specify exact canonical bytes, rejection receipts, and authorization
+   check at the committed log position.
 6. **Rotation transaction and offline writes.** Define an atomic transition
    from epoch e to e+1 with grants, keyring, membership change, and auth key.
    Decide what happens to old-epoch writes created offline or uploaded while
@@ -328,8 +575,9 @@ with an existing local copy from making an independent fork.
 9. **Concurrent same-field edits and clock skew.** Specify whether the UI
    exposes displaced values from the log, and bound or handle future-dated
    HLC stamps so one clock does not dominate later edits indefinitely.
-10. **Local-to-shared promotion and fork.** Decide family-id stability,
-    history upload, and whether the first share includes all local history.
+10. **Local-to-shared promotion and fork.** Review the stable-ID, staged
+    manifest, watermark, and activation boundary above for **all** existing
+    history, which U2 already requires on first share.
     Define how a removed client learns of removal, how it makes a private
     copy with new keys and identity, what provenance is retained, and how
     pending offline edits enter that copy. No automatic merge with the old
@@ -344,11 +592,10 @@ with an existing local copy from making an independent fork.
     portability feature; they must omit original shared credentials. A
     phrase restores a key, not missing data. State backup completeness and
     snapshot time accurately.
-13. **Multiple-Family isolation.** Use per-Family device keypairs. Specify
-    storage and backup partitioning, and how joins choose a relay endpoint
-    without a global account. Specify what happens when one Family is removed
-    while another remains active. Separate keys alone do not prevent server
-    correlation through network or push metadata.
+13. **Multiple-Family isolation.** Review the per-Family keys, storage scope,
+    explicit handles, endpoint bootstrap, and failure isolation above. Specify
+    exact database and backup partitioning and negative vectors. Separate keys
+    do not prevent server correlation through network or push metadata.
 
 ## Reconsider if
 

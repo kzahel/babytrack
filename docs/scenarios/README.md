@@ -12,13 +12,14 @@ Read the relevant cases and their owning decisions, not the whole catalog.
 
 | Concern | Case IDs | Decision owner |
 |---|---|---|
-| Offline start and first sharing | FS01-FS03 | [Family sharing](../topics/family-sharing-and-trust.md) U1-U4 |
+| Offline start and first sharing | FS01-FS03, FS49 | [Family sharing](../topics/family-sharing-and-trust.md) U1-U4; [sync](../topics/sync-and-encryption.md#local-shared-and-detached-families) promotion candidate |
 | Roles and competing access changes | FS04-FS12 | Family sharing U3-U4, D1 |
-| Pending work and independent copies | FS13-FS18, FS34 | Family sharing U1, U5 |
-| Invitations and redemption races | FS19-FS21, FS35-FS39 | Family sharing D2, D8 |
+| Pending work and independent copies | FS13-FS18, FS34, FS48 | Family sharing U1, U5; [sync](../topics/sync-and-encryption.md#m-1-candidate-authority-and-key-handoff) retry candidate |
+| Invitations, redemption, and automatic handoff | FS19-FS21, FS35-FS39, FS47, FS51 | Family sharing D2, D8; sync key-handoff candidate |
 | Family/child targeting | FS22-FS25 | Family sharing U6, D7 |
 | Recovery and file restore | FS26-FS30, FS40-FS45 | Family sharing U7, D3-D5; [event export](../topics/event-model.md#import-and-export) |
-| Malicious relay limits | FS31-FS32 | Family sharing trust limits; [sync threat model](../topics/sync-and-encryption.md#threat-model) |
+| Malicious relay limits | FS31-FS32, FS46 | Family sharing trust limits; [sync threat model](../topics/sync-and-encryption.md#threat-model) and grant candidate |
+| Batch authorship | FS50 | [Sync](../topics/sync-and-encryption.md#m-1-candidate-authority-and-key-handoff) candidate; not yet a settled guarantee |
 | Displaced edits | FS33 | Family sharing D6; [event model](../topics/event-model.md) |
 
 For example, read one case from the repository root:
@@ -53,16 +54,17 @@ an initially consistent membership view, and no other concurrent actions,
 unless the case or variant says otherwise. A lost response is distinct from
 a failed commit. Each variant starts from a fresh fixture. Expand secondary
 variation combinations in M0; do not infer that a list already exercises
-their Cartesian product. Cases FS31-FS32 deliberately change relay trust.
+their Cartesian product. Cases FS31-FS32 and FS46 deliberately change relay
+trust.
 
 | Product promise | Implementation responsibility | Scenario examples |
 |---|---|---|
-| Local work survives | Core storage, outbox, projection, copy/restore transactions | FS01, FS13, FS16 |
+| Local work survives | Core storage, outbox, projection, copy/restore/promotion transactions | FS01, FS13, FS16, FS48-FS49 |
 | Shared access changes coherently | Verified membership history and relay commit boundary | FS04-FS12, FS21 |
 | Continuing privately is independent | New Family identity/keys, preserved local work, explicit UI destination | FS13-FS16, FS34 |
 | Family/child context stays correct | Core scoping and platform action adapters | FS22-FS25 |
 | Recovery claims match reality | Backup format, recovery authorization, status UI | FS26-FS30, FS40-FS45 |
-| Accepted limits are honestly represented | Threat model, freshness/status wording, adversarial fixtures | FS17, FS31-FS32 |
+| Accepted limits are honestly represented | Threat model, freshness/status wording, adversarial fixtures | FS17, FS31-FS32, FS46 |
 
 The sync and event topics must map these obligations to concrete rules before
 M0 depends on them. Fixture authoring must not invent missing authority,

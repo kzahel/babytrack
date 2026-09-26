@@ -124,8 +124,18 @@ Recommended additional protections are expiry and manager cancellation;
 their lifecycle details, including outstanding invitations when the creator
 loses manager authority, remain D8. The protocol must enforce consumption
 and authenticated resumption and must not embed a reusable raw Family key
-that bypasses that boundary. Key delivery and whether the inviter's device
-must be reachable in the background remain technical design work; no second
+that bypasses that boundary. The accepted onboarding direction is asynchronous:
+after the recipient opens the invitation, key handoff and history download
+advance automatically whenever the required devices can run and connect.
+The inviter need not stay online or reopen the app at the same time as the
+recipient; another authorized key-holding device may deliver the key. A
+normal background-wake path needs no further human action. Device wake and
+network availability can delay progress, so the app persists the attempt and
+resumes it on the next opportunity rather than promising an instant join.
+The UI distinguishes invitation/enrollment pending, waiting for a Family
+key holder, verifying the grant and loading history, and ready for shared
+use; it never calls a keyless pending device ready. Exact status wording and
+platform background scheduling remain design and validation work. No second
 manual approval is required or may be introduced implicitly.
 
 ## D3: Portable files restore into a new Family

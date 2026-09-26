@@ -1038,6 +1038,169 @@
       "decisions": [
         "D3"
       ]
+    },
+    {
+      "id": "FS46",
+      "status": "agreed",
+      "requirements": [
+        "U4",
+        "U5",
+        "U6"
+      ],
+      "given": "Alice removed Bob and an authorized device with a pinned Family control head is receiving the new epoch grant through a malicious relay.",
+      "actions": [
+        "Replace, omit, or replay that device's grant or keyring ciphertext.",
+        "Attempt to log a new entry from the device."
+      ],
+      "expect": [
+        "The device rejects an uncommitted, incomplete, wrong-recipient, stale, or mismatched key transcript before encrypting new shared data.",
+        "The relay cannot read the device's later-epoch entry or give Bob a usable later-epoch key."
+      ],
+      "variants": [
+        "grant substitution",
+        "keyring omission or substitution",
+        "recipient or agreement-key-version substitution",
+        "cross-Family grant replay",
+        "stale grant after another rotation"
+      ]
+    },
+    {
+      "id": "FS47",
+      "status": "proposed",
+      "requirements": [
+        "U2",
+        "U3",
+        "U4"
+      ],
+      "given": "Bob has a valid unused invitation but no existing Family device holding the key is online.",
+      "actions": [
+        "Commit Bob's one-device enrollment using the invitation.",
+        "Bring an existing authorized key holder online later."
+      ],
+      "expect": [
+        "Only Bob's exact device and fixed invited role are enrolled pending key activation; the invitation cannot enroll a second device.",
+        "Before verified key delivery and device acknowledgement, Bob sees that he joined but is waiting for history and cannot read, write, or exercise the invited role in the shared Family.",
+        "The holder delivers history access automatically without another manual approval, and activation binds Bob's exact device to the then-current Family head and epoch.",
+        "A lost response resumes the same pending enrollment or activation rather than consuming another invitation."
+      ],
+      "variants": [
+        "holder comes online without an intervening rotation",
+        "epoch rotates while Bob is pending",
+        "Bob is a pending manager while the only active manager tries to leave",
+        "activation response is lost after commit"
+      ],
+      "decisions": [
+        "D2",
+        "D8"
+      ]
+    },
+    {
+      "id": "FS48",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U4",
+        "U5"
+      ],
+      "given": "Charlie submitted an old-epoch upload during Bob's removal race and lost the response, so Charlie does not yet know whether it committed before cutover.",
+      "actions": [
+        "Rotate the epoch to remove Bob.",
+        "Restart and reconnect Charlie.",
+        "Query or pull the stable batch result before rebatching any still-uncommitted operations under the new epoch."
+      ],
+      "expect": [
+        "Charlie's operation takes effect once in the original Family, regardless of batch retry or rebatching.",
+        "Charlie's local pending work is retained until its committed result is known.",
+        "A replacement batch keeps the operation ID but cannot overwrite or impersonate an already committed batch."
+      ],
+      "variants": [
+        "old batch accepted before cutover",
+        "old batch rejected after cutover",
+        "restart before the client persists the queried result"
+      ]
+    },
+    {
+      "id": "FS49",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U2",
+        "U4"
+      ],
+      "given": "A local Family has earlier creates, edits, deletions, and pending work.",
+      "actions": [
+        "Share the Family and receive confirmation.",
+        "Enroll a second device and read its history."
+      ],
+      "expect": [
+        "A staged or incomplete promotion cannot be joined or appear as a confirmed share.",
+        "The new device verifies and receives the complete manifested local history through the share watermark, including deletions and preserved unknown data.",
+        "Pending work above the watermark remains in the durable outbox and enters shared history exactly once under ordinary sync.",
+        "A failed or unknown promotion leaves the local Family usable and never appears as a confirmed complete share."
+      ],
+      "variants": [
+        "lost promotion response",
+        "restart during history upload",
+        "relay omits or substitutes a manifested chunk",
+        "new local operation while promotion is staged",
+        "unknown event fields"
+      ]
+    },
+    {
+      "id": "FS50",
+      "status": "proposed",
+      "requirements": [
+        "U1",
+        "U3",
+        "U4",
+        "U6"
+      ],
+      "given": "Bob is a member and knows the shared epoch key but not Alice's signing key.",
+      "actions": [
+        "Submit an encrypted batch claiming Alice's device ID and next sequence.",
+        "Then let Alice submit her genuine pending batch."
+      ],
+      "expect": [
+        "Bob's batch is rejected as Alice's work.",
+        "Alice's genuine work is not displaced by Bob's forged device identity.",
+        "A valid signed batch from another Family, epoch, state, device, or sequence position is not accepted as this batch."
+      ],
+      "variants": [
+        "forged Alice device ID",
+        "copied ciphertext with a changed envelope",
+        "cross-Family signed-batch replay",
+        "old-state replay after removal"
+      ]
+    },
+    {
+      "id": "FS51",
+      "status": "agreed",
+      "requirements": [
+        "U2",
+        "U4"
+      ],
+      "given": "Bob opened a valid invitation and the joining devices are not online at the same time.",
+      "actions": [
+        "Let Bob submit enrollment and background or close the joining app.",
+        "Later let an authorized key holder sync, including through a supported background wake.",
+        "Let Bob's app sync again after the grant is available."
+      ],
+      "expect": [
+        "The attempt persists across app suspension and restart; no second human approval or deliberate reopen is needed when background execution is delivered.",
+        "The UI identifies whether enrollment is pending, a Family key holder is needed, the grant and history are being verified and loaded, or shared use is ready.",
+        "A delayed or unavailable wake leaves an accurate pending state and resumes on the next sync opportunity without claiming a completion deadline.",
+        "Bob cannot read, write, or exercise an invited manager role before verified activation."
+      ],
+      "variants": [
+        "key holder syncs after Bob goes offline",
+        "Bob retrieves the grant after the holder goes offline",
+        "background wake delivered to each app",
+        "background wake delayed or unavailable",
+        "app restart between protocol messages"
+      ],
+      "decisions": [
+        "D2"
+      ]
     }
   ]
 }

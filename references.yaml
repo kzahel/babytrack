@@ -77,6 +77,16 @@ repos:
     url: https://github.com/mozilla/uniffi-rs
     license: MPL-2.0
 
+  - name: element-x-android
+    url: https://github.com/element-hq/element-x-android
+    license: AGPL-3.0
+    notes: Rust SDK via UniFFI, Compose, F-Droid and Play flavors, UnifiedPush
+
+  - name: element-x-ios
+    url: https://github.com/element-hq/element-x-ios
+    license: AGPL-3.0
+    notes: Rust SDK via UniFFI from SwiftUI
+
   # Local-first sync and E2EE
   - name: actual
     url: https://github.com/actualbudget/actual

@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+mod authority;
 mod receipt;
 
 pub use receipt::{RelayEntry, encode_control_page};

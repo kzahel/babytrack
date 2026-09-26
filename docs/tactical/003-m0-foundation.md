@@ -61,6 +61,12 @@ Exact genesis and invite-issue API byte vectors pass, including the relay
 signature. These constructors are internal to the relay and are not yet
 reachable through a server endpoint: authority validation, atomic storage,
 read authentication, and network delivery must precede any write route.
+The relay's genesis candidate validator now independently checks the pinned
+relay identity, zero parent, initial manager row and signature, resulting
+state/core hashes, epoch, and ordered promotion manifest. It accepts the
+published candidate and rejects a wrong relay key or altered signature.
+This covers only reservation of a new Family; later control kinds still
+need public relay authorization and state transition checks.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

@@ -6,10 +6,10 @@ native phone/watch apps and a web client.
 `babytrack` is a working name.
 
 **Status: M0 implementation in progress.** The Rust core has a strict
-canonical CBOR codec, structural operation decoder, and executable byte
-vectors. It has no complete application, sharing, or relay behavior yet.
-Scenario files still describe expected behavior; they are not passing
-product tests.
+canonical CBOR codec, structural operation decoder, tested hash, signature,
+and encryption primitives, and executable byte vectors. It has no complete
+application, sharing, or relay behavior yet. Scenario files still describe
+expected behavior; they are not passing product tests.
 
 ## Product and architecture
 
@@ -84,9 +84,10 @@ Install `cargo-deny` 0.20.2 for the last command. The Rust core's
 `core/tests/cbor_vectors.rs` runs the six CBOR cases in
 `tests/vectors/records-v1.json` plus canonicality and limit checks;
 `core/tests/operation_vectors.rs` checks selected operation bytes and binding
-failures. Run both with `cargo test -p babytrack-core`. The other vectors,
-bindings, and product flows are not executable yet; compilation does not
-establish protocol correctness.
+failures. `core/tests/crypto_vectors.rs` checks hash, Ed25519, and XChaCha
+known answers and tampering. Run them with `cargo test -p babytrack-core`.
+The other vectors, bindings, and product flows are not executable yet;
+compilation does not establish protocol correctness.
 
 Reference repositories are listed in [references.yaml](references.yaml).
 Run `scripts/sync_references.py [name ...]` to populate gitignored

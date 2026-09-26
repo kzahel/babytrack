@@ -40,7 +40,8 @@ appear implemented.
 | `apps/ios/` | iOS/watchOS apps and extensions | M3 phone, M4 watch |
 
 The five Rust targets and root build files now exist. The core now contains
-a canonical CBOR codec, structural operation decoder, and vector tests;
+a canonical CBOR codec, structural operation decoder, first crypto primitives,
+and vector tests;
 the other targets remain scaffold
 boundaries. The documentation,
 test, and platform paths marked for later milestones are future paths, not

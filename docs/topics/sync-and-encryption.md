@@ -1,7 +1,7 @@
 # Sync and encryption
 
 Status: M-1 design decided, September 2026; M0 has started with Rust
-canonical CBOR, structural operation decoding, and first byte vectors.
+canonical CBOR, structural operation decoding, and first crypto byte vectors.
 Most implementation and executed validation remain. The normative v1 byte
 and state-machine rules are in
 [records](../protocol/records-v1.md),
@@ -269,9 +269,9 @@ checks are still required.
 The Rust core now executes CB01-CB06 from `tests/vectors/records-v1.json`
 and selected operation bytes from `full-wire-v1.json` and
 `negative-batch-v1.json` with `cargo test -p babytrack-core`. This covers
-canonical CBOR and structural operation checks; complete field validity,
-other vectors, cross-language agreement, and the protocol/security gates
-below remain open.
+canonical CBOR, structural operation checks, and SHA-256/Ed25519/XChaCha
+known answers; complete field validity, HPKE, full batch bytes, cross-language
+agreement, and the protocol/security gates below remain open.
 
 - Property tests: random operations delivered in random orders to several
   replicas always converge to identical state.

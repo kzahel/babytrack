@@ -89,9 +89,11 @@ The Rust core implements canonical CBOR and structural version-1 operation
 decoding, with Family/author binding and unknown-field byte retention.
 `cargo test -p babytrack-core` runs CB01-CB06 from
 `tests/vectors/records-v1.json`, plus fixed operation and minor-field cases
-from `full-wire-v1.json` and `negative-batch-v1.json`. The rest of slice 1
-remains open: full field validity, all byte fixtures, crypto, bindings, and
-browser storage.
+from `full-wire-v1.json` and `negative-batch-v1.json`. Domain hashes,
+Ed25519, and XChaCha20-Poly1305 pass their known answers in
+`crypto-v1.json`; supplied-nonce encryption still needs safe nonce ownership
+in the batch/outbox layer. The rest of slice 1 remains open: full field
+validity, HPKE, full batch bytes, bindings, and browser storage.
 
 Every agreed FS case gets a deterministic core/relay action binding with
 assertions for local state, shared state, pending outbox, visible status, and

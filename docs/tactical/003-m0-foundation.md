@@ -196,7 +196,13 @@ hash, claimed agreement/signing keys, context, and committed secret hash
 before signing the proof. A holder checks the verifier object's hash,
 committed epoch key, challenge hash, pending signature, and committed proof
 hash. The contiguous chain's actual object bytes pass; wrong keys and
-tampered bytes fail. Grant-object readiness remains open.
+tampered bytes fail.
+The admission manifest now yields an opaque grant context after the signed
+transition. The recipient opens only the addressed HPKE object using its
+committed agreement key, checks purpose/suite/context and full object hash,
+and accepts an epoch key only when it matches the signed commitment. The
+contiguous join object's actual bytes pass; wrong keys and tampering fail.
+Membership ciphertext comparison and repair/rotation grants remain open.
 `FamilySession` now consumes the fixed genesis and `BATCHBYTE01` acceptance
 through a core-owned path: it verifies the manager, head, epoch, sequence,
 object hash, cursor, and relay-signed receipt before projecting the first

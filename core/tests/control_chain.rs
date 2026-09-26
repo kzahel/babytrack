@@ -140,6 +140,36 @@ fn admission_moves_proved_pending_device_to_active_and_repair_preserves_role() {
     chain.apply_key_proof(&wire(4)).unwrap();
     chain.apply_admit_grant(&wire(5)).unwrap();
     assert_eq!(chain.last_global_cursor(), 6);
+    let recipient_id = bytes::<16>(
+        fixture["test_only_inputs"]["recipient_device_id_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let grant = chain.initial_admission_grant(&recipient_id).unwrap();
+    let grant_object = hex_bytes(
+        fixture["objects_by_id_hex"]["923e4567e89b42d3a456426614174000"]
+            .as_str()
+            .unwrap(),
+    );
+    let agreement_private = bytes::<32>(
+        fixture["test_only_inputs"]["recipient_agreement_seed_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let opened = grant.open(&grant_object, &agreement_private).unwrap();
+    let expected_key = bytes::<32>(
+        fixture["test_only_inputs"]["epoch_1_key_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    assert_eq!(
+        opened,
+        chain.verify_current_epoch_key(&expected_key).unwrap()
+    );
+    assert!(grant.open(&grant_object, &[0u8; 32]).is_err());
+    let mut tampered_grant = grant_object.clone();
+    *tampered_grant.last_mut().unwrap() ^= 1;
+    assert!(grant.open(&tampered_grant, &agreement_private).is_err());
     assert_eq!(
         chain.state_bytes().unwrap(),
         hex_bytes(transitions[5]["state_cbor_hex"].as_str().unwrap())

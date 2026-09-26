@@ -9,6 +9,7 @@ use crate::{
     cbor::{self, Value},
     control::{self, Genesis, array, exact_map, fixed, number, signed_number},
     crypto,
+    grant::{self, VerifiedAdmissionGrant},
     handoff::{self, VerifiedChallenge},
     projection::VerifiedEpochKey,
     session,
@@ -21,6 +22,7 @@ pub enum Error {
     Crypto(crypto::Error),
     Batch(batch::Error),
     Handoff(handoff::Error),
+    Grant(grant::Error),
     Invalid(&'static str),
     UnsupportedKind,
 }
@@ -49,6 +51,11 @@ impl From<handoff::Error> for Error {
         Self::Handoff(value)
     }
 }
+impl From<grant::Error> for Error {
+    fn from(value: grant::Error) -> Self {
+        Self::Grant(value)
+    }
+}
 
 pub struct ControlChain {
     genesis: Genesis,
@@ -61,6 +68,7 @@ pub struct ControlChain {
     challenges: BTreeMap<[u8; 16], VerifiedChallenge>,
     seen_challenge_ids: BTreeSet<[u8; 16]>,
     admissions: BTreeMap<[u8; 16], [u8; 16]>,
+    admission_grants: BTreeMap<[u8; 16], VerifiedAdmissionGrant>,
     known_heads: BTreeMap<[u8; 32], u32>,
     next_sequences: BTreeMap<[u8; 16], u64>,
     seen_batch_ids: BTreeSet<[u8; 16]>,
@@ -103,6 +111,7 @@ impl ControlChain {
             challenges: BTreeMap::new(),
             seen_challenge_ids: BTreeSet::new(),
             admissions: BTreeMap::new(),
+            admission_grants: BTreeMap::new(),
             known_heads: BTreeMap::from([(genesis_head, 1)]),
             next_sequences: BTreeMap::new(),
             seen_batch_ids: BTreeSet::new(),
@@ -122,6 +131,10 @@ impl ControlChain {
 
     pub fn latest_challenge(&self, invitation_id: &[u8; 16]) -> Option<&VerifiedChallenge> {
         self.challenges.get(invitation_id)
+    }
+
+    pub fn initial_admission_grant(&self, device_id: &[u8; 16]) -> Option<&VerifiedAdmissionGrant> {
+        self.admission_grants.get(device_id)
     }
 
     pub fn verify_current_epoch_key(&self, key: &[u8; 32]) -> Result<VerifiedEpochKey, Error> {
@@ -763,6 +776,31 @@ impl ControlChain {
         let sign_public = fixed::<32>(&pending[2])?;
         let agree_public = fixed::<32>(&pending[3])?;
         let key_version = number(&pending[4])?;
+        let manifest = array(&unsigned[9].1, 2)?;
+        let grant_entry = array(&manifest[1], 4)?;
+        if number(&grant_entry[0])? != 4 {
+            return Err(Error::Invalid("admission grant manifest kind invalid"));
+        }
+        let grant = VerifiedAdmissionGrant {
+            family_id: self.genesis.family_id(),
+            epoch: self
+                .current_epoch()?
+                .try_into()
+                .map_err(|_| Error::Invalid("epoch outside u32"))?,
+            epoch_commitment: self.current_commitment,
+            core_hash: fixed::<32>(&unsigned[10].1)?,
+            invitation_id,
+            device_id,
+            role: role
+                .try_into()
+                .map_err(|_| Error::Invalid("admission role outside u8"))?,
+            agree_public,
+            key_version: key_version
+                .try_into()
+                .map_err(|_| Error::Invalid("key version outside u32"))?,
+            grant_id: fixed::<16>(&grant_entry[1])?,
+            object_hash: fixed::<32>(&grant_entry[2])?,
+        };
         let signatures = array(&root[1].1, 1)?;
         let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
         let active = find_row(&state[4].1, 5, 0, signer_id)?
@@ -804,6 +842,7 @@ impl ControlChain {
             },
         )?;
         self.admissions.insert(device_id, transition_id);
+        self.admission_grants.insert(device_id, grant);
         Ok(())
     }
 
@@ -1020,6 +1059,7 @@ impl ControlChain {
         )?;
         self.current_commitment = new_commitment;
         self.challenges.clear();
+        self.admission_grants.remove(&target_id);
         Ok(())
     }
 

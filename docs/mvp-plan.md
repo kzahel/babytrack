@@ -19,11 +19,13 @@ One Rust core shared by every client, with native UI on each platform.
   events over two years), so each client folds the whole log in memory in
   milliseconds. Storage is only an op log plus occasional snapshots: a file on
   native, IndexedDB on web.
-- **Crypto.** One symmetric family key. Op batches are encrypted with
-  XChaCha20-Poly1305. A separate auth key derived with HKDF from the family
-  secret authenticates writes to the server, so the server never holds a key
-  that decrypts anything. The invite QR code or link carries the secret. Key
-  epochs, rotation, and recovery are specified under Requirements.
+- **Crypto.** Op batches are encrypted with a per-epoch symmetric key using
+  XChaCha20-Poly1305. Each device, platform backup, and recovery phrase is a
+  key holder with its own keypairs, and new epoch keys are granted to each
+  holder with HPKE. A per-epoch auth key derived with HKDF authenticates
+  requests, so the server never holds a key that decrypts anything. The
+  invite QR code or link carries the current epoch key. Details in
+  [topics/sync-and-encryption.md](topics/sync-and-encryption.md).
 - **Server (Rust, axum).** A dumb relay: an ordered log of encrypted blobs per
   family. Clients pull everything since a cursor, get live updates over a
   WebSocket, and receive empty wake pushes sent directly through APNs and FCM
@@ -66,6 +68,10 @@ Agreed September 2026. The first group shapes the sync protocol and must be
 in place in M0, because changing it after clients exist is expensive.
 
 ### Protocol (M0)
+
+The designs that meet these requirements are owned by
+[topics/sync-and-encryption.md](topics/sync-and-encryption.md) and
+[topics/event-model.md](topics/event-model.md).
 
 - **Key epochs and caregiver removal.** Family keys are versioned by epoch
   and every encrypted batch records the epoch it was sealed with. Removing a
@@ -202,8 +208,9 @@ same for dependencies.
 
 ## CI
 
-GitHub Actions. Standard macOS runners are free for public repos, so the repo
-should be public on GitHub before CI work starts. Every job is path-filtered.
+GitHub Actions on the public repo
+[kzahel/babytrack](https://github.com/kzahel/babytrack), where standard
+macOS runners are free. Every job is path-filtered.
 
 - **core:** fmt, clippy, tests, property tests, wasm build, `cargo-deny`.
 - **server:** tests against SQLite and Postgres, Docker build, image published
@@ -215,8 +222,10 @@ should be public on GitHub before CI work starts. Every job is path-filtered.
 - **web:** lint, type-check, Vitest, Playwright.
 - **e2e:** sync torture test and two-browser Playwright sync on every PR.
 - **release (M5):** fastlane uploads to TestFlight and Play on version tags,
-  and a reproducibility check for the F-Droid build. Renovate for dependency
-  updates from the start.
+  and a reproducibility check for the F-Droid build.
+- **dependencies:** Dependabot version and security updates, configured in
+  `.github/dependabot.yml`, which lists every planned manifest directory.
+  Update it when the layout changes.
 
 ## Milestones
 

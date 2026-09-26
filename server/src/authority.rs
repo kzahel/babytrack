@@ -34,6 +34,7 @@ pub(crate) struct GenesisCandidate {
     pub manager_id: [u8; 16],
     pub manager_signing_key: [u8; 32],
     pub manager_row: Value,
+    pub epoch_commitment: [u8; 32],
     pub manifest: Vec<ManifestEntry>,
 }
 
@@ -81,7 +82,7 @@ pub(crate) fn verify_genesis_candidate(
     if number(&manager[3])? == 0 || number(&manager[4])? != 2 {
         return Err(Error::Invalid("initial manager row invalid"));
     }
-    let _epoch_commitment = fixed::<32>(&delta[1].1)?;
+    let epoch_commitment = fixed::<32>(&delta[1].1)?;
     let promotion_hash = fixed::<32>(&delta[2].1)?;
     let state = Value::Map(vec![
         (1, Value::Integer(1)),
@@ -156,6 +157,7 @@ pub(crate) fn verify_genesis_candidate(
         manager_id,
         manager_signing_key,
         manager_row: delta[0].1.clone(),
+        epoch_commitment,
         manifest: entries,
     })
 }
@@ -742,6 +744,129 @@ pub(crate) fn verify_first_proof(
     })
 }
 
+#[derive(Debug, Clone)]
+#[allow(dead_code)] // Consumed by the admission staging transaction.
+pub(crate) struct AdmissionCandidate {
+    pub transition_id: [u8; 16],
+    pub recipient_id: [u8; 16],
+    pub manifest: Vec<ManifestEntry>,
+}
+
+#[allow(dead_code)] // Consumed by the admission staging transaction.
+pub(crate) fn verify_first_admission(
+    candidate_bytes: &[u8],
+    genesis: &GenesisCandidate,
+    issue: &IssueCandidate,
+    claim: &ClaimCandidate,
+    challenge: &ChallengeCandidate,
+    proof: &ProofCandidate,
+    proof_head: [u8; 32],
+) -> Result<AdmissionCandidate, Error> {
+    let value = cbor::decode_with_limits(
+        candidate_bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?;
+    let root = exact_map(&value, 2)?;
+    let unsigned = exact_map(&root[0].1, 11)?;
+    let delta = exact_map(&unsigned[6].1, 4)?;
+    let invitation_id = fixed::<16>(&delta[0].1)?;
+    let recipient_id = fixed::<16>(&delta[1].1)?;
+    let role = number(&delta[2].1)?;
+    let commitment = fixed::<32>(&delta[3].1)?;
+    if invitation_id != issue.invitation_id
+        || recipient_id != claim.device_id
+        || role != issue.role
+        || commitment != genesis.epoch_commitment
+    {
+        return Err(Error::Invalid(
+            "admission target, role, or key commitment mismatch",
+        ));
+    }
+    let recipient_row = Value::Array(vec![
+        Value::Bytes(recipient_id.to_vec()),
+        Value::Bytes(claim.signing_public.to_vec()),
+        Value::Bytes(claim.agreement_public.to_vec()),
+        Value::Integer(claim.key_version.into()),
+        Value::Integer(role.into()),
+    ]);
+    let mut active = vec![genesis.manager_row.clone(), recipient_row];
+    active.sort_by(|left, right| {
+        let Value::Array(left) = left else {
+            unreachable!()
+        };
+        let Value::Array(right) = right else {
+            unreachable!()
+        };
+        let Value::Bytes(left) = &left[0] else {
+            unreachable!()
+        };
+        let Value::Bytes(right) = &right[0] else {
+            unreachable!()
+        };
+        left.cmp(right)
+    });
+    let invitation = Value::Array(vec![
+        Value::Bytes(issue.invitation_id.to_vec()),
+        Value::Bytes(genesis.manager_id.to_vec()),
+        Value::Bytes(issue.invite_public.to_vec()),
+        Value::Integer(issue.role.into()),
+        Value::Bytes(issue.transition_id.to_vec()),
+        Value::Integer(2),
+    ]);
+    let resulting = Value::Map(vec![
+        (1, Value::Integer(1)),
+        (2, Value::Bytes(genesis.family_id.to_vec())),
+        (3, Value::Bytes(genesis.relay_id.to_vec())),
+        (4, Value::Integer(1)),
+        (5, Value::Array(active)),
+        (6, Value::Array(vec![])),
+        (7, Value::Array(vec![invitation])),
+    ]);
+    let header = verify_following(
+        candidate_bytes,
+        genesis,
+        FollowingPlan {
+            parent: proof_head,
+            kind: 6,
+            epoch: 1,
+            resulting: &resulting,
+            expected_signers: &[(genesis.manager_id, genesis.manager_signing_key)],
+            manifest_kinds: &[1, 4],
+        },
+    )?;
+    if [
+        genesis.transition_id,
+        issue.transition_id,
+        claim.transition_id,
+        challenge.transition_id,
+        proof.transition_id,
+    ]
+    .contains(&header.transition_id)
+        || header.manifest[0].object_id == header.manifest[1].object_id
+        || header.manifest.iter().any(|entry| {
+            genesis
+                .manifest
+                .iter()
+                .any(|prior| prior.object_id == entry.object_id)
+                || entry.object_id == issue.manifest.object_id
+                || challenge
+                    .manifest
+                    .iter()
+                    .any(|prior| prior.object_id == entry.object_id)
+        })
+    {
+        return Err(Error::Invalid("admission transition or object ID reused"));
+    }
+    Ok(AdmissionCandidate {
+        transition_id: header.transition_id,
+        recipient_id,
+        manifest: header.manifest,
+    })
+}
+
 fn exact_map(value: &Value, count: usize) -> Result<&[(u64, Value)], Error> {
     let Value::Map(entries) = value else {
         return Err(Error::Invalid("expected map"));
@@ -942,6 +1067,51 @@ mod tests {
         assert!(
             verify_first_proof(&proof_bytes, &genesis, &issue, &claim, &challenge, [0; 32])
                 .is_err()
+        );
+        let proof_committed = hex(chain["transitions"][4]["committed_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let proof_head = crypto::hash("control-head", &proof_committed).unwrap();
+        let admission_bytes = cbor::encode(&Value::Map(vec![
+            (
+                1,
+                cbor::decode(&hex(chain["transitions"][5]["unsigned_cbor_hex"]
+                    .as_str()
+                    .unwrap()))
+                .unwrap(),
+            ),
+            (
+                2,
+                cbor::decode(&hex(chain["transitions"][5]["signatures_cbor_hex"]
+                    .as_str()
+                    .unwrap()))
+                .unwrap(),
+            ),
+        ]))
+        .unwrap();
+        let admission = verify_first_admission(
+            &admission_bytes,
+            &genesis,
+            &issue,
+            &claim,
+            &challenge,
+            &proof,
+            proof_head,
+        )
+        .unwrap();
+        assert_eq!(admission.recipient_id, claim.device_id);
+        assert_eq!(admission.manifest.len(), 2);
+        assert!(
+            verify_first_admission(
+                &admission_bytes,
+                &genesis,
+                &issue,
+                &claim,
+                &challenge,
+                &proof,
+                [0; 32]
+            )
+            .is_err()
         );
     }
 }

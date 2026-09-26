@@ -115,6 +115,12 @@ cursor without objects. The HTTP test commits both transitions with an
 injected clock and exact fixture bytes. A pending device can fetch only
 its addressed HPKE challenge object, never the holder's verifier object.
 Admission, grant delivery, and batch data remain closed.
+The relay's public admission validator now matches the next signed
+contiguous vector: proved pending identity, fixed invited role, unchanged
+epoch commitment, manager signature, resulting active membership state,
+and distinct membership/grant object manifests. Durable staging and the
+admission HTTP route remain the next slice; no key is available through
+the relay until that commit exists.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

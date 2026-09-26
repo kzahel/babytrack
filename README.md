@@ -51,6 +51,7 @@ Then follow the task-specific links; do not load all documentation by default.
 |---|---|
 | Find the owning decisions | [Topic index](docs/topics/README.md) |
 | Find current work and gates | [Tactical index](docs/tactical/README.md) |
+| Follow the active delivery handoff | [Delivery tracker](docs/tactical/004-delivery-tracker.md) |
 | Scope, milestones, cross-cutting changes | [MVP plan](docs/mvp-plan.md) |
 | Run independent security reviews | [Security review runbook](docs/security-review-runbook.md) |
 | Directory structure and build preparation | [Repository layout](docs/topics/repository-layout.md) |

@@ -1,6 +1,6 @@
 # MVP implementation plan
 
-Status: agreed direction, September 2026; implementation has not started.
+Status: agreed direction, September 2026; M0 implementation is in progress.
 Owns scope, stack, milestone sequencing, and review gates. Read the
 [topic index](topics/README.md) for detailed decisions and the
 [tactical index](tactical/README.md) for current work. The
@@ -276,10 +276,11 @@ implementation choices remain autonomous.
 
 GitHub Actions on the public repo
 [kzahel/babytrack](https://github.com/kzahel/babytrack), where standard
-macOS runners are free. Keep an always-running required check; selectively
-run component jobs based on changed paths. Changes to shared core, bindings,
-`docs/protocol/`, `docs/scenarios/`, `tests/vectors/`, dependency manifests,
-or CI configuration run every affected job.
+macOS runners are free. Keep an always-running required check. The current
+foundation workflow runs every job on each push and PR; add selective
+component jobs as the suites grow, based on changed paths. Changes to shared
+core, bindings, `docs/protocol/`, `docs/scenarios/`, `tests/vectors/`,
+dependency manifests, or CI configuration run every affected job.
 PR checks use read-only permissions and no release credentials. Release and
 publishing jobs run only from protected tags or environments.
 
@@ -317,11 +318,12 @@ touches an app store until M5.
 1. **M0, executable foundation.** Build the protocol, core, relay, and CLI in
    ordered slices: first a minimal encode/encrypt/decrypt proof through Rust,
    Swift, Kotlin, and wasm; then local operations, projections, and storage;
-   then two CLI clients sharing through the real encrypted relay; finally
-   membership, removal, recovery, multi-Family isolation, and adversarial
-   reconnect cases. Add a minimal browser harness using wasm and IndexedDB
-   that syncs through the same relay, so browser storage and key handling are
-   exercised before the web UI. The harness is test infrastructure, not the
+   then relay authority, invitations, and rotation with an independent
+   implemented-protocol review; then mixed-client sync, recovery,
+   multi-Family isolation, and adversarial reconnect cases. Add a minimal
+   browser harness using wasm and IndexedDB that syncs through the same relay,
+   so browser storage and key handling are exercised before the web UI.
+   The harness is test infrastructure, not the
    product interface. M0 exits only when the versioned vectors pass in every
    language, a mixed-client exchange converges, the bounded real-relay suite
    passes in CI, and crash/restart plus removal/recovery cases pass. The dev

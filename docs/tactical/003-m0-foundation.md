@@ -48,40 +48,48 @@ four runtimes; no platform adapter reimplements CBOR, crypto, or merge.
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.
 
-### 3. Real relay and mixed clients
+### 3. Relay authority and early security review
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed
   batch receipts, and authenticated reads. Relay stores opaque bytes and
   cannot decrypt marker strings in events or logs.
-- [ ] Promote all local history atomically. Connect two CLI clients and the
-  real-browser harness through the relay. Inject offline writes, duplicate
-  requests, lost responses, restart, old-epoch rejection, malformed signed
-  payloads, and a withheld latest batch (FS03, FS17-FS18, FS31-FS32,
-  FS46, FS49-FS50, FS60).
-
-Gate: mixed clients converge on the same verified history; an unknown batch
-outcome retains its local outbox until accepted evidence is retrieved.
-
-### 4. Membership and recovery adversarial pass
-
 - [ ] Implement invitation bootstrap, seven-day honest-relay expiry,
   authenticated claim retry, holder challenge/proof, atomic admission and
   grant, grant repair, and background sync state machine. Use injected wakes
   and delayed delivery, without a simultaneous-online or second-approval
   dependency (FS19-FS21, FS35-FS39, FS47, FS51, FS55, FS59).
 - [ ] Implement rotating active removal, keyring verification, stale-writer
-  handling, signed removal proof, and one private-copy transaction. Run both
+  handling, signed removal proof, and one private-copy transaction. Exercise
   manager-removal orders, third caregiver, pending work, forged denial,
   cloned credential, and malicious fork (FS04-FS12, FS34, FS52-FS58).
-- [ ] Run the independent implemented-protocol review from the MVP plan using
-  the [review runbook](../security-review-runbook.md).
-  Map each finding to a scenario/vector and fix any access or retention
-  blocker before M1 uses real Family data.
+- [ ] Run the early M0 implemented-protocol review from the
+  [MVP plan](../mvp-plan.md#security-review-gates) using the
+  [review runbook](../security-review-runbook.md). Review authorization,
+  invitation, encryption, and rotation at a fixed revision. Fix access and
+  retention blockers before expanding mixed-client sync.
+
+Gate: the relay and clients enforce the reviewed authority transitions;
+deterministic authority and key-handoff tests pass; the independent review
+has no unresolved access or retention blocker.
+
+### 4. Mixed-client sync and recovery adversarial pass
+
+- [ ] Promote all local history atomically. Connect two CLI clients and the
+  real-browser harness through the relay. Inject offline writes, duplicate
+  requests, lost responses, restart, old-epoch rejection, malformed signed
+  payloads, and a withheld latest batch (FS03, FS17-FS18, FS31-FS32,
+  FS46, FS49-FS50, FS60).
+- [ ] Run the end-of-M0 independent review using the
+  [review runbook](../security-review-runbook.md). Review recovery,
+  pending writes, crash safety, isolation, and scenario coverage at a
+  fixed revision. Map each finding to a scenario/vector and fix access or
+  retention blockers before M1 uses real Family data.
 
 Gate: the bounded real-relay scenario suite passes with crash/restart and
-multiple Families; the adversarial review has no unresolved violation of an
-agreed product promise.
+multiple Families; mixed clients converge on verified history; an unknown
+batch outcome retains its outbox until accepted evidence is retrieved; the
+end-of-M0 review has no unresolved violation of an agreed product promise.
 
 ## Test placement and CI
 
@@ -139,11 +147,12 @@ browser-key cases, M3 iOS parity, and M4 watch targeting. M0 records actual
 runner commands next to its completed gate; the passing byte subset does not
 establish any complete scenario or slice gate today.
 
-The CI path rules in the [MVP plan](../mvp-plan.md#ci) are required:
-core, bindings, protocol, scenarios, vectors, dependency, and CI edits run
-the bounded relevant checks on PRs. Randomized fault sequences and fuzzing
-run nightly with saved seeds. Physical device startup and size baselines
-begin in M1; simulator timing is informational.
+The [MVP CI plan](../mvp-plan.md#ci) requires core, bindings, protocol,
+scenarios, vectors, dependency, and CI edits to run the bounded relevant
+checks on PRs. The current foundation workflow runs all jobs on every push
+and PR; introduce path selection as component suites grow. Randomized fault
+sequences and fuzzing run nightly with saved seeds. Physical device startup
+and size baselines begin in M1; simulator timing is informational.
 
 ## Completion condition
 

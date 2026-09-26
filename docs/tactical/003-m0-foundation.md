@@ -181,7 +181,16 @@ The current relay methods and builders cover only one manager and one
 first recipient at epoch one. The dynamic test exercises the authenticated
 relay storage boundary; HTTP batch delivery has separate coverage, while
 HTTP control transport, background polling, later invitations, removal,
-promotion of existing local records, and recovery remain open.
+and recovery remain open.
+Existing local records now promote as encrypted, manifest-bound chunks at a
+fixed watermark. The manager stores exact chunk and genesis bytes before
+upload, and a recipient verifies every chunk under its granted epoch key
+before the Family becomes data-ready. The dynamic two-store test begins with
+an offline child, waits for the final promotion chunk before showing that
+child on the recipient, then uploads one manager edit made after the watermark
+and one recipient edit. The manager marks only the promoted prefix accepted;
+post-watermark local edits remain in its outbox. Multi-chunk limits and
+transport-failure campaigns remain to be exercised.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

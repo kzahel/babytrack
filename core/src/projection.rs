@@ -59,6 +59,7 @@ pub enum Error {
     WrongCursor,
     WrongEpoch,
     Open(batch::Error),
+    Invalid(&'static str),
 }
 
 /// Created only by the core after verifying an epoch-key commitment in the
@@ -155,6 +156,24 @@ impl Projection {
 
     pub fn record(&self, id: &[u8; 16]) -> Option<&Record> {
         self.records.get(id)
+    }
+
+    /// Genesis promotes the existing local log at cursor one. All promoted
+    /// operations precede subsequent relay batches at later cursors.
+    pub(crate) fn apply_promotion(&mut self, operations: &[Operation]) -> Result<(), Error> {
+        if self.last_cursor != 0 {
+            return Err(Error::WrongCursor);
+        }
+        let mut records = self.records.clone();
+        let mut seen = self.seen_operations.clone();
+        for (index, operation) in operations.iter().enumerate() {
+            apply_operation(&mut records, &mut seen, operation, 1, index)
+                .map_err(Error::Invalid)?;
+        }
+        self.records = records;
+        self.seen_operations = seen;
+        self.last_cursor = 1;
+        Ok(())
     }
 
     pub fn inert_batches(&self) -> &[InertBatch] {

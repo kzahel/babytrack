@@ -1,5 +1,4 @@
-//! Fresh local manager keys and exact genesis bytes survive restart before
-//! the first network request.
+//! Fresh keys, promoted local history, and exact signed bytes survive restart.
 
 use babytrack_core::{
     bootstrap::InvitationBootstrap,
@@ -36,7 +35,7 @@ fn v7(tag: u8) -> [u8; 16] {
 }
 
 #[test]
-fn fresh_empty_family_promotes_with_durable_local_keys() {
+fn existing_local_family_promotes_and_shares_with_durable_keys() {
     let dir = tempfile::tempdir().unwrap();
     let local_path = dir.path().join("manager.db");
     let relay_path = dir.path().join("relay.db");
@@ -51,10 +50,58 @@ fn fresh_empty_family_promotes_with_durable_local_keys() {
     local
         .create_family(family.family_id, family.device_id)
         .unwrap();
+    let pre_child_id = v7(0x20);
+    local
+        .append_local(
+            family,
+            NewOperation {
+                family_id: family.family_id,
+                operation_id: v7(0x21),
+                record_id: pre_child_id,
+                scope: Scope::Child,
+                kind: Kind::Create,
+                author_device_id: family.device_id,
+                hlc: Hlc {
+                    wall_ms: 0,
+                    counter: 0,
+                    device_id: family.device_id,
+                },
+                record_type: Some("child".to_owned()),
+                child_id: None,
+                fields: Some(vec![(1, Value::Text("Before sharing".to_owned()))]),
+            },
+            1_700_000_000_000,
+        )
+        .unwrap();
     let creation =
         ManagerCreation::prepare(&mut local, family, relay_public, &wrapping_key).unwrap();
     let candidate = creation.candidate_bytes().to_vec();
     let stage = creation.stage_body().unwrap();
+    let genesis_stages = creation.stage_bodies().unwrap();
+    assert_eq!(genesis_stages.len(), 2);
+    let post_child_id = v7(0x22);
+    local
+        .append_local(
+            family,
+            NewOperation {
+                family_id: family.family_id,
+                operation_id: v7(0x23),
+                record_id: post_child_id,
+                scope: Scope::Child,
+                kind: Kind::Create,
+                author_device_id: family.device_id,
+                hlc: Hlc {
+                    wall_ms: 0,
+                    counter: 0,
+                    device_id: family.device_id,
+                },
+                record_type: Some("child".to_owned()),
+                child_id: None,
+                fields: Some(vec![(1, Value::Text("After sharing started".to_owned()))]),
+            },
+            1_700_000_000_001,
+        )
+        .unwrap();
     let promotion_id = creation.promotion_id();
     assert_ne!(creation.transition_id(), promotion_id);
     let object_id = creation.object_id();
@@ -72,11 +119,14 @@ fn fresh_empty_family_promotes_with_durable_local_keys() {
     let resumed = ManagerCreation::resume(&local, family, &wrapping_key).unwrap();
     assert_eq!(resumed.candidate_bytes(), candidate);
     assert_eq!(resumed.stage_body().unwrap(), stage);
+    assert_eq!(resumed.stage_bodies().unwrap(), genesis_stages);
 
     let mut relay = RelayStore::open(&relay_path, relay_seed).unwrap();
-    relay
-        .stage_genesis_object(family.family_id, object_id, &stage)
-        .unwrap();
+    for (id, body) in &genesis_stages {
+        relay
+            .stage_genesis_object(family.family_id, *id, body)
+            .unwrap();
+    }
     assert!(
         relay
             .committed_object(family.family_id, object_id)
@@ -108,6 +158,8 @@ fn fresh_empty_family_promotes_with_durable_local_keys() {
     let ready = resumed.confirm(&mut local, committed).unwrap();
     assert_eq!(ready.observed_cursor(), 1);
     assert_eq!(ready.active_epoch(), 1);
+    assert!(ready.projection().record(&pre_child_id).is_some());
+    assert!(ready.projection().record(&post_child_id).is_none());
     drop(local);
     let mut local = SqliteStore::open(&local_path).unwrap();
     let resumed = ManagerCreation::resume(&local, family, &wrapping_key).unwrap();
@@ -424,10 +476,17 @@ fn fresh_empty_family_promotes_with_durable_local_keys() {
         .accept_control(&mut recipient_store, &page.entries[0].committed_bytes)
         .unwrap();
     assert!(ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).is_err());
+    let chunk_id = genesis_stages[1].0;
     let mut object_ids = vec![object_id, issue.object_id()];
     object_ids.extend(staged.iter().map(|(id, _)| *id));
     object_ids.extend(admission_stage.iter().map(|(id, _)| *id));
+    object_ids.push(chunk_id);
     for id in object_ids {
+        if id == chunk_id {
+            assert!(
+                ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).is_err()
+            );
+        }
         let path = format!(
             "/v1/families/{}/objects/{}",
             lower_hex(&family.family_id),
@@ -448,6 +507,7 @@ fn fresh_empty_family_promotes_with_durable_local_keys() {
     let ready = ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).unwrap();
     assert_eq!(ready.observed_cursor(), 6);
     assert_eq!(ready.active_epoch(), 1);
+    assert!(ready.projection().record(&pre_child_id).is_some());
 
     let child_id = v7(0x32);
     recipient_store
@@ -528,7 +588,47 @@ fn fresh_empty_family_promotes_with_durable_local_keys() {
     let manager_ready = resumed.confirm(&mut local, committed).unwrap();
     assert_eq!(manager_ready.observed_cursor(), 7);
     assert_eq!(
+        manager_ready.projection().record(&pre_child_id),
+        recipient_ready.projection().record(&pre_child_id)
+    );
+    assert_eq!(
         manager_ready.projection().record(&child_id),
         recipient_ready.projection().record(&child_id)
+    );
+    let manager_batch = match resumed
+        .stage_next_local(&manager_ready, &mut local)
+        .unwrap()
+    {
+        NextUpload::Fresh(batch) => batch,
+        NextUpload::RetryExact(_) => panic!("post-watermark record was already pending"),
+    };
+    assert_eq!(manager_batch.from_index, 2);
+    let response = relay
+        .commit_initial_cohort_batch(family.family_id, &manager_batch.envelope_bytes)
+        .unwrap();
+    let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(manager_receipt) = &fields[1].1 else {
+        panic!()
+    };
+    let mut manager_public = PublicHistorySession::resume(&local, family).unwrap();
+    manager_public
+        .accept_batch(&mut local, &manager_batch.envelope_bytes, manager_receipt)
+        .unwrap();
+    recipient_public
+        .accept_batch(
+            &mut recipient_store,
+            &manager_batch.envelope_bytes,
+            manager_receipt,
+        )
+        .unwrap();
+    let manager_ready = resumed.confirm(&mut local, committed).unwrap();
+    let recipient_ready =
+        ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).unwrap();
+    assert_eq!(manager_ready.observed_cursor(), 8);
+    assert_eq!(
+        manager_ready.projection().record(&post_child_id),
+        recipient_ready.projection().record(&post_child_id)
     );
 }

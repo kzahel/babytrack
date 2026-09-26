@@ -1,5 +1,4 @@
-//! Durable zero-watermark sharing preparation for a local Family. A Family
-//! with local operations needs encrypted promotion chunks before activation.
+//! Durable sharing preparation for an existing local Family.
 
 use sha2::{Digest, Sha256};
 
@@ -7,8 +6,8 @@ use crate::{
     cbor::{self, Value},
     crypto, hpke,
     shared_history::{self, PublicHistorySession},
-    shared_ready::{self, ReadyFamilySession},
-    sqlite_store::{self, FamilyHandle, ManagerCreationRow, SqliteStore},
+    shared_ready::{self, NextUpload, ReadyFamilySession},
+    sqlite_store::{self, FamilyHandle, ManagerCreationRow, PromotionChunkRow, SqliteStore},
     sync_wire,
 };
 
@@ -73,15 +72,17 @@ pub struct ManagerCreation {
     transition_id: [u8; 16],
     object_id: [u8; 16],
     object_bytes: Vec<u8>,
+    chunks: Vec<PromotionChunkRow>,
     candidate_bytes: Vec<u8>,
     signing_seed: [u8; 32],
     agreement_private: [u8; 32],
     epoch_key: [u8; 32],
 }
+type StagedBody = ([u8; 16], Vec<u8>);
 impl ManagerCreation {
     /// Persist keys and exact signed candidate before the first relay POST.
     /// Existing preparation resumes byte-for-byte, even after later local
-    /// edits. A nonempty pre-promotion journal needs the chunk path.
+    /// edits above the saved watermark.
     pub fn prepare(
         store: &mut SqliteStore,
         family: FamilyHandle,
@@ -100,23 +101,26 @@ impl ManagerCreation {
                 "Family already has a different shared genesis",
             ));
         }
-        if store.load_local(family)?.last_append_index() != 0 {
-            return Err(Error::Invalid("local history needs promotion chunks"));
-        }
+        let operations = store.local_operation_snapshot(family)?;
         let promotion_id = random_v4()?;
-        let transition_id = random_v4()?;
+        let mut transition_id = random_v4()?;
+        while transition_id == promotion_id {
+            transition_id = random_v4()?;
+        }
         let object_id = promotion_id;
         let signing_seed = random::<32>()?;
         let agreement_private = random::<32>()?;
         let epoch_key = random::<32>()?;
         let relay_id: [u8; 32] = Sha256::digest(relay_public_key).into();
-        let object_bytes = promotion_object(family.family_id, relay_id, promotion_id)?;
+        let chunks = promotion_chunks(family, relay_id, promotion_id, &operations, &epoch_key)?;
+        let object_bytes = promotion_object(family.family_id, relay_id, promotion_id, &chunks)?;
         let candidate_bytes = genesis_candidate(
             family,
             relay_id,
             transition_id,
             object_id,
             &object_bytes,
+            &chunks,
             &signing_seed,
             &agreement_private,
             &epoch_key,
@@ -141,6 +145,7 @@ impl ManagerCreation {
             candidate_bytes,
             secret_nonce,
             secret_ciphertext,
+            chunks,
         })?;
         Self::resume(store, family, local_wrapping_key)
     }
@@ -180,13 +185,15 @@ impl ManagerCreation {
             return Err(Error::Invalid("promotion and transition IDs invalid"));
         }
         let relay_id: [u8; 32] = Sha256::digest(row.relay_public_key).into();
-        let object_bytes = promotion_object(family.family_id, relay_id, row.promotion_id)?;
+        let object_bytes =
+            promotion_object(family.family_id, relay_id, row.promotion_id, &row.chunks)?;
         let candidate_bytes = genesis_candidate(
             family,
             relay_id,
             row.transition_id,
             row.object_id,
             &object_bytes,
+            &row.chunks,
             &signing_seed,
             &agreement_private,
             &epoch_key,
@@ -203,6 +210,7 @@ impl ManagerCreation {
             transition_id: row.transition_id,
             object_id: row.object_id,
             object_bytes,
+            chunks: row.chunks,
             candidate_bytes,
             signing_seed,
             agreement_private,
@@ -238,6 +246,24 @@ impl ManagerCreation {
         self.relay_public_key
     }
     pub fn stage_body(&self) -> Result<Vec<u8>, Error> {
+        self.stage_body_for(6, self.object_id, &self.object_bytes)
+    }
+    pub fn stage_bodies(&self) -> Result<Vec<StagedBody>, Error> {
+        let mut bodies = vec![(self.object_id, self.stage_body()?)];
+        for chunk in &self.chunks {
+            bodies.push((
+                chunk.object_id,
+                self.stage_body_for(7, chunk.object_id, &chunk.object_bytes)?,
+            ));
+        }
+        Ok(bodies)
+    }
+    fn stage_body_for(
+        &self,
+        kind: u16,
+        object_id: [u8; 16],
+        bytes: &[u8],
+    ) -> Result<Vec<u8>, Error> {
         let Value::Map(candidate) = cbor::decode(&self.candidate_bytes)? else {
             return Err(Error::Invalid("stored candidate not map"));
         };
@@ -245,9 +271,9 @@ impl ManagerCreation {
             (1, Value::Integer(1)),
             (2, candidate[0].1.clone()),
             (3, candidate[1].1.clone()),
-            (4, Value::Integer(6)),
-            (5, Value::Bytes(self.object_id.to_vec())),
-            (6, Value::Bytes(self.object_bytes.clone())),
+            (4, Value::Integer(kind.into())),
+            (5, Value::Bytes(object_id.to_vec())),
+            (6, Value::Bytes(bytes.to_vec())),
         ]))?)
     }
     pub fn sign_get(&self, exact_path: &str) -> Result<sync_wire::SignedRead, Error> {
@@ -259,6 +285,16 @@ impl ManagerCreation {
             &self.signing_seed,
             exact_path,
         )?)
+    }
+    pub fn stage_next_local(
+        &self,
+        ready: &ReadyFamilySession,
+        store: &mut SqliteStore,
+    ) -> Result<NextUpload, Error> {
+        if ready.family() != self.family {
+            return Err(Error::Invalid("ready session belongs to another Family"));
+        }
+        Ok(ready.stage_next_local(store, &self.signing_seed)?)
     }
     pub fn verify_pending_proof(
         &self,
@@ -308,27 +344,143 @@ impl ManagerCreation {
             self.relay_public_key,
         )?;
         public.accept_object(store, self.object_id, &self.object_bytes)?;
-        Ok(ReadyFamilySession::from_store(
+        for chunk in &self.chunks {
+            public.accept_object(store, chunk.object_id, &chunk.object_bytes)?;
+        }
+        let ready = ReadyFamilySession::from_store(
             store,
             self.family,
             self.epoch_key,
             self.agreement_private,
-        )?)
+        )?;
+        store.mark_promotion_accepted(
+            self.family,
+            self.chunks.last().map_or(0, |chunk| chunk.last_local_index),
+        )?;
+        Ok(ready)
     }
+}
+
+fn promotion_chunks(
+    family: FamilyHandle,
+    relay_id: [u8; 32],
+    promotion_id: [u8; 16],
+    operations: &[Vec<u8>],
+    epoch_key: &[u8; 32],
+) -> Result<Vec<PromotionChunkRow>, Error> {
+    let mut chunks = Vec::new();
+    let mut start = 0usize;
+    while start < operations.len() {
+        let mut end = start;
+        let mut plain = Vec::new();
+        while end < operations.len() && end - start < 256 {
+            plain.push(Value::Bytes(operations[end].clone()));
+            let candidate = cbor::encode(&Value::Array(plain.clone()))?;
+            if candidate.len() > 256 * 1024 {
+                plain.pop();
+                break;
+            }
+            end += 1;
+        }
+        if end == start {
+            return Err(Error::Invalid(
+                "one local operation exceeds promotion chunk limit",
+            ));
+        }
+        let index =
+            u32::try_from(chunks.len()).map_err(|_| Error::Invalid("too many promotion chunks"))?;
+        let mut object_id = random_v4()?;
+        for _ in 0..8 {
+            if object_id != promotion_id
+                && !chunks
+                    .iter()
+                    .any(|chunk: &PromotionChunkRow| chunk.object_id == object_id)
+            {
+                break;
+            }
+            object_id = random_v4()?;
+        }
+        if object_id == promotion_id
+            || chunks
+                .iter()
+                .any(|chunk: &PromotionChunkRow| chunk.object_id == object_id)
+        {
+            return Err(Error::Invalid("promotion object ID collision"));
+        }
+        let nonce = random::<24>()?;
+        let header = cbor::encode(&Value::Array(vec![
+            Value::Bytes(family.family_id.to_vec()),
+            Value::Bytes(relay_id.to_vec()),
+            Value::Bytes(promotion_id.to_vec()),
+            Value::Integer(index.into()),
+            Value::Integer(1),
+            Value::Bytes(nonce.to_vec()),
+        ]))?;
+        let aad = crypto::hash("promotion-aad", &header)?;
+        let ciphertext = crypto::seal_with_nonce(
+            epoch_key,
+            &nonce,
+            &aad,
+            &cbor::encode(&Value::Array(plain))?,
+        )?;
+        let object_bytes = cbor::encode(&Value::Map(vec![
+            (1, Value::Integer(1)),
+            (2, cbor::decode(&header)?),
+            (3, Value::Bytes(ciphertext)),
+        ]))?;
+        if object_bytes.len() > 1024 * 1024 {
+            return Err(Error::Invalid("promotion object exceeds relay limit"));
+        }
+        chunks.push(PromotionChunkRow {
+            index,
+            object_id,
+            first_local_index: (start + 1) as u64,
+            last_local_index: end as u64,
+            object_bytes,
+        });
+        if chunks.len() > 16_383 {
+            return Err(Error::Invalid("too many promotion chunks"));
+        }
+        start = end;
+    }
+    Ok(chunks)
 }
 
 fn promotion_object(
     family_id: [u8; 16],
     relay_id: [u8; 32],
     promotion_id: [u8; 16],
+    chunks: &[PromotionChunkRow],
 ) -> Result<Vec<u8>, Error> {
+    let mut next = 1u64;
+    let mut rows = Vec::with_capacity(chunks.len());
+    for (index, chunk) in chunks.iter().enumerate() {
+        if chunk.index as usize != index
+            || chunk.first_local_index != next
+            || chunk.last_local_index < next
+        {
+            return Err(Error::Invalid("promotion chunk range invalid"));
+        }
+        next = chunk
+            .last_local_index
+            .checked_add(1)
+            .ok_or(Error::Invalid("promotion watermark overflow"))?;
+        rows.push(Value::Array(vec![
+            Value::Integer(index as i128),
+            Value::Bytes(chunk.object_id.to_vec()),
+            Value::Bytes(crypto::hash("object", &chunk.object_bytes)?.to_vec()),
+            Value::Integer(chunk.object_bytes.len() as i128),
+            Value::Integer(chunk.first_local_index as i128),
+            Value::Integer(chunk.last_local_index as i128),
+        ]));
+    }
     Ok(cbor::encode(&Value::Map(vec![
         (1, Value::Integer(1)),
         (2, Value::Bytes(family_id.to_vec())),
         (3, Value::Bytes(relay_id.to_vec())),
         (4, Value::Bytes(promotion_id.to_vec())),
-        (5, Value::Integer(0)),
-        (6, Value::Array(vec![])),
+        (5, Value::Integer((next - 1) as i128)),
+        (6, Value::Array(rows)),
     ]))?)
 }
 #[allow(clippy::too_many_arguments)]
@@ -338,6 +490,7 @@ fn genesis_candidate(
     transition_id: [u8; 16],
     object_id: [u8; 16],
     object_bytes: &[u8],
+    chunks: &[PromotionChunkRow],
     signing_seed: &[u8; 32],
     agreement_private: &[u8; 32],
     epoch_key: &[u8; 32],
@@ -389,20 +542,33 @@ fn genesis_candidate(
         "transition-core",
         &cbor::encode(&Value::Array(core.clone()))?,
     )?;
+    let mut manifest = vec![Value::Array(vec![
+        Value::Integer(6),
+        Value::Bytes(object_id.to_vec()),
+        Value::Bytes(crypto::hash("object", object_bytes)?.to_vec()),
+        Value::Integer(object_bytes.len() as i128),
+    ])];
+    let mut ordered = chunks.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|chunk| chunk.object_id);
+    manifest.extend(
+        ordered
+            .into_iter()
+            .map(|chunk| {
+                Ok(Value::Array(vec![
+                    Value::Integer(7),
+                    Value::Bytes(chunk.object_id.to_vec()),
+                    Value::Bytes(crypto::hash("object", &chunk.object_bytes)?.to_vec()),
+                    Value::Integer(chunk.object_bytes.len() as i128),
+                ]))
+            })
+            .collect::<Result<Vec<_>, Error>>()?,
+    );
     let unsigned = Value::Map(
         core.into_iter()
             .enumerate()
             .map(|(i, v)| (i as u64 + 1, v))
             .chain([
-                (
-                    10,
-                    Value::Array(vec![Value::Array(vec![
-                        Value::Integer(6),
-                        Value::Bytes(object_id.to_vec()),
-                        Value::Bytes(crypto::hash("object", object_bytes)?.to_vec()),
-                        Value::Integer(object_bytes.len() as i128),
-                    ])]),
-                ),
+                (10, Value::Array(manifest)),
                 (11, Value::Bytes(core_hash.to_vec())),
             ])
             .collect(),

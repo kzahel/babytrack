@@ -139,6 +139,16 @@ pub(crate) struct ManagerCreationRow {
     pub candidate_bytes: Vec<u8>,
     pub secret_nonce: [u8; 24],
     pub secret_ciphertext: Vec<u8>,
+    pub chunks: Vec<PromotionChunkRow>,
+}
+
+#[derive(Clone)]
+pub(crate) struct PromotionChunkRow {
+    pub index: u32,
+    pub object_id: [u8; 16],
+    pub first_local_index: u64,
+    pub last_local_index: u64,
+    pub object_bytes: Vec<u8>,
 }
 
 pub(crate) struct InviteIssueRow {
@@ -284,6 +294,17 @@ impl SqliteStore {
                secret_ciphertext BLOB NOT NULL,
                FOREIGN KEY (family_id) REFERENCES families(family_id)
              );
+             CREATE TABLE IF NOT EXISTS manager_promotion_chunks (
+               family_id BLOB NOT NULL CHECK(length(family_id) = 16),
+               chunk_index INTEGER NOT NULL CHECK(chunk_index >= 0),
+               object_id BLOB NOT NULL CHECK(length(object_id) = 16),
+               first_local_index INTEGER NOT NULL CHECK(first_local_index > 0),
+               last_local_index INTEGER NOT NULL CHECK(last_local_index >= first_local_index),
+               object_bytes BLOB NOT NULL,
+               PRIMARY KEY (family_id, chunk_index),
+               UNIQUE (family_id, object_id),
+               FOREIGN KEY (family_id) REFERENCES manager_creations(family_id)
+             );
              CREATE TABLE IF NOT EXISTS first_invite_issues (
                family_id BLOB PRIMARY KEY CHECK(length(family_id) = 16),
                device_id BLOB NOT NULL CHECK(length(device_id) = 16),
@@ -347,6 +368,66 @@ impl SqliteStore {
             return Err(Error::CorruptState);
         }
         Ok(projection)
+    }
+
+    /// Return immutable local operation bytes through one SQLite snapshot.
+    pub(crate) fn local_operation_snapshot(
+        &self,
+        family: FamilyHandle,
+    ) -> Result<Vec<Vec<u8>>, Error> {
+        let (last_index, _) = checked_family(&self.connection, family)?;
+        let mut statement = self.connection.prepare(
+            "SELECT append_index, operation_bytes FROM local_operations
+             WHERE family_id = ?1 ORDER BY append_index",
+        )?;
+        let rows = statement.query_map([family.family_id.as_slice()], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })?;
+        let mut operations = Vec::new();
+        for row in rows {
+            let (index, bytes) = row?;
+            if index != i64::try_from(operations.len() + 1).map_err(|_| Error::CorruptState)? {
+                return Err(Error::CorruptState);
+            }
+            Operation::decode_bound(&bytes, &family.family_id, &family.device_id)?;
+            operations.push(bytes);
+        }
+        if i64::try_from(operations.len()).map_err(|_| Error::CorruptState)? != last_index {
+            return Err(Error::CorruptState);
+        }
+        Ok(operations)
+    }
+
+    pub(crate) fn mark_promotion_accepted(
+        &mut self,
+        family: FamilyHandle,
+        watermark: u64,
+    ) -> Result<(), Error> {
+        let transaction = self.connection.transaction()?;
+        let (last_index, _) = checked_family(&transaction, family)?;
+        let watermark = i64::try_from(watermark).map_err(|_| Error::CorruptState)?;
+        if watermark > last_index {
+            return Err(Error::CorruptState);
+        }
+        let accepted: i64 = transaction.query_row(
+            "SELECT accepted_index FROM local_sync_state WHERE family_id=?1",
+            [family.family_id.as_slice()],
+            |r| r.get(0),
+        )?;
+        if accepted != 0 && accepted < watermark {
+            return Err(Error::CorruptState);
+        }
+        if accepted == 0 {
+            if load_pending(&transaction, family)?.is_some() {
+                return Err(Error::CorruptState);
+            }
+            transaction.execute(
+                "UPDATE local_sync_state SET accepted_index=?2 WHERE family_id=?1",
+                params![family.family_id.as_slice(), watermark],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
     }
 
     /// Reserve the HLC, append index, and operation bytes in one transaction.
@@ -976,7 +1057,9 @@ impl SqliteStore {
     pub(crate) fn save_manager_creation(&mut self, row: &ManagerCreationRow) -> Result<(), Error> {
         let transaction = self.connection.transaction()?;
         let (last_index, _) = checked_family(&transaction, row.family)?;
-        if last_index != 0 {
+        let watermark = i64::try_from(row.chunks.last().map_or(0, |chunk| chunk.last_local_index))
+            .map_err(|_| Error::CorruptState)?;
+        if last_index < watermark {
             return Err(Error::CorruptState);
         }
         transaction.execute(
@@ -997,6 +1080,21 @@ impl SqliteStore {
                 &row.secret_ciphertext,
             ],
         )?;
+        for chunk in &row.chunks {
+            transaction.execute(
+                "INSERT INTO manager_promotion_chunks
+                 (family_id,chunk_index,object_id,first_local_index,last_local_index,object_bytes)
+                 VALUES(?1,?2,?3,?4,?5,?6)",
+                params![
+                    row.family.family_id.as_slice(),
+                    chunk.index,
+                    chunk.object_id.as_slice(),
+                    chunk.first_local_index,
+                    chunk.last_local_index,
+                    &chunk.object_bytes,
+                ],
+            )?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -1031,6 +1129,21 @@ impl SqliteStore {
                 if row.0 != family.device_id {
                     return Err(Error::WrongDevice);
                 }
+                let mut statement = self.connection.prepare(
+                    "SELECT chunk_index,object_id,first_local_index,last_local_index,object_bytes
+                     FROM manager_promotion_chunks WHERE family_id=?1 ORDER BY chunk_index",
+                )?;
+                let chunks = statement
+                    .query_map([family.family_id.as_slice()], |r| {
+                        Ok((r.get::<_, u32>(0)?, r.get::<_, Vec<u8>>(1)?, r.get::<_, u64>(2)?,
+                            r.get::<_, u64>(3)?, r.get::<_, Vec<u8>>(4)?))
+                    })?
+                    .map(|r| {
+                        let (index, object_id, first_local_index, last_local_index, object_bytes) = r?;
+                        Ok(PromotionChunkRow { index, object_id: object_id.try_into().map_err(|_| Error::CorruptState)?,
+                            first_local_index, last_local_index, object_bytes })
+                    })
+                    .collect::<Result<Vec<_>, Error>>()?;
                 Ok(ManagerCreationRow {
                     family,
                     relay_public_key: row.1.try_into().map_err(|_| Error::CorruptState)?,
@@ -1041,6 +1154,7 @@ impl SqliteStore {
                 candidate_bytes: row.6,
                 secret_nonce: row.7.try_into().map_err(|_| Error::CorruptState)?,
                 secret_ciphertext: row.8,
+                chunks,
                 })
             })
             .transpose()

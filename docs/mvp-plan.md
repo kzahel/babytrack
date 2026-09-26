@@ -1,9 +1,11 @@
 # MVP implementation plan
 
-Status: agreed direction, September 2026. Companion to the proposal in
-[README.md](../README.md). M-1 closes design questions before M0 implementation;
-see [the M-1 tactical](tactical/001-pre-m0-design.md). Open release decisions
-are listed at the end.
+Status: agreed direction, September 2026; implementation has not started.
+Owns scope, stack, milestone sequencing, and review gates. Read the
+[topic index](topics/README.md) for detailed decisions and the
+[tactical index](tactical/README.md) for current work. The
+[background proposal](product-proposal.md) preserves business rationale;
+it is not an additional implementation contract.
 
 ## Stack
 
@@ -15,48 +17,23 @@ One Rust core shared by every client, with native UI on each platform.
   through UniFFI and to the web through wasm-bindgen. This is the pattern used
   by Mozilla application-services, Bitwarden, and libsignal. Chosen over Kotlin
   Multiplatform for mature crypto, clean wasm, and small binary cost.
-- **Data model.** Append-only operation log rather than a general CRDT
-  library. Every event has a UUIDv7 id. Edits are field-level operations
-  stamped with a hybrid logical clock (HLC), merged last-writer-wins per field.
-  Deletes are tombstones. The immutable log is the source of truth; a
-  rebuildable current-record projection supports fast timeline and summary
-  queries. Native clients use SQLite for the log and projection, updated in
-  one transaction; web uses IndexedDB with the same logical schema. The
-  projected state is not a second source of truth. At about 30 events a day
-  (roughly 22K events over two years), snapshots can be added when measured
-  replay time warrants them. M-1 settles private-copy transactions.
-- **Family lifecycle.** A fresh install offers a local-only Family without an
-  account or relay, or can join an invitation directly. The user explicitly
-  turns on sharing for each local Family. One app can hold multiple Families;
-  a Family is one independent space for children, entries, membership, and
-  sync, not necessarily a biological or legal household. A shared Family has
-  managers, who can also manage membership, and members, who can read and
-  write data. Roles are per Family. Anyone with a local copy can continue
-  with it independently after leaving or being removed. The exact copy and
-  identity rules are settled in M-1.
-- **Multiple Families.** The active Family scopes the child list, timeline,
-  logging, import/export, and settings. Every operation belongs to exactly
-  one Family; its log, projection, encryption epochs, membership, relay
-  endpoint, and sync cursor are isolated from other Families on the device.
-  Losing access to one Family does not affect another. A running timer keeps
-  the Family and child selected when it began, even if the person switches
-  Families. Quick logging surfaces must identify their target Family and
-  child. M-1 settles the precise switcher, invite, widget, watch, and
-  notification behavior.
-- **Scope of merging.** Members may log events whose activity time is in the
-  past; their operation time remains the time of the write. Competitor CSV
-  import remains in the MVP. Automatic merging of live families, child
-  identities, memberships, or operation histories is excluded. A later
-  client-side import tool may copy selected records into a target family as
-  new operations; the relay never interprets their contents.
-- **Crypto.** Op batches are encrypted with a per-epoch symmetric key using
-  XChaCha20-Poly1305. Devices have their own keypairs; platform backup and
-  recovery phrase holders are recovery paths. New epoch keys are wrapped
-  for each holder with HPKE. Server authorization must distinguish devices
-  and roles without seeing family content; a single auth key derived from
-  the shared epoch key cannot enforce manager-only membership changes. The
-  invite QR code or link carries bootstrap access. Details in
-  [topics/sync-and-encryption.md](topics/sync-and-encryption.md).
+- **Model and storage.** Append-only operations, UUIDv7 activity IDs,
+  field-level HLC merge, tombstones, and rebuildable projections. Native
+  storage is SQLite; browser storage is IndexedDB. The core owns semantics
+  on both. Measure replay before adding snapshots. Exact rules and open
+  cases belong to [sync](topics/sync-and-encryption.md) and
+  [event model](topics/event-model.md).
+- **Family behavior.** Local-only by default, explicit sharing, independent
+  multiple Families, manager/member roles, offline work, and private copies.
+  [Family sharing and trust](topics/family-sharing-and-trust.md) owns those
+  promises, removal races, single-use invitations, portable backups, and
+  remaining UX choices. Live Family/child/history merging is outside the
+  MVP; a later CLI import may copy selected records through the shared core.
+- **Crypto.** Per-epoch XChaCha20-Poly1305, per-Family device identities, HPKE
+  grants, and device-specific authorization. The
+  [sync topic](topics/sync-and-encryption.md) owns the constructions,
+  recovery design, protocol contracts, and threat model. Do not infer that
+  naming primitives settles the membership or key-handoff protocol.
 - **Server (Rust, axum).** A dumb relay: an ordered log of encrypted blobs per
   family. Clients pull everything since a cursor, get live updates over a
   WebSocket, and receive empty wake pushes sent directly through APNs and FCM
@@ -74,77 +51,60 @@ One Rust core shared by every client, with native UI on each platform.
   Wear OS can embed the core since it is a normal Android target. Android is
   the primary development platform. Google services sit behind interfaces so
   a later F-Droid build can swap them out (see Requirements).
-- **Web.** Svelte and Vite, static build, wasm core. The family key arrives in
-  the URL fragment, which browsers never send to the server.
+- **Web.** Svelte and Vite, static build, wasm core. Single-use invitation
+  bootstrap secrets arrive in the URL fragment, which browsers do not send
+  in the initial page request. The authorized join flow delivers Family keys;
+  the link does not contain a reusable raw Family key.
 - **Dev CLI (Rust).** Exercises sync end to end before any UI exists and
   scripts importer tests.
 
-### Repo layout
+### Repository and preparation
 
-```
-core/          Rust: model, ops, projection, storage, crypto, sync, import/export
-core-ffi/      UniFFI bindings for Swift and Kotlin
-core-wasm/     wasm-bindgen bindings for web
-server/        Rust relay
-cli/           Rust dev client
-apps/ios/      Xcode project: iOS app, watchOS app, widgets
-apps/android/  Gradle project: phone and Wear OS modules, service modules
-apps/web/      Svelte client
-spec/          Protocol spec and cross-language test vectors
-```
+The [layout topic](topics/repository-layout.md) owns the current and future
+directory map and dependency boundaries. [002](tactical/002-repository-scaffold.md)
+plans a minimal build foundation before product behavior; it has not started
+executable work. M-1 still gates implementation of unsettled protocol/data
+contracts. No empty platform projects or future-directory placeholders are
+required to show the intended layout.
 
 ## Requirements
+
+The [Family sharing and trust contract](topics/family-sharing-and-trust.md)
+states agreed user flows and accepted trust boundaries, with a scenario
+catalog for implementation tests. It also labels remaining UX proposals;
+an implementation agent must not silently decide those while building the
+protocol.
 
 Agreed September 2026. The first group shapes the sync protocol. M-1 settles
 its design and acceptance cases; M0 implements it, because changing it after
 clients exist is expensive.
 
-### Protocol (M0)
+### Protocol and data (M0)
 
-The designs that meet these requirements are owned by
-[topics/sync-and-encryption.md](topics/sync-and-encryption.md) and
-[topics/event-model.md](topics/event-model.md).
+These requirements are fixed; their detailed behavior has one owning topic.
+M-1 must settle contracts and examples before the implementation depends on
+those details.
 
-- **Key epochs and caregiver removal.** Family keys are versioned by epoch
-  and every encrypted batch records the epoch it was sealed with. Removing a
-  member creates a new epoch key and re-grants it to the remaining devices.
-  Old epochs and data already stored locally stay readable to members who
-  hold them. Managers may change membership; ordinary members may read and
-  write data but may not invite, remove, or change roles. Removal stops
-  future sync access after the new epoch commits; it never deletes a local
-  copy. A removed member can keep working in a new, independent local-only
-  family and may choose to share that new family later.
-- **Manager authority.** Any manager may remove or demote another manager;
-  no owner hierarchy or quorum is planned. Reject a change that would leave
-  a shared family with no manager. This is a cooperative-family policy, not
-  protection against a malicious manager acting first.
-- **Forward compatibility.** Caregivers will run different app versions.
-  Clients preserve event types and fields they do not understand and pass
-  them through unchanged on edit and re-encryption, so an old client never
-  silently drops data written by a newer one. Every batch and the sync API
-  carry a protocol version.
-- **Time.** Events store a UTC instant plus the UTC offset where they were
-  logged. The day boundary for daily summaries follows the offset of the
-  device showing them. The exact rule for travel is written into the spec
-  with test vectors.
-- **Units and locale.** Amounts, weights, and lengths are stored in metric
-  and converted for display. All user-facing strings are externalized from
-  the first screen, even though launch is English only.
-- **Key backup and recovery.** For a shared family, other caregiver devices
-  and an optional 24-word recovery phrase are independent key recovery
-  paths while ciphertext history remains available. iCloud Keychain
-  (synchronizable item) and Android Block Store can provide convenience
-  backups, but availability and successful restore are not assumed. Cloud
-  backup through Block Store is enabled only when its end-to-end encryption
-  check succeeds. M-1 defines the recovery guarantee and UI states. The
-  later F-Droid build has no Block Store and emphasizes the phrase. For a
-  local-only family, a phrase or saved key is not a data backup: M-1 must
-  specify an encrypted record backup and restore path or an explicit warning
-  about unbacked local history.
-- **Abuse limits.** The server has no accounts, so the hosted service
-  enforces per-family storage quotas and per-family and per-IP rate limits.
-  App Attest and Play Integrity are added only if abuse appears, and never
-  in the F-Droid build.
+| Requirement | Authoritative decision home |
+|---|---|
+| Epoch rotation, device/role authorization, removal, recovery, encrypted relay | [Sync and encryption](topics/sync-and-encryption.md) |
+| Local/shared authority, manager races, single-use direct invites, independent copies, backup into a fresh Family | [Family sharing and trust](topics/family-sharing-and-trust.md) |
+| Records, timers, metric storage, entered units, UTC instants and recorded offsets, display/day boundaries | [Event model](topics/event-model.md) |
+| Unknown types/fields preserved on edit and re-encryption; versioned batches and API | [Sync encoding](topics/sync-and-encryption.md#encoding-and-versioning) and [event preservation](topics/event-model.md#unknown-types-and-fields) |
+| Full file backup/restore with optional protection, readable analysis export, importer identity | [Event import/export](topics/event-model.md#import-and-export) |
+
+- **Key-backup platforms.** Other devices and an optional 24-word recovery
+  phrase are independent shared-Family key-recovery paths while ciphertext
+  remains available. iCloud Keychain synchronizable items and Android Block
+  Store are conditional conveniences. Block Store cloud backup requires its
+  end-to-end encryption check to succeed. F-Droid has no Block Store.
+  Data-file restore and original-Family authority recovery remain distinct;
+  see the owning topics for guarantees and open decisions.
+- **Locale.** Externalize all user-facing strings from the first screen;
+  launch is English only. Amounts, weights, and lengths use metric storage.
+- **Abuse.** The accountless hosted relay needs per-Family storage quotas and
+  per-Family/per-IP rate limits. Add App Attest/Play Integrity only if abuse
+  appears, never in the F-Droid build.
 
 ### Platform service interfaces (from M1)
 
@@ -194,7 +154,7 @@ public release, not before development.
 - Publishing identity (personal or company) for both stores, privacy
   policy, GDPR position, and App Store privacy labels. The server holds push
   tokens and IP addresses even though it cannot read data.
-- A written threat model that states what the server can see: which
+- Confirm the M-1 threat model still states what the server can see: which
   families exist, when they write, and how much.
 - Web client trust: a hosted web client cannot fully guarantee E2EE because
   the server supplies the code that handles the key. Mitigate with a strict
@@ -232,13 +192,17 @@ long randomized or fault-injection campaigns nightly, recording failing
 seeds so they can become regression tests. A test that uses only the Rust
 core cannot prove that the Swift, Kotlin, or browser bindings agree.
 
+The [scenario guide](scenarios/README.md) owns case lookup, variation
+coverage, and the fast core/real-relay versus selected UI test split. Cases
+are symbolic until M0 gives them executable actions and assertions.
+
 - **Core.** Property tests for merge convergence: random operations applied in
   random orders across several replicas must reach identical state. This is
   the most important test in the project. Projection replay matches
   incremental updates, including edits, tombstones, and backfilled events.
   Crypto known-answer tests. Fuzzing of decoders and importers.
-- **Cross-language vectors.** Inputs and expected outputs in `spec/`, run from
-  the Rust, Swift, Kotlin, and TypeScript test suites to catch binding bugs.
+- **Cross-language vectors.** Inputs and expected outputs in `tests/vectors/`,
+  run from the Rust, Swift, Kotlin, and TypeScript suites to catch binding bugs.
   Start with encoding, encryption, and unknown-field preservation; include
   version skew before treating the protocol as stable.
 - **Sync integration.** A bounded, deterministic test uses a real relay and
@@ -253,7 +217,8 @@ core cannot prove that the Swift, Kotlin, or browser bindings agree.
 - **UI.** Screenshot tests (swift-snapshot-testing on iOS, Roborazzi on
   Android). A few end-to-end flows (XCUITest, Compose tests). Playwright on
   web, including two browsers syncing through a real server.
-- **Budgets.** Track installed app size and cold start from M1. Measure
+- **Budgets.** Aim well under 30 MB and for sub-second cold start. Track
+  installed app size and cold start from M1. Measure
   startup against a baseline on fixed physical devices with Macrobenchmark
   on Android and XCTest metrics on iOS; do not fail PRs on simulator or
   emulator timing noise.
@@ -266,19 +231,41 @@ core cannot prove that the Swift, Kotlin, or browser bindings agree.
 - **Store beta (M5).** F-Droid, Play internal testing, and TestFlight with 20
   to 50 families, recruited from people leaving Nara.
 
+### Security review gates
+
+- **Before security implementation:** review the
+  [product contract](topics/family-sharing-and-trust.md) and scenarios first,
+  then the protocol mapping. Resolve D4-D8 at their stated
+  gates. Reviewers return concrete user-visible counterexamples.
+- **Early M0:** independent adversarial review of implemented authorization,
+  invitation, encryption, and rotation before dependent sync work proceeds.
+- **End of M0, before real family data:** review recovery, pending writes,
+  crash safety, isolation, and scenario coverage. No unresolved finding that
+  breaks an agreed access or data-retention promise may pass the gate.
+- **New web/watch boundary and M5 release:** review the new trust boundary
+  and deployment assumptions before relying on it with real data/public use.
+
+Reviews use a fixed revision, record assumptions, findings, dispositions,
+and regression scenario IDs. A separate security-focused model session can
+assist; independent human security review is recommended before public
+release. Implementation agents stop for changes to security guarantees,
+compatibility, destructive recovery, or product scope, while routine internal
+implementation choices remain autonomous.
+
 ## CI
 
 GitHub Actions on the public repo
 [kzahel/babytrack](https://github.com/kzahel/babytrack), where standard
 macOS runners are free. Keep an always-running required check; selectively
 run component jobs based on changed paths. Changes to shared core, bindings,
-`spec/`, dependency manifests, or CI configuration run every affected job.
+`docs/protocol/`, `docs/scenarios/`, `tests/vectors/`, dependency manifests,
+or CI configuration run every affected job.
 PR checks use read-only permissions and no release credentials. Release and
 publishing jobs run only from protected tags or environments.
 
 - **core:** fmt, clippy, tests, property tests, wasm build, `cargo-deny`.
 - **server:** tests against SQLite and Postgres, Docker build, image published
-  to GHCR on tags.
+  to GHCR on tags from M5 only.
 - **android:** build, unit tests, lint, screenshot tests, and the service
   boundary check. Emulator tests nightly. Debug APKs attached as build artifacts for
   dogfooding.
@@ -289,14 +276,17 @@ publishing jobs run only from protected tags or environments.
   Once the web UI exists, add two-browser Playwright user flows.
 - **release (M5):** fastlane uploads to TestFlight and Play on version tags,
   and a reproducibility check for the F-Droid build.
-- **dependencies:** Dependabot version and security updates, configured in
-  `.github/dependabot.yml`, which lists every planned manifest directory.
-  Update it when the layout changes.
+- **dependencies:** Dependabot version and security updates in
+  `.github/dependabot.yml`. The current file anticipates future manifests;
+  002 must activate entries only when their manifests/workflows exist and
+  add later platforms as they arrive.
 
 ## Milestones
 
-M-1 is design work only. M1 to M4 use developer builds on physical devices
-only. Nothing touches an app store until M5.
+M-1 is design work only. The separate 002 scaffolding plan describes build
+preparation without product/protocol behavior; only its documentation slice
+is complete. M1 to M4 use developer builds on physical devices only. Nothing
+touches an app store until M5.
 
 0. **M-1, design closure.** Resolve the local-to-shared lifecycle, role
    authorization, protocol, recovery, event-model, and product-scope

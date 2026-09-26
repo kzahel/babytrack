@@ -2,7 +2,8 @@
 
 Status: in progress. This is the design milestone before M0 implementation.
 The [MVP plan](../mvp-plan.md) fixes the architecture requirements; the
-[sync](../topics/sync-and-encryption.md) and
+[Family sharing](../topics/family-sharing-and-trust.md),
+[sync](../topics/sync-and-encryption.md), and
 [event-model](../topics/event-model.md) topics own the detailed decisions.
 This tactical tracks which decisions and examples must be complete before
 code begins. A recommendation below is not a decision until its topic is
@@ -14,21 +15,9 @@ Make the data and sync contract precise enough to implement without choosing
 security, merge, or recovery behavior ad hoc in M0. Keep the first usable
 product small enough to validate with families.
 
-Decided product behavior: new families start local-only; sharing is opt-in.
-First launch can join an invitation instead. One app can hold and switch
-between multiple independent Families, with Family as the user-facing term.
-Each Family has its own children, history, role, device keypairs, and sync state.
-The first share includes the family's existing history.
-Shared families have managers (read/write plus membership management) and
-members (read/write). Removed members retain their local data and may make
-an independent local-only family, which they may share later. The design
-assumes cooperating caregivers rather than trying to arbitrate hostile
-co-managers. Any manager may remove or demote another manager, while at
-least one manager must remain. Automatic merging of live families, child
-identities, and membership histories is outside the MVP; backdated logging
-and competitor CSV import remain in scope. Native storage is SQLite with an
-append-only log and rebuildable current-record projection. M-1 still needs
-exact protocol and UX rules for these cases.
+The [Family sharing contract](../topics/family-sharing-and-trust.md) owns
+U1-U8 and D1-D8. The technical topics own mechanisms. This tactical tracks
+closure; it does not maintain a second copy of those decisions.
 
 ## Exclusions
 
@@ -45,6 +34,20 @@ exact protocol and UX rules for these cases.
   and the removed member's ability to continue from a private copy.
 - [x] Decide that any manager may remove or demote another manager, without
   an owner hierarchy or quorum, while at least one manager must remain.
+- [x] Record the high-level local/shared authority and accepted trust limits
+  in the Family sharing topic, without requiring product decisions in terms
+  of cryptographic machinery.
+- [x] Decide mutual-removal behavior: first valid relay commit takes effect;
+  both retain local work, copies are optional, and other caregivers remain
+  in the original Family. Record both orders and confirmation-loss cases.
+- [x] Decide single-use direct join: creating the invitation is manager
+  approval; no second manual approval, no reusable membership links.
+- [x] Decide full portable file backup and restore, with optional protection,
+  into a fresh local Family. Recreating the original shared group is not
+  required; readable analysis exports remain available.
+- [ ] Resolve user-visible invitation lifecycle, original-Family recovery
+  authority, person/device removal, displaced edits, and stale quick-log
+  targeting (D4-D8 in the Family sharing topic).
 - [ ] State the exact security limit for removal of a lost device, departed
   member, or actively malicious manager, and how manager authority is
   restored after device loss.
@@ -70,16 +73,19 @@ exact protocol and UX rules for these cases.
 - [ ] Specify what happens to offline writes made under an old epoch after a
   removal, including whether they can be re-encrypted by a remaining holder
   and whether a removed holder's late writes are rejected.
-- [ ] Decide invite authority and expiry. Compare direct epoch-key links with
-  short-lived, inviter-approved remote invitations. Include replay and leaked
-  link cases.
+- [ ] Specify the decided single-use direct-join protocol: atomic enrollment,
+  authenticated retry by the same device, key handoff, and background inviter
+  availability. Settle expiry, cancellation, and issuer-removal races (D8).
+  Include concurrent redemption, preview, retry, replay, and leaked-link cases.
 - [ ] State what a malicious relay can hide or fork, what sequence numbers
   actually detect, and whether clients need an out-of-band history check.
 - [ ] Define recovery identity and key rotation after a lost device or
   phrase. Specify fallback when platform backup is unavailable, delayed, or
   not end-to-end encrypted.
-- [ ] Define local-only record backup and restore. A saved key or recovery
-  phrase cannot reconstruct a lost database without a ciphertext copy.
+- [ ] Specify the decided full-file backup/restore contract: readable and
+  optionally protected forms, saved record state, metadata, versioning,
+  credentials excluded, atomic restore into a new Family, and failure cases.
+  A saved key or phrase alone cannot reconstruct missing records.
 - [ ] Define the revoked client's notice and private-copy path. The new
   family needs fresh identity and keys and must carry forward pending local
   entries without silently merging with the original.
@@ -109,7 +115,14 @@ exact protocol and UX rules for these cases.
 
 ### 4. Validation and implementation handoff
 
-- [ ] Write `spec/` contracts and illustrative vectors for all settled
+- [x] Add symbolic user-flow scenarios with stable IDs, agreement status,
+  observations, and variation coverage. These are not executable tests.
+- [x] Define product-contract and independent security-review checkpoints
+  before implementation, during M0, before real data, and at new boundaries.
+- [ ] Turn every agreed scenario into concrete M0 fixtures/actions/assertions
+  in the handoff plan; resolve proposals and assign UI coverage. Record exact
+  runner commands when M0 creates them, not as fictitious M-1 test results.
+- [ ] Write `docs/protocol/` contracts and concrete `tests/vectors/` for settled
   protocol cases before M0 code, including join, remove, race, offline
   upload, recovery, unknown fields, and time boundaries.
 - [ ] List negative and adversarial tests beside each security guarantee.
@@ -122,39 +135,34 @@ exact protocol and UX rules for these cases.
   and adversarial membership/recovery. Require crash/restart and multi-Family
   isolation cases before M1 uses real data.
 - [ ] Review CI triggers and required checks against the shared-core and
-  `spec/` dependencies. Keep bounded deterministic protocol and relay tests
+  protocol/scenario/vector dependencies. Keep bounded deterministic protocol and relay tests
   on relevant PRs; run extended randomized tests and fuzzing nightly, with
   reproducible failure seeds. Keep performance baselines on physical devices.
 
-## Questions to resolve first
+## Decision lookup
 
-| Question | Working direction | Decision record |
-|---|---|---|
-| Who controls membership? | Any manager may manage any other, but one manager must remain. Decide how permissions bind to devices and survive recovery. | [Sync topic](../topics/sync-and-encryption.md) |
-| What does removal guarantee? | Protect future data after a committed rotation; document any limit against an actively hostile current member or relay. | [Sync topic](../topics/sync-and-encryption.md) |
-| What if an offline client writes under the old epoch? | Keep the local write, then define acceptance or authorized re-encryption at reconnection. Never silently discard it. | [Sync topic](../topics/sync-and-encryption.md) |
-| What is a safe remote invite? | Prefer a short-lived, approved join over a reusable link containing the epoch key; check usability against offline requirements. | [Sync topic](../topics/sync-and-encryption.md) |
-| What restores a family after phone loss? | Treat platform backup as conditional convenience. Test phrase and second-device paths independently. | [Sync topic](../topics/sync-and-encryption.md) |
-| What backs up local-only records? | Decide on encrypted file backup and restore, or explicitly disclose the risk of a sole unbacked device. | [Sync topic](../topics/sync-and-encryption.md) |
-| Are metadata records activity events? | Separate record scopes while sharing operation and encryption machinery. | [Event-model topic](../topics/event-model.md) |
-| Is freezer inventory core logging? | Treat it as individual stored portions with amount, storage date, and use/discard state if included; otherwise defer it explicitly. | [Event-model topic](../topics/event-model.md) |
-| What does "no lost data" mean with LWW? | Promise convergence and retention of operations, then decide whether displaced edits are visible or recoverable. | [Sync topic](../topics/sync-and-encryption.md) |
-| How does sharing begin? | Start local-only. On explicit opt-in, register the family and upload the existing history under encryption; settle id stability and exact UX. | [Sync topic](../topics/sync-and-encryption.md) |
-| What does a removed member keep? | Preserve local history. Offer a separate private family with fresh keys; allow a later share of that new family. | [Sync topic](../topics/sync-and-encryption.md) |
-| Can families or children be merged? | No automatic live merge in the MVP. Backdated entries and competitor CSV import remain; a later local import tool may copy selected records as new operations. | [Event-model topic](../topics/event-model.md) |
-| Can one app hold multiple Families? | Yes. A caregiver can switch among independent Families with different roles; the same real child can have separate histories in two Families. Settle quick-log targeting and per-Family identity/storage. | [Sync topic](../topics/sync-and-encryption.md), [Event-model topic](../topics/event-model.md) |
-| How is the timeline fast if the log only grows? | Query a rebuildable current-record projection, not the log. Update both in one SQLite transaction on native devices and test replay equivalence. | [Sync topic](../topics/sync-and-encryption.md) |
+- Product choices: [D4-D8](../topics/family-sharing-and-trust.md#remaining-ux-choices).
+- Protocol choices: [sync open questions](../topics/sync-and-encryption.md#open-questions).
+- Record/format choices: [event-model open questions](../topics/event-model.md#open-questions).
+- Relevant cases: [scenario index](../scenarios/README.md).
+- Build preparation: [002](002-repository-scaffold.md); it does not satisfy
+  this tactical's product/protocol gates.
 
 ## Gates
 
-- The two topic documents state each protocol and event decision as decided,
-  or explicitly defer it with a milestone and proof that M0 compatibility is
-  unaffected. No security-critical item above is left as an open question.
+- The owning topic documents state each product, protocol, and event
+  decision as decided, or explicitly defer it with a milestone and proof
+  that M0 compatibility is unaffected. No security-critical item above is
+  left as an open question.
 - A reader can walk through local creation, promotion to shared, join,
   concurrent edit, removal, private fork, multi-Family switch, backdated entry,
   offline reconnect, recovery, and export without inventing rules.
-- The MVP plan, proposal, topic documents, and vectors agree about scope,
+- The MVP plan, topic documents, and scenarios/vectors agree about scope,
   security guarantees, and terminology.
+- Sharing scenarios distinguish agreed outcomes from unresolved proposals.
+  All M-1 UX choices have a disposition; no proposed fixture becomes an
+  implicit implementation decision. Reviewer findings map back to scenario
+  IDs, including both outcomes of manager races and lost confirmations.
 - The M0 tactical can be written as ordered implementation slices with
   concrete tests, including a browser harness and mixed-client exchange,
   without needing a new product or protocol decision.

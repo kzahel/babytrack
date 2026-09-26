@@ -1,13 +1,19 @@
 # babytrack agent instructions
 
-Before planning or changing anything, read [README.md](README.md) (the
-product proposal), [docs/mvp-plan.md](docs/mvp-plan.md) (the agreed stack,
-requirements, and milestones), and the [topic index](docs/topics/README.md).
-Read every topic the index names for the area being changed. The plan and
-topics are authoritative. If a change contradicts them, update them in the
-same commit or ask first.
+Start with [README.md](README.md), the [topic index](docs/topics/README.md),
+and the [tactical index](docs/tactical/README.md). Read the owning topics and
+active tactical for the area being changed. Read [the MVP plan](docs/mvp-plan.md)
+for milestone, scope, architectural, or cross-cutting work. The background
+proposal and unrelated topics/scenarios are not mandatory context.
 
-Status: planning, before M0. No code exists yet. `babytrack` is a code name.
+Each concern has one authoritative home: product promises and technical
+decisions in their owning topics, scope/milestones in the plan, work status
+in tacticals, exact protocol formats in future `docs/protocol/`, and test
+expectations in scenario/vector files. Summaries link to the owner. If two
+documents contradict, reconcile them or ask; do not silently pick one.
+
+Status: design and repository preparation, before M0. No application code
+exists yet. `babytrack` is a code name.
 
 The working tree may contain concurrent human or agent changes. Do not revert,
 reformat, or tidy unrelated work.
@@ -39,10 +45,15 @@ them true, and keep the tactical index status current.
 - The server is a relay for encrypted blobs. It must never receive plaintext
   or a key that decrypts user data. Do not add server features that need to
   read user data.
-- Local-first: every feature works offline and without an account.
+- Local-first: local data features work offline and without an account.
+  Joining, sync, and confirmed shared membership changes require network
+  coordination under the Family sharing contract; never claim remote access
+  changed merely because an offline request was made.
 - The protocol requirements in the plan (key epochs, forward compatibility,
   protocol versioning, time representation) are fixed. Any protocol change
-  updates the spec and the cross-language test vectors in `spec/`.
+  updates the owning topics and scenarios; once present, update the exact
+  contract in `docs/protocol/` and cross-language vectors in `tests/vectors/`
+  in the same change. `docs/scenarios/` currently contains symbolic cases.
 - Vendor services (push, key backup, device integrity, watch link) are
   reached only through app-owned interfaces. Google Play services and
   Firebase may appear only in their implementation modules.

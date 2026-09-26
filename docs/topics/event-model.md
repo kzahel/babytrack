@@ -6,6 +6,9 @@ Owns what gets logged: entities, event types and fields, timers, units, time
 and day boundaries, multiple children, import mapping, and export. How
 events are stored, merged, and synced is owned by
 [sync-and-encryption.md](sync-and-encryption.md).
+The [Family sharing contract](family-sharing-and-trust.md) owns user-visible
+retention of pending edits after removal and the open displaced-edit UX
+(D6). Its scenario IDs link those promises to later implementation tests.
 
 ## Entities
 
@@ -89,7 +92,7 @@ the UI offers to merge them rather than guessing.
 - A day is a calendar day in the viewing device's current time zone. Events
   are listed on the day they start. Daily totals, such as sleep, split a
   duration that crosses midnight between the two days.
-- Travel and daylight saving cases are written into `spec/` as test vectors.
+- Travel and daylight saving cases are written into `tests/vectors/` as test vectors.
 
 ## Multiple children
 
@@ -109,9 +112,21 @@ plan applied to events.
 
 ## Import and export
 
-- **Export** is JSON Lines, one event per line, with a schema version and
-  base units, plus a CSV for spreadsheets. Export then import into a fresh
-  family reproduces the same events.
+- **Export and file backup.** Readable CSV supports spreadsheets and analysis.
+  A documented full structured export also serves as a restorable Family
+  backup, with optional password protection. The working format is versioned
+  JSON Lines with base units; the earlier one-event-per-line sketch must also
+  accommodate children, required settings/metadata, and unknown fields.
+  M-1 settles the exact envelope, deletion semantics, and whether full edit
+  history is included. CSV is not a full-fidelity backup promise.
+- **File restore.** Restore the saved record state into a new independent
+  local-only Family with fresh identity and keys, offline and without the
+  original group's permission. Include saved pending local work in the
+  snapshot. Existing Families remain unchanged. Files contain data, not
+  original-Family device credentials or authority to rejoin. The user can
+  share the new Family and invite caregivers again. Protected and readable
+  forms must restore equivalent saved data; the protected form also requires
+  its protection credential. See product decision D3.
 - **Import** maps Nara, Huckleberry, and Nighp exports onto these types.
   Imported event ids are UUIDv5 values derived from the source app and the
   source row, so importing the same file twice creates no duplicates. The
@@ -125,6 +140,9 @@ plan applied to events.
   can create entries in the chosen family. A later client-side import tool may
   copy selected records from a local family into another as new operations,
   mapped to a chosen child; this is data import, not sync-history merging.
+  A later CLI may expose this through the shared core, with explicit child
+  mapping, duplicate/conflict handling, and a preview. It remains outside
+  the MVP and must not reimplement event or merge semantics in scripts.
 
 ## Validation
 
@@ -134,6 +152,10 @@ plan applied to events.
 - A backdated activity appears at its activity time while its operation
   retains the current HLC for merge ordering.
 - Round-trip tests: every type through encode, merge, export, and import.
+- Full backup restores saved state into a fresh Family, in readable and
+  protected forms, including metadata, unknown fields, and saved pending
+  work. No original shared access or credentials are restored. Corrupt files
+  and interrupted restores leave existing Families intact.
 - Importer fixtures from real, anonymized exports.
 
 ## M-1 candidate: record scopes
@@ -166,9 +188,12 @@ deleting a child affects its activity history before encoding is frozen.
    source record identifier or content-derived identity, not a line number:
    overlapping exports can reorder rows. Specify how repeated imports and
    genuinely changed source records behave.
-7. **Export promise.** Decide whether JSON Lines reproduces current visible
-   state or the full edit history. Include family and child metadata, units,
-   unknown fields, and deletion semantics in that contract.
+7. **Full backup format.** D3 decides portable file restore into a new local
+   Family with optional protection. Specify JSON Lines envelopes and versions,
+   required metadata, unknown fields, units, deletion semantics, and whether
+   full edit history is included beyond the required saved record state.
+   Specify the protection wrapper and validation/failure behavior. CSV remains
+   an analysis export, not a substitute for the full backup contract.
 8. **Daily reports while travelling.** Current-viewer time zone makes two
    caregivers in different zones see different daily totals. Decide whether
    that is intended or whether family reports use a stable family zone.

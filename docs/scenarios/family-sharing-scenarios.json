@@ -1,0 +1,1043 @@
+{
+  "schema_version": 1,
+  "status": "symbolic_behavior_cases",
+  "contract": "../topics/family-sharing-and-trust.md",
+  "execution": "Not executable yet. M0 must bind agreed cases and resolve proposed cases before claiming coverage.",
+  "cases": [
+    {
+      "id": "FS01",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U2"
+      ],
+      "given": "A fresh installation has no network.",
+      "actions": [
+        "Create Family A and record a diaper.",
+        "Restart the app and export A."
+      ],
+      "expect": [
+        "A and its entry remain available without an account or relay.",
+        "The export contains the recorded entry."
+      ]
+    },
+    {
+      "id": "FS02",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U2",
+        "U4"
+      ],
+      "given": "A local Family has existing history.",
+      "actions": [
+        "Choose to share A.",
+        "Interrupt connectivity before confirmation."
+      ],
+      "expect": [
+        "Local history remains readable and writable.",
+        "The UI does not assert that sharing completed without confirmation."
+      ],
+      "variants": [
+        "disconnect before request delivery",
+        "disconnect after relay commit before response"
+      ]
+    },
+    {
+      "id": "FS03",
+      "status": "agreed",
+      "requirements": [
+        "U2"
+      ],
+      "given": "A fresh installation holds a valid invitation.",
+      "actions": [
+        "Complete the authorized join flow."
+      ],
+      "expect": [
+        "The invited Family is available.",
+        "No unwanted empty local Family is created."
+      ]
+    },
+    {
+      "id": "FS04",
+      "status": "agreed",
+      "requirements": [
+        "U3"
+      ],
+      "given": "Alice manages A; Bob is a member.",
+      "actions": [
+        "Bob attempts to remove Alice through the UI and a direct unauthorized request."
+      ],
+      "expect": [
+        "Membership does not change.",
+        "Bob can still record entries."
+      ]
+    },
+    {
+      "id": "FS05",
+      "status": "agreed",
+      "requirements": [
+        "U3",
+        "U4"
+      ],
+      "given": "Alice is the only manager of A.",
+      "actions": [
+        "Alice attempts to remove or demote herself without a successor."
+      ],
+      "expect": [
+        "The shared Family is not left without a manager.",
+        "The UI explains that another manager is required."
+      ],
+      "variants": [
+        "remove self",
+        "demote self"
+      ]
+    },
+    {
+      "id": "FS06",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U4"
+      ],
+      "given": "Alice is offline and last knew herself to be a manager.",
+      "actions": [
+        "Attempt a membership change.",
+        "Record an entry before reconnecting."
+      ],
+      "expect": [
+        "The app does not claim the membership change has completed.",
+        "The local entry is retained."
+      ],
+      "open_details": [
+        "Whether offline membership requests are queued or require retry remains an implementation UX choice to document."
+      ]
+    },
+    {
+      "id": "FS07",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U3",
+        "U4",
+        "U5"
+      ],
+      "given": "Alice and Bob are the only managers of A and each requests removal of the other.",
+      "actions": [
+        "Commit Alice removing Bob first.",
+        "Deliver Bob removing Alice next.",
+        "Reconnect both clients."
+      ],
+      "expect": [
+        "Alice remains the manager of original Family A.",
+        "Bob cannot remove Alice using his former authority.",
+        "Bob sees access ended and that his removal request did not take effect.",
+        "Both retain their respective local histories and pending edits.",
+        "Either may explicitly make an independent copy; neither is automatically moved."
+      ],
+      "variants": [
+        "exchange Alice and Bob and reverse committed order",
+        "deliver a duplicate of each request"
+      ],
+      "decisions": [
+        "D1"
+      ]
+    },
+    {
+      "id": "FS08",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U3",
+        "U4",
+        "U5"
+      ],
+      "given": "Both managers are offline and each tries to remove the other.",
+      "actions": [
+        "Record local entries on both devices.",
+        "Reconnect and submit both removal attempts."
+      ],
+      "expect": [
+        "No access change was represented as confirmed while offline.",
+        "The first valid committed removal governs original Family A.",
+        "Each device retains its own pending entries regardless of the outcome."
+      ],
+      "variants": [
+        "Alice reconnects first",
+        "Bob reconnects first",
+        "both reconnect before either request commits"
+      ],
+      "decisions": [
+        "D1"
+      ]
+    },
+    {
+      "id": "FS09",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U3",
+        "U4"
+      ],
+      "given": "Both managers requested mutual removal; Alice removal of Bob commits but its response is lost.",
+      "actions": [
+        "Restart Alice device.",
+        "Retry or query the action result.",
+        "Reconnect Bob."
+      ],
+      "expect": [
+        "Alice does not mistake a timeout for proof that removal failed.",
+        "The committed removal is discovered without applying a second access change.",
+        "Both clients eventually report the same original-Family membership."
+      ],
+      "variants": [
+        "lost response without restart",
+        "restart after remote commit before local persistence"
+      ],
+      "decisions": [
+        "D1"
+      ]
+    },
+    {
+      "id": "FS10",
+      "status": "agreed",
+      "requirements": [
+        "U3",
+        "U5",
+        "U6"
+      ],
+      "given": "Alice and Bob manage A; Charlie is an unaffected member.",
+      "actions": [
+        "Execute either order of mutual manager removal.",
+        "Reconnect Charlie."
+      ],
+      "expect": [
+        "Charlie remains a member of original Family A.",
+        "Charlie is not silently redirected into either private copy.",
+        "The surviving manager remains visible when current membership is known."
+      ],
+      "variants": [
+        "Alice removal commits first",
+        "Bob removal commits first",
+        "Charlie is offline during the race"
+      ],
+      "decisions": [
+        "D1"
+      ]
+    },
+    {
+      "id": "FS11",
+      "status": "agreed",
+      "requirements": [
+        "U3",
+        "U4"
+      ],
+      "given": "Alice requests removal of Bob while Bob requests demotion of Alice; both initially manage A.",
+      "actions": [
+        "Commit one change.",
+        "Deliver the other request from the prior membership state."
+      ],
+      "expect": [
+        "The first change takes effect.",
+        "The second cannot execute using authority the requester no longer has.",
+        "Clients explain current role/access rather than claiming both requests succeeded."
+      ],
+      "variants": [
+        "removal commits first",
+        "demotion commits first"
+      ],
+      "decisions": [
+        "D1"
+      ]
+    },
+    {
+      "id": "FS12",
+      "status": "agreed",
+      "requirements": [
+        "U3",
+        "U4"
+      ],
+      "given": "Alice and Bob are the only managers and request demotion of each other.",
+      "actions": [
+        "Commit one demotion.",
+        "Deliver the other request."
+      ],
+      "expect": [
+        "One manager remains.",
+        "The demoted member cannot complete the competing demotion.",
+        "The demoted member retains ordinary read/write access."
+      ],
+      "variants": [
+        "Alice request commits first",
+        "Bob request commits first"
+      ],
+      "decisions": [
+        "D1"
+      ]
+    },
+    {
+      "id": "FS13",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U5"
+      ],
+      "given": "Bob has local history and pending work when his shared access ends.",
+      "actions": [
+        "Reconnect and learn access has ended.",
+        "Choose an independent copy.",
+        "Restart and export the new Family."
+      ],
+      "expect": [
+        "Existing local records and pending work are preserved according to the event model.",
+        "The copy has independent identity and keys and starts local-only.",
+        "New records in the copy do not sync into the original.",
+        "The export is scoped to the copy."
+      ],
+      "variants": [
+        "pending new entry",
+        "pending edit",
+        "pending deletion",
+        "running timer"
+      ]
+    },
+    {
+      "id": "FS14",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U5"
+      ],
+      "given": "Bob learns his access ended and has not chosen a copy.",
+      "actions": [
+        "Dismiss the notice.",
+        "Read and export the locally retained history."
+      ],
+      "expect": [
+        "The app does not erase local data or silently create a shared replacement.",
+        "The archive and independent-copy option remain distinguishable."
+      ]
+    },
+    {
+      "id": "FS15",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U5"
+      ],
+      "given": "Alice remains an authorized manager and holds a local copy.",
+      "actions": [
+        "Explicitly create an independent local Family from that copy."
+      ],
+      "expect": [
+        "The copy does not require another manager approval.",
+        "It has independent identity and keys.",
+        "Creating a copy does not silently change original Family membership."
+      ]
+    },
+    {
+      "id": "FS16",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U5"
+      ],
+      "given": "An independent-copy operation is underway with pending local entries.",
+      "actions": [
+        "Interrupt the process and restart."
+      ],
+      "expect": [
+        "The source history and pending entries remain recoverable.",
+        "A partial copy is not represented as complete.",
+        "Retry does not mix source and destination Family identities."
+      ],
+      "variants": [
+        "interrupt before destination commit",
+        "interrupt after destination commit before UI confirmation"
+      ]
+    },
+    {
+      "id": "FS17",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U4"
+      ],
+      "given": "Bob cannot reach the relay; no removal is confirmed.",
+      "actions": [
+        "Keep recording entries.",
+        "Read sharing status."
+      ],
+      "expect": [
+        "Entries remain locally available.",
+        "The app reports connection/confirmation uncertainty, not an invented removal."
+      ],
+      "variants": [
+        "network timeout",
+        "relay unavailable",
+        "rate limit or storage quota response"
+      ]
+    },
+    {
+      "id": "FS18",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U4",
+        "U5"
+      ],
+      "given": "Charlie remains authorized but was offline while Bob was removed.",
+      "actions": [
+        "Charlie records offline entries.",
+        "Reconnect Charlie and refresh shared access.",
+        "Upload retained pending work."
+      ],
+      "expect": [
+        "Charlie pending work enters shared history exactly once under current authorization.",
+        "Bob cannot read the new-key uploads.",
+        "The UI does not ask Charlie to re-enter the records."
+      ],
+      "variants": [
+        "offline new entry",
+        "offline edit",
+        "response lost after accepted upload"
+      ]
+    },
+    {
+      "id": "FS19",
+      "status": "agreed",
+      "requirements": [
+        "U2",
+        "U3",
+        "U4"
+      ],
+      "given": "Alice created a valid unused invitation to A with a specified role.",
+      "actions": [
+        "Bob opens the invitation and completes enrollment."
+      ],
+      "expect": [
+        "Bob joins and receives history with the specified role without a second manual manager approval.",
+        "The invitation is consumed by this enrollment and cannot enroll another device."
+      ],
+      "variants": [
+        "in-person QR invitation",
+        "remote invitation link"
+      ],
+      "decisions": [
+        "D2"
+      ]
+    },
+    {
+      "id": "FS20",
+      "status": "proposed",
+      "requirements": [
+        "U2",
+        "U3",
+        "U4"
+      ],
+      "given": "A remote invitation was canceled or expired before redemption.",
+      "actions": [
+        "Try to join using the old invitation."
+      ],
+      "expect": [
+        "No new access is granted.",
+        "The UI explains the unusable invitation and offers a fresh invitation route.",
+        "An existing unrelated Family on the device is unchanged."
+      ],
+      "variants": [
+        "canceled before redemption",
+        "expired before redemption"
+      ],
+      "decisions": [
+        "D8"
+      ]
+    },
+    {
+      "id": "FS21",
+      "status": "proposed",
+      "requirements": [
+        "U2",
+        "U3",
+        "U4"
+      ],
+      "given": "Alice issued an unused invitation for Charlie; Bob is removing Alice.",
+      "actions": [
+        "Order Charlie enrollment and Alice removal in both ways.",
+        "Refresh membership on remaining clients."
+      ],
+      "expect": [
+        "Enrollment committed while Alice invitation remained authorized is not silently undone by her later removal.",
+        "Under the proposed policy, Alice removal invalidates her still-unused invitation before any later redemption.",
+        "Charlie receives a confirmed joined state or a clear unusable invitation state."
+      ],
+      "variants": [
+        "enrollment commits first",
+        "issuer removal commits first"
+      ],
+      "decisions": [
+        "D1",
+        "D2",
+        "D8"
+      ]
+    },
+    {
+      "id": "FS22",
+      "status": "agreed",
+      "requirements": [
+        "U6"
+      ],
+      "given": "One app is manager in A and member in B.",
+      "actions": [
+        "Log in B.",
+        "Manage membership in A.",
+        "Export each Family."
+      ],
+      "expect": [
+        "Only B contains the logged entry.",
+        "Only A membership changes.",
+        "Each export contains only its selected Family."
+      ]
+    },
+    {
+      "id": "FS23",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U5",
+        "U6"
+      ],
+      "given": "One app participates in A and B and has pending work in both.",
+      "actions": [
+        "Access to A ends.",
+        "Reconnect B and choose an independent copy of A."
+      ],
+      "expect": [
+        "B remains writable and syncing with its existing identity.",
+        "A pending work survives in its independent copy.",
+        "No A entries are redirected into B."
+      ]
+    },
+    {
+      "id": "FS24",
+      "status": "agreed",
+      "requirements": [
+        "U6"
+      ],
+      "given": "A timer started for child X in Family A.",
+      "actions": [
+        "Switch the app to child Y in Family B.",
+        "Stop the original timer."
+      ],
+      "expect": [
+        "The stop targets child X in A.",
+        "Family B receives no timer entry as a side effect."
+      ]
+    },
+    {
+      "id": "FS25",
+      "status": "proposed",
+      "requirements": [
+        "U1",
+        "U5",
+        "U6"
+      ],
+      "given": "A widget or watch still targets A after access to A ended; the phone now displays B.",
+      "actions": [
+        "Attempt quick logging or stop a running timer."
+      ],
+      "expect": [
+        "The action and its A target are retained for deliberate resolution.",
+        "No entry is silently written into B.",
+        "The surface explains changed access and provides a route to an independent copy."
+      ],
+      "variants": [
+        "widget log",
+        "watch queued log",
+        "watch timer stop",
+        "duplicate companion delivery"
+      ],
+      "decisions": [
+        "D7"
+      ]
+    },
+    {
+      "id": "FS26",
+      "status": "agreed",
+      "requirements": [
+        "U7"
+      ],
+      "given": "The sole local-only device is lost; only a recovery phrase remains and no record backup exists.",
+      "actions": [
+        "Attempt recovery."
+      ],
+      "expect": [
+        "The app does not claim missing records were recovered.",
+        "It explains that the phrase is not a record backup."
+      ]
+    },
+    {
+      "id": "FS27",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U7"
+      ],
+      "given": "A Family has a complete readable or password-protected record backup; the protection credential is available if needed.",
+      "actions": [
+        "Lose the original device.",
+        "Restore the file on a fresh installation without contacting the original relay."
+      ],
+      "expect": [
+        "The saved children, entries, required metadata, units, and unknown fields round-trip according to the full-file contract.",
+        "The saved record state includes local pending work present at backup time.",
+        "Restore creates a new independent local-only Family with fresh identity and keys.",
+        "Original membership and device credentials are not restored.",
+        "The UI identifies the backup point; later unsaved records are not invented."
+      ],
+      "variants": [
+        "readable full backup",
+        "password-protected full backup",
+        "backup of a local-only Family",
+        "backup of a shared Family",
+        "saved unknown fields and event types"
+      ],
+      "decisions": [
+        "D3"
+      ]
+    },
+    {
+      "id": "FS28",
+      "status": "proposed",
+      "requirements": [
+        "U3",
+        "U7"
+      ],
+      "given": "The only manager lost their only device; relay history and an authorized recovery credential remain.",
+      "actions": [
+        "Recover on a fresh device."
+      ],
+      "expect": [
+        "Manager authority follows the explicit recovery policy.",
+        "Decryption ability alone is not treated as proof of manager role.",
+        "The old device and recovery credentials receive an explicit retained/revoked disposition."
+      ],
+      "variants": [
+        "old device never returns",
+        "old device reconnects later"
+      ],
+      "decisions": [
+        "D4",
+        "D5"
+      ]
+    },
+    {
+      "id": "FS29",
+      "status": "proposed",
+      "requirements": [
+        "U3",
+        "U5",
+        "U7"
+      ],
+      "given": "A removed caregiver retains an old platform backup or recovery phrase.",
+      "actions": [
+        "Try to restore access to the original shared Family."
+      ],
+      "expect": [
+        "Revoked credentials do not silently restore shared membership.",
+        "Locally held old records remain usable independently."
+      ],
+      "variants": [
+        "restore backup",
+        "use old phrase",
+        "reconnect another previously enrolled device"
+      ],
+      "decisions": [
+        "D4",
+        "D5"
+      ]
+    },
+    {
+      "id": "FS30",
+      "status": "agreed",
+      "requirements": [
+        "U7"
+      ],
+      "given": "Platform key backup is unavailable or its required protection check fails.",
+      "actions": [
+        "Inspect recovery status."
+      ],
+      "expect": [
+        "The app does not claim platform recovery is ready.",
+        "It explains which independently usable recovery paths exist, if any."
+      ],
+      "variants": [
+        "backup unavailable",
+        "backup delayed",
+        "required encryption check fails"
+      ]
+    },
+    {
+      "id": "FS31",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U7",
+        "U8"
+      ],
+      "given": "A relay withholds the latest history from one client.",
+      "actions": [
+        "Sync that client without any out-of-band history source."
+      ],
+      "expect": [
+        "Locally held records remain available.",
+        "The test does not demand detection of an unknowable hidden latest entry.",
+        "The product does not promise that server sync proves universal history completeness."
+      ]
+    },
+    {
+      "id": "FS32",
+      "status": "agreed",
+      "requirements": [
+        "U5",
+        "U8"
+      ],
+      "given": "Bob was removed; relay hides the rotation from Carol, who still knows only the old key.",
+      "actions": [
+        "Carol sends old-key ciphertext to the malicious relay.",
+        "Relay gives that ciphertext to Bob."
+      ],
+      "expect": [
+        "The scenario records an accepted confidentiality limitation: Bob may decrypt old-key ciphertext.",
+        "No product claim treats all wall-clock-later entries as protected.",
+        "Separate tests still require Bob to be unable to decrypt new-key ciphertext."
+      ]
+    },
+    {
+      "id": "FS33",
+      "status": "proposed",
+      "requirements": [
+        "U1"
+      ],
+      "given": "Two caregivers edit the same field while offline.",
+      "actions": [
+        "Reconnect in both delivery orders.",
+        "Inspect the resulting record and displaced edit."
+      ],
+      "expect": [
+        "The resulting state converges according to the event model.",
+        "The displaced value can be inspected and explicitly restored.",
+        "Restore is a new edit, not deletion of history."
+      ],
+      "variants": [
+        "reverse delivery order",
+        "restart before inspecting conflict"
+      ],
+      "decisions": [
+        "D6"
+      ]
+    },
+    {
+      "id": "FS34",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U5"
+      ],
+      "given": "Bob continued in an independent local Family after removal.",
+      "actions": [
+        "Share the independent Family later.",
+        "Record entries in both the original and independent Families."
+      ],
+      "expect": [
+        "Each Family has separate membership and subsequent history.",
+        "No automatic reunification or child-history merge occurs."
+      ]
+    },
+    {
+      "id": "FS35",
+      "status": "agreed",
+      "requirements": [
+        "U2",
+        "U3",
+        "U4"
+      ],
+      "given": "Two different devices possess the same valid unused invitation.",
+      "actions": [
+        "Both attempt enrollment concurrently.",
+        "Deliver enrollment requests in either order."
+      ],
+      "expect": [
+        "Exactly one enrollment can commit.",
+        "The other device receives an already-used result and no access from the consumed invitation."
+      ],
+      "variants": [
+        "Bob enrollment commits first",
+        "Charlie enrollment commits first"
+      ],
+      "decisions": [
+        "D2"
+      ]
+    },
+    {
+      "id": "FS36",
+      "status": "agreed",
+      "requirements": [
+        "U2",
+        "U3",
+        "U4"
+      ],
+      "given": "Bob already enrolled using an invitation.",
+      "actions": [
+        "Try the same invitation on a different device."
+      ],
+      "expect": [
+        "The used invitation cannot grant another enrollment, even with the same display name.",
+        "The second device needs a fresh invitation or a separately authorized recovery/linking path."
+      ],
+      "variants": [
+        "same intended caregiver on another device",
+        "different caregiver"
+      ],
+      "decisions": [
+        "D2"
+      ]
+    },
+    {
+      "id": "FS37",
+      "status": "agreed",
+      "requirements": [
+        "U2",
+        "U3",
+        "U4"
+      ],
+      "given": "Bob enrollment committed but the response was lost.",
+      "actions": [
+        "Restart or reconnect the joining client.",
+        "Resume the original enrollment using its device credentials.",
+        "Try resuming from another device holding only the link."
+      ],
+      "expect": [
+        "Bob can discover and complete the same enrollment without a second membership record.",
+        "Possession of the link alone does not authorize the other device to resume Bob enrollment."
+      ],
+      "variants": [
+        "lost response without restart",
+        "restart with persisted enrollment credentials"
+      ],
+      "decisions": [
+        "D2"
+      ]
+    },
+    {
+      "id": "FS38",
+      "status": "agreed",
+      "requirements": [
+        "U2",
+        "U3",
+        "U4"
+      ],
+      "given": "An invitation is valid and unused.",
+      "actions": [
+        "Preview the link or scan its QR code without submitting enrollment.",
+        "The intended recipient later completes enrollment."
+      ],
+      "expect": [
+        "Viewing or previewing does not consume the invitation or disclose Family history.",
+        "The recipient can still perform its one authorized enrollment."
+      ],
+      "variants": [
+        "messaging-service preview",
+        "browser preview",
+        "QR scan then cancellation",
+        "connection failure before enrollment commit"
+      ],
+      "decisions": [
+        "D2"
+      ]
+    },
+    {
+      "id": "FS39",
+      "status": "agreed",
+      "requirements": [
+        "U2",
+        "U3",
+        "U4"
+      ],
+      "given": "An unintended recipient obtains a valid unused invitation.",
+      "actions": [
+        "The unintended recipient redeems it before the intended recipient.",
+        "The intended recipient subsequently tries to join."
+      ],
+      "expect": [
+        "The first recipient can join under the agreed bearer-invitation policy; this is an accepted risk.",
+        "The intended recipient sees that the invitation is already used and needs a new invitation.",
+        "Removing the unintended recipient cannot retract history already received."
+      ],
+      "variants": [
+        "forwarded invitation",
+        "copied invitation"
+      ],
+      "decisions": [
+        "D2"
+      ]
+    },
+    {
+      "id": "FS40",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U5",
+        "U7"
+      ],
+      "given": "Bob has a complete data backup of A but was subsequently removed from shared Family A.",
+      "actions": [
+        "Restore the backup offline.",
+        "Record a new entry in restored Family B.",
+        "Choose to share B and invite a caregiver."
+      ],
+      "expect": [
+        "Saved data is available without original manager permission.",
+        "B has fresh identity and keys; its new entry never silently joins A.",
+        "Restoring and sharing B do not reinstate Bob membership in A.",
+        "Caregivers must join B through new invitations; A membership is not copied."
+      ],
+      "variants": [
+        "readable backup",
+        "protected backup with credential"
+      ],
+      "decisions": [
+        "D3"
+      ]
+    },
+    {
+      "id": "FS41",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U6",
+        "U7"
+      ],
+      "given": "The app already has Families A and C, and a full backup originally exported from A.",
+      "actions": [
+        "Restore the file into a new local Family B."
+      ],
+      "expect": [
+        "A and C retain their records, roles, keys, and sync state.",
+        "B contains the saved data as a separate Family.",
+        "A matching original Family or child identifier in the file does not trigger automatic merge or replacement."
+      ],
+      "variants": [
+        "A still shared",
+        "A access ended",
+        "same child display name in C"
+      ],
+      "decisions": [
+        "D3"
+      ]
+    },
+    {
+      "id": "FS42",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U6",
+        "U7"
+      ],
+      "given": "A Family has children, recorded activities, and locally held metadata.",
+      "actions": [
+        "Export readable CSV and a full structured file.",
+        "Read both in another program without contacting the relay."
+      ],
+      "expect": [
+        "Export does not require a password or enabling encrypted-file mode.",
+        "The documented formats support analysis and portability.",
+        "The full structured file is restorable; CSV is not presented as a full-fidelity backup.",
+        "Neither export includes original shared device credentials or epoch keys."
+      ],
+      "variants": [
+        "local-only Family",
+        "shared Family member",
+        "shared Family manager"
+      ],
+      "decisions": [
+        "D3"
+      ]
+    },
+    {
+      "id": "FS43",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U7"
+      ],
+      "given": "A backup was saved before several later entries were logged; the original device and later records are now unavailable.",
+      "actions": [
+        "Restore the saved backup into a new Family."
+      ],
+      "expect": [
+        "The saved records are restored.",
+        "The backup point is clear and later missing records are not invented.",
+        "Successful restore does not imply that records after the saved snapshot were recovered."
+      ],
+      "variants": [
+        "original relay unavailable",
+        "original shared access lost"
+      ],
+      "decisions": [
+        "D3"
+      ]
+    },
+    {
+      "id": "FS44",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U6",
+        "U7"
+      ],
+      "given": "Existing local Families are intact and the selected backup cannot be decoded or unlocked.",
+      "actions": [
+        "Attempt file restore."
+      ],
+      "expect": [
+        "The app reports restore failure and does not claim records were recovered.",
+        "Existing Families remain unchanged.",
+        "A failed restore is not presented as a completed empty replacement Family."
+      ],
+      "variants": [
+        "wrong password for protected file",
+        "truncated full file",
+        "corrupt record data"
+      ],
+      "decisions": [
+        "D3"
+      ]
+    },
+    {
+      "id": "FS45",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U6",
+        "U7"
+      ],
+      "given": "A complete backup is being restored into a new independent Family.",
+      "actions": [
+        "Interrupt the app at a restore boundary.",
+        "Restart and inspect or resume the operation."
+      ],
+      "expect": [
+        "Existing Families and the source backup remain intact.",
+        "An incomplete destination is not presented as a completed restore.",
+        "Resuming the same restore either completes its intended new Family or reports a recoverable failure without mixing identities."
+      ],
+      "variants": [
+        "interruption before destination commit",
+        "interruption after destination commit before UI confirmation"
+      ],
+      "decisions": [
+        "D3"
+      ]
+    }
+  ]
+}

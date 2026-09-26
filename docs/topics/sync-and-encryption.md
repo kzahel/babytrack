@@ -5,6 +5,10 @@ contract before M0 code.
 Owns the operation log, merge rules, keys, invites, removal, recovery, server
 API, protocol versioning, and threat model. The event payloads themselves are
 owned by [event-model.md](event-model.md).
+User-visible promises, accepted trust limits, and the agreed first-committed
+outcome for competing removals are owned by
+[family-sharing-and-trust.md](family-sharing-and-trust.md). Protocol choices
+must implement that contract and its scenarios.
 
 ## Goals
 
@@ -16,7 +20,10 @@ owned by [event-model.md](event-model.md).
 - The server stores and relays ciphertext only. It cannot read events,
   children's names, or anything else a family logs.
 - After a removal commits, the removed member receives no new epoch key and
-  cannot read later shared entries. Data already on their device remains.
+  cannot read entries encrypted under later epochs. Data already on their
+  device remains. An honest relay rejects old-epoch uploads after cutover;
+  a malicious relay hiding the change from a stale writer can expose that
+  writer's old-key ciphertext to a removed holder of that key.
 - A shared family can recover from phone loss when another complete copy or
   relay history plus a valid key recovery path remains. Local-only families
   need a separate data backup; a recovery phrase alone cannot recreate lost
@@ -117,6 +124,11 @@ specify how local storage partitions and backups enforce this boundary.
   manager, but a shared family must retain at least one manager. There is no
   owner hierarchy or approval quorum. An ordinary member still has enough
   data to create an independent copy outside the shared family.
+  Competing removals use the first valid relay-committed change; a stale
+  request cannot exercise revoked authority. An offline request or missing
+  response must not be presented as a completed change. Both managers may
+  explicitly make independent copies, and unaffected members stay in the
+  original Family. See the product contract's D1 and scenarios FS07-FS12.
 - **Removed or departed.** Once the client learns that its membership has
   ended, it clearly says that sync for this family has stopped. It does not
   erase local history. The user may keep the old copy as an archive or
@@ -126,13 +138,21 @@ specify how local storage partitions and backups enforce this boundary.
 
 ## Invites, removal, and recovery
 
-- **Invite in person.** The inviting device shows a QR code carrying the
-  server URL, family id, current epoch, and epoch key. A manager must
-  authorize the new holder and role. The new device generates its keypairs
-  and receives grants like any other holder. M-1 must revise the direct-key
-  payload if it bypasses manager approval.
-- **Invite remotely.** The same payload in the URL fragment of a link. The
-  link is as sensitive as the key, so the app warns before sharing it.
+- **Invites.** A manager authorizes one enrollment and its role when creating
+  the invitation. A QR code or remote link carries single-use bootstrap
+  access; remote secrets belong in the URL fragment. No second manual
+  manager approval is required. The previous raw epoch-key payload is
+  superseded: it must not allow link holders to bypass consumption and read
+  history independently of enrollment. M-1 must specify the key handoff.
+  The joining device generates its own keys; the relay atomically consumes
+  the invitation with enrollment. Concurrent redemptions cannot create two
+  enrollments. Previews do not consume it, and failed/lost responses allow
+  authenticated resumption only by the same enrolled device. A fresh device
+  needs a fresh invitation. Product decision D2 accepts that an unintended
+  bearer may redeem a valid unused invitation first.
+- **Invite lifecycle.** Expiry, cancellation, and outstanding invitations
+  after their issuer loses manager authority are proposed in product D8.
+  Settle their ordering with enrollment and key delivery before implementation.
 - **Removal.** A manager can remove a holder. The removing device creates
   epoch e+1, grants it to every remaining holder, posts the keyring and the
   new authorization state, and appends a signed "removed" operation. The
@@ -143,10 +163,15 @@ specify how local storage partitions and backups enforce this boundary.
   fetches its grant and ciphertext history, and joins as a new device.
   Rotating the phrase or backup is a removal of the old holder plus a new
   join. The mechanism for restoring manager authority is still open.
-- **Recovery for local-only families.** A key or phrase without an encrypted
-  copy of the local records is insufficient after device loss. M-1 must
-  define whether the MVP offers an encrypted backup/export and restore path
-  or explicitly warns that unbacked local-only history can be lost.
+- **File backup and independent restore.** Product D3 requires a complete
+  restorable data file with optional password protection. This applies to
+  local-only and shared Families. Restore creates a new local-only Family
+  with fresh identity and keys, saved records, and no original membership or
+  device credentials. It works without the original relay or manager. The
+  person can share the new Family and reinvite caregivers; recreating the
+  old shared group is not required for this recovery path. A key or phrase
+  without a record copy is insufficient after device loss. The event topic
+  specifies the file contract; original-Family key recovery remains separate.
 
 ## Server API
 
@@ -181,7 +206,7 @@ limit storage per family and requests per family and IP.
 Pure-Rust RustCrypto crates (`chacha20poly1305`, `hkdf`, `x25519-dalek`,
 `ed25519-dalek`) and an HPKE crate, so the same code runs natively and in
 wasm. No custom primitives. Every construction gets known-answer vectors in
-`spec/`.
+`tests/vectors/`.
 
 ## Threat model
 
@@ -204,8 +229,16 @@ stale or forked view. Per-device sequence numbers detect gaps between known
 batches; they cannot detect a withheld latest batch without another source
 of history. A device retaining a local copy can survive relay deletion, but
 recovery after loss of every device also depends on relay data or a separate
-encrypted backup. A hosted web client can be served malicious code; see the
-plan's web client trust note.
+record backup. File backups may be readable by user choice; protected files
+also require their protection credential. A hosted web client can be served
+malicious code; see the plan's web client trust note.
+
+Removal protects later-epoch ciphertext, not all records with an activity
+or creation timestamp after the removal. A stale authorized writer may still
+encrypt with an old key; a malicious relay can disclose that ciphertext to
+a removed holder. This is an accepted product limit, not a claim that such
+relay behavior is detectable. Honest-relay cutover and client authorization
+checks are still required.
 
 ## Validation
 
@@ -221,16 +254,22 @@ plan's web client trust note.
   manager; removing or demoting the last manager is rejected.
 - Recovery tests: phrase and platform backup both restore full history on a
   fresh device.
-- Local-only loss test: restore from an actual data backup, or verify that
-  the product clearly reports that no recoverable backup exists.
+- File loss-recovery tests: readable and protected backups restore saved
+  data into a new independent Family without original shared access. An old
+  backup never reinstates revoked membership. Also verify that no-backup
+  states do not claim lost records are recoverable.
 - Sync torture test with a real server and many simulated clients going
   offline and reconnecting.
 - Plaintext marker test: known strings written into events never appear in
   the server database or logs.
+- Run the agreed [sharing scenarios](../scenarios/family-sharing-scenarios.json)
+  with both race orders and lost-response/restart cases. Resolve proposed
+  cases before claiming M-1 closure; these are not executable tests yet.
 
 ## M-1 candidate: removal cutover
 
-The following is a candidate to test, not a decision. Sign every batch with
+The product's first-valid-commit outcome for competing removals is decided.
+The following mechanism is still a candidate to test. Sign every batch with
 its device key. Bind a manager-authorized rotation to the prior epoch and
 membership state, and commit the grants and membership change atomically
 with a compare-and-swap on the server. Reject uploads sealed under the old
@@ -259,10 +298,12 @@ with an existing local copy from making an independent fork.
    signed role grant applies to a person or an individual device and how
    manager authority is recovered after losing a device. A manager acting
    maliciously can still win a rotation race; the design accepts this limit.
-2. **Remote invites with approval.** A safer remote invite would carry a
-   short-lived invite key and require the inviter to approve the new
-   device's keys. It needs the inviter online. Decide whether it replaces
-   the plain link for the MVP.
+2. **Single-use direct join.** D2 decides direct join without a second
+   manual approval. Specify atomic consumption, device-bound authenticated
+   resumption, role binding, and key delivery without a reusable raw Family
+   key in the link. Determine background inviter availability requirements.
+   Resolve D8 expiry, cancellation, and issuer-removal races. Test concurrent
+   redemption, previewing, retries, and unintended-first-recipient cases.
 3. **Encoding.** Confirm CBOR over protobuf once the core exists. The
    requirement is verbatim preservation of unknown fields.
 4. **Web key storage.** The web client keeps its holder keys in IndexedDB.
@@ -297,10 +338,12 @@ with an existing local copy from making an independent fork.
     and projection updates in one transaction. Specify transactions for
     promotion and private copy so a crash cannot mix family identities or
     drop pending local edits.
-12. **Local-only backup.** Decide how a user restores records after losing
-    their sole local-only device. A phrase restores a key, not missing data;
-    a portable JSON/CSV export may be plaintext and is not automatically a
-    secure backup.
+12. **File backup implementation.** D3 settles optional protection and
+    restore into a new independent Family. Specify the atomic restore and
+    protection format with the event topic. Plain files are an intentional
+    portability feature; they must omit original shared credentials. A
+    phrase restores a key, not missing data. State backup completeness and
+    snapshot time accurately.
 13. **Multiple-Family isolation.** Use per-Family device keypairs. Specify
     storage and backup partitioning, and how joins choose a relay endpoint
     without a global account. Specify what happens when one Family is removed

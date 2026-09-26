@@ -166,7 +166,9 @@ the pinned head remain open.
 through a core-owned path: it verifies the manager, head, epoch, sequence,
 object hash, cursor, and relay-signed receipt before projecting the first
 shared event. Tampered receipts/envelopes and duplicate replay leave the
-cursor unchanged. This currently covers only epoch-one manager data after
+cursor unchanged. A separately signed but undecryptable manager batch is
+recorded inert under the verified epoch key, then a later valid batch
+applies at the next cursor. This currently covers only epoch-one manager data after
 genesis; later members, rotation, durable shared replay, and malicious relay
 fork checks remain open.
 `bash scripts/check_browser_smoke.sh` launches Playwright's isolated Chromium

@@ -1,0 +1,45 @@
+# Open source competitor repos, cloned into references/ (gitignored) for
+# reading only. Sync with: scripts/sync_references.py [name ...]
+
+repos:
+  # 2026 entrants with a hosted service
+  - name: enfold
+    url: https://github.com/enfold-baby/enfold
+    license: AGPL-3.0
+    notes: Flutter app, FastAPI + Postgres + Redis sync, app store covenant
+
+  - name: beanlo
+    url: https://github.com/matthewsmorrison/baby-tracker
+    license: AGPL-3.0
+    notes: Next.js, Supabase, Anthropic-backed assistant; TestFlight only
+
+  # Self-host only
+  - name: babybuddy
+    url: https://github.com/babybuddy/babybuddy
+    license: BSD-2-Clause
+    notes: Django, the homelab incumbent
+
+  - name: finnberry
+    url: https://github.com/bckenstler/finnberry
+    license: MIT
+    notes: Next.js, Supabase, MCP integration
+
+  - name: mbentancour-babytracker
+    url: https://github.com/mbentancour/babytracker
+    license: MIT
+    notes: Go single binary
+
+  - name: shnick92-baby-tracker
+    url: https://github.com/shnick92/baby-tracker
+    license: MIT
+    notes: React PWA, two parents only
+
+  # Not really open
+  - name: sprout-track
+    url: https://github.com/Oak-and-Sprout/sprout-track
+    license: custom non-commercial
+
+  - name: sara
+    url: https://github.com/suleymansurucu/flutter_sara_baby_tracker_and_sounds
+    license: GPL-3.0
+    notes: Flutter, Firebase backend

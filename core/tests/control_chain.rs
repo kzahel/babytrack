@@ -108,7 +108,7 @@ fn holder_challenge_and_pending_proof_follow_the_latest_public_chain() {
             .as_str()
             .unwrap(),
     );
-    let verified_issue_key = chain.verify_current_epoch_key(&epoch_one).unwrap();
+    let verified_issue_key = chain.verify_initial_epoch_key(&epoch_one).unwrap();
     let issue_membership = chain
         .membership_check(&transition_id(&transitions[1]))
         .unwrap();
@@ -179,7 +179,7 @@ fn admission_moves_proved_pending_device_to_active_and_repair_preserves_role() {
     );
     assert_eq!(
         opened,
-        chain.verify_current_epoch_key(&expected_key).unwrap()
+        chain.verify_initial_epoch_key(&expected_key).unwrap()
     );
     let admission_membership = chain
         .membership_check(&transition_id(&transitions[5]))
@@ -249,8 +249,9 @@ fn admission_moves_proved_pending_device_to_active_and_repair_preserves_role() {
             .as_str()
             .unwrap(),
     );
-    let rotated_key = chain.verify_current_epoch_key(&epoch_two).unwrap();
-    let rotation = chain.rotation(&transition_id(&transitions[7])).unwrap();
+    assert!(chain.verify_initial_epoch_key(&epoch_two).is_err());
+    let removal_id = transition_id(&transitions[7]);
+    let rotation = chain.rotation(&removal_id).unwrap();
     let grants: Vec<_> = rotation
         .grant_ids()
         .into_iter()
@@ -267,38 +268,66 @@ fn admission_moves_proved_pending_device_to_active_and_repair_preserves_role() {
             .as_str()
             .unwrap(),
     );
-    let keys = rotation
-        .open_for(manager_id, &manager_agreement, &grants, &keyring)
+    let removal_membership = chain.membership_check(&removal_id).unwrap();
+    let membership_object = object_bytes(&fixture, removal_membership.object_id());
+    let keys = chain
+        .open_rotation_for(
+            &removal_id,
+            manager_id,
+            &manager_agreement,
+            &grants,
+            &keyring,
+            &membership_object,
+        )
         .unwrap();
-    assert_eq!(keys.current(), &rotated_key);
+    assert_ne!(keys.current(), &opened);
     assert_eq!(keys.earlier(1), Some(&opened));
     assert!(
-        rotation
-            .open_for(recipient_id, &agreement_private, &grants, &keyring)
+        chain
+            .open_rotation_for(
+                &removal_id,
+                recipient_id,
+                &agreement_private,
+                &grants,
+                &keyring,
+                &membership_object,
+            )
             .is_err()
     );
     let mut changed_keyring = keyring.clone();
     *changed_keyring.last_mut().unwrap() ^= 1;
     assert!(
-        rotation
-            .open_for(manager_id, &manager_agreement, &grants, &changed_keyring)
+        chain
+            .open_rotation_for(
+                &removal_id,
+                manager_id,
+                &manager_agreement,
+                &grants,
+                &changed_keyring,
+                &membership_object,
+            )
             .is_err()
     );
-    let removal_membership = chain
-        .membership_check(&transition_id(&transitions[7]))
-        .unwrap();
+    let mut changed_membership = membership_object.clone();
+    *changed_membership.last_mut().unwrap() ^= 1;
+    assert!(
+        chain
+            .open_rotation_for(
+                &removal_id,
+                manager_id,
+                &manager_agreement,
+                &grants,
+                &keyring,
+                &changed_membership,
+            )
+            .is_err()
+    );
     removal_membership
-        .verify(
-            &object_bytes(&fixture, removal_membership.object_id()),
-            &rotated_key,
-        )
+        .verify(&membership_object, keys.current())
         .unwrap();
     assert!(
         removal_membership
-            .verify(
-                &object_bytes(&fixture, removal_membership.object_id()),
-                &opened
-            )
+            .verify(&membership_object, &opened)
             .is_err()
     );
     assert_eq!(chain.last_global_cursor(), 9);
@@ -415,7 +444,7 @@ fn committed_challenge_objects_prove_both_pending_keys_without_granting_data_acc
             .as_str()
             .unwrap(),
     );
-    let verified_key = chain.verify_current_epoch_key(&key).unwrap();
+    let verified_key = chain.verify_initial_epoch_key(&key).unwrap();
     assert!(
         chain
             .verify_latest_holder_proof(
@@ -438,7 +467,7 @@ fn committed_challenge_objects_prove_both_pending_keys_without_granting_data_acc
             )
             .is_err()
     );
-    assert!(chain.verify_current_epoch_key(&[0u8; 32]).is_err());
+    assert!(chain.verify_initial_epoch_key(&[0u8; 32]).is_err());
 }
 fn bytes<const N: usize>(hex: &str) -> [u8; N] {
     hex_bytes(hex).try_into().unwrap()

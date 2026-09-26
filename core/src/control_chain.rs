@@ -171,7 +171,15 @@ impl ControlChain {
         self.rotations.get(transition_id)
     }
 
-    pub fn verify_current_epoch_key(&self, key: &[u8; 32]) -> Result<VerifiedEpochKey, Error> {
+    /// Only the genesis manager may verify the initial key by commitment.
+    /// Later epochs require the complete committed grant, keyring, and
+    /// encrypted membership objects before a usable key token is issued.
+    pub fn verify_initial_epoch_key(&self, key: &[u8; 32]) -> Result<VerifiedEpochKey, Error> {
+        if self.current_epoch()? != 1 {
+            return Err(Error::Invalid(
+                "rotated epoch requires complete grant and keyring verification",
+            ));
+        }
         let epoch = u32::try_from(self.current_epoch()?)
             .map_err(|_| Error::Invalid("epoch outside u32"))?;
         let bytes = cbor::encode(&Value::Array(vec![
@@ -189,6 +197,33 @@ impl ControlChain {
             epoch,
             bytes: *key,
         })
+    }
+
+    /// Open a committed rotation only after every active recipient grant,
+    /// the complete history keyring, and its encrypted membership agree.
+    pub fn open_rotation_for(
+        &self,
+        transition_id: &[u8; 16],
+        device_id: [u8; 16],
+        agreement_private: &[u8; 32],
+        grant_objects: &[([u8; 16], Vec<u8>)],
+        keyring_object: &[u8],
+        membership_object: &[u8],
+    ) -> Result<rotation::VerifiedRotationKeys, Error> {
+        let rotation = self
+            .rotations
+            .get(transition_id)
+            .ok_or(Error::Invalid("no committed rotation"))?;
+        if rotation.epoch as u64 != self.current_epoch()? {
+            return Err(Error::Invalid("rotation is not the current epoch"));
+        }
+        let keys =
+            rotation.open_for(device_id, agreement_private, grant_objects, keyring_object)?;
+        self.memberships
+            .get(transition_id)
+            .ok_or(Error::Invalid("rotation membership is missing"))?
+            .verify(membership_object, keys.current())?;
+        Ok(keys)
     }
 
     pub fn verify_latest_holder_proof(

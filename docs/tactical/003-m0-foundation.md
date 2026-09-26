@@ -253,6 +253,31 @@ and PR; introduce path selection as component suites grow. Randomized fault
 sequences and fuzzing run nightly with saved seeds. Physical device startup
 and size baselines begin in M1; simulator timing is informational.
 
+## Advisory authority and key-handoff preflight
+
+Daybreak Blue at high thinking reviewed fixed commit
+`dd138166da631064064817d17ee508249da033be` in read-only mode through
+Yep Anywhere session `01a0df66-09ef-7042-9e95-5ee4bea9e8a4`.
+The checkout matched that commit and stayed clean until verified idle. The
+reviewer inspected source, contracts, vectors, and scenarios without running
+tests. Result: **FAIL for integrated client authority readiness**; the
+cryptographic transcript checks themselves were found sound. This advisory
+does not close the early M0 gate.
+
+| Finding | Disposition |
+|---|---|
+| Durable pin, pending enrollment credentials, grant status, keyring, and removal proof are absent. A restart can forget a higher observed head. | Blocker for relay-backed client use; build transactional, core-owned authority replay and restart rollback tests (FS09, FS37, FS51, FS56). |
+| Native store and initial `FamilySession` cannot persist interleaved control and other-device data at one global cursor. | Blocker; replay the full contiguous chain through a durable store with restart at each entry (FS18, FS48, FS60). |
+| A signed stale-epoch rejection leaves the exact pending outbox batch stuck forever. | Blocker; preserve uncertain bytes, then atomically re-batch only after verified rejection/rotation or archive for private copy (FS48, FS54, FS57). |
+| Public commitment verification could issue a rotated epoch key token before grant, keyring, and membership checks. | Blocker; restrict initial-key verification to epoch one and issue rotated capability through one complete check. This change begins that fix; durable session enforcement still follows. |
+| Bootstrap parser, cancel/role/pending removal handlers, and verified private copy are absent. | Planned work required before the early gate; add negative bootstrap and lifecycle cases (FS19–FS21, FS35–FS38, FS47, FS51, FS54–FS55). |
+| Historical device, transition, object, and grant IDs can be reused. | Hardening; add durable ID registry and IDREUSE01. |
+| A rotation can reuse an earlier raw epoch key under a different epoch commitment. | Hardening; reject equality during full keyring opening. |
+
+The reviewer did not recommend a v2 wire change. The agreed v1 contract
+remains the target. See [the review runbook](../security-review-runbook.md)
+for the launch and evidence procedure.
+
 ## Advisory byte/crypto preflight
 
 The independent Daybreak Blue high-thinking read-only session

@@ -78,7 +78,7 @@ impl VerifiedRotation {
 
     /// Require exactly one valid grant for every remaining active device.
     /// The new key is usable only after the complete keyring also verifies.
-    pub fn open_for(
+    pub(crate) fn open_for(
         &self,
         device_id: [u8; 16],
         agreement_private: &[u8; 32],
@@ -239,6 +239,9 @@ impl VerifiedRotation {
                 return Err(Error::Invalid("keyring epochs not contiguous"));
             }
             let key = fixed::<32>(&pair[1])?;
+            if key == current.bytes {
+                return Err(Error::Invalid("rotation reused an earlier epoch key"));
+            }
             let commitment = *self
                 .prior_commitments
                 .get(&epoch)

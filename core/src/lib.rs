@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 pub mod batch;
+pub mod bootstrap;
 pub mod cbor;
 pub mod control;
 pub mod control_chain;

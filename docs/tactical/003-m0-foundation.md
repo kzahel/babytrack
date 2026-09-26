@@ -176,9 +176,9 @@ operation/child/activity identities, and a positive batch epoch.
 The Rust core now verifies the fixed `GENESIS01` committed control object:
 relay pin and receipt signature, manager signature, transition core and
 state hashes, promotion manifest binding, receipt context, and head hash.
-Only this verified genesis can issue an epoch-key token after checking its
-committed key commitment. Subsequent control transitions and persistence of
-the pinned head remain open.
+The initial manager's key is checked against its committed genesis
+commitment. The separate shared journal now persists later control heads;
+rotated keys require complete grant, keyring, and membership verification.
 The public `ControlChain` now verifies the first `invite_issue` after
 genesis against the contiguous-chain vector: manager role/signature,
 relay-signed receipt, parent head, global cursor, state/core hashes, and
@@ -189,8 +189,7 @@ claim transcript and pending state, and a relay-signed commit strictly before
 the seven-day expiry; a boundary test exercises the final millisecond and
 the exact expiry. Public chain replay now also checks a holder's challenge
 and the pending device's proof against the latest pending row, committed
-hashes, signatures, and cursor. Their HPKE/verifier objects and proof secret
-still need validation before a holder signs admission. Public admission
+hashes, signatures, and cursor. Public admission
 now atomically replaces a
 proved pending device with its active row at the invitation's fixed role
 and commitment; repair names that admission and leaves authority unchanged.
@@ -199,9 +198,17 @@ starting root). Fresh signed tests cover canceling an unused invitation,
 removing a keyless pending enrollment without rotation, promoting a member,
 demoting a manager while canceling that issuer's unused invitations, and
 rejecting demotion of the final manager.
-The contiguous byte vector passes through both transitions. Validating the
-HPKE grant and encrypted membership objects, producing these transitions,
-and encrypted membership readiness remain open. Public replay now also
+The core now creates the exact v1 invitation fragment only from a verified
+committed issue, and a recipient parses its strict canonical CBOR/base64url
+descriptor without contacting the relay. It pins the exact origin, relay
+key, Family/genesis, role, invitation seed, and signed issue hash, then
+verifies the fetched genesis and issue before a claim. The contiguous
+fragment round-trips exactly; altered link fields, padding, extra fragment
+keys, and mismatched signed bytes fail. Durable recipient enrollment keys
+and claim generation are still open.
+The contiguous byte vector passes through both transitions. Producing
+transitions and a durable joining-device readiness session remain open.
+Public replay now also
 verifies the recipient's accepted signed batch at cursor 8, then the
 manager's active-removal transition at cursor 9. Removal increments the
 epoch, keeps a manager, cancels affected unused invites, clears pending

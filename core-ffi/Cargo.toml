@@ -17,6 +17,7 @@ required-features = ["bindgen"]
 
 [features]
 bindgen = ["uniffi/cli"]
+fixture-api = []
 
 [dependencies]
 babytrack-core.workspace = true

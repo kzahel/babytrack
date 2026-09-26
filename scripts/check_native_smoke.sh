@@ -7,14 +7,14 @@ cd "$repo_root"
 scratch_dir="$(mktemp -d)"
 trap 'rm -rf "$scratch_dir"' EXIT
 
-cargo build -p babytrack-core-ffi --locked
+cargo build -p babytrack-core-ffi --features fixture-api --locked
 case "$(uname -s)" in
   Darwin) library_path=target/debug/libbabytrack_core_ffi.dylib ;;
   Linux) library_path=target/debug/libbabytrack_core_ffi.so ;;
   *) echo "unsupported native smoke platform" >&2; exit 1 ;;
 esac
 
-bindgen=(cargo run -p babytrack-core-ffi --features bindgen --bin uniffi-bindgen -- generate "$library_path")
+bindgen=(cargo run -p babytrack-core-ffi --features bindgen,fixture-api --bin uniffi-bindgen -- generate "$library_path")
 "${bindgen[@]}" --language kotlin --out-dir core-ffi/tests/kotlin/build/generated --no-format
 core-ffi/tests/kotlin/gradlew -p core-ffi/tests/kotlin run --no-daemon
 

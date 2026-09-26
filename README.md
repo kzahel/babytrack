@@ -83,6 +83,7 @@ cargo check --workspace --locked
 cargo test --workspace --locked
 cargo check -p babytrack-core-wasm --target wasm32-unknown-unknown --locked
 bash scripts/check_wasm_smoke.sh
+bash scripts/check_fixture_api_boundary.sh
 bash scripts/check_native_smoke.sh
 bash scripts/check_browser_smoke.sh
 python3 scripts/check_workspace.py

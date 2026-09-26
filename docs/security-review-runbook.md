@@ -11,7 +11,11 @@ cases, and the gate record; a model verdict alone does not close a gate.
 1. Read the gate in the MVP plan and its active tactical. Finish the work to
    be reviewed and commit it so the reviewer can name one immutable revision.
    Check `git status --short` and `git rev-parse HEAD`. If other work is still
-   in the tree, do not present it as part of that revision.
+   in the tree, do not present it as part of that revision. Keep the review
+   checkout unchanged until the session finishes. If implementation must
+   continue concurrently, launch the reviewer in a separate checkout pinned
+   to the target SHA and compute the Yep Anywhere project ID from that
+   checkout's absolute path.
 2. Select the product promises, protocol files, scenarios, vectors, and code
    that belong to this gate. For Family access, start with
    [Family sharing and trust](topics/family-sharing-and-trust.md), then

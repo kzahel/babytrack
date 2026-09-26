@@ -90,6 +90,7 @@ fn signed_invalid_batches_are_wholly_inert_but_consume_cursor() {
     for id in [
         "INERTBYTE01",
         "PRECREATEBYTE01",
+        "SETTHENCREATEBYTE01",
         "WRONGSCOPEBYTE01",
         "PREFSBYTE01",
     ] {
@@ -105,6 +106,13 @@ fn signed_invalid_batches_are_wholly_inert_but_consume_cursor() {
             "{id}"
         );
         assert!(projection.record(&family).is_none(), "{id}");
+        if matches!(id, "PRECREATEBYTE01" | "SETTHENCREATEBYTE01") {
+            let child = bytes::<16>("0183f9d0000070008000000000000021");
+            assert!(
+                projection.record(&child).is_none(),
+                "{id}: child leaked from inert batch"
+            );
+        }
 
         let valid = authenticated(&fixtures, "CROSSMINORBYTE01");
         assert_eq!(

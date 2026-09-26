@@ -28,11 +28,14 @@ assert.equal(Buffer.from(family.field_cbor(childId, 500n)).toString('hex'), 'f4'
 assert.equal(family.last_cursor(), 1n);
 assert.equal(family.inert_count(), 0);
 
-for (const id of ['INERTBYTE01', 'PRECREATEBYTE01', 'WRONGSCOPEBYTE01', 'PREFSBYTE01']) {
+for (const id of ['INERTBYTE01', 'PRECREATEBYTE01', 'SETTHENCREATEBYTE01', 'WRONGSCOPEBYTE01', 'PREFSBYTE01']) {
   const replay = new WasmFamily(familyId);
   assert.equal(replay.apply_envelope(envelope(id), relayId, epochKey, signer, 1n), false, id);
   assert.equal(replay.last_cursor(), 1n, id);
   assert.equal(replay.inert_count(), 1, id);
+  if (id === 'PRECREATEBYTE01' || id === 'SETTHENCREATEBYTE01') {
+    assert.equal(replay.field_cbor(hex('0183f9d0000070008000000000000021'), 1n).length, 0, id);
+  }
   assert.equal(replay.apply_envelope(sealedChild, relayId, epochKey, signer, 2n), true, id);
   assert.equal(Buffer.from(replay.field_cbor(childId, 500n)).toString('hex'), 'f4', id);
 }

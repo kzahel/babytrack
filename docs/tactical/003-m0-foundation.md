@@ -128,6 +128,11 @@ them. Wrong key, signer, Family, relay, and tampered envelope signature
 are rejected without advancing the projection cursor in each runtime.
 The caller supplies the fixture's nonce, batch ID, and sequence;
 production allocation and retry ownership belong to the durable outbox.
+Primitive batch replay and fixed-header sealing in native/wasm bindings now
+require the explicit `fixture-api` build feature. Default generated bindings
+exclude them; `bash scripts/check_fixture_api_boundary.sh` checks this.
+A production core-owned authorization session and durable retry API remain
+required before sharing UI work.
 The core operation encoder also drives a signed encrypted multi-batch replay:
 cursor order beats an extreme HLC, tombstoned fields stay retained, restore
 is explicit, identical operation bytes dedupe, conflicting IDs and second
@@ -168,6 +173,33 @@ checks on PRs. The current foundation workflow runs all jobs on every push
 and PR; introduce path selection as component suites grow. Randomized fault
 sequences and fuzzing run nightly with saved seeds. Physical device startup
 and size baselines begin in M1; simulator timing is informational.
+
+## Advisory byte/crypto preflight
+
+The independent Daybreak Blue high-thinking read-only session
+`01a0df22-146a-7081-ae56-e715e47aad23` reviewed fixed commit `8402bd8`
+through Yep Anywhere. The checkout advanced during the review; the reviewer
+re-verified cited source at that SHA with `git show`. It assumed the agreed
+honest-relay order and separately considered a hostile authorized device,
+compromised relay storage, and malicious withholding/forking. It did not run
+tests; its request to execute Cargo tests was denied to keep the review
+read-only. This optional preflight returned **advisory FAIL**, not a named
+M0 gate result.
+
+| Finding | Disposition and required regression |
+|---|---|
+| High: platform bindings accepted caller-supplied signer, key, relay, and cursor, including an unchecked control advance. | Primitive exports are now fixture-only; the production Rust session must verify committed control, receipt, epoch, sequence, and author before projection. Bind FS50 stale batch after removal and FS56 rollback/sibling cases. |
+| High: sealing accepted caller-owned nonce, batch ID, and sequence without durable retry identity. | Fixture sealing is now excluded from production bindings. Core-owned outbox must reserve and persist exact envelope bytes before send, retry identical bytes on unknown outcome, and never reuse a nonce under an epoch key. Bind BATCH01/02/04 crash/retry cases. |
+| Medium: primitive sealing could sign a structurally valid but locally invalid edit. | Production `append_and_prepare` must validate against local projection before allocating HLC, nonce, or sequence. Incoming hostile malformed batches remain inert. Bind PRECREATEBYTE01 and a conflicting-pump local/incoming pair. |
+| High: a validly signed but undecryptable batch from an authorized hostile writer could stop replay before inert classification. | Signature-checked envelope replay now marks AEAD failure inert only when given a core-verified committed epoch key. `UNOPENABLEBYTE01` exercises signature-valid/AEAD-invalid bytes and continuation; the production authority session must construct the verified key from committed control. |
+| Medium: PRECREATEBYTE01 used different child IDs for its create and invalid set, leaving set-before-create untested. | Corrected the rollback assertion to inspect the created child and added `SETTHENCREATEBYTE01` across Rust, Swift, Kotlin, and wasm. |
+| Hardening: full projection clones per batch; unbounded host response and GC-managed key-copy risks. | Address before real data with FS60 work-bound stress, bounded transport reads, and platform key-storage review. |
+
+The reviewer found no isolated CBOR, domain-separation, signature, AEAD,
+fixed HPKE receiver, or unknown-field defect at the reviewed SHA. The early
+implemented-authority gate and end-of-M0 gate remain open. The fixture-only
+boundary removes one exposure but does not resolve the durable session and
+outbox findings.
 
 ## Completion condition
 

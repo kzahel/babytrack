@@ -1355,10 +1355,10 @@
       "id": "FS60",
       "status": "agreed",
       "requirements": ["U1", "U4"],
-      "given": "An authorized but hostile member uploads an operation with an extreme HLC and a second batch with malformed record content.",
+      "given": "An authorized but hostile member uploads an operation with an extreme HLC and a second batch with malformed record content or signed ciphertext that fails to open under the committed epoch key.",
       "actions": ["Replay both committed entries; remove the hostile device; create a new edit on another device."],
       "expect": ["The HLC cannot permanently dominate the field winner or block a later edit.", "The malformed batch is inert with a visible integrity issue, and replay continues through later control and data entries.", "The valid later edit wins by verified log position."],
-      "variants": ["i64 maximum wall time", "counter limit", "duplicate create", "unknown future HLC"],
+      "variants": ["i64 maximum wall time", "counter limit", "duplicate create", "unknown future HLC", "signed but undecryptable ciphertext", "missing local epoch key must not advance"],
       "decisions": ["D6"]
     },
     {

@@ -39,10 +39,13 @@ fun main(args: Array<String>) {
         check(family.lastCursor() == 1uL)
     }
 
-    for (id in listOf("INERTBYTE01", "PRECREATEBYTE01", "WRONGSCOPEBYTE01", "PREFSBYTE01")) {
+    for (id in listOf("INERTBYTE01", "PRECREATEBYTE01", "SETTHENCREATEBYTE01", "WRONGSCOPEBYTE01", "PREFSBYTE01")) {
         NativeFamily(familyId).use { replay ->
             check(!replay.applyEnvelope(envelope(id), relayId, epochKey, signer, 1uL))
             check(replay.inertCount() == 1uL)
+            if (id == "PRECREATEBYTE01" || id == "SETTHENCREATEBYTE01") {
+                check(replay.fieldCbor(bytes("0183f9d0000070008000000000000021"), 1uL).isEmpty())
+            }
             check(replay.applyEnvelope(sealedChild, relayId, epochKey, signer, 2uL))
         }
     }

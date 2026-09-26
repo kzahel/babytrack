@@ -55,13 +55,16 @@ struct Smoke {
         try expect(try family.fieldCbor(recordId: childId, fieldId: 500) == bytes("f4"))
         try expect(try family.lastCursor() == 1)
 
-        for id in ["INERTBYTE01", "PRECREATEBYTE01", "WRONGSCOPEBYTE01", "PREFSBYTE01"] {
+        for id in ["INERTBYTE01", "PRECREATEBYTE01", "SETTHENCREATEBYTE01", "WRONGSCOPEBYTE01", "PREFSBYTE01"] {
             let replay = try NativeFamily(familyId: familyId)
             try expect(try !replay.applyEnvelope(
                 envelope: envelope(id), relayId: relayId,
                 epochKey: epochKey, signerPublicKey: signer, cursor: 1
             ))
             try expect(try replay.inertCount() == 1)
+            if id == "PRECREATEBYTE01" || id == "SETTHENCREATEBYTE01" {
+                try expect(try replay.fieldCbor(recordId: bytes("0183f9d0000070008000000000000021"), fieldId: 1).isEmpty)
+            }
             try expect(try replay.applyEnvelope(
                 envelope: sealedChild, relayId: relayId,
                 epochKey: epochKey, signerPublicKey: signer, cursor: 2

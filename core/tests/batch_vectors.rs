@@ -204,3 +204,33 @@ fn newer_minor_envelope_preserves_unknown_child_field() {
     assert_eq!(opened.operations()[0].field_bytes(500), Some(vec![0xf4]));
     assert_eq!(opened.operations()[0].canonical_bytes(), operation);
 }
+
+#[test]
+fn validly_signed_unopenable_ciphertext_is_distinct_from_wrong_signer() {
+    let fixtures: serde_json::Value =
+        serde_json::from_str(include_str!("../../tests/vectors/negative-batch-v1.json")).unwrap();
+    let case = fixtures["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["id"] == "UNOPENABLEBYTE01")
+        .unwrap();
+    let base = &fixtures["base"];
+    let family = bytes::<16>(base["family_id_hex"].as_str().unwrap());
+    let relay = bytes::<32>("03396219237f75a64f12aeb7f39723abf400b160c364980a765dac24aeba2464");
+    let key = bytes::<32>(base["epoch_key_hex"].as_str().unwrap());
+    let signer = crypto::signing_public_key(&bytes::<32>(
+        base["recipient_sign_seed_hex"].as_str().unwrap(),
+    ));
+    let envelope = hex_bytes(case["input"]["envelope_cbor_hex"].as_str().unwrap());
+    let signed = batch::verify_signed_envelope(&envelope, &family, &relay, &signer).unwrap();
+    assert_eq!(signed.header().epoch, 1);
+    assert_eq!(
+        signed.object_hash(),
+        bytes::<32>(case["expect"]["object_hash_hex"].as_str().unwrap())
+    );
+    assert_eq!(
+        batch::open_authenticated(&envelope, &family, &relay, &key, &signer),
+        Err(Error::Crypto(crypto::Error::AuthenticationFailed))
+    );
+}

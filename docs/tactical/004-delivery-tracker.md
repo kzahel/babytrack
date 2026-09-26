@@ -33,7 +33,8 @@ UI remain open; the current passing checks do not close an M0 slice.
 | Active implementation owner | [003 M0 foundation](003-m0-foundation.md), slice 1 |
 | Next demonstrable proof | Complete the same encrypted event and negative vectors independently in Rust, Swift, Kotlin, and wasm. |
 | Next dependent slice | Atomic local log, projection, outbox, native SQLite, browser IndexedDB, and portable backup. |
-| Next independent review | A focused byte/crypto review may run after slice 1 as a preflight; the required early M0 authority review follows implemented invite, grant, and rotation. |
+| Next independent review | The required early M0 authority review follows implemented invite, grant, and rotation. |
+| Open advisory | The [byte/crypto preflight](003-m0-foundation.md#advisory-bytecrypto-preflight) returned FAIL for fixture-shaped production exports, nonce/retry ownership, local validity, and signed-but-undecryptable replay. Fixture exports are gated and lower-level inert replay is covered; core-owned session/outbox work remains before shared sync. |
 | CI signal today | Read-only Rust, native-binding, and browser jobs are required on every push/PR. Local checks passed; a remote Actions result has not been verified here. |
 
 Update this card when the active slice changes. Do not copy fine-grained
@@ -66,7 +67,7 @@ preflight can reduce rework but never substitutes for a named gate.
 
 | When | Review question | Gate owner |
 |---|---|---|
-| After M0 bytes, optional preflight | Are the implemented wire, key, and binding boundaries safe enough to build on? | 003 slice 1; advisory only |
+| M0 byte/crypto preflight, run at `8402bd8` | Are the implemented wire, key, and binding boundaries safe enough to build on? Advisory FAIL; see the [record](003-m0-foundation.md#advisory-bytecrypto-preflight). | 003 slice 1; advisory only |
 | After minimal authority implementation, before broader sync | Can an unauthorized, stale, or hostile device gain or retain shared authority or a new epoch key? | [Early M0 gate](../mvp-plan.md#security-review-gates), 003 slice 3 |
 | M0 exit, before real Family data | Can crash/retry, pending work, restore, or cross-Family access violate the agreed promises? | [End-of-M0 gate](../mvp-plan.md#security-review-gates), 003 slice 4 |
 | New web/watch boundary and M5 | Does the new client or deployment boundary change the threat model or user-visible guarantees? | Later milestone tacticals and MVP plan |

@@ -7,8 +7,9 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    batch::{AuthenticatedBatch, OpenedBatch},
+    batch::{self, AuthenticatedBatch, OpenedBatch, SignedEnvelope},
     cbor::{self, Value},
+    crypto,
     operation::{Kind, Operation, Scope},
     record_validity,
 };
@@ -56,6 +57,17 @@ pub enum Outcome {
 pub enum Error {
     WrongFamily,
     WrongCursor,
+    WrongEpoch,
+    Open(batch::Error),
+}
+
+/// Created only by the core after verifying an epoch-key commitment in the
+/// committed control chain. Platform code cannot construct this value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedEpochKey {
+    pub(crate) family_id: [u8; 16],
+    pub(crate) epoch: u32,
+    pub(crate) bytes: [u8; 32],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -147,6 +159,31 @@ impl Projection {
 
     pub fn inert_batches(&self) -> &[InertBatch] {
         &self.inert_batches
+    }
+
+    /// Consume a signed, authorized data entry after the core has verified
+    /// its control head, signer, receipt, and epoch-key commitment. An
+    /// authorized hostile writer's undecryptable ciphertext is inert; a
+    /// missing or unverified local key must never reach this method.
+    pub fn apply_authorized_signed(
+        &mut self,
+        signed: &SignedEnvelope,
+        key: &VerifiedEpochKey,
+        cursor: u64,
+    ) -> Result<Outcome, Error> {
+        self.check_position(&signed.header().family_id, cursor)?;
+        if key.family_id != self.family_id || key.epoch != signed.header().epoch {
+            return Err(Error::WrongEpoch);
+        }
+        match signed.open(&key.bytes) {
+            Ok(authenticated) => self.apply_authenticated(&authenticated, cursor),
+            Err(batch::Error::Crypto(crypto::Error::AuthenticationFailed)) => Ok(self.mark_inert(
+                cursor,
+                signed.object_hash(),
+                "authenticated writer supplied undecryptable ciphertext".to_owned(),
+            )),
+            Err(error) => Err(Error::Open(error)),
+        }
     }
 
     /// Advance over a separately verified control-chain entry in the shared
@@ -323,4 +360,75 @@ fn validate_record(record: &Record) -> Result<(), &'static str> {
         return Err("pump total conflicts with side amounts");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod signed_replay_tests {
+    use super::*;
+
+    fn hex(value: &str) -> Vec<u8> {
+        value
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect()
+    }
+
+    fn fixed<const N: usize>(value: &str) -> [u8; N] {
+        hex(value).try_into().unwrap()
+    }
+
+    #[test]
+    fn authorized_unopenable_entry_is_inert_and_later_history_advances() {
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/vectors/negative-batch-v1.json"))
+                .unwrap();
+        let cases = fixtures["cases"].as_array().unwrap();
+        let case = |id| cases.iter().find(|case| case["id"] == id).unwrap();
+        let base = &fixtures["base"];
+        let family = fixed::<16>(base["family_id_hex"].as_str().unwrap());
+        let relay = fixed::<32>("03396219237f75a64f12aeb7f39723abf400b160c364980a765dac24aeba2464");
+        let seed = fixed::<32>(base["recipient_sign_seed_hex"].as_str().unwrap());
+        let signer = crypto::signing_public_key(&seed);
+        let key = VerifiedEpochKey {
+            family_id: family,
+            epoch: 1,
+            bytes: fixed(base["epoch_key_hex"].as_str().unwrap()),
+        };
+        let signed = |id| {
+            batch::verify_signed_envelope(
+                &hex(case(id)["input"]["envelope_cbor_hex"].as_str().unwrap()),
+                &family,
+                &relay,
+                &signer,
+            )
+            .unwrap()
+        };
+        let mut projection = Projection::new(family);
+        let unopenable = signed("UNOPENABLEBYTE01");
+        assert!(matches!(
+            projection.apply_authorized_signed(&unopenable, &key, 1),
+            Ok(Outcome::Inert(_))
+        ));
+        assert_eq!(projection.last_cursor(), 1);
+        assert_eq!(
+            projection.inert_batches()[0].object_hash,
+            unopenable.object_hash()
+        );
+        assert!(
+            projection
+                .record(&fixed::<16>("0183f9d0000070008000000000000011"))
+                .is_none()
+        );
+        assert_eq!(
+            projection.apply_authorized_signed(&signed("CROSSMINORBYTE01"), &key, 2),
+            Ok(Outcome::Applied)
+        );
+        assert_eq!(projection.last_cursor(), 2);
+        assert!(
+            projection
+                .record(&fixed::<16>("0183f9d0000070008000000000000011"))
+                .is_some()
+        );
+    }
 }

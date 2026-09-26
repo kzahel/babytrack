@@ -2,8 +2,10 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "fixture-api")]
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "fixture-api")]
 use babytrack_core::{
     batch, crypto,
     projection::{Outcome, Projection},
@@ -11,6 +13,7 @@ use babytrack_core::{
 
 uniffi::setup_scaffolding!();
 
+#[cfg(feature = "fixture-api")]
 #[derive(Debug, uniffi::Error)]
 pub enum BindingError {
     InvalidBytes,
@@ -18,19 +21,23 @@ pub enum BindingError {
     LockPoisoned,
 }
 
+#[cfg(feature = "fixture-api")]
 impl std::fmt::Display for BindingError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "{self:?}")
     }
 }
 
+#[cfg(feature = "fixture-api")]
 impl std::error::Error for BindingError {}
 
+#[cfg(feature = "fixture-api")]
 #[derive(uniffi::Object)]
 pub struct NativeFamily {
     projection: Mutex<Projection>,
 }
 
+#[cfg(feature = "fixture-api")]
 #[uniffi::export]
 impl NativeFamily {
     #[uniffi::constructor]
@@ -40,8 +47,8 @@ impl NativeFamily {
         }))
     }
 
-    /// Host code verifies the relay receipt, signer membership, and epoch at
-    /// this cursor before supplying the active signer and key.
+    /// Fixture-only primitive replay. Production sharing will accept raw
+    /// committed entries through a core-owned authorization session.
     pub fn apply_envelope(
         &self,
         envelope: Vec<u8>,
@@ -109,13 +116,14 @@ impl NativeFamily {
     }
 }
 
+#[cfg(feature = "fixture-api")]
 #[uniffi::export]
 pub fn ed25519_public_key(signing_seed: Vec<u8>) -> Result<Vec<u8>, BindingError> {
     Ok(crypto::signing_public_key(&fixed(&signing_seed)?).to_vec())
 }
 
-/// Fixed-header byte path. A durable outbox must own nonce, batch ID, and
-/// device sequence allocation before this is used for real writes.
+/// Fixture-only fixed-header byte path; never use for production writes.
+#[cfg(feature = "fixture-api")]
 #[uniffi::export]
 pub fn seal_one(
     header_cbor: Vec<u8>,
@@ -134,10 +142,12 @@ pub fn seal_one(
     .envelope_bytes)
 }
 
+#[cfg(feature = "fixture-api")]
 fn fixed<const N: usize>(bytes: &[u8]) -> Result<[u8; N], BindingError> {
     bytes.try_into().map_err(|_| BindingError::InvalidBytes)
 }
 
+#[cfg(feature = "fixture-api")]
 fn rejected(error: impl std::fmt::Debug) -> BindingError {
     BindingError::Rejected(format!("{error:?}"))
 }

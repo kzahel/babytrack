@@ -2,13 +2,15 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "fixture-api")]
 use babytrack_core::{
     batch, crypto,
-    operation::Operation,
-    projection::{LocalProjection, Outcome, Projection},
+    projection::{Outcome, Projection},
 };
+use babytrack_core::{operation::Operation, projection::LocalProjection};
 use wasm_bindgen::prelude::*;
 
+#[cfg(feature = "fixture-api")]
 #[wasm_bindgen]
 pub struct WasmFamily {
     projection: Projection,
@@ -60,6 +62,7 @@ impl WasmLocalFamily {
     }
 }
 
+#[cfg(feature = "fixture-api")]
 #[wasm_bindgen]
 impl WasmFamily {
     #[wasm_bindgen(constructor)]
@@ -69,8 +72,8 @@ impl WasmFamily {
         })
     }
 
-    /// The host verifies the relay receipt, authorization, and epoch at this
-    /// cursor before passing its active signer and key to this method.
+    /// Fixture-only primitive replay. Production sharing will accept raw
+    /// committed entries through a core-owned authorization session.
     pub fn apply_envelope(
         &mut self,
         envelope: &[u8],
@@ -131,13 +134,14 @@ fn debug_error(error: impl std::fmt::Debug) -> JsError {
     JsError::new(&format!("{error:?}"))
 }
 
+#[cfg(feature = "fixture-api")]
 #[wasm_bindgen]
 pub fn ed25519_public_key(signing_seed: &[u8]) -> Result<Vec<u8>, JsError> {
     Ok(crypto::signing_public_key(&fixed(signing_seed, "signing seed")?).to_vec())
 }
 
-/// Fixed-header byte path. The host must durably allocate nonce, batch ID,
-/// and device sequence before real writes and persist the returned envelope.
+/// Fixture-only fixed-header byte path; never use for production writes.
+#[cfg(feature = "fixture-api")]
 #[wasm_bindgen]
 pub fn seal_one(
     header_cbor: &[u8],

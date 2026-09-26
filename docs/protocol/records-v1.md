@@ -194,8 +194,11 @@ into the local HLC generator and is flagged. Offline concurrent writes
 converge by eventual verified log position. HLC is not authorization time
 and does not date the activity.
 
-A signed and authorized batch whose decrypted payload violates the
-major-version-1 shared-validity rules below is an inert data entry: every
+A signed and authorized batch whose ciphertext cannot be opened with the
+epoch key verified against the committed control chain is an inert data
+entry. A missing or unverified local key is a local sync error and must not
+advance the cursor. A signed and authorized batch whose decrypted payload
+violates the major-version-1 shared-validity rules below is also inert: every
 client records its cursor, batch hash,
 and validation error, applies none of its operations, and continues replaying
 later entries including control transitions. It is visible as a sync

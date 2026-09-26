@@ -54,6 +54,36 @@ pub struct AuthenticatedBatch {
     plaintext: Vec<u8>,
 }
 
+/// Signature-checked envelope that has not yet been decrypted. Authorization
+/// and a verified committed epoch key must precede replay classification.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignedEnvelope {
+    header: Header,
+    ciphertext: Vec<u8>,
+    object_hash: [u8; 32],
+}
+
+impl SignedEnvelope {
+    pub fn header(&self) -> &Header {
+        &self.header
+    }
+
+    pub fn object_hash(&self) -> [u8; 32] {
+        self.object_hash
+    }
+
+    pub(crate) fn open(&self, epoch_key: &[u8; 32]) -> Result<AuthenticatedBatch, Error> {
+        let header_bytes = self.header.encode()?;
+        let aad = crypto::hash("batch-aad", &header_bytes)?;
+        let plaintext = crypto::open(epoch_key, &self.header.nonce, &aad, &self.ciphertext)?;
+        Ok(AuthenticatedBatch {
+            header: self.header.clone(),
+            plaintext,
+            object_hash: self.object_hash,
+        })
+    }
+}
+
 impl AuthenticatedBatch {
     pub fn header(&self) -> &Header {
         &self.header
@@ -278,6 +308,18 @@ pub fn open_authenticated(
     epoch_key: &[u8; 32],
     signer_public_key: &[u8; 32],
 ) -> Result<AuthenticatedBatch, Error> {
+    verify_signed_envelope(envelope_bytes, family_id, relay_id, signer_public_key)?.open(epoch_key)
+}
+
+/// Verify canonical structure, Family/relay context, and device signature
+/// without requiring the data key. A core-owned session then checks the
+/// signer and epoch against its committed control state before decrypting.
+pub fn verify_signed_envelope(
+    envelope_bytes: &[u8],
+    family_id: &[u8; 16],
+    relay_id: &[u8; 32],
+    signer_public_key: &[u8; 32],
+) -> Result<SignedEnvelope, Error> {
     let envelope = cbor::decode_with_limits(
         envelope_bytes,
         Limits {
@@ -316,12 +358,9 @@ pub fn open_authenticated(
         &signature,
     )?;
 
-    let header_bytes = cbor::encode(&entries[0].1)?;
-    let aad = crypto::hash("batch-aad", &header_bytes)?;
-    let plaintext = crypto::open(epoch_key, &header.nonce, &aad, ciphertext)?;
-    Ok(AuthenticatedBatch {
+    Ok(SignedEnvelope {
         header,
-        plaintext,
+        ciphertext: ciphertext.clone(),
         object_hash: crypto::hash("object", envelope_bytes)?,
     })
 }

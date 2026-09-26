@@ -4,6 +4,7 @@
 
 pub mod batch;
 pub mod cbor;
+pub mod control;
 pub mod crypto;
 pub mod hlc;
 pub mod hpke;

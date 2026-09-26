@@ -156,6 +156,12 @@ core-owned authority session; verified acceptance, browser outbox, and
 rebatching remain open.
 The decoder now enforces UUIDv4 Family/device/batch identities, UUIDv7
 operation/child/activity identities, and a positive batch epoch.
+The Rust core now verifies the fixed `GENESIS01` committed control object:
+relay pin and receipt signature, manager signature, transition core and
+state hashes, promotion manifest binding, receipt context, and head hash.
+Only this verified genesis can issue an epoch-key token after checking its
+committed key commitment. Subsequent control transitions, persistence of
+the pinned head, and accepted-batch authorization remain open.
 `bash scripts/check_browser_smoke.sh` launches Playwright's isolated Chromium
 shell, loads the wasm binding, and checks IndexedDB reload, an aborted
 multi-store transaction, and Family-scoped keys and rows. It uses fixture

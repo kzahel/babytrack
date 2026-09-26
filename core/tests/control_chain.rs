@@ -91,6 +91,37 @@ fn claim_requires_both_keys_and_commits_before_signed_expiry() {
         );
     }
 }
+
+#[test]
+fn holder_challenge_and_pending_proof_follow_the_latest_public_chain() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../tests/vectors/contiguous-chain-v1.json")).unwrap();
+    let transitions = fixture["transitions"].as_array().unwrap();
+    let relay_public =
+        bytes::<32>("2543b92ff1095511476adc8369db6ddc933665a11978dda1404ee1066ca9559d");
+    let wire = |index: usize| hex_bytes(transitions[index]["committed_cbor_hex"].as_str().unwrap());
+    let mut chain = ControlChain::from_genesis(&wire(0), relay_public).unwrap();
+    chain.apply_invite_issue(&wire(1)).unwrap();
+    chain.apply_invite_claim(&wire(2)).unwrap();
+    assert!(chain.apply_key_proof(&wire(4)).is_err());
+    assert_eq!(chain.last_global_cursor(), 3);
+    chain.apply_holder_challenge(&wire(3)).unwrap();
+    assert_eq!(
+        chain.state_bytes().unwrap(),
+        hex_bytes(transitions[3]["state_cbor_hex"].as_str().unwrap())
+    );
+    assert_eq!(chain.last_global_cursor(), 4);
+    chain.apply_key_proof(&wire(4)).unwrap();
+    assert_eq!(
+        chain.state_bytes().unwrap(),
+        hex_bytes(transitions[4]["state_cbor_hex"].as_str().unwrap())
+    );
+    assert_eq!(
+        chain.head_hash(),
+        bytes(transitions[4]["head_hash_hex"].as_str().unwrap())
+    );
+    assert!(chain.apply_key_proof(&wire(4)).is_err());
+}
 fn bytes<const N: usize>(hex: &str) -> [u8; N] {
     hex_bytes(hex).try_into().unwrap()
 }

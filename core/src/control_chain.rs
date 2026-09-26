@@ -2,7 +2,7 @@
 //! Invitation issue is the first implemented transition; other kinds fail
 //! closed until their state rules and object checks are implemented.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     cbor::{self, Value},
@@ -42,6 +42,21 @@ pub struct ControlChain {
     last_global_cursor: u64,
     last_commit_ms: i64,
     issue_times: BTreeMap<[u8; 16], i64>,
+    challenges: BTreeMap<[u8; 16], ChallengeRecord>,
+    seen_challenge_ids: BTreeSet<[u8; 16]>,
+}
+
+struct ChallengeRecord {
+    device_id: [u8; 16],
+    challenge_id: [u8; 16],
+    challenge_hash: [u8; 32],
+}
+
+struct FinalizePlan<'a> {
+    next_state: Value,
+    expected_signers: &'a [([u8; 16], [u8; 32])],
+    manifest_kinds: &'a [u64],
+    before_ms: Option<i64>,
 }
 
 impl ControlChain {
@@ -68,6 +83,8 @@ impl ControlChain {
             relay_public_key,
             state,
             issue_times: BTreeMap::new(),
+            challenges: BTreeMap::new(),
+            seen_challenge_ids: BTreeSet::new(),
         })
     }
 
@@ -459,4 +476,277 @@ impl ControlChain {
         self.last_commit_ms = committed_ms;
         Ok(())
     }
+
+    pub fn apply_holder_challenge(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        let object = cbor::decode_with_limits(
+            bytes,
+            cbor::Limits {
+                max_bytes: 1024 * 1024,
+                max_depth: 16,
+            },
+        )?;
+        let root = exact_map(&object, 4)?;
+        let unsigned = exact_map(&root[0].1, 11)?;
+        self.check_unsigned(unsigned, 11, 1)?;
+        let delta = exact_map(&unsigned[6].1, 4)?;
+        let invitation_id = fixed::<16>(&delta[0].1)?;
+        let device_id = fixed::<16>(&delta[1].1)?;
+        let challenge_id = fixed::<16>(&delta[2].1)?;
+        let challenge_hash = fixed::<32>(&delta[3].1)?;
+        if self.seen_challenge_ids.contains(&challenge_id) {
+            return Err(Error::Invalid("challenge ID reused"));
+        }
+        let state = exact_map(&self.state, 7)?;
+        let pending = find_row(&state[5].1, 9, 0, invitation_id)?
+            .ok_or(Error::Invalid("challenge invitation not pending"))?;
+        if fixed::<16>(&pending[1])? != device_id {
+            return Err(Error::Invalid("challenge device mismatch"));
+        }
+        let signatures = array(&root[1].1, 1)?;
+        let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
+        let active = find_row(&state[4].1, 5, 0, signer_id)?
+            .ok_or(Error::Invalid("challenge signer not active"))?;
+        let signer_key = fixed::<32>(&active[1])?;
+        let mut next_state = self.state.clone();
+        let Value::Map(map) = &mut next_state else {
+            unreachable!()
+        };
+        let Value::Array(rows) = &mut map[5].1 else {
+            unreachable!()
+        };
+        let row = rows
+            .iter_mut()
+            .find(|row| {
+                array(row, 9)
+                    .is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(invitation_id))
+            })
+            .unwrap();
+        let Value::Array(row) = row else {
+            unreachable!()
+        };
+        row[7] = Value::Bytes(challenge_id.to_vec());
+        row[8] = Value::Null;
+        self.finalize(
+            bytes,
+            root,
+            unsigned,
+            FinalizePlan {
+                next_state,
+                expected_signers: &[(signer_id, signer_key)],
+                manifest_kinds: &[2, 3],
+                before_ms: None,
+            },
+        )?;
+        self.challenges.insert(
+            invitation_id,
+            ChallengeRecord {
+                device_id,
+                challenge_id,
+                challenge_hash,
+            },
+        );
+        self.seen_challenge_ids.insert(challenge_id);
+        Ok(())
+    }
+
+    pub fn apply_key_proof(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        let object = cbor::decode_with_limits(
+            bytes,
+            cbor::Limits {
+                max_bytes: 1024 * 1024,
+                max_depth: 16,
+            },
+        )?;
+        let root = exact_map(&object, 4)?;
+        let unsigned = exact_map(&root[0].1, 11)?;
+        self.check_unsigned(unsigned, 5, 1)?;
+        let delta = exact_map(&unsigned[6].1, 4)?;
+        let invitation_id = fixed::<16>(&delta[0].1)?;
+        let device_id = fixed::<16>(&delta[1].1)?;
+        let challenge_hash = fixed::<32>(&delta[2].1)?;
+        let proof_signature = fixed::<64>(&delta[3].1)?;
+        let state = exact_map(&self.state, 7)?;
+        let pending = find_row(&state[5].1, 9, 0, invitation_id)?
+            .ok_or(Error::Invalid("proof invitation not pending"))?;
+        let challenge = self
+            .challenges
+            .get(&invitation_id)
+            .ok_or(Error::Invalid("proof has no verified challenge transition"))?;
+        if fixed::<16>(&pending[1])? != device_id
+            || challenge.device_id != device_id
+            || pending[7] != Value::Bytes(challenge.challenge_id.to_vec())
+            || challenge.challenge_hash != challenge_hash
+        {
+            return Err(Error::Invalid(
+                "proof does not match latest pending challenge",
+            ));
+        }
+        let signer_key = fixed::<32>(&pending[2])?;
+        let proof = Value::Array(vec![
+            Value::Bytes(challenge.challenge_id.to_vec()),
+            Value::Bytes(proof_signature.to_vec()),
+        ]);
+        let proof_hash = crypto::hash("proof", &cbor::encode(&proof)?)?;
+        let mut next_state = self.state.clone();
+        let Value::Map(map) = &mut next_state else {
+            unreachable!()
+        };
+        let Value::Array(rows) = &mut map[5].1 else {
+            unreachable!()
+        };
+        let row = rows
+            .iter_mut()
+            .find(|row| {
+                array(row, 9)
+                    .is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(invitation_id))
+            })
+            .unwrap();
+        let Value::Array(row) = row else {
+            unreachable!()
+        };
+        row[8] = Value::Bytes(proof_hash.to_vec());
+        self.finalize(
+            bytes,
+            root,
+            unsigned,
+            FinalizePlan {
+                next_state,
+                expected_signers: &[(device_id, signer_key)],
+                manifest_kinds: &[],
+                before_ms: None,
+            },
+        )?;
+        Ok(())
+    }
+
+    fn check_unsigned(
+        &self,
+        unsigned: &[(u64, Value)],
+        kind: u64,
+        epoch: u64,
+    ) -> Result<(), Error> {
+        if number(&unsigned[0].1)? != 1
+            || number(&unsigned[5].1)? != kind
+            || number(&unsigned[8].1)? != epoch
+            || fixed::<16>(&unsigned[1].1)? != self.genesis.family_id()
+            || fixed::<32>(&unsigned[2].1)? != self.genesis.relay_id()
+            || fixed::<32>(&unsigned[3].1)? != self.head_hash
+        {
+            return Err(Error::Invalid(
+                "control version, kind, Family, relay, epoch, or parent mismatch",
+            ));
+        }
+        Ok(())
+    }
+
+    fn finalize(
+        &mut self,
+        bytes: &[u8],
+        root: &[(u64, Value)],
+        unsigned: &[(u64, Value)],
+        plan: FinalizePlan<'_>,
+    ) -> Result<(), Error> {
+        let FinalizePlan {
+            next_state,
+            expected_signers,
+            manifest_kinds,
+            before_ms,
+        } = plan;
+        if fixed::<32>(&unsigned[7].1)? != crypto::hash("auth-state", &cbor::encode(&next_state)?)?
+        {
+            return Err(Error::Invalid("resulting authority state hash mismatch"));
+        }
+        let core = Value::Array(
+            unsigned[0..9]
+                .iter()
+                .map(|(_, value)| value.clone())
+                .collect(),
+        );
+        if fixed::<32>(&unsigned[10].1)? != crypto::hash("transition-core", &cbor::encode(&core)?)?
+        {
+            return Err(Error::Invalid("transition core hash mismatch"));
+        }
+        let manifest = array(&unsigned[9].1, manifest_kinds.len())?;
+        let mut prior_manifest: Option<(u64, [u8; 16])> = None;
+        for (item, kind) in manifest.iter().zip(manifest_kinds) {
+            let fields = array(item, 4)?;
+            let actual_kind = number(&fields[0])?;
+            let object_id = fixed::<16>(&fields[1])?;
+            let _hash = fixed::<32>(&fields[2])?;
+            if actual_kind != *kind
+                || number(&fields[3])? > 1024 * 1024
+                || prior_manifest.is_some_and(|prior| (actual_kind, object_id) <= prior)
+            {
+                return Err(Error::Invalid("manifest kind, length, or order invalid"));
+            }
+            prior_manifest = Some((actual_kind, object_id));
+        }
+        let signatures = array(&root[1].1, expected_signers.len())?;
+        let unsigned_bytes = cbor::encode(&root[0].1)?;
+        let mut prior_signer = None;
+        for (entry, (expected_id, public_key)) in signatures.iter().zip(expected_signers) {
+            let fields = array(entry, 2)?;
+            let signer_id = fixed::<16>(&fields[0])?;
+            if signer_id != *expected_id || prior_signer.is_some_and(|prior| signer_id <= prior) {
+                return Err(Error::Invalid("control signer set/order invalid"));
+            }
+            prior_signer = Some(signer_id);
+            crypto::verify_cbor(
+                "control-transition",
+                &unsigned_bytes,
+                public_key,
+                &fixed::<64>(&fields[1])?,
+            )?;
+        }
+        let receipt = array(&root[2].1, 6)?;
+        let expected_cursor = self
+            .last_global_cursor
+            .checked_add(1)
+            .ok_or(Error::Invalid("cursor overflow"))?;
+        let committed_ms = signed_number(&receipt[4])?;
+        if fixed::<16>(&receipt[0])? != self.genesis.family_id()
+            || fixed::<32>(&receipt[1])? != self.genesis.relay_id()
+            || fixed::<16>(&receipt[2])? != fixed::<16>(&unsigned[4].1)?
+            || number(&receipt[3])? != expected_cursor
+            || committed_ms < self.last_commit_ms
+            || before_ms.is_some_and(|limit| committed_ms >= limit)
+        {
+            return Err(Error::Invalid(
+                "control receipt context, cursor, or time invalid",
+            ));
+        }
+        let signed = Value::Array(vec![root[0].1.clone(), root[1].1.clone()]);
+        if fixed::<32>(&receipt[5])? != crypto::hash("control-signed", &cbor::encode(&signed)?)? {
+            return Err(Error::Invalid("control signed-object hash mismatch"));
+        }
+        crypto::verify_cbor(
+            "control-receipt",
+            &cbor::encode(&root[2].1)?,
+            &self.relay_public_key,
+            &fixed::<64>(&root[3].1)?,
+        )?;
+        self.state = next_state;
+        self.head_hash = crypto::hash("control-head", bytes)?;
+        self.last_global_cursor = expected_cursor;
+        self.last_commit_ms = committed_ms;
+        Ok(())
+    }
+}
+
+fn find_row(
+    value: &Value,
+    width: usize,
+    id_index: usize,
+    id: [u8; 16],
+) -> Result<Option<&[Value]>, Error> {
+    let Value::Array(rows) = value else {
+        return Err(Error::Invalid("state rows must be array"));
+    };
+    for row in rows {
+        let fields = array(row, width)?;
+        if fixed::<16>(&fields[id_index])? == id {
+            return Ok(Some(fields));
+        }
+    }
+    Ok(None)
 }

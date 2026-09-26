@@ -49,8 +49,9 @@ The documentation, test, and platform paths marked for later milestones are futu
 links to existing files. Scaffold targets compile without implementing their
 responsibilities. The CBOR vector tests cover only the first byte subset;
 other targets reporting zero cases are not evidence of protocol or product
-correctness. The Node wasm smoke is a binding proof, not a browser storage
-or IndexedDB test. UniFFI's MPL-2.0 runtime/build crates have exact-version
+correctness. A separate real Chromium harness tests wasm with IndexedDB
+reload, rollback, and Family key separation using fixture data. UniFFI's
+MPL-2.0 runtime/build crates have exact-version
 exceptions in `deny.toml`; generated native bindings are build outputs, not
 committed project sources.
 

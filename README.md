@@ -81,13 +81,16 @@ cargo test --workspace --locked
 cargo check -p babytrack-core-wasm --target wasm32-unknown-unknown --locked
 bash scripts/check_wasm_smoke.sh
 bash scripts/check_native_smoke.sh
+bash scripts/check_browser_smoke.sh
 python3 scripts/check_workspace.py
 cargo deny check advisories bans licenses sources
 ```
 
 Install `wasm-bindgen-cli` 0.2.127 and Node.js for the wasm smoke,
 Java 17 for the Kotlin Gradle smoke, and `cargo-deny` 0.20.2 for the
-last command. Swift is checked on macOS. The Rust core's
+last command. Swift is checked on macOS. The browser smoke uses Playwright's
+isolated Chromium; install it with `npx playwright install chromium` from
+`tests/browser/`. The Rust core's
 `core/tests/cbor_vectors.rs` runs the six CBOR cases in
 `tests/vectors/records-v1.json` plus canonicality and limit checks;
 `core/tests/operation_vectors.rs` checks selected operation bytes and binding

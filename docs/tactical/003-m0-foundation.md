@@ -25,7 +25,7 @@ hosting, publishing, store work, clinical content, or vendor-service logic.
 - [ ] Encrypt, sign, decrypt, and project one fixed child event through each
   binding in both directions before freezing the core API. Make wrong key,
   wrong Family, wrong AAD, and wrong signature fail in every language.
-- [ ] Run a minimal real browser harness using wasm and IndexedDB. Verify
+- [x] Run a minimal real browser harness using wasm and IndexedDB. Verify
   reload, transaction rollback, and key isolation with no product web UI.
 
 Gate: the same encrypted event and negative vectors pass independently in
@@ -117,7 +117,11 @@ macOS. All four runtimes seal the fixed child and Family operations to the
 exact expected encrypted envelope bytes, then verify, decrypt, and project
 them. The caller supplies the fixture's nonce, batch ID, and sequence;
 production allocation and retry ownership belong to the durable outbox.
-The full vector suite and real browser/IndexedDB gate remain open.
+`bash scripts/check_browser_smoke.sh` launches Playwright's isolated Chromium
+shell, loads the wasm binding, and checks IndexedDB reload, an aborted
+multi-store transaction, and Family-scoped keys and rows. It uses fixture
+keys and a small test adapter; the production browser store and complete
+cross-language vector suite remain open.
 
 Every agreed FS case gets a deterministic core/relay action binding with
 assertions for local state, shared state, pending outbox, visible status, and

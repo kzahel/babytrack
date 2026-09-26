@@ -118,6 +118,7 @@ cargo test --workspace --locked
 cargo check -p babytrack-core-wasm --target wasm32-unknown-unknown --locked
 bash scripts/check_wasm_smoke.sh
 bash scripts/check_native_smoke.sh
+bash scripts/check_browser_smoke.sh
 python3 scripts/check_workspace.py
 cargo deny check advisories bans licenses sources
 ```
@@ -130,5 +131,7 @@ Per-Family HLC boundary tests run there as well. The wasm smoke calls the
 shared core through JavaScript with fixed encrypted vectors. The native
 smoke calls it through Swift and Kotlin with the same selected vectors. All
 four runtimes seal and open one fixed child event. `server` and `cli`
-still have no behavioral tests. Add gates for their behavior with
+still have no behavioral tests. The Playwright Chromium smoke exercises wasm
+and IndexedDB with fixture data across reload and rollback. Add gates for
+the remaining behavior with
 M0 work.

@@ -149,6 +149,17 @@ HTTP, rejects a tampered POST, and fetches the batch into a manager store;
 both client projections show the same record after independent verification.
 This is still the initial two-device cohort: general membership, rotation,
 stale-epoch rejection, delivery faults, and background polling remain open.
+Fresh empty local Families can now prepare sharing with random manager
+signing/agreement keys and an epoch key, encrypted under an app-supplied
+local wrapping key in SQLite. The signed zero-watermark genesis candidate,
+promotion manifest object, and secrets persist before POST; restart retries
+the exact bytes. A dynamic manager/relay test stages and commits those bytes,
+uses the manager's authenticated promotion-result read, verifies the exact
+candidate and signed genesis, and reaches data readiness after another
+restart. That test exposed and fixed a builder mismatch: the promotion ID
+names the manifest object and result path, while the signed genesis has a
+distinct transition ID. Nonempty local history
+still requires encrypted promotion chunks before this path can activate.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

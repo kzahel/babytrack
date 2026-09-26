@@ -7,6 +7,8 @@ pub mod bootstrap;
 pub use babytrack_wire::cbor;
 pub mod control;
 pub mod control_chain;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod creation;
 pub use babytrack_wire::crypto;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod enrollment;

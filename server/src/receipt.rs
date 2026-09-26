@@ -1,6 +1,7 @@
 //! Exact relay-signed receipt and page encodings. These constructors remain
 //! internal until the server's authority validator and transaction call them.
 
+use crate::batch_authority::VerifiedBatch;
 use babytrack_wire::{
     cbor::{self, Value},
     crypto,
@@ -138,6 +139,78 @@ pub fn encode_control_page(
         return Err(Error::Invalid("page bytes too large"));
     }
     Ok(page)
+}
+
+pub(crate) fn encode_log_page(
+    family_id: [u8; 16],
+    after: u64,
+    entries: &[RelayEntry],
+    has_more: bool,
+) -> Result<Vec<u8>, Error> {
+    if entries.len() > 256 {
+        return Err(Error::Invalid("page too large"));
+    }
+    let mut last = after;
+    let mut encoded = Vec::with_capacity(entries.len());
+    for entry in entries {
+        if (entry.kind != 1 && entry.kind != 2) || entry.cursor != last.saturating_add(1) {
+            return Err(Error::Invalid("log cursor gap or kind"));
+        }
+        cbor::decode(&entry.committed_bytes)?;
+        encoded.push(Value::Array(vec![
+            Value::Integer(entry.cursor.into()),
+            Value::Integer(entry.kind.into()),
+            Value::Bytes(entry.committed_bytes.clone()),
+        ]));
+        last = entry.cursor;
+    }
+    let page = cbor::encode(&Value::Map(vec![
+        (1, Value::Integer(1)),
+        (2, Value::Bytes(family_id.to_vec())),
+        (3, Value::Integer(after.into())),
+        (4, Value::Array(encoded)),
+        (5, Value::Integer(last.into())),
+        (6, Value::Bool(has_more)),
+    ]))?;
+    if page.len() > 4 * 1024 * 1024 {
+        return Err(Error::Invalid("page bytes too large"));
+    }
+    Ok(page)
+}
+
+pub(crate) fn accepted_batch(
+    batch: &VerifiedBatch,
+    cursor: u64,
+    relay_seed: &[u8; 32],
+) -> Result<Vec<u8>, Error> {
+    if cursor == 0 || batch.sequence == 0 || batch.sequence == u64::MAX {
+        return Err(Error::Invalid("batch cursor or sequence"));
+    }
+    let body = Value::Map(vec![
+        (1, Value::Integer(1)),
+        (2, Value::Bytes(batch.family_id.to_vec())),
+        (3, Value::Bytes(batch.relay_id.to_vec())),
+        (4, Value::Bytes(batch.batch_id.to_vec())),
+        (5, Value::Bytes(batch.object_hash.to_vec())),
+        (6, Value::Bool(true)),
+        (7, Value::Integer(cursor.into())),
+        (8, Value::Bytes(batch.control_head.to_vec())),
+        (9, Value::Integer(batch.sequence.into())),
+        (10, Value::Null),
+        (11, Value::Integer((batch.sequence + 1).into())),
+    ]);
+    let signed = crypto::sign_cbor("batch-receipt", &cbor::encode(&body)?, relay_seed)?;
+    Ok(cbor::encode(&Value::Map(vec![
+        (1, body),
+        (2, Value::Bytes(signed.to_vec())),
+    ]))?)
+}
+
+pub(crate) fn batch_commit_response(receipt_bytes: &[u8]) -> Result<Vec<u8>, Error> {
+    Ok(cbor::encode(&Value::Map(vec![
+        (1, Value::Integer(1)),
+        (2, Value::Bytes(receipt_bytes.to_vec())),
+    ]))?)
 }
 
 #[allow(dead_code)] // Used by commit_control after authority wiring.

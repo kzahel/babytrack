@@ -1,5 +1,5 @@
-//! Development relay routes. Genesis and the first manager invitation are
-//! enabled; later control and batch kinds remain closed.
+//! Development relay routes for the first join and initial-cohort batches.
+//! Later membership, rotation, and general repair remain closed.
 
 use std::{
     path::Path,
@@ -61,6 +61,12 @@ fn router_with_clock(
         .route(
             "/v1/families/{family}/control",
             post(commit_control).get(read_control),
+        )
+        .route("/v1/families/{family}/batches", post(commit_batch))
+        .route("/v1/families/{family}/log", get(read_log))
+        .route(
+            "/v1/families/{family}/batch-results/{batch}",
+            get(read_batch_result),
         )
         .route(
             "/v1/families/{family}/promotions/{promotion}",
@@ -177,6 +183,90 @@ async fn commit_control(
         _ => return Err(StatusCode::NOT_IMPLEMENTED),
     }
     .map_err(|_| StatusCode::CONFLICT)?;
+    Ok(cbor_response(response))
+}
+
+async fn commit_batch(
+    State(store): State<Shared>,
+    RoutePath(family): RoutePath<String>,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<impl axum::response::IntoResponse, StatusCode> {
+    let family_id = canonical_id(&family)?;
+    exact_post(&uri, &format!("/v1/families/{family}/batches"), &headers)?;
+    let mut store = store
+        .store
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let response = store
+        .commit_initial_cohort_batch(family_id, &body)
+        .map_err(|_| StatusCode::CONFLICT)?;
+    Ok(cbor_response(response))
+}
+
+async fn read_log(
+    State(store): State<Shared>,
+    RoutePath(family): RoutePath<String>,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<impl axum::response::IntoResponse, StatusCode> {
+    let family_id = canonical_id(&family)?;
+    if headers
+        .get(CONTENT_TYPE)
+        .is_none_or(|v| v.as_bytes() != b"application/cbor")
+    {
+        return Err(StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    }
+    let query = uri.query().ok_or(StatusCode::BAD_REQUEST)?;
+    let digits = query
+        .strip_prefix("after=")
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    if digits.is_empty()
+        || (digits.len() > 1 && digits.starts_with('0'))
+        || !digits.bytes().all(|b| b.is_ascii_digit())
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let after: u64 = digits.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
+    let exact = uri
+        .path_and_query()
+        .ok_or(StatusCode::BAD_REQUEST)?
+        .as_str();
+    let mut store = store
+        .store
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let response = store
+        .log_page_authenticated(family_id, after, exact, &body)
+        .map_err(|_| StatusCode::FORBIDDEN)?;
+    Ok(cbor_response(response))
+}
+
+async fn read_batch_result(
+    State(store): State<Shared>,
+    RoutePath((family, batch)): RoutePath<(String, String)>,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<impl axum::response::IntoResponse, StatusCode> {
+    let family_id = canonical_id(&family)?;
+    let batch_id = canonical_id(&batch)?;
+    if uri.query().is_some()
+        || headers
+            .get(CONTENT_TYPE)
+            .is_none_or(|v| v.as_bytes() != b"application/cbor")
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let mut store = store
+        .store
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let response = store
+        .batch_result_authenticated(family_id, batch_id, uri.path(), &body)
+        .map_err(|_| StatusCode::FORBIDDEN)?;
     Ok(cbor_response(response))
 }
 

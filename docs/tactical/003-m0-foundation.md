@@ -139,6 +139,16 @@ agreement key remains unable to open the grant, and readiness survives a
 recipient restart. This uses the fixed fixture identities and calls the
 relay's authenticated store boundary; dynamic claim generation, HTTP
 delivery, data batches, polling, and later joins still need end-to-end tests.
+The initial manager and first admitted recipient can now commit signed epoch-one
+batches through the relay's HTTP route. The relay checks public signature,
+Family, relay, head, epoch, device sequence, and exact batch ID reuse without
+opening ciphertext, then atomically appends the envelope and signed receipt.
+Authenticated result and full-log reads expose those bytes. A mixed-client
+test stages a real recipient local outbox, confirms its exact retry through
+HTTP, rejects a tampered POST, and fetches the batch into a manager store;
+both client projections show the same record after independent verification.
+This is still the initial two-device cohort: general membership, rotation,
+stale-epoch rejection, delivery faults, and background polling remain open.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

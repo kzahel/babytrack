@@ -152,6 +152,114 @@ impl ControlPage {
     }
 }
 
+pub struct LogPage {
+    pub entries: Vec<LogEntry>,
+    pub next_after: u64,
+    pub has_more: bool,
+}
+pub struct LogEntry {
+    pub cursor: u64,
+    pub kind: u8,
+    pub committed_bytes: Vec<u8>,
+}
+impl LogPage {
+    pub fn decode(bytes: &[u8], family_id: [u8; 16], requested_after: u64) -> Result<Self, Error> {
+        let value = cbor::decode_with_limits(
+            bytes,
+            cbor::Limits {
+                max_bytes: 4 * 1024 * 1024,
+                max_depth: 16,
+            },
+        )?;
+        let fields = exact_map(&value, 6)?;
+        if fields[0].1 != Value::Integer(1)
+            || fields[1].1 != Value::Bytes(family_id.to_vec())
+            || fields[2].1 != Value::Integer(requested_after.into())
+        {
+            return Err(Error::Invalid("log page context mismatch"));
+        }
+        let Value::Array(items) = &fields[3].1 else {
+            return Err(Error::Invalid("log entries not array"));
+        };
+        if items.len() > 256 {
+            return Err(Error::Invalid("log page too many entries"));
+        }
+        let mut entries = Vec::with_capacity(items.len());
+        let mut last = requested_after;
+        for item in items {
+            let Value::Array(parts) = item else {
+                return Err(Error::Invalid("log entry not array"));
+            };
+            if parts.len() != 3 {
+                return Err(Error::Invalid("log entry length"));
+            }
+            let cursor = number(&parts[0])?;
+            if cursor
+                != last
+                    .checked_add(1)
+                    .ok_or(Error::Invalid("log cursor overflow"))?
+            {
+                return Err(Error::Invalid("log cursor gap"));
+            }
+            let kind: u8 = number(&parts[1])?
+                .try_into()
+                .map_err(|_| Error::Invalid("log kind range"))?;
+            if kind != 1 && kind != 2 {
+                return Err(Error::Invalid("log kind invalid"));
+            }
+            let Value::Bytes(committed) = &parts[2] else {
+                return Err(Error::Invalid("log bytes not bytes"));
+            };
+            cbor::decode(committed)?;
+            entries.push(LogEntry {
+                cursor,
+                kind,
+                committed_bytes: committed.clone(),
+            });
+            last = cursor;
+        }
+        if number(&fields[4].1)? != last {
+            return Err(Error::Invalid("log page next cursor mismatch"));
+        }
+        let Value::Bool(has_more) = fields[5].1 else {
+            return Err(Error::Invalid("log page has_more not bool"));
+        };
+        Ok(Self {
+            entries,
+            next_after: last,
+            has_more,
+        })
+    }
+}
+
+pub struct BatchResult {
+    pub receipt_bytes: Option<Vec<u8>>,
+}
+impl BatchResult {
+    pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
+        let value = cbor::decode_with_limits(
+            bytes,
+            cbor::Limits {
+                max_bytes: 4096,
+                max_depth: 8,
+            },
+        )?;
+        let fields = exact_map(&value, 2)?;
+        if fields[0].1 != Value::Integer(1) {
+            return Err(Error::Invalid("batch result version"));
+        }
+        let receipt_bytes = match &fields[1].1 {
+            Value::Null => None,
+            Value::Bytes(bytes) => {
+                cbor::decode(bytes)?;
+                Some(bytes.clone())
+            }
+            _ => return Err(Error::Invalid("batch result shape")),
+        };
+        Ok(Self { receipt_bytes })
+    }
+}
+
 pub struct OpaqueObject {
     pub kind: u16,
     pub object_id: [u8; 16],

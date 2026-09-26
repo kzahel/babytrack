@@ -157,10 +157,13 @@ dependencies = [
 name = "babytrack-cli"
 version = "0.0.0"
 dependencies = [
+ "axum",
  "babytrack-core",
  "babytrack-server",
  "serde_json",
  "tempfile",
+ "tokio",
+ "tower",
 ]
 
 [[package]]

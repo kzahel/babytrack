@@ -9,7 +9,7 @@ use babytrack_wire::{
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::{authority, read_auth, receipt};
+use crate::{authority, batch_authority, read_auth, receipt};
 
 #[derive(Debug)]
 #[allow(dead_code)] // Detailed errors are mapped to protocol responses by routes.
@@ -19,6 +19,7 @@ pub enum Error {
     Cbor(cbor::Error),
     Crypto(crypto::Error),
     Authority(authority::Error),
+    Batch(batch_authority::Error),
     ReadAuth(read_auth::Error),
     Receipt(receipt::Error),
     Invalid(&'static str),
@@ -41,6 +42,11 @@ impl From<crypto::Error> for Error {
 impl From<authority::Error> for Error {
     fn from(v: authority::Error) -> Self {
         Self::Authority(v)
+    }
+}
+impl From<batch_authority::Error> for Error {
+    fn from(v: batch_authority::Error) -> Self {
+        Self::Batch(v)
     }
 }
 impl From<read_auth::Error> for Error {
@@ -119,6 +125,15 @@ impl RelayStore {
                family_id BLOB NOT NULL, signer_id BLOB NOT NULL,
                request_id BLOB NOT NULL, request_hash BLOB NOT NULL,
                PRIMARY KEY (family_id, signer_id, request_id)
+             );
+             CREATE TABLE IF NOT EXISTS batch_results (
+               family_id BLOB NOT NULL, batch_id BLOB NOT NULL,
+               author_id BLOB NOT NULL, sequence INTEGER NOT NULL,
+               envelope_bytes BLOB NOT NULL, receipt_bytes BLOB NOT NULL,
+               cursor INTEGER NOT NULL,
+               PRIMARY KEY (family_id, batch_id),
+               UNIQUE (family_id, author_id, sequence),
+               UNIQUE (family_id, cursor)
              );",
         )?;
         let relay_public = crypto::signing_public_key(&relay_seed);
@@ -1013,6 +1028,152 @@ impl RelayStore {
         Ok(receipt::control_commit_response(&committed)?)
     }
 
+    /// Accept an epoch-one batch from the initial manager or first admitted
+    /// recipient. Later membership and rotation transitions are still closed.
+    pub fn commit_initial_cohort_batch(
+        &mut self,
+        path_family: [u8; 16],
+        envelope_bytes: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        let prefix = load_proved_prefix(&self.db, self.relay_public, path_family)?;
+        if prefix.join.cursor < 6 {
+            return Err(Error::Invalid("initial recipient not admitted"));
+        }
+        let admitted: Vec<u8> = self.db.query_row(
+            "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=6 AND kind=1",
+            params![&path_family[..]],
+            |r| r.get(0),
+        )?;
+        let admission = authority::verify_first_admission(
+            &control_candidate(&admitted)?,
+            &prefix.join.genesis,
+            &prefix.join.issue,
+            &prefix.join.claim,
+            &prefix.challenge,
+            &prefix.proof,
+            prefix.proof_head,
+        )?;
+        let author = batch_authority::claimed_author(envelope_bytes)?;
+        let signer = if author == prefix.join.genesis.manager_id {
+            prefix.join.genesis.manager_signing_key
+        } else if author == admission.recipient_id {
+            prefix.join.claim.signing_public
+        } else {
+            return Err(Error::Invalid("batch author not active"));
+        };
+        let batch = batch_authority::verify(
+            envelope_bytes,
+            path_family,
+            prefix.join.genesis.relay_id,
+            signer,
+        )?;
+        if batch.family_id != path_family
+            || batch.relay_id != prefix.join.genesis.relay_id
+            || batch.author_id != author
+            || batch.epoch != 1
+            || batch.control_head != prefix.join.head
+        {
+            return Err(Error::Invalid("batch authority or epoch mismatch"));
+        }
+        let tx = self.db.transaction()?;
+        let prior: Option<(Vec<u8>, Vec<u8>)> = tx.query_row(
+            "SELECT envelope_bytes,receipt_bytes FROM batch_results WHERE family_id=?1 AND batch_id=?2",
+            params![&path_family[..], &batch.batch_id[..]],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        ).optional()?;
+        if let Some((old_envelope, old_receipt)) = prior {
+            if old_envelope != envelope_bytes {
+                return Err(Error::Invalid("batch ID reused with different bytes"));
+            }
+            return Ok(receipt::batch_commit_response(&old_receipt)?);
+        }
+        let (cursor, head): (i64, Vec<u8>) = tx.query_row(
+            "SELECT cursor,head_hash FROM families WHERE family_id=?1 AND active=1",
+            params![&path_family[..]],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let head: [u8; 32] = head
+            .try_into()
+            .map_err(|_| Error::Invalid("Family head length"))?;
+        if cursor < 6 || head != batch.control_head {
+            return Err(Error::Invalid("batch stale head"));
+        }
+        let last: Option<i64> = tx.query_row(
+            "SELECT MAX(sequence) FROM batch_results WHERE family_id=?1 AND author_id=?2",
+            params![&path_family[..], &author[..]],
+            |r| r.get(0),
+        )?;
+        let next_sequence = u64::try_from(last.unwrap_or(0))
+            .map_err(|_| Error::Invalid("stored sequence negative"))?
+            .checked_add(1)
+            .ok_or(Error::Invalid("sequence overflow"))?;
+        if batch.sequence != next_sequence {
+            return Err(Error::Invalid("batch sequence mismatch"));
+        }
+        let next_cursor: u64 = u64::try_from(cursor)
+            .map_err(|_| Error::Invalid("cursor negative"))?
+            .checked_add(1)
+            .ok_or(Error::Invalid("cursor overflow"))?;
+        let receipt = receipt::accepted_batch(&batch, next_cursor, &self.relay_seed)?;
+        tx.execute(
+            "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,?2,2,?3)",
+            params![
+                &path_family[..],
+                i64::try_from(next_cursor).map_err(|_| Error::Invalid("cursor range"))?,
+                envelope_bytes
+            ],
+        )?;
+        tx.execute(
+            "INSERT INTO batch_results(family_id,batch_id,author_id,sequence,envelope_bytes,receipt_bytes,cursor) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+            params![&path_family[..], &batch.batch_id[..], &author[..],
+                i64::try_from(batch.sequence).map_err(|_| Error::Invalid("sequence range"))?,
+                envelope_bytes, &receipt, i64::try_from(next_cursor).map_err(|_| Error::Invalid("cursor range"))?],
+        )?;
+        tx.execute(
+            "UPDATE families SET cursor=?2 WHERE family_id=?1 AND cursor=?3",
+            params![
+                &path_family[..],
+                i64::try_from(next_cursor).map_err(|_| Error::Invalid("cursor range"))?,
+                cursor
+            ],
+        )?;
+        tx.commit()?;
+        Ok(receipt::batch_commit_response(&receipt)?)
+    }
+
+    pub fn batch_result_authenticated(
+        &mut self,
+        family_id: [u8; 16],
+        batch_id: [u8; 16],
+        exact_path: &str,
+        auth_bytes: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        let expected = format!(
+            "/v1/families/{}/batch-results/{}",
+            lower_hex(&family_id),
+            lower_hex(&batch_id)
+        );
+        if exact_path != expected {
+            return Err(Error::Invalid("batch result path not canonical"));
+        }
+        match self.verify_control_reader(family_id, exact_path, auth_bytes)? {
+            ControlReader::Manager | ControlReader::Active => {}
+            _ => return Err(Error::Invalid("reader cannot fetch batch results")),
+        }
+        let receipt: Option<Vec<u8>> = self
+            .db
+            .query_row(
+                "SELECT receipt_bytes FROM batch_results WHERE family_id=?1 AND batch_id=?2",
+                params![&family_id[..], &batch_id[..]],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(cbor::encode(&Value::Map(vec![
+            (1, Value::Integer(1)),
+            (2, receipt.map_or(Value::Null, Value::Bytes)),
+        ]))?)
+    }
+
     pub fn promotion_result_authenticated(
         &mut self,
         family_id: [u8; 16],
@@ -1102,6 +1263,49 @@ impl RelayStore {
         let has_more = entries.len() > 256;
         entries.truncate(256);
         Ok(receipt::encode_control_page(
+            family_id, after, &entries, has_more,
+        )?)
+    }
+
+    pub fn log_page_authenticated(
+        &mut self,
+        family_id: [u8; 16],
+        after: u64,
+        exact_path: &str,
+        auth_bytes: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        let expected = format!("/v1/families/{}/log?after={after}", lower_hex(&family_id));
+        if exact_path != expected {
+            return Err(Error::Invalid("log read path not canonical"));
+        }
+        match self.verify_control_reader(family_id, exact_path, auth_bytes)? {
+            ControlReader::Manager | ControlReader::Active => {}
+            _ => return Err(Error::Invalid("reader cannot fetch full log")),
+        }
+        let mut stmt = self.db.prepare(
+            "SELECT cursor,kind,committed_bytes FROM entries WHERE family_id=?1 AND cursor>?2 ORDER BY cursor LIMIT 257"
+        )?;
+        let mut rows = stmt.query(params![
+            &family_id[..],
+            i64::try_from(after).map_err(|_| Error::Invalid("cursor range"))?
+        ])?;
+        let mut entries = Vec::new();
+        while let Some(row) = rows.next()? {
+            let cursor: i64 = row.get(0)?;
+            let kind: i64 = row.get(1)?;
+            entries.push(receipt::RelayEntry {
+                cursor: cursor
+                    .try_into()
+                    .map_err(|_| Error::Invalid("cursor range"))?,
+                kind: kind
+                    .try_into()
+                    .map_err(|_| Error::Invalid("entry kind range"))?,
+                committed_bytes: row.get(2)?,
+            });
+        }
+        let has_more = entries.len() > 256;
+        entries.truncate(256);
+        Ok(receipt::encode_log_page(
             family_id, after, &entries, has_more,
         )?)
     }

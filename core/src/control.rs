@@ -247,7 +247,7 @@ fn verify_genesis_body(
     })
 }
 
-fn exact_map(value: &Value, count: usize) -> Result<&[(u64, Value)], Error> {
+pub(crate) fn exact_map(value: &Value, count: usize) -> Result<&[(u64, Value)], Error> {
     let Value::Map(entries) = value else {
         return Err(Error::Invalid("expected map"));
     };
@@ -262,7 +262,7 @@ fn exact_map(value: &Value, count: usize) -> Result<&[(u64, Value)], Error> {
     Ok(entries)
 }
 
-fn array(value: &Value, count: usize) -> Result<&[Value], Error> {
+pub(crate) fn array(value: &Value, count: usize) -> Result<&[Value], Error> {
     let Value::Array(items) = value else {
         return Err(Error::Invalid("expected array"));
     };
@@ -272,7 +272,7 @@ fn array(value: &Value, count: usize) -> Result<&[Value], Error> {
     Ok(items)
 }
 
-fn fixed<const N: usize>(value: &Value) -> Result<[u8; N], Error> {
+pub(crate) fn fixed<const N: usize>(value: &Value) -> Result<[u8; N], Error> {
     let Value::Bytes(bytes) = value else {
         return Err(Error::Invalid("expected bytes"));
     };
@@ -282,7 +282,7 @@ fn fixed<const N: usize>(value: &Value) -> Result<[u8; N], Error> {
         .map_err(|_| Error::Invalid("unexpected byte length"))
 }
 
-fn number(value: &Value) -> Result<u64, Error> {
+pub(crate) fn number(value: &Value) -> Result<u64, Error> {
     let Value::Integer(number) = value else {
         return Err(Error::Invalid("expected integer"));
     };
@@ -291,7 +291,7 @@ fn number(value: &Value) -> Result<u64, Error> {
         .map_err(|_| Error::Invalid("expected unsigned integer"))
 }
 
-fn signed_number(value: &Value) -> Result<i64, Error> {
+pub(crate) fn signed_number(value: &Value) -> Result<i64, Error> {
     let Value::Integer(number) = value else {
         return Err(Error::Invalid("expected integer"));
     };

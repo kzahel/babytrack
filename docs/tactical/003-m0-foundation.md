@@ -166,6 +166,12 @@ state hashes, promotion manifest binding, receipt context, and head hash.
 Only this verified genesis can issue an epoch-key token after checking its
 committed key commitment. Subsequent control transitions and persistence of
 the pinned head remain open.
+The public `ControlChain` now verifies the first `invite_issue` after
+genesis against the contiguous-chain vector: manager role/signature,
+relay-signed receipt, parent head, global cursor, state/core hashes, and
+canonical invitation row. Replaying the same transition or altering its
+declared state cannot advance. Claims, proof, grant, rotation, and object
+decryption remain open.
 `FamilySession` now consumes the fixed genesis and `BATCHBYTE01` acceptance
 through a core-owned path: it verifies the manager, head, epoch, sequence,
 object hash, cursor, and relay-signed receipt before projecting the first

@@ -1,0 +1,113 @@
+{
+  "format": "babytrack-vectors-v1",
+  "cases": [
+    {
+      "id": "FILE01",
+      "scenario": "FS27",
+      "input": {
+        "snapshot_utc_ms": 1000,
+        "source_family_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_cursor": 7,
+        "known_gap": false,
+        "children": 1,
+        "records": 2
+      },
+      "expect": {
+        "new_family_id": "different-from-source",
+        "new_device_keys": true,
+        "source_membership_restored": false,
+        "rows": 3
+      }
+    },
+    {
+      "id": "FILE02",
+      "scenario": "FS27",
+      "input": {
+        "protected": true,
+        "password": "correct",
+        "source_cursor": 7
+      },
+      "expect": {
+        "restore": "success",
+        "source_cursor_resumed": false
+      }
+    },
+    {
+      "id": "FILE03",
+      "scenario": "FS27",
+      "input": {
+        "protected": true,
+        "password": "wrong"
+      },
+      "expect": {
+        "restore": "reject-atomically",
+        "new_families": 0
+      }
+    },
+    {
+      "id": "FILE04",
+      "scenario": "FS44",
+      "input": {
+        "trailer_rows": 2,
+        "header_child_count": 1,
+        "header_record_count": 2
+      },
+      "expect": {
+        "restore": "reject-atomically",
+        "new_families": 0
+      }
+    },
+    {
+      "id": "FILE05",
+      "scenario": "FS53",
+      "input": {
+        "known_gap": true,
+        "locally_held_rows": 3,
+        "remote_missing_rows": 1
+      },
+      "expect": {
+        "restored_rows": 3,
+        "gap_disclosed": true,
+        "claim_full_original_history": false
+      }
+    },
+    {
+      "id": "FILE06",
+      "scenario": "FS58",
+      "input": {
+        "source_family_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "restore_target": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "expect": "reject-merge-into-existing-family"
+    },
+    {
+      "id": "FILE07",
+      "scenario": "FS61",
+      "input": {
+        "source_family_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "child_id": "11111111111111111111111111111111",
+        "unknown_field_refers_to_child": "11111111111111111111111111111111"
+      },
+      "expect": {
+        "new_family_id": "different-from-source",
+        "child_id": "11111111111111111111111111111111",
+        "opaque_field_bytes": "unchanged"
+      }
+    },
+    {
+      "id": "FILEBYTE08",
+      "scenario": "FS42",
+      "input": {
+        "readable_file_hex": "7b226368696c645f636f756e74223a312c226b696e64223a2262616279747261636b2d6261636b7570222c226b6e6f776e5f676170223a66616c73652c227265636f72645f636f756e74223a312c22736e617073686f745f7574635f6d73223a313739303432303030303030302c22736f757263655f637572736f72223a392c22736f757263655f66616d696c795f6964223a2231323365343536372d653839622d343264332d613435362d343236363134313734303030222c2273746174655f736861323536223a2236303632383735326633346565363062316536323033336639653637636265373135386432366533666338613538313333313234326338623437633464336538222c2276657273696f6e223a317d0a7b2264656c65746564223a66616c73652c226669656c6473223a7b2231223a225a454a68596e6b222c2232223a224141222c2233223a224177227d2c226b696e64223a226368696c64222c227265636f72645f74797065223a226368696c64222c22736f757263655f6964223a2230313833663964302d303030302d373030302d383030302d303030303030303030303231227d0a7b2264656c65746564223a66616c73652c226669656c6473223a7b2231223a227041454241676f44465151594867227d2c226b696e64223a227265636f7264222c227265636f72645f74797065223a2266616d696c79222c2273636f7065223a312c22736f757263655f6368696c645f6964223a6e756c6c2c22736f757263655f6964223a2231323365343536372d653839622d343264332d613435362d343236363134313734303030227d0a7b226b696e64223a22656e64222c22726f7773223a327d0a"
+      },
+      "expect": {
+        "state_sha256": "60628752f34ee60b1e62033f9e67cbe7158d26e3fc8a581331242c8b47c4d3e8",
+        "child_record_type": "child",
+        "family_record_type": "family",
+        "child_id_after_restore": "0183f9d0-0000-7000-8000-000000000021",
+        "new_family_id": "different-from-source",
+        "new_authority": true
+      }
+    }
+  ]
+}

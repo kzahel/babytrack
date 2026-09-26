@@ -1,0 +1,81 @@
+{
+  "format": "babytrack-join-byte-vectors-v1",
+  "note": "Test-only deterministic seeds and nonces. Each case is an exact cryptographic object example; the state-machine fixtures cover its commit position.",
+  "cases": [
+    {
+      "id": "CHALLENGEBYTE01",
+      "scenario": "FS59",
+      "inputs": {
+        "family_id_hex": "123e4567e89b42d3a456426614174000",
+        "relay_id_hex": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "prior_head_hex": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "invitation_id_hex": "623e4567e89b42d3a456426614174000",
+        "recipient_device_id_hex": "723e4567e89b42d3a456426614174000",
+        "claim_hash_hex": "abababababababababababababababababababababababababababababababab",
+        "challenge_id_hex": "823e4567e89b42d3a456426614174000",
+        "recipient_agreement_seed_hex": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+        "ephemeral_seed_hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+        "recipient_sign_seed_hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+        "holder_epoch_key_hex": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+        "secret_hex": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedf",
+        "verifier_nonce_hex": "202122232425262728292a2b2c2d2e2f3031323334353637"
+      },
+      "expect": {
+        "recipient_agreement_public_key_hex": "493e82fc74464a59268817623d2053c5eb8e2cc4a988b4fee179ec6b010d531d",
+        "context_cbor_hex": "8950123e4567e89b42d3a4564266141740005820eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee50623e4567e89b42d3a45642661417400050723e4567e89b42d3a4564266141740005820abababababababababababababababababababababababababababababababab50823e4567e89b42d3a4564266141740005820493e82fc74464a59268817623d2053c5eb8e2cc4a988b4fee179ec6b010d531d015820dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "hpke_info_hex": "73a312ccdb8753e583171ed986ccf1def23da56267b848e123978c0028d76630",
+        "hpke_enc_hex": "605a725d2a4adfeeb1a29e17edd621c1b7593ee8cdbc44ac6c4ab6e2f805d23c",
+        "hpke_ciphertext_hex": "1d20ea29da66607abf18261321f380e68370f47a53e31f63c3b12803e00c3fadb5ea4593a98d6a4c6028a68e83150d715c2dc4af",
+        "hpke_object_cbor_hex": "a701010250823e4567e89b42d3a4564266141740000350723e4567e89b42d3a45642661417400004010558ce8950123e4567e89b42d3a4564266141740005820eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee50623e4567e89b42d3a45642661417400050723e4567e89b42d3a4564266141740005820abababababababababababababababababababababababababababababababab50823e4567e89b42d3a4564266141740005820493e82fc74464a59268817623d2053c5eb8e2cc4a988b4fee179ec6b010d531d015820dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd065820605a725d2a4adfeeb1a29e17edd621c1b7593ee8cdbc44ac6c4ab6e2f805d23c0758341d20ea29da66607abf18261321f380e68370f47a53e31f63c3b12803e00c3fadb5ea4593a98d6a4c6028a68e83150d715c2dc4af",
+        "verifier_aad_hex": "fe5e206f88ba92f798416ca54a4963e71f94b075912e7cbfd8da9730172552f9",
+        "verifier_object_cbor_hex": "a501010250823e4567e89b42d3a45642661417400003582024ffe11cab3ebe6c8f18f692af28eac918f521c16be021c748df9ad6cf867f4d045818202122232425262728292a2b2c2d2e2f3031323334353637055834c885326c15e208fdedac2c89d3f3f670804e0b4ba57c98c3f4ec8c4067a382aa8805c082a57d789e828e90c8bcffe7ee59b0b6d0",
+        "challenge_hash_hex": "fbecb28e3cd9d46335129310ca6cef7eeb778ba07dc0562199b59a1a80fc7196",
+        "proof_signature_hex": "e705613decd135501b94645c4ce8dd84bad355519f6c2fe1043f5dd673cba228c34ba452495c266b12dbf8227835517c9368688c6ed09be86184879646792c0c",
+        "proof_hash_hex": "d3c956f4e63593051ad7e17a000e091d98b980c76c31e49e06e9421ea4ec01d6"
+      }
+    },
+    {
+      "id": "ADMISSIONBYTE01",
+      "scenario": "FS55",
+      "inputs": {
+        "core_hash_hex": "a4cbabd4d83bad78dfd4e4d1ac5000e9c7934678eae4833c75f7bc3c727169ff",
+        "recipient_agreement_seed_hex": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+        "ephemeral_seed_hex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "epoch_key_hex": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+        "key_commitment_hex": "2b25adaa437b0b137408b2ab016590ae450454d285be59863bab6e0677f12975",
+        "grant_id_hex": "923e4567e89b42d3a456426614174000"
+      },
+      "expect": {
+        "admission_context_hex": "885820a4cbabd4d83bad78dfd4e4d1ac5000e9c7934678eae4833c75f7bc3c727169ff50623e4567e89b42d3a45642661417400050723e4567e89b42d3a456426614174000015820493e82fc74464a59268817623d2053c5eb8e2cc4a988b4fee179ec6b010d531d010158202b25adaa437b0b137408b2ab016590ae450454d285be59863bab6e0677f12975",
+        "info_hex": "492806a6bcc0b2e02b5879bd40255c6f11a7919dba02fe9d9670958d9bb53548",
+        "plaintext_hex": "8301015820606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+        "enc_hex": "79a631eede1bf9c98f12032cdeadd0e7a079398fc786b88cc846ec89af85a51a",
+        "ciphertext_hex": "43b828a587c2814a17c61ea2e0a87fb390de5febdb208a7a8715f4406cf8159c87eacc11ed8c3f0b598d34bb67ac9d7a2da56d8702",
+        "grant_object_cbor_hex": "a901010250923e4567e89b42d3a45642661417400003010450723e4567e89b42d3a4564266141740000501068318200103075820a4cbabd4d83bad78dfd4e4d1ac5000e9c7934678eae4833c75f7bc3c727169ff08582079a631eede1bf9c98f12032cdeadd0e7a079398fc786b88cc846ec89af85a51a09583543b828a587c2814a17c61ea2e0a87fb390de5febdb208a7a8715f4406cf8159c87eacc11ed8c3f0b598d34bb67ac9d7a2da56d8702",
+        "grant_object_hash_hex": "2fbd44212632fd53ce8e55149e7218459eb5ea39c72f578fd015e6874882aa5e"
+      }
+    },
+    {
+      "id": "ROTATIONBYTE01",
+      "scenario": "FS07",
+      "inputs": {
+        "rotation_core_hash_hex": "d0fdceb665c0109efa18077aeb7ceccce1d777d62db5f20907016052c6c8e7d7",
+        "old_epoch_key_hex": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+        "new_epoch_key_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+        "recipient_agreement_seed_hex": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+        "ephemeral_seed_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+        "keyring_nonce_hex": "404142434445464748494a4b4c4d4e4f5051525354555657"
+      },
+      "expect": {
+        "new_key_commitment_hex": "0f170f0f2643698bf8d6f46d0bf37c37586a94b8243337aad86fbb30754074c0",
+        "rotation_context_hex": "895820d0fdceb665c0109efa18077aeb7ceccce1d777d62db5f20907016052c6c8e7d750123e4567e89b42d3a4564266141740005820eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee5820dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd50a23e4567e89b42d3a4564266141740005820cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc0258200f170f0f2643698bf8d6f46d0bf37c37586a94b8243337aad86fbb30754074c0a30150b23e4567e89b42d3a45642661417400002010358200f170f0f2643698bf8d6f46d0bf37c37586a94b8243337aad86fbb30754074c0",
+        "grant_info_hex": "013705bf22eeb3bb79370071d06f8ed5c03ad7029764c6544f43c0446825f638",
+        "grant_plaintext_hex": "8301025820202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+        "grant_object_cbor_hex": "a901010250c23e4567e89b42d3a45642661417400003020450723e4567e89b42d3a4564266141740000501068318200103075820d0fdceb665c0109efa18077aeb7ceccce1d777d62db5f20907016052c6c8e7d7085820358072d6365880d1aeea329adf9121383851ed21a28e3b75e965d0d2cd166254095835787c02167573e053ca0545bfcdb0026a5181272271339f851cadc4cf0147c7d314ec8147e84e69155c9c3216bdf59c7ae1f6a142b2",
+        "keyring_plaintext_hex": "82018182015820606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+        "keyring_aad_hex": "1adbb8620f518afcb56b8a3dbbfea80415d011ecadef00f1954265118b28763d",
+        "keyring_object_cbor_hex": "a30101025818404142434445464748494a4b4c4d4e4f5051525354555657035837b820ec2b273eddbf161c8c5c8105854d903fac8fbb796d3345f3b25bfb49be6af3513acf01ab839db7946d1e869f0ee4d494cc2d2a49f4"
+      }
+    }
+  ]
+}

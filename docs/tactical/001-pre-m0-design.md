@@ -57,7 +57,8 @@ closure; it does not maintain a second copy of those decisions.
   removal, make one private copy for pending work or a new targeted action.
   With no work, offer an explicit copy. A member may deliberately copy a
   stranded Family after sole-manager loss.
-- [ ] Resolve displaced edits (D6 in the Family sharing topic).
+- [x] Decide D6: show the deterministic field winner and retain the
+  displaced edit in inspectable history; restoring it creates a new edit.
 - [ ] State the exact security limit for removing a lost device, excluding
   all known devices of a departed person, or facing an actively malicious
   manager; define the remaining-manager replacement path and sole-manager
@@ -66,11 +67,12 @@ closure; it does not maintain a second copy of those decisions.
   backdated logging and competitor CSV import.
 - [x] Allow multiple Families in one app, with independent child histories
   and per-Family roles; use "Family" in the UI, not "sync group."
-- [ ] Specify the Family switcher and target Family/child behavior for logging,
-  timers, widgets, notifications, watches, import/export, and invitations.
+- [x] Specify explicit Family/child targets for new activity, pinned timer and
+  widget/watch actions, selected import/export/invitation Families, and no
+  fallback to another Family when a target is unavailable.
 - [x] Exclude freezer milk inventory from the MVP.
-- [ ] Reconcile first-class watch and widget promises with the proposal's
-  possible paid unlock.
+- [x] Keep planned watch/widget basics in MVP milestones; paid unlocks are
+  later extras and cannot gate Family data access.
 - [ ] Write concrete launch and dogfooding gates for two caregivers, offline
   logging, recovery, and export. Mark other surfaces as launch gates or
   explicitly later work.
@@ -116,17 +118,19 @@ closure; it does not maintain a second copy of those decisions.
 
 ### 3. Event and data contract
 
-- [ ] Give family settings, children, and child activity records consistent
-  envelopes and merge rules. Activity records must retain child scoping;
-  family and child metadata need not pretend to be child activity.
+- [x] Choose distinct family metadata, child metadata, and child activity
+  scopes in one operation log; tombstoning a child does not cascade-delete
+  its activity history. Exact envelopes remain protocol work.
 - [ ] State the exact meaning of last-writer-wins, including simultaneous
   edits to one field, clock skew, tombstones, and a way to inspect or restore
   an overwritten edit if the product promises no loss.
-- [ ] Decide whether breastfeeding segments need independent operations.
-- [ ] Specify stable importer identity across overlapping exports and the
-  round-trip contract for state versus full operation history.
-- [ ] Confirm time-zone and day-boundary behavior with travel examples and
-  decide whether family-level reporting needs a stable time zone.
+- [x] Keep breastfeeding segments as one field for the MVP; displaced edits
+  remain inspectable under D6.
+- [x] Choose stable source record IDs for overlapping imports where present;
+  use a content identity and preview warning otherwise. File backup promises
+  saved record state, not full source edit history.
+- [x] Use viewer-zone midnight day boundaries for reports, with no
+  configurable day start in the MVP. Exact travel/DST vectors remain open.
 
 ### 4. Validation and implementation handoff
 

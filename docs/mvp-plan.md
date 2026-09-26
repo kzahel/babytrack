@@ -18,7 +18,7 @@ One Rust core shared by every client, with native UI on each platform.
   by Mozilla application-services, Bitwarden, and libsignal. Chosen over Kotlin
   Multiplatform for mature crypto, clean wasm, and small binary cost.
 - **Model and storage.** Append-only operations, UUIDv7 activity IDs,
-  field-level HLC merge, tombstones, and rebuildable projections. Native
+  field-level merge by verified log position, HLC metadata, tombstones, and rebuildable projections. Native
   storage is SQLite; browser storage is IndexedDB. The core owns semantics
   on both. Measure replay before adding snapshots. Exact rules and open
   cases belong to [sync](topics/sync-and-encryption.md) and
@@ -31,6 +31,8 @@ One Rust core shared by every client, with native UI on each platform.
   promises, removal races, single-use invitations, portable backups, and
   remaining UX choices. Live Family/child/history merging is outside the
   MVP; a later CLI import may copy selected records through the shared core.
+  Basic widgets and watch access remain in their planned milestones without
+  a paid unlock; paid extras are later work and never gate Family authority.
 - **Crypto.** Per-epoch XChaCha20-Poly1305, per-Family device identities, HPKE
   grants, and device-specific authorization. The
   [sync topic](topics/sync-and-encryption.md) owns the constructions,
@@ -230,6 +232,19 @@ are symbolic until M0 gives them executable actions and assertions.
   phones and a few friends', installed directly as APKs or from Xcode. No
   store involvement. Pass criterion: log a feed or diaper in two taps or
   fewer from the lock screen, one-handed.
+- **M1 two-caregiver gate.** On two Android phones, create one Family,
+  invite a second device without simultaneous app use, load the same child
+  history, record and edit while each phone is offline, and converge after
+  reconnect. Exercise removal with pending work and show its private-copy
+  destination. Each phone can export a readable full file, restore it offline
+  into a fresh Family, and explain the saved point; a missing or corrupt
+  file never claims recovery. A failed background wake leaves a visible
+  pending stage and resumes on the next app run.
+- **Later-surface gates.** M2 repeats the Family, offline, and restore paths
+  in the real browser. M3 repeats them on iOS and validates delayed wake
+  when push is unavailable. M4 validates watch and widget Family/child
+  targeting, including a stale action after removal. These surfaces add no
+  new Family authority semantics or paid access gate.
 - **Store beta (M5).** F-Droid, Play internal testing, and TestFlight with 20
   to 50 families, recruited from people leaving Nara.
 

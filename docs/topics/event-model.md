@@ -1,7 +1,7 @@
 # Event model
 
-Status: proposed design, September 2026. M-1 must settle the record envelopes
-and remaining MVP questions before M0 code.
+Status: v1 record and portable-file contracts drafted, September 2026;
+adversarial review and byte vectors remain M-1 work.
 Owns what gets logged: entities, event types and fields, timers, units, time
 and day boundaries, multiple children, import mapping, and export. How
 events are stored, merged, and synced is owned by
@@ -17,8 +17,9 @@ retention of pending edits after removal and the open displaced-edit UX
   settings such as display units. One app can hold multiple Families.
 - **Child.** Name, birth date, and sex (WHO growth charts are sex-specific).
   A family has any number of children.
-- **Holder.** A caregiver device or backup, defined in the sync topic. Each
-  event records which device wrote it.
+- **Holder.** An enrolled Family-specific device credential, defined in the
+  sync topic. A portable file is data, not a key holder or access credential.
+  Each event records which device wrote it.
 - **Activity event.** A child-scoped item in the timeline. Child and family
   metadata also use the shared operation and sync machinery, but their
   envelope and scope are an M-1 decision.
@@ -38,8 +39,11 @@ Every child-scoped activity event has:
 - type-specific fields.
 
 Each field merges independently (last writer wins), so fields are kept small
-and independent. A field whose parts must change together, such as a list of
-feeding segments, is a single field.
+and independent. The operation log retains displaced edits; record history
+lets a caregiver inspect one and restore it by making a new edit. A field
+whose parts must change together, such as a list of feeding segments, is a
+single field in the MVP. Concurrent edits to that list therefore choose one
+complete list, with the other inspectable in history.
 
 ## Event types for the MVP
 
@@ -60,6 +64,7 @@ Growth percentiles are computed from WHO tables when shown, never stored.
 Wake-window hints are computed from sleep events on the device.
 Freezer milk inventory is outside the MVP; pumping records do not imply a
 stock ledger or `stash.add`/`stash.use` operations.
+Diaper colour and consistency are outside the MVP.
 
 ## Timers
 
@@ -87,13 +92,17 @@ the UI offers to merge them rather than guessing.
   only, so they are unaffected by time zones or daylight saving.
 - A caregiver may log or import an activity whose `start` is in the past.
   The activity time controls where it appears in timelines and reports; the
-  operation's HLC records when the change was made and controls merge order.
+  operation's HLC records the author's causal estimate; verified log order
+  controls shared merge order.
   Backfilling does not require rewriting old operations.
 - Lists and timelines show each event at the local time it was logged, with
   a marker when that offset differs from the viewing device's current one.
 - A day is a calendar day in the viewing device's current time zone. Events
   are listed on the day they start. Daily totals, such as sleep, split a
   duration that crosses midnight between the two days.
+- The MVP uses midnight as day start and has no configurable day boundary.
+  Family reports use the viewer's zone too, so caregivers in different zones
+  may see different daily totals for the same instants.
 - Travel and daylight saving cases are written into `tests/vectors/` as test vectors.
 
 ## Multiple children
@@ -117,12 +126,14 @@ plan applied to events.
 - **Export and file backup.** Readable CSV supports spreadsheets and analysis.
   A documented full structured export also serves as a restorable Family
   backup, with optional password protection. The working format is versioned
-  JSON Lines with base units; the earlier one-event-per-line sketch must also
-  accommodate children, required settings/metadata, and unknown fields.
-  M-1 settles the exact envelope, deletion semantics, and whether full edit
-  history is included. CSV is not a full-fidelity backup promise.
+  JSON Lines with base units. It includes family settings, children, current
+  activity state, tombstones, pending local state at the saved point, and
+  unknown fields. It does not promise the source operation/edit history;
+  displaced values remain inspectable in a live Family or private log copy,
+  not after state-only file restore. CSV is not a full-fidelity backup.
 - **File restore.** Restore the saved record state into a new independent
-  local-only Family with fresh identity and keys, offline and without the
+  local-only Family with fresh Family identity and keys while retaining
+  child/activity record IDs inside that new Family scope, offline and without the
   original group's permission. Include saved pending local work in the
   snapshot. Existing Families remain unchanged. Files contain data, not
   original-Family device credentials or authority to rejoin. The user can
@@ -130,10 +141,13 @@ plan applied to events.
   forms must restore equivalent saved data; the protected form also requires
   its protection credential. See product decision D3.
 - **Import** maps Nara, Huckleberry, and Nighp exports onto these types.
-  Imported event ids are UUIDv5 values derived from the source app and the
-  source row, so importing the same file twice creates no duplicates. The
-  mapping tables are written once real, anonymized sample exports are
-  collected.
+  When a source has stable record IDs, derive imported UUIDv5 IDs from the
+  source app, source account/export namespace, and that record ID. Repeated
+  or overlapping exports update the same destination record by field diff;
+  they do not create duplicates. If a source supplies no stable ID, derive
+  identity from normalized content and show a preview warning that edited
+  rows may import as new records; never use row number as identity. Exact
+  mappings await real anonymized samples.
 - **No automatic family merge in the MVP.** Competing live families, child
   identities, memberships, and operation histories are not merged. Members
   may keep both Families in one app and switch between them without merging.
@@ -152,7 +166,7 @@ plan applied to events.
 - Vectors for day boundaries across midnight, daylight saving changes, and
   travel between zones.
 - A backdated activity appears at its activity time while its operation
-  retains the current HLC for merge ordering.
+  retains its author HLC metadata and merges by verified log order.
 - Round-trip tests: every type through encode, merge, export, and import.
 - Full backup restores saved state into a fresh Family, in readable and
   protected forms, including metadata, unknown fields, and saved pending
@@ -160,42 +174,25 @@ plan applied to events.
   and interrupted restores leave existing Families intact.
 - Importer fixtures from real, anonymized exports.
 
-## M-1 candidate: record scopes
+## Record scopes
 
-Use one operation log over records with an explicit scope: family metadata,
-child metadata, or child activity. Only activity records require a child id
-and start time; child metadata has its own child id, and family metadata has
-neither. All scopes retain the same id, field-level merge, unknown-field,
-encryption, and sync rules. M-1 must confirm this envelope and define how
-deleting a child affects its activity history before encoding is frozen.
+One operation log covers explicit family metadata, child metadata, and child
+activity scopes. Only activity records require a child ID and start time;
+child metadata has its own child ID, and family metadata has neither. All
+scopes share operation identity, field merge, unknown-field preservation,
+encryption, and sync rules. Deleting a child tombstones its metadata and
+prevents new activity targeting it, but does not cascade-delete historical
+activity; restore is a new metadata operation. The UI can still export or
+inspect that child's locally held history.
 
 ## Open questions
 
-1. **Breastfeeding segments.** Segments are one field, so two caregivers
-   editing the same feed at once keep only one edit. Accept that, or make
-   each segment its own event linked by `group`.
-2. **Day start.** Some families think of the day as starting at a fixed
-   morning hour so night sleep is not split. Decide whether to offer a
-   configurable day start.
-3. **Diaper detail.** Whether to record colour and consistency in the MVP.
-   Keep it out while medical content stays out.
-4. **Metadata envelope.** Decide whether family settings and children are
-   distinct record types with their own fields, while sharing the operation
-   log and merge machinery. They cannot use the required child id and
-   activity start time above without inventing false values.
-5. **Import identity.** "Source app and source row" must mean a stable
-   source record identifier or content-derived identity, not a line number:
-   overlapping exports can reorder rows. Specify how repeated imports and
-   genuinely changed source records behave.
-6. **Full backup format.** D3 decides portable file restore into a new local
-   Family with optional protection. Specify JSON Lines envelopes and versions,
-   required metadata, unknown fields, units, deletion semantics, and whether
-   full edit history is included beyond the required saved record state.
-   Specify the protection wrapper and validation/failure behavior. CSV remains
-   an analysis export, not a substitute for the full backup contract.
-7. **Daily reports while travelling.** Current-viewer time zone makes two
-   caregivers in different zones see different daily totals. Decide whether
-   that is intended or whether family reports use a stable family zone.
+1. **Importer mapping.** Write source-specific field and unit maps after
+   collecting real anonymized samples. A source without stable record IDs
+   must keep the duplicate warning and preview.
+2. **Importer and file validation.** Validate the
+   [portable-file contract](../protocol/portable-file-v1.md) and its vectors
+   across platforms. CSV remains an analysis export.
 
 ## Reconsider if
 

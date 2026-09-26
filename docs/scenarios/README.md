@@ -12,14 +12,15 @@ Read the relevant cases and their owning decisions, not the whole catalog.
 
 | Concern | Case IDs | Decision owner |
 |---|---|---|
-| Offline start and first sharing | FS01-FS03, FS49 | [Family sharing](../topics/family-sharing-and-trust.md) U1-U4; [sync](../topics/sync-and-encryption.md#local-shared-and-detached-families) promotion candidate |
+| Offline start and first sharing | FS01-FS03, FS49 | [Family sharing](../topics/family-sharing-and-trust.md) U1-U4; [sharing protocol](../protocol/sharing-v1.md#promotion-isolation-and-trust-limits) |
 | Roles, device grants, and competing access changes | FS04-FS12, FS52 | Family sharing U3-U4, D1, D4-D5 |
-| Pending work and independent copies | FS13-FS18, FS34, FS48, FS53-FS54 | Family sharing U1, U5, D7; [sync](../topics/sync-and-encryption.md#m-1-candidate-authority-and-key-handoff) retry candidate |
-| Invitations, redemption, and automatic handoff | FS19-FS21, FS35-FS39, FS47, FS51 | Family sharing D2, D8; sync key-handoff candidate |
+| Pending work and independent copies | FS13-FS18, FS34, FS48, FS53-FS54, FS57 | Family sharing U1, U5, D7; [sharing protocol](../protocol/sharing-v1.md#verified-removal-and-private-copy) |
+| Invitations, redemption, and automatic handoff | FS19-FS21, FS35-FS39, FS47, FS51, FS55, FS59 | Family sharing D2, D8; [sharing protocol](../protocol/sharing-v1.md#invitation-proof-and-admission) |
 | Family/child targeting | FS22-FS25, FS54 | Family sharing U6, D7 |
-| Recovery and file restore | FS26-FS30, FS40-FS45 | Family sharing U7, D3-D5; [event export](../topics/event-model.md#import-and-export) |
-| Malicious relay limits | FS31-FS32, FS46 | Family sharing trust limits; [sync threat model](../topics/sync-and-encryption.md#threat-model) and grant candidate |
-| Batch authorship | FS50 | [Sync](../topics/sync-and-encryption.md#m-1-candidate-authority-and-key-handoff) candidate; not yet a settled guarantee |
+| Recovery and file restore | FS26-FS30, FS40-FS45, FS61 | Family sharing U7, D3-D5; [portable file](../protocol/portable-file-v1.md) |
+| Malicious relay limits | FS31-FS32, FS46, FS56 | Family sharing trust limits; [sync threat model](../topics/sync-and-encryption.md#threat-model) |
+| Batch authorship and hostile data | FS50, FS60 | [Sharing protocol](../protocol/sharing-v1.md#signed-encrypted-batches-and-receipts); [records](../protocol/records-v1.md#merge-and-clock-rules) |
+| Credential and Family isolation | FS52, FS58 | [Sharing protocol](../protocol/sharing-v1.md#promotion-isolation-and-trust-limits) |
 | Displaced edits | FS33 | Family sharing D6; [event model](../topics/event-model.md) |
 
 For example, read one case from the repository root:
@@ -37,9 +38,9 @@ maintain one implementation, not two subtly different behavioral definitions.
 ## Placement and handoff
 
 The old `spec/` contained these symbolic descriptions. Concrete versioned
-wire/API/file contracts will be written under `docs/protocol/`, with exact
-cross-language input/output fixtures under `tests/vectors/`. Those future
-directories are created when real contents exist, not as placeholders.
+wire/API/file contracts live under [docs/protocol/](../protocol/README.md),
+with exact cross-language input/output fixtures under
+[tests/vectors/](../../tests/vectors/README.md).
 See the [repository layout](../topics/repository-layout.md).
 
 M0 gives agreed cases concrete action bindings and asserts every expected

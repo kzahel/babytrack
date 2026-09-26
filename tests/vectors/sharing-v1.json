@@ -1,0 +1,465 @@
+{
+  "format": "babytrack-vectors-v1",
+  "cases": [
+    {
+      "id": "JOIN01",
+      "scenario": "FS55",
+      "initial": {
+        "invitation": "unused",
+        "pending": [],
+        "active": [
+          "manager"
+        ],
+        "epoch": 1
+      },
+      "actions": [
+        "claim recipient R",
+        "holder publishes challenge; R proves HPKE secret with signing key",
+        "prove R signing and agreement keys"
+      ],
+      "expect": {
+        "invitation": "claimed",
+        "pending": [
+          "R"
+        ],
+        "active": [
+          "manager"
+        ],
+        "epoch": 1,
+        "grants_to_R": 0,
+        "R_can_read": false
+      }
+    },
+    {
+      "id": "JOIN02",
+      "scenario": "FS55",
+      "initial": {
+        "invitation": "claimed",
+        "pending": [
+          "R proved"
+        ],
+        "active": [
+          "manager"
+        ],
+        "epoch": 1
+      },
+      "actions": [
+        "commit admit_grant signed by manager with complete grant"
+      ],
+      "expect": {
+        "pending": [],
+        "active": [
+          "manager",
+          "R"
+        ],
+        "grants_to_R": 1,
+        "R_authorized": true,
+        "ready_after_verified_download": true
+      }
+    },
+    {
+      "id": "JOIN03",
+      "scenario": "FS55",
+      "initial": {
+        "pending": [
+          "R proved"
+        ],
+        "epoch": 1
+      },
+      "actions": [
+        "manager removes R",
+        "retry stale admit_grant"
+      ],
+      "expect": {
+        "pending": [],
+        "epoch": 1,
+        "grant_commit": "reject",
+        "R_can_read": false
+      }
+    },
+    {
+      "id": "JOIN04",
+      "scenario": "FS20",
+      "initial": {
+        "invitation": "unused",
+        "issue_commit_ms": 1000
+      },
+      "actions": [
+        "claim at relay time 604800999"
+      ],
+      "expect": "accept-claim"
+    },
+    {
+      "id": "JOIN05",
+      "scenario": "FS20",
+      "initial": {
+        "invitation": "unused",
+        "issue_commit_ms": 1000
+      },
+      "actions": [
+        "claim at relay time 604801000"
+      ],
+      "expect": "reject-expired"
+    },
+    {
+      "id": "JOIN06",
+      "scenario": "FS56",
+      "initial": {
+        "head": "H",
+        "invitation": "unused"
+      },
+      "actions": [
+        "relay commits claim R on hidden branch one",
+        "relay commits claim S on hidden branch two",
+        "client observes both"
+      ],
+      "expect": {
+        "both_branches_individually_valid": true,
+        "client_state": "quarantine",
+        "global_single_use_guarantee": false
+      }
+    },
+    {
+      "id": "REMOVE01",
+      "scenario": "FS07",
+      "initial": {
+        "managers": [
+          "A",
+          "B"
+        ],
+        "epoch": 1
+      },
+      "actions": [
+        "A removes B commits first",
+        "B removes A attempts second"
+      ],
+      "expect": {
+        "managers": [
+          "A"
+        ],
+        "epoch": 2,
+        "second": "reject-revoked"
+      }
+    },
+    {
+      "id": "REMOVE02",
+      "scenario": "FS07",
+      "initial": {
+        "managers": [
+          "A",
+          "B"
+        ],
+        "epoch": 1
+      },
+      "actions": [
+        "B removes A commits first",
+        "A removes B attempts second"
+      ],
+      "expect": {
+        "managers": [
+          "B"
+        ],
+        "epoch": 2,
+        "second": "reject-revoked"
+      }
+    },
+    {
+      "id": "REMOVE03",
+      "scenario": "FS57",
+      "initial": {
+        "A_removed_locally": false,
+        "A_outbox": [
+          "op1"
+        ]
+      },
+      "actions": [
+        "unsigned access denied"
+      ],
+      "expect": {
+        "A_removed_locally": false,
+        "A_outbox": [
+          "op1"
+        ],
+        "private_copies": 0
+      }
+    },
+    {
+      "id": "REMOVE04",
+      "scenario": "FS54",
+      "initial": {
+        "A_outbox": [
+          "op1"
+        ]
+      },
+      "actions": [
+        "verified signed removal chain targeting A",
+        "copy transaction crashes",
+        "retry proof"
+      ],
+      "expect": {
+        "private_copies": 1,
+        "copied_operations": [
+          "op1"
+        ],
+        "source_outbox": "archival"
+      }
+    },
+    {
+      "id": "BATCH01",
+      "scenario": "FS50",
+      "initial": {
+        "author": "A",
+        "epoch": 1,
+        "next_sequence": 1
+      },
+      "actions": [
+        "accept signed batch X sequence 1",
+        "retry identical X"
+      ],
+      "expect": {
+        "next_sequence": 2,
+        "committed_entries": 1,
+        "same_receipt": true
+      }
+    },
+    {
+      "id": "BATCH02",
+      "scenario": "FS50",
+      "initial": {
+        "author": "A",
+        "epoch": 1,
+        "next_sequence": 1
+      },
+      "actions": [
+        "reject invalid batch X sequence 1",
+        "accept corrected batch Y sequence 1"
+      ],
+      "expect": {
+        "next_sequence": 2,
+        "committed_entries": 1
+      }
+    },
+    {
+      "id": "BATCH03",
+      "scenario": "FS50",
+      "initial": {
+        "author": "A",
+        "epoch": 1,
+        "next_sequence": 1
+      },
+      "actions": [
+        "relay submits unsigned batch claiming A"
+      ],
+      "expect": "reject-without-sequence-consumption"
+    },
+    {
+      "id": "BATCH04",
+      "scenario": "FS54",
+      "initial": {
+        "epoch": 1,
+        "outbox": [
+          "op1"
+        ],
+        "next_sequence": 1
+      },
+      "actions": [
+        "old-epoch upload times out",
+        "verify rotation to epoch 2",
+        "query old batch result: rejected",
+        "rebatch same op1 ID with fresh nonce and batch ID"
+      ],
+      "expect": {
+        "epoch": 2,
+        "outbox": [
+          "op1 until verified acceptance"
+        ],
+        "next_sequence": 1
+      }
+    },
+    {
+      "id": "FAMILY01",
+      "scenario": "FS58",
+      "initial": {
+        "family_A": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "family_B": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "actions": [
+        "submit A signature with B family ID",
+        "lookup B grant through A handle"
+      ],
+      "expect": [
+        "reject-batch",
+        "reject-grant-lookup"
+      ]
+    },
+    {
+      "id": "JOIN07",
+      "scenario": "FS59",
+      "initial": {
+        "pending": "R",
+        "holder_challenge": "C",
+        "attacker_has": "R signing key only"
+      },
+      "actions": [
+        "malicious relay gives attacker guessed challenge secret",
+        "attacker signs proof"
+      ],
+      "expect": "holder rejects proof; R remains keyless"
+    },
+    {
+      "id": "JOIN08",
+      "scenario": "FS47",
+      "initial": {
+        "pending": "R",
+        "holders_online": false
+      },
+      "actions": [
+        "R claims while holders offline",
+        "holder later commits challenge",
+        "R later commits proof",
+        "holder later commits admit_grant"
+      ],
+      "expect": {
+        "simultaneous_online_required": false,
+        "manual_second_approval": false,
+        "ready_after_history_load": true
+      }
+    },
+    {
+      "id": "BATCH05",
+      "scenario": "FS60",
+      "initial": {
+        "next_sequence": 1
+      },
+      "actions": [
+        "accept signed batch with malformed duplicate create",
+        "accept later valid batch"
+      ],
+      "expect": {
+        "first_entry": "inert with visible integrity issue",
+        "cursor_advanced": true,
+        "later_entry_applied": true
+      }
+    },
+    {
+      "id": "JOIN09",
+      "scenario": "FS59",
+      "initial": {
+        "pending": "R",
+        "latest_challenge": "C1",
+        "epoch": 1
+      },
+      "actions": [
+        "unrelated invitation commits after C1",
+        "R proves C1"
+      ],
+      "expect": "accept proof if C1 remains latest and current epoch is 1"
+    },
+    {
+      "id": "JOIN10",
+      "scenario": "FS59",
+      "initial": {
+        "pending": "R",
+        "latest_challenge": "C1",
+        "epoch": 1
+      },
+      "actions": [
+        "holder commits C2 for R",
+        "R proves C1"
+      ],
+      "expect": "reject stale C1 proof; pending remains keyless"
+    },
+    {
+      "id": "JOIN11",
+      "scenario": "FS59",
+      "initial": {
+        "pending": "R with proved C1",
+        "epoch": 1
+      },
+      "actions": [
+        "manager rotates to epoch 2 by removing another device",
+        "try admission using C1"
+      ],
+      "expect": "pending challenge and proof cleared; admission rejected until fresh epoch-2 challenge/proof"
+    },
+    {
+      "id": "JOIN12",
+      "scenario": "FS59",
+      "initial": {
+        "pending": "R",
+        "epoch": 1
+      },
+      "actions": [
+        "relay fabricates proof using R signing key but not agreement key",
+        "holder checks encrypted verifier before signing admission"
+      ],
+      "expect": "holder refuses admission"
+    },
+    {
+      "id": "JOIN13",
+      "scenario": "FS55",
+      "initial": {
+        "recipient": "R admitted but grant unusable",
+        "manager": "active",
+        "epoch": 1
+      },
+      "actions": [
+        "same manager commits grant_repair for R",
+        "R opens grant"
+      ],
+      "expect": {
+        "R_role": "unchanged",
+        "epoch": 1,
+        "R_ready_after_history": true
+      }
+    },
+    {
+      "id": "INVROLE01",
+      "scenario": "FS20",
+      "initial": {
+        "active_managers": [
+          "M",
+          "N"
+        ],
+        "invitation": {
+          "id": "I",
+          "issuer": "M",
+          "status": 1
+        }
+      },
+      "actions": [
+        "N demotes M to member",
+        "N promotes M to manager",
+        "claim I"
+      ],
+      "expect": {
+        "status_after_demote": 3,
+        "status_after_promote": 3,
+        "claim": "reject-terminal"
+      }
+    },
+    {
+      "id": "INVROLE02",
+      "scenario": "FS20",
+      "initial": {
+        "active_managers": [
+          "M",
+          "N"
+        ],
+        "invitation": {
+          "id": "I",
+          "issuer": "M",
+          "status": 1
+        }
+      },
+      "actions": [
+        "N removes M and rotates",
+        "claim I"
+      ],
+      "expect": {
+        "status_after_removal": 3,
+        "claim": "reject-terminal"
+      }
+    }
+  ]
+}

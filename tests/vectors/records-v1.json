@@ -1,0 +1,238 @@
+{
+  "format": "babytrack-vectors-v1",
+  "cases": [
+    {
+      "id": "CB01",
+      "input_hex": "a201010240",
+      "expect": "accept",
+      "decoded": {
+        "1": 1,
+        "2": "bytes:"
+      }
+    },
+    {
+      "id": "CB02",
+      "input_hex": "a202400101",
+      "expect": "reject",
+      "reason": "unsorted-map-keys"
+    },
+    {
+      "id": "CB03",
+      "input_hex": "a201010102",
+      "expect": "reject",
+      "reason": "duplicate-map-key"
+    },
+    {
+      "id": "CB04",
+      "input_hex": "a2011801",
+      "expect": "reject",
+      "reason": "nonshortest-integer"
+    },
+    {
+      "id": "CB05",
+      "input_hex": "bf0101ff",
+      "expect": "reject",
+      "reason": "indefinite-map"
+    },
+    {
+      "id": "CB06",
+      "input_hex": "a101f93c00",
+      "expect": "reject",
+      "reason": "float"
+    },
+    {
+      "id": "HASH01",
+      "label": "auth-state",
+      "input_hex": "a10101",
+      "expect_sha256_hex": "5a42ce50ca31859d1b44019e4b96e2ceee68e514126a60d6421725267d42eede"
+    },
+    {
+      "id": "HASH02",
+      "label": "batch-ciphertext",
+      "input_hex": "00ff",
+      "expect_sha256_hex": "ed0d249c9e609f818f606a457ba7499a263cf9951036cc94db92fda70864275e"
+    },
+    {
+      "id": "MERGE01",
+      "scenario": "FS33",
+      "input": {
+        "field": "note",
+        "edits": [
+          {
+            "op": "00000000000000000000000000000001",
+            "hlc": [
+              1000,
+              0,
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            ],
+            "value": "first",
+            "cursor": 7,
+            "index": 0
+          },
+          {
+            "op": "00000000000000000000000000000002",
+            "hlc": [
+              1000,
+              0,
+              "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            ],
+            "value": "second",
+            "cursor": 9,
+            "index": 0
+          }
+        ]
+      },
+      "expect": {
+        "visible": "second",
+        "history": [
+          "first",
+          "second"
+        ],
+        "restore": "new-set-operation"
+      }
+    },
+    {
+      "id": "MERGE02",
+      "scenario": "FS33",
+      "input": {
+        "tombstone_cursor": 7,
+        "later_note_cursor": 8
+      },
+      "expect": {
+        "visible": false,
+        "tombstone": true,
+        "note_retained": true
+      }
+    },
+    {
+      "id": "UNIT01",
+      "input": {
+        "decimal": "4",
+        "unit_code": 2
+      },
+      "expect": {
+        "base_ml": 118,
+        "display": "4 US fl oz"
+      }
+    },
+    {
+      "id": "UNIT02",
+      "input": {
+        "decimal": "98.6",
+        "unit_code": 31
+      },
+      "expect": {
+        "base_celsius_hundredths": 3700
+      }
+    },
+    {
+      "id": "UNIT03",
+      "input": {
+        "decimal": "1",
+        "unit_code": 999,
+        "field": "growth.weight"
+      },
+      "expect": "preserve-opaque-and-block-field-edit"
+    },
+    {
+      "id": "SCOPE01",
+      "scenario": "FS58",
+      "input": {
+        "handle_family": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "operation_family": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "expect": "reject-before-projection"
+    },
+    {
+      "id": "RECORD01",
+      "input": {
+        "record_id": "11111111111111111111111111111111",
+        "operations": [
+          {
+            "kind": "create",
+            "op_id": "22222222222222222222222222222222"
+          },
+          {
+            "kind": "create",
+            "op_id": "33333333333333333333333333333333"
+          }
+        ]
+      },
+      "expect": "quarantine-second-create"
+    },
+    {
+      "id": "MERGE03",
+      "scenario": "FS60",
+      "input": {
+        "edits": [
+          {
+            "cursor": 7,
+            "hlc": [
+              9223372036854775807,
+              1000000,
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            ],
+            "value": "hostile"
+          },
+          {
+            "cursor": 8,
+            "hlc": [
+              1000,
+              0,
+              "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            ],
+            "value": "later"
+          }
+        ]
+      },
+      "expect": {
+        "visible": "later",
+        "local_edit_blocked": false
+      }
+    },
+    {
+      "id": "TIME01",
+      "input": {
+        "start_utc_ms": 1790458200000,
+        "end_utc_ms": 1790461800000,
+        "viewer_zone": "Europe/Berlin"
+      },
+      "expect": {
+        "duration_ms": 3600000,
+        "daily_ms": {
+          "2026-09-26": 1800000,
+          "2026-09-27": 1800000
+        }
+      }
+    },
+    {
+      "id": "TIME02",
+      "input": {
+        "start_utc_ms": 1774740600000,
+        "end_utc_ms": 1774823400000,
+        "viewer_zone": "Europe/Berlin"
+      },
+      "expect": {
+        "duration_ms": 82800000,
+        "daily_ms": {
+          "2026-03-29": 81000000,
+          "2026-03-30": 1800000
+        }
+      }
+    },
+    {
+      "id": "TIME03",
+      "input": {
+        "start_utc_ms": 1790461800000,
+        "viewer_zones": [
+          "Europe/Berlin",
+          "America/Los_Angeles"
+        ]
+      },
+      "expect": {
+        "Europe/Berlin": "2026-09-27",
+        "America/Los_Angeles": "2026-09-26"
+      }
+    }
+  ]
+}

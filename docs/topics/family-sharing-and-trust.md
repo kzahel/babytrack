@@ -91,6 +91,19 @@ No login is required for local logging, sharing, or Family access. A future
 account for licensing or paid services is separate from Family membership:
 it cannot authorize a device, restore a role, or decrypt Family data.
 
+## Family and child targeting
+
+The phone shows an explicit active Family and child for new activity actions.
+If either is required but missing, it asks for a target before saving. Starting
+a timer captures both IDs; switching views later does not move that timer.
+A configured widget captures its Family and child, and a watch action carries
+the selected Family and child to the phone. Imports choose a destination
+Family and child mapping before writing. Export, backup, and invitation
+creation name the Family being acted on. An inaccessible or deleted target
+never falls back to the currently visible Family or child. D7 governs work
+already aimed at a Family whose shared access was later removed. Exact
+control layout and labels may change without changing these target rules.
+
 ## D1: Two managers try to remove each other
 
 Decision: **agreed**. The first valid removal committed by the relay takes
@@ -137,7 +150,8 @@ enrollment into that Family with its specified role. The recipient can join
 without a second manual approval by the manager. There are no reusable,
 perpetual membership links. Another enrollment requires a fresh invitation.
 
-Single use means one successful enrollment, not one page view or HTTP
+On an honest relay's one ordered Family history, single use means one
+committed pending enrollment, not one page view or HTTP
 request. Opening a preview, scanning the QR code, or a failed connection
 must not consume it. Concurrent redemption attempts cannot enroll two
 devices. Once used, the invitation cannot authorize another enrollment.
@@ -150,10 +164,19 @@ recipient who obtains it and redeems it first may join and see history.
 Single use does not identify the intended person, and removal cannot retract
 data already received. The invitation screen explains that it grants access
 to existing history. This is the accepted tradeoff for direct join.
+An actively malicious relay can fork the control history and consume the same
+invitation differently on two hidden branches. Single use and first-committed
+membership outcomes are honest-relay guarantees, not global agreement
+against relay equivocation. Clients pin their observed control heads and
+reject a detected sibling or rollback, but a hidden fork may remain unseen.
 
-Invitations expire seven days after their committed creation if still unused.
+On an honest relay, invitations expire seven days after their committed
+creation if still unused. A malicious relay controls its own signed clock
+and may extend this real-time limit by future-dating the issue receipt; the
+MVP has no independent time witness.
 Any active manager can cancel an unused invitation. Unused invitations also
-become invalid when their issuer loses manager authority. The protocol must
+become permanently invalid when their issuer loses manager authority;
+promoting that device again does not revive its old links. The protocol must
 enforce consumption and authenticated resumption. It must not embed a raw
 reusable Family key that bypasses that boundary. The accepted onboarding
 direction is asynchronous:
@@ -219,17 +242,18 @@ discussion, not decisions hidden in fixtures.
 |---|---|---|---|
 | D4 | Can I recover access to the original shared Family? | **Decided:** no self-service original-Family recovery from a phrase, platform backup, file, or paid account. A still-active manager can invite a replacement device. Otherwise use an existing local copy or saved full file to create a new Family; unsaved records may be lost. | Agreed for M-1 |
 | D5 | Am I removing a person or one device? | **Decided:** grants and removal are per Family-specific device. Show enrolled devices and revoke each one explicitly; labels do not establish person identity or person-wide removal. | Agreed for M-1 |
-| D6 | What happens to an edit displaced by another edit? | Make the displaced value inspectable and explicitly restorable; retain operations regardless. | M-1, before edit/conflict contract |
+| D6 | What happens to an edit displaced by another edit? | **Decided:** the deterministic field winner is shown normally, while the losing edit remains inspectable in record history. Restoring it creates a new edit; neither value is silently deleted. | Agreed for M-1; exact merge rule in sync |
 | D7 | Where does local work go when shared access changes? | **Decided:** while access is uncertain, retain work for its original Family; on verified removal, create or reuse one private copy for pending work or a newly attempted action and tell the user where it was saved. With no work, offer an explicit copy. Never retarget work to another open Family. | Agreed for M-1; UI in M1/M4 |
-| D8 | When does an unused invitation stop working? | **Decided:** seven days after committed creation, explicit cancellation by any active manager, or loss of the issuer's manager role, whichever occurs first. An already committed enrollment remains pending through later expiry or issuer removal; managers may remove that pending device explicitly. | Agreed for M-1 |
+| D8 | When does an unused invitation stop working? | **Decided:** on an honest relay, seven days after committed creation, explicit cancellation by any active manager, or permanent invalidation when the issuer loses manager authority, whichever occurs first. An already committed enrollment remains pending through later expiry or issuer removal; managers may remove that pending device explicitly. | Agreed for M-1 |
 
-D8 governs initial redemption, not the time needed for asynchronous key
+D8 governs initial pending enrollment, not the time needed for asynchronous key
 handoff. A preview never consumes the invitation. The relay's committed
 ordering decides a race: redemption committed before expiry, cancellation,
 or issuer-role loss is the one authorized enrollment; a later attempt is
 rejected. A committed pending enrollment does not disappear merely because
 seven days pass or its inviter is removed. A manager can separately remove
-the pending device before activation. The exact timestamp representation,
+the pending device before key admission. Once admission and grant commit,
+later removal uses normal rotation and cannot retract old history. The exact timestamp representation,
 clock source, and atomic checks belong in the protocol contract.
 
 D7 distinguishes uncertainty from confirmed loss of access. A network outage,

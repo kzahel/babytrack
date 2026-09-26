@@ -105,6 +105,12 @@ rejects the claim at expiry. An unused invitation key may read the public
 control chain and its issue object, then loses that read access after
 claim. The pending device's own signing key can read the public control
 chain but cannot fetch data objects before a grant.
+The relay now also validates, against contiguous signed vectors, the next
+public holder challenge and pending key proof. It checks the target and
+challenge context, two ordered challenge-object manifests, resulting
+pending state hashes, manager or pending signature, and proof hash. These
+validators are not yet connected to durable staging or HTTP routes; the
+pending device still cannot receive the challenge through this relay.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

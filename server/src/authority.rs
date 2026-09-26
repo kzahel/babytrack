@@ -292,6 +292,9 @@ pub(crate) struct ClaimCandidate {
     pub device_id: [u8; 16],
     pub signing_public: [u8; 32],
     pub agreement_public: [u8; 32],
+    pub key_version: u64,
+    pub claim_hash: [u8; 32],
+    pub role: u64,
 }
 
 #[allow(dead_code)] // Used by the pending-claim relay transaction.
@@ -430,6 +433,312 @@ pub(crate) fn verify_first_claim(
         device_id,
         signing_public,
         agreement_public,
+        key_version,
+        claim_hash,
+        role: issue.role,
+    })
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct TransitionHeader {
+    pub transition_id: [u8; 16],
+    pub manifest: Vec<ManifestEntry>,
+}
+
+struct FollowingPlan<'a> {
+    parent: [u8; 32],
+    kind: u64,
+    epoch: u64,
+    resulting: &'a Value,
+    expected_signers: &'a [([u8; 16], [u8; 32])],
+    manifest_kinds: &'a [u16],
+}
+
+#[allow(dead_code)] // Shared by challenge, proof, and admission validators.
+fn verify_following(
+    candidate_bytes: &[u8],
+    genesis: &GenesisCandidate,
+    plan: FollowingPlan<'_>,
+) -> Result<TransitionHeader, Error> {
+    let value = cbor::decode_with_limits(
+        candidate_bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?;
+    let root = exact_map(&value, 2)?;
+    let unsigned = exact_map(&root[0].1, 11)?;
+    if number(&unsigned[0].1)? != 1
+        || fixed::<16>(&unsigned[1].1)? != genesis.family_id
+        || fixed::<32>(&unsigned[2].1)? != genesis.relay_id
+        || fixed::<32>(&unsigned[3].1)? != plan.parent
+        || number(&unsigned[5].1)? != plan.kind
+        || number(&unsigned[8].1)? != plan.epoch
+    {
+        return Err(Error::Invalid("transition context mismatch"));
+    }
+    let transition_id = fixed::<16>(&unsigned[4].1)?;
+    if fixed::<32>(&unsigned[7].1)? != crypto::hash("auth-state", &cbor::encode(plan.resulting)?)? {
+        return Err(Error::Invalid("resulting state hash mismatch"));
+    }
+    let core = Value::Array(
+        unsigned[..9]
+            .iter()
+            .map(|(_, value)| value.clone())
+            .collect(),
+    );
+    if fixed::<32>(&unsigned[10].1)? != crypto::hash("transition-core", &cbor::encode(&core)?)? {
+        return Err(Error::Invalid("transition core hash mismatch"));
+    }
+    let manifest = array(&unsigned[9].1, plan.manifest_kinds.len())?;
+    let mut parsed = Vec::with_capacity(manifest.len());
+    let mut prior = None;
+    for (item, expected_kind) in manifest.iter().zip(plan.manifest_kinds) {
+        let fields = array(item, 4)?;
+        let kind: u16 = number(&fields[0])?
+            .try_into()
+            .map_err(|_| Error::Invalid("manifest kind range"))?;
+        let object_id = fixed::<16>(&fields[1])?;
+        let object_hash = fixed::<32>(&fields[2])?;
+        let object_len: u32 = number(&fields[3])?
+            .try_into()
+            .map_err(|_| Error::Invalid("manifest length range"))?;
+        if kind != *expected_kind
+            || object_len > 1024 * 1024
+            || prior.is_some_and(|p| (kind, object_id) <= p)
+        {
+            return Err(Error::Invalid("manifest kind or order invalid"));
+        }
+        prior = Some((kind, object_id));
+        parsed.push(ManifestEntry {
+            kind,
+            object_id,
+            object_hash,
+            object_len,
+        });
+    }
+    let signatures = array(&root[1].1, plan.expected_signers.len())?;
+    let mut prior = None;
+    for (signature, (expected_id, key)) in signatures.iter().zip(plan.expected_signers) {
+        let pair = array(signature, 2)?;
+        let signer = fixed::<16>(&pair[0])?;
+        if signer != *expected_id || prior.is_some_and(|p| signer <= p) {
+            return Err(Error::Invalid("transition signer or order invalid"));
+        }
+        prior = Some(signer);
+        crypto::verify_cbor(
+            "control-transition",
+            &cbor::encode(&root[0].1)?,
+            key,
+            &fixed::<64>(&pair[1])?,
+        )?;
+    }
+    Ok(TransitionHeader {
+        transition_id,
+        manifest: parsed,
+    })
+}
+
+fn state_with_pending(
+    genesis: &GenesisCandidate,
+    issue: &IssueCandidate,
+    claim: &ClaimCandidate,
+    challenge_id: Option<[u8; 16]>,
+    proof_hash: Option<[u8; 32]>,
+) -> Value {
+    let pending = Value::Array(vec![
+        Value::Bytes(claim.invitation_id.to_vec()),
+        Value::Bytes(claim.device_id.to_vec()),
+        Value::Bytes(claim.signing_public.to_vec()),
+        Value::Bytes(claim.agreement_public.to_vec()),
+        Value::Integer(claim.key_version.into()),
+        Value::Integer(claim.role.into()),
+        Value::Bytes(claim.claim_hash.to_vec()),
+        challenge_id.map_or(Value::Null, |id| Value::Bytes(id.to_vec())),
+        proof_hash.map_or(Value::Null, |hash| Value::Bytes(hash.to_vec())),
+    ]);
+    let invitation = Value::Array(vec![
+        Value::Bytes(issue.invitation_id.to_vec()),
+        Value::Bytes(genesis.manager_id.to_vec()),
+        Value::Bytes(issue.invite_public.to_vec()),
+        Value::Integer(issue.role.into()),
+        Value::Bytes(issue.transition_id.to_vec()),
+        Value::Integer(2),
+    ]);
+    Value::Map(vec![
+        (1, Value::Integer(1)),
+        (2, Value::Bytes(genesis.family_id.to_vec())),
+        (3, Value::Bytes(genesis.relay_id.to_vec())),
+        (4, Value::Integer(1)),
+        (5, Value::Array(vec![genesis.manager_row.clone()])),
+        (6, Value::Array(vec![pending])),
+        (7, Value::Array(vec![invitation])),
+    ])
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)] // Consumed by challenge staging and proof validation.
+pub(crate) struct ChallengeCandidate {
+    pub transition_id: [u8; 16],
+    pub challenge_id: [u8; 16],
+    pub challenge_hash: [u8; 32],
+    pub context_bytes: Vec<u8>,
+    pub manifest: Vec<ManifestEntry>,
+}
+
+#[allow(dead_code)] // Consumed by challenge staging and proof validation.
+pub(crate) fn verify_first_challenge(
+    candidate_bytes: &[u8],
+    genesis: &GenesisCandidate,
+    issue: &IssueCandidate,
+    claim: &ClaimCandidate,
+    claim_head: [u8; 32],
+) -> Result<ChallengeCandidate, Error> {
+    let value = cbor::decode_with_limits(
+        candidate_bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?;
+    let root = exact_map(&value, 2)?;
+    let unsigned = exact_map(&root[0].1, 11)?;
+    let delta = exact_map(&unsigned[6].1, 4)?;
+    let invitation_id = fixed::<16>(&delta[0].1)?;
+    let device_id = fixed::<16>(&delta[1].1)?;
+    let challenge_id = fixed::<16>(&delta[2].1)?;
+    let challenge_hash = fixed::<32>(&delta[3].1)?;
+    if invitation_id != issue.invitation_id
+        || device_id != claim.device_id
+        || challenge_id == genesis.transition_id
+        || challenge_id == issue.transition_id
+        || challenge_id == claim.transition_id
+    {
+        return Err(Error::Invalid("challenge target or ID invalid"));
+    }
+    let context_bytes = cbor::encode(&Value::Array(vec![
+        Value::Bytes(genesis.family_id.to_vec()),
+        Value::Bytes(genesis.relay_id.to_vec()),
+        Value::Bytes(invitation_id.to_vec()),
+        Value::Bytes(device_id.to_vec()),
+        Value::Bytes(claim.claim_hash.to_vec()),
+        Value::Bytes(challenge_id.to_vec()),
+        Value::Bytes(claim.agreement_public.to_vec()),
+        Value::Integer(claim.key_version.into()),
+        Value::Bytes(claim_head.to_vec()),
+    ]))?;
+    let resulting = state_with_pending(genesis, issue, claim, Some(challenge_id), None);
+    let header = verify_following(
+        candidate_bytes,
+        genesis,
+        FollowingPlan {
+            parent: claim_head,
+            kind: 11,
+            epoch: 1,
+            resulting: &resulting,
+            expected_signers: &[(genesis.manager_id, genesis.manager_signing_key)],
+            manifest_kinds: &[2, 3],
+        },
+    )?;
+    if header.transition_id == genesis.transition_id
+        || header.transition_id == issue.transition_id
+        || header.transition_id == claim.transition_id
+        || header.manifest[0].object_id == header.manifest[1].object_id
+        || header.manifest.iter().any(|entry| {
+            genesis
+                .manifest
+                .iter()
+                .any(|prior| prior.object_id == entry.object_id)
+                || entry.object_id == issue.manifest.object_id
+        })
+    {
+        return Err(Error::Invalid("challenge transition or object ID reused"));
+    }
+    Ok(ChallengeCandidate {
+        transition_id: header.transition_id,
+        challenge_id,
+        challenge_hash,
+        context_bytes,
+        manifest: header.manifest,
+    })
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)] // Consumed by the key-proof transaction.
+pub(crate) struct ProofCandidate {
+    pub transition_id: [u8; 16],
+    pub proof_hash: [u8; 32],
+}
+
+#[allow(dead_code)] // Consumed by the key-proof transaction.
+pub(crate) fn verify_first_proof(
+    candidate_bytes: &[u8],
+    genesis: &GenesisCandidate,
+    issue: &IssueCandidate,
+    claim: &ClaimCandidate,
+    challenge: &ChallengeCandidate,
+    challenge_head: [u8; 32],
+) -> Result<ProofCandidate, Error> {
+    let value = cbor::decode_with_limits(
+        candidate_bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?;
+    let root = exact_map(&value, 2)?;
+    let unsigned = exact_map(&root[0].1, 11)?;
+    let delta = exact_map(&unsigned[6].1, 4)?;
+    let invitation_id = fixed::<16>(&delta[0].1)?;
+    let device_id = fixed::<16>(&delta[1].1)?;
+    let challenge_hash = fixed::<32>(&delta[2].1)?;
+    let proof_signature = fixed::<64>(&delta[3].1)?;
+    if invitation_id != issue.invitation_id
+        || device_id != claim.device_id
+        || challenge_hash != challenge.challenge_hash
+    {
+        return Err(Error::Invalid("proof target or challenge mismatch"));
+    }
+    let proof_hash = crypto::hash(
+        "proof",
+        &cbor::encode(&Value::Array(vec![
+            Value::Bytes(challenge.challenge_id.to_vec()),
+            Value::Bytes(proof_signature.to_vec()),
+        ]))?,
+    )?;
+    let resulting = state_with_pending(
+        genesis,
+        issue,
+        claim,
+        Some(challenge.challenge_id),
+        Some(proof_hash),
+    );
+    let header = verify_following(
+        candidate_bytes,
+        genesis,
+        FollowingPlan {
+            parent: challenge_head,
+            kind: 5,
+            epoch: 1,
+            resulting: &resulting,
+            expected_signers: &[(claim.device_id, claim.signing_public)],
+            manifest_kinds: &[],
+        },
+    )?;
+    if [
+        genesis.transition_id,
+        issue.transition_id,
+        claim.transition_id,
+        challenge.transition_id,
+    ]
+    .contains(&header.transition_id)
+    {
+        return Err(Error::Invalid("proof transition ID reused"));
+    }
+    Ok(ProofCandidate {
+        transition_id: header.transition_id,
+        proof_hash,
     })
 }
 
@@ -572,5 +881,67 @@ mod tests {
         let claim = verify_first_claim(&claim_bytes, &genesis, &issue, issue_head).unwrap();
         assert_eq!(claim.invitation_id, issue.invitation_id);
         assert!(verify_first_claim(&claim_bytes, &genesis, &issue, [0; 32]).is_err());
+        let claim_committed = hex(chain["transitions"][2]["committed_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let claim_head = crypto::hash("control-head", &claim_committed).unwrap();
+        let challenge_bytes = cbor::encode(&Value::Map(vec![
+            (
+                1,
+                cbor::decode(&hex(chain["transitions"][3]["unsigned_cbor_hex"]
+                    .as_str()
+                    .unwrap()))
+                .unwrap(),
+            ),
+            (
+                2,
+                cbor::decode(&hex(chain["transitions"][3]["signatures_cbor_hex"]
+                    .as_str()
+                    .unwrap()))
+                .unwrap(),
+            ),
+        ]))
+        .unwrap();
+        let challenge =
+            verify_first_challenge(&challenge_bytes, &genesis, &issue, &claim, claim_head).unwrap();
+        assert_eq!(challenge.manifest.len(), 2);
+        assert!(
+            verify_first_challenge(&challenge_bytes, &genesis, &issue, &claim, [0; 32]).is_err()
+        );
+        let challenge_committed = hex(chain["transitions"][3]["committed_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let challenge_head = crypto::hash("control-head", &challenge_committed).unwrap();
+        let proof_bytes = cbor::encode(&Value::Map(vec![
+            (
+                1,
+                cbor::decode(&hex(chain["transitions"][4]["unsigned_cbor_hex"]
+                    .as_str()
+                    .unwrap()))
+                .unwrap(),
+            ),
+            (
+                2,
+                cbor::decode(&hex(chain["transitions"][4]["signatures_cbor_hex"]
+                    .as_str()
+                    .unwrap()))
+                .unwrap(),
+            ),
+        ]))
+        .unwrap();
+        let proof = verify_first_proof(
+            &proof_bytes,
+            &genesis,
+            &issue,
+            &claim,
+            &challenge,
+            challenge_head,
+        )
+        .unwrap();
+        assert_ne!(proof.proof_hash, [0; 32]);
+        assert!(
+            verify_first_proof(&proof_bytes, &genesis, &issue, &claim, &challenge, [0; 32])
+                .is_err()
+        );
     }
 }

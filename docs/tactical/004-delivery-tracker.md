@@ -34,7 +34,7 @@ UI remain open; the current passing checks do not close an M0 slice.
 | Next demonstrable proof | Complete the same encrypted event and negative vectors independently in Rust, Swift, Kotlin, and wasm. |
 | Next dependent slice | Atomic local log, projection, outbox, native SQLite, browser IndexedDB, and portable backup. |
 | Next independent review | The required early M0 authority review follows implemented invite, grant, and rotation. |
-| Open advisory | The [byte/crypto preflight](003-m0-foundation.md#advisory-bytecrypto-preflight) returned FAIL for fixture-shaped production exports, nonce/retry ownership, local validity, and signed-but-undecryptable replay. Fixture exports are gated and lower-level inert replay is covered; core-owned session/outbox work remains before shared sync. |
+| Open advisory | The [byte/crypto preflight](003-m0-foundation.md#advisory-bytecrypto-preflight) returned FAIL for fixture-shaped production exports, nonce/retry ownership, local validity, and signed-but-undecryptable replay. Fixture exports are gated; native outbox staging and lower-level inert replay are covered. Core-owned authority, receipt confirmation, and browser outbox remain before shared sync. |
 | CI signal today | Read-only Rust, native-binding, and browser jobs are required on every push/PR. Local checks passed; a remote Actions result has not been verified here. |
 
 Update this card when the active slice changes. Do not copy fine-grained

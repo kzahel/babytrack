@@ -148,7 +148,12 @@ now stores validated operation bytes and append indexes in one transaction;
 `WasmLocalFamily` replays through the shared Rust projection. The real
 Chromium smoke covers reload, duplicate rejection, and wrong-Family append
 rollback. Materialized projection, browser HLC, accepted shared entries,
-outbox, and private copy remain open.
+outbox, and private copy remain open. Native SQLite now also reserves a random
+batch ID and nonce and persists exact signed envelope bytes in one transaction.
+An uncertain retry returns those bytes after reopen even if the caller's
+current head/key has changed. The crate-private staging path awaits a
+core-owned authority session; verified acceptance, browser outbox, and
+rebatching remain open.
 The decoder now enforces UUIDv4 Family/device/batch identities, UUIDv7
 operation/child/activity identities, and a positive batch epoch.
 `bash scripts/check_browser_smoke.sh` launches Playwright's isolated Chromium
@@ -189,7 +194,7 @@ M0 gate result.
 | Finding | Disposition and required regression |
 |---|---|
 | High: platform bindings accepted caller-supplied signer, key, relay, and cursor, including an unchecked control advance. | Primitive exports are now fixture-only; the production Rust session must verify committed control, receipt, epoch, sequence, and author before projection. Bind FS50 stale batch after removal and FS56 rollback/sibling cases. |
-| High: sealing accepted caller-owned nonce, batch ID, and sequence without durable retry identity. | Fixture sealing is now excluded from production bindings. Core-owned outbox must reserve and persist exact envelope bytes before send, retry identical bytes on unknown outcome, and never reuse a nonce under an epoch key. Bind BATCH01/02/04 crash/retry cases. |
+| High: sealing accepted caller-owned nonce, batch ID, and sequence without durable retry identity. | Fixture sealing is excluded from production bindings. Native SQLite now stages random ID/nonce and exact bytes atomically, retains reservations, and retries identical bytes after restart. A core-owned session and browser outbox must verify acceptance before clearing or rebatching. Bind BATCH01/02/04 crash/retry cases. |
 | Medium: primitive sealing could sign a structurally valid but locally invalid edit. | Production `append_and_prepare` must validate against local projection before allocating HLC, nonce, or sequence. Incoming hostile malformed batches remain inert. Bind PRECREATEBYTE01 and a conflicting-pump local/incoming pair. |
 | High: a validly signed but undecryptable batch from an authorized hostile writer could stop replay before inert classification. | Signature-checked envelope replay now marks AEAD failure inert only when given a core-verified committed epoch key. `UNOPENABLEBYTE01` exercises signature-valid/AEAD-invalid bytes and continuation; the production authority session must construct the verified key from committed control. |
 | Medium: PRECREATEBYTE01 used different child IDs for its create and invalid set, leaving set-before-create untested. | Corrected the rollback assertion to inspect the created child and added `SETTHENCREATEBYTE01` across Rust, Swift, Kotlin, and wasm. |

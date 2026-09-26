@@ -6,6 +6,8 @@ use std::path::Path;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::{
+    batch::{self, Header},
+    cbor::{self, Value},
     hlc::{self, Clock},
     ids,
     operation::{self, Hlc, NewOperation, Operation},
@@ -25,6 +27,9 @@ pub enum Error {
     DuplicateOperation,
     AppendIndexOverflow,
     CorruptState,
+    NoUnsentOperation,
+    Random(getrandom::Error),
+    Batch(batch::Error),
 }
 
 impl From<rusqlite::Error> for Error {
@@ -51,6 +56,12 @@ impl From<LocalError> for Error {
     }
 }
 
+impl From<batch::Error> for Error {
+    fn from(error: batch::Error) -> Self {
+        Self::Batch(error)
+    }
+}
+
 /// A Family-specific capability; every read and write checks its device row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FamilyHandle {
@@ -63,6 +74,16 @@ pub struct AppendedOperation {
     pub index: u64,
     pub bytes: Vec<u8>,
     pub clock_anomaly: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedBatch {
+    pub from_index: u64,
+    pub to_index: u64,
+    pub sequence: u64,
+    pub batch_id: [u8; 16],
+    pub envelope_bytes: Vec<u8>,
+    pub object_hash: [u8; 32],
 }
 
 pub struct SqliteStore {
@@ -91,7 +112,34 @@ impl SqliteStore {
                PRIMARY KEY (family_id, append_index),
                UNIQUE (family_id, operation_id),
                FOREIGN KEY (family_id) REFERENCES families(family_id)
-             );",
+             );
+             CREATE TABLE IF NOT EXISTS local_sync_state (
+               family_id BLOB PRIMARY KEY,
+               accepted_index INTEGER NOT NULL DEFAULT 0 CHECK(accepted_index >= 0),
+               next_sequence INTEGER NOT NULL DEFAULT 1 CHECK(next_sequence > 0),
+               FOREIGN KEY (family_id) REFERENCES families(family_id)
+             );
+             CREATE TABLE IF NOT EXISTS local_outbox (
+               family_id BLOB PRIMARY KEY,
+               from_index INTEGER NOT NULL CHECK(from_index > 0),
+               to_index INTEGER NOT NULL CHECK(to_index >= from_index),
+               sequence INTEGER NOT NULL CHECK(sequence > 0),
+               batch_id BLOB NOT NULL CHECK(length(batch_id) = 16),
+               envelope_bytes BLOB NOT NULL,
+               object_hash BLOB NOT NULL CHECK(length(object_hash) = 32),
+               FOREIGN KEY (family_id) REFERENCES families(family_id)
+             );
+             CREATE TABLE IF NOT EXISTS local_batch_reservations (
+               family_id BLOB NOT NULL,
+               epoch INTEGER NOT NULL CHECK(epoch > 0),
+               nonce BLOB NOT NULL CHECK(length(nonce) = 24),
+               batch_id BLOB NOT NULL CHECK(length(batch_id) = 16),
+               PRIMARY KEY (family_id, batch_id),
+               UNIQUE (family_id, epoch, nonce),
+               FOREIGN KEY (family_id) REFERENCES families(family_id)
+             );
+             INSERT OR IGNORE INTO local_sync_state(family_id)
+               SELECT family_id FROM families;",
         )?;
         Ok(Self { connection })
     }
@@ -104,10 +152,16 @@ impl SqliteStore {
         if !ids::is_v4(&family_id) || !ids::is_v4(&device_id) {
             return Err(Error::InvalidId);
         }
-        self.connection.execute(
+        let transaction = self.connection.transaction()?;
+        transaction.execute(
             "INSERT INTO families(family_id, device_id) VALUES (?1, ?2)",
             params![family_id.as_slice(), device_id.as_slice()],
         )?;
+        transaction.execute(
+            "INSERT INTO local_sync_state(family_id) VALUES (?1)",
+            [family_id.as_slice()],
+        )?;
+        transaction.commit()?;
         Ok(FamilyHandle {
             family_id,
             device_id,
@@ -198,6 +252,153 @@ impl SqliteStore {
             clock_anomaly: next.anomaly,
         })
     }
+
+    /// Stage one already validated local operation as exact durable wire
+    /// bytes. A retry returns the original envelope even if the caller now
+    /// supplies different current control information. Authority/receipt
+    /// verification is owned by the future core Family session.
+    #[allow(dead_code)] // Wired to the core authority session, not exported to platform bindings.
+    pub(crate) fn stage_next_batch(
+        &mut self,
+        family: FamilyHandle,
+        relay_id: [u8; 32],
+        control_head: [u8; 32],
+        epoch: u32,
+        epoch_key: &[u8; 32],
+        signing_seed: &[u8; 32],
+    ) -> Result<PreparedBatch, Error> {
+        let transaction = self.connection.transaction()?;
+        let _ = checked_family(&transaction, family)?;
+        if let Some(pending) = load_pending(&transaction, family)? {
+            return Ok(pending);
+        }
+        let (accepted_index, sequence): (i64, i64) = transaction.query_row(
+            "SELECT accepted_index, next_sequence FROM local_sync_state WHERE family_id = ?1",
+            [family.family_id.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        let next_index = accepted_index
+            .checked_add(1)
+            .ok_or(Error::AppendIndexOverflow)?;
+        let operation_bytes: Vec<u8> = transaction
+            .query_row(
+                "SELECT operation_bytes FROM local_operations
+                 WHERE family_id = ?1 AND append_index = ?2",
+                params![family.family_id.as_slice(), next_index],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or(Error::NoUnsentOperation)?;
+        // Operation bytes were validated before the local append committed.
+        let plaintext = cbor::encode(&Value::Array(vec![Value::Bytes(operation_bytes.clone())]))
+            .map_err(|_| Error::CorruptState)?;
+        let mut batch_id = [0u8; 16];
+        let mut nonce = [0u8; 24];
+        let mut reserved = false;
+        for _ in 0..4 {
+            getrandom::fill(&mut batch_id).map_err(Error::Random)?;
+            batch_id[6] = (batch_id[6] & 0x0f) | 0x40;
+            batch_id[8] = (batch_id[8] & 0x3f) | 0x80;
+            getrandom::fill(&mut nonce).map_err(Error::Random)?;
+            let result = transaction.execute(
+                "INSERT INTO local_batch_reservations(family_id, epoch, nonce, batch_id)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    family.family_id.as_slice(),
+                    epoch,
+                    nonce.as_slice(),
+                    batch_id.as_slice()
+                ],
+            );
+            match result {
+                Ok(_) => {
+                    reserved = true;
+                    break;
+                }
+                Err(rusqlite::Error::SqliteFailure(error, _))
+                    if error.code == rusqlite::ErrorCode::ConstraintViolation => {}
+                Err(error) => return Err(Error::Sqlite(error)),
+            }
+        }
+        if !reserved {
+            return Err(Error::CorruptState);
+        }
+        let header = Header {
+            minor: 0,
+            family_id: family.family_id,
+            relay_id,
+            control_head,
+            epoch,
+            batch_id,
+            author_device_id: family.device_id,
+            device_sequence: sequence.try_into().map_err(|_| Error::CorruptState)?,
+            nonce,
+            plaintext_len: plaintext
+                .len()
+                .try_into()
+                .map_err(|_| Error::CorruptState)?,
+        };
+        let sealed = batch::seal(&header, &[operation_bytes], epoch_key, signing_seed)?;
+        transaction.execute(
+            "INSERT INTO local_outbox(family_id, from_index, to_index, sequence, batch_id, envelope_bytes, object_hash)
+             VALUES (?1, ?2, ?2, ?3, ?4, ?5, ?6)",
+            params![family.family_id.as_slice(), next_index, sequence, batch_id.as_slice(),
+                &sealed.envelope_bytes, sealed.object_hash.as_slice()],
+        )?;
+        transaction.commit()?;
+        Ok(PreparedBatch {
+            from_index: next_index.try_into().map_err(|_| Error::CorruptState)?,
+            to_index: next_index.try_into().map_err(|_| Error::CorruptState)?,
+            sequence: sequence.try_into().map_err(|_| Error::CorruptState)?,
+            batch_id,
+            envelope_bytes: sealed.envelope_bytes,
+            object_hash: sealed.object_hash,
+        })
+    }
+
+    #[allow(dead_code)] // Wired to the core authority session, not exported to platform bindings.
+    pub(crate) fn pending_batch(
+        &self,
+        family: FamilyHandle,
+    ) -> Result<Option<PreparedBatch>, Error> {
+        let _ = checked_family(&self.connection, family)?;
+        load_pending(&self.connection, family)
+    }
+}
+
+#[allow(dead_code)] // Used by the staged-batch session path above.
+fn load_pending(
+    connection: &Connection,
+    family: FamilyHandle,
+) -> Result<Option<PreparedBatch>, Error> {
+    connection
+        .query_row(
+            "SELECT from_index, to_index, sequence, batch_id, envelope_bytes, object_hash
+         FROM local_outbox WHERE family_id = ?1",
+            [family.family_id.as_slice()],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, Vec<u8>>(3)?,
+                    row.get::<_, Vec<u8>>(4)?,
+                    row.get::<_, Vec<u8>>(5)?,
+                ))
+            },
+        )
+        .optional()?
+        .map(|row| {
+            Ok(PreparedBatch {
+                from_index: row.0.try_into().map_err(|_| Error::CorruptState)?,
+                to_index: row.1.try_into().map_err(|_| Error::CorruptState)?,
+                sequence: row.2.try_into().map_err(|_| Error::CorruptState)?,
+                batch_id: row.3.try_into().map_err(|_| Error::CorruptState)?,
+                envelope_bytes: row.4,
+                object_hash: row.5.try_into().map_err(|_| Error::CorruptState)?,
+            })
+        })
+        .transpose()
 }
 
 fn checked_family(
@@ -256,4 +457,114 @@ fn load_projection(
         )?;
     }
     Ok(projection)
+}
+
+#[cfg(test)]
+mod outbox_tests {
+    use super::*;
+    use crate::operation::{Hlc, Kind, Scope};
+
+    fn v4(suffix: u8) -> [u8; 16] {
+        let mut id = [0u8; 16];
+        id[6] = 0x40;
+        id[8] = 0x80;
+        id[15] = suffix;
+        id
+    }
+
+    fn v7(suffix: u8) -> [u8; 16] {
+        let mut id = [0u8; 16];
+        id[6] = 0x70;
+        id[8] = 0x80;
+        id[15] = suffix;
+        id
+    }
+
+    #[test]
+    fn staged_batch_retries_exact_bytes_after_reopen_and_does_not_expose_failed_write() {
+        let path = std::env::temp_dir().join(format!(
+            "babytrack-outbox-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let family = FamilyHandle {
+            family_id: v4(1),
+            device_id: v4(2),
+        };
+        let operation = NewOperation {
+            family_id: family.family_id,
+            operation_id: v7(1),
+            record_id: v7(2),
+            scope: Scope::Child,
+            kind: Kind::Create,
+            author_device_id: family.device_id,
+            hlc: Hlc {
+                wall_ms: 0,
+                counter: 0,
+                device_id: family.device_id,
+            },
+            record_type: Some("child".to_owned()),
+            child_id: None,
+            fields: Some(vec![(1, Value::Text("Baby".to_owned()))]),
+        };
+        let relay = [3u8; 32];
+        let head = [4u8; 32];
+        let key = [5u8; 32];
+        let seed = [6u8; 32];
+        let first;
+        {
+            let mut store = SqliteStore::open(&path).unwrap();
+            store
+                .create_family(family.family_id, family.device_id)
+                .unwrap();
+            assert!(matches!(
+                store.stage_next_batch(family, relay, head, 1, &key, &seed),
+                Err(Error::NoUnsentOperation)
+            ));
+            store.append_local(family, operation.clone(), 100).unwrap();
+            first = store
+                .stage_next_batch(family, relay, head, 1, &key, &seed)
+                .unwrap();
+            assert_eq!(first.from_index, 1);
+            assert_eq!(first.sequence, 1);
+            assert!(ids::is_v4(&first.batch_id));
+            assert_eq!(store.pending_batch(family).unwrap(), Some(first.clone()));
+            let signer = crate::crypto::signing_public_key(&seed);
+            assert!(
+                batch::open_verified(
+                    &first.envelope_bytes,
+                    &family.family_id,
+                    &relay,
+                    &key,
+                    &signer
+                )
+                .is_ok()
+            );
+            let mut invalid = operation.clone();
+            invalid.operation_id = v7(3);
+            invalid.record_id = v7(4);
+            invalid.kind = Kind::Set;
+            invalid.record_type = None;
+            assert!(matches!(
+                store.append_local(family, invalid, 101),
+                Err(Error::Projection(_))
+            ));
+        }
+        {
+            let mut store = SqliteStore::open(&path).unwrap();
+            assert_eq!(store.pending_batch(family).unwrap(), Some(first.clone()));
+            // A changed head/key must not silently re-encrypt an uncertain batch.
+            let retry = store
+                .stage_next_batch(family, relay, [8u8; 32], 2, &[9u8; 32], &seed)
+                .unwrap();
+            assert_eq!(retry, first);
+            assert_eq!(store.load_local(family).unwrap().last_append_index(), 1);
+        }
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("sqlite-wal"));
+        let _ = std::fs::remove_file(path.with_extension("sqlite-shm"));
+    }
 }

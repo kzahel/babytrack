@@ -1,7 +1,8 @@
 use babytrack_core::{
-    batch::{self, AuthenticatedBatch},
-    cbor::Value,
+    batch::{self, AuthenticatedBatch, Header},
+    cbor::{self, Value},
     crypto,
+    operation::{Hlc, Kind, NewOperation, Operation, Scope},
     projection::{Outcome, Projection},
 };
 
@@ -146,4 +147,193 @@ fn verified_control_cursor_can_precede_a_data_batch() {
         projection.advance_control(2),
         Err(babytrack_core::projection::Error::WrongCursor)
     );
+}
+
+fn operation_id(suffix: u8) -> [u8; 16] {
+    let mut id = bytes::<16>("0183f9d0000070008000000000000000");
+    id[15] = suffix;
+    id
+}
+
+fn new_child_operation(
+    family: [u8; 16],
+    author: [u8; 16],
+    child: [u8; 16],
+    suffix: u8,
+    kind: Kind,
+    field: Option<(u64, Value)>,
+    wall_ms: i64,
+) -> Vec<u8> {
+    Operation::encode_new(&NewOperation {
+        family_id: family,
+        operation_id: operation_id(suffix),
+        record_id: child,
+        scope: Scope::Child,
+        kind,
+        author_device_id: author,
+        hlc: Hlc {
+            wall_ms,
+            counter: 0,
+            device_id: author,
+        },
+        record_type: (kind == Kind::Create).then(|| "child".to_owned()),
+        child_id: None,
+        fields: field.map(|field| vec![field]),
+    })
+    .unwrap()
+}
+
+fn authenticated_test_batch(
+    family: [u8; 16],
+    author: [u8; 16],
+    cursor: u64,
+    operations: &[Vec<u8>],
+) -> AuthenticatedBatch {
+    let relay = [4; 32];
+    let key = [5; 32];
+    let seed = [6; 32];
+    let plaintext = cbor::encode(&Value::Array(
+        operations.iter().cloned().map(Value::Bytes).collect(),
+    ))
+    .unwrap();
+    let mut batch_id = bytes::<16>("533e4567e89b42d3a456426614174000");
+    batch_id[15] = cursor as u8;
+    let header = Header {
+        minor: 0,
+        family_id: family,
+        relay_id: relay,
+        control_head: [7; 32],
+        epoch: 1,
+        batch_id,
+        author_device_id: author,
+        device_sequence: cursor,
+        nonce: [cursor as u8; 24],
+        plaintext_len: plaintext.len().try_into().unwrap(),
+    };
+    let sealed = batch::seal(&header, operations, &key, &seed).unwrap();
+    batch::open_authenticated(
+        &sealed.envelope_bytes,
+        &family,
+        &relay,
+        &key,
+        &crypto::signing_public_key(&seed),
+    )
+    .unwrap()
+}
+
+#[test]
+fn cursor_order_beats_hostile_hlc_and_tombstones_need_explicit_restore() {
+    let family = bytes::<16>("123e4567e89b42d3a456426614174000");
+    let author = bytes::<16>("723e4567e89b42d3a456426614174000");
+    let child = operation_id(0x50);
+    let create = new_child_operation(
+        family,
+        author,
+        child,
+        1,
+        Kind::Create,
+        Some((1, Value::Text("First".to_owned()))),
+        100,
+    );
+    let hostile = new_child_operation(
+        family,
+        author,
+        child,
+        2,
+        Kind::Set,
+        Some((1, Value::Text("Hostile".to_owned()))),
+        i64::MAX,
+    );
+    let delete = new_child_operation(family, author, child, 3, Kind::Delete, None, 101);
+    let later = new_child_operation(
+        family,
+        author,
+        child,
+        4,
+        Kind::Set,
+        Some((1, Value::Text("Later".to_owned()))),
+        1,
+    );
+    let restore = new_child_operation(family, author, child, 5, Kind::Restore, None, 102);
+    let conflict = new_child_operation(
+        family,
+        author,
+        child,
+        2,
+        Kind::Set,
+        Some((1, Value::Text("Conflict".to_owned()))),
+        i64::MAX,
+    );
+    let second_create = new_child_operation(
+        family,
+        author,
+        child,
+        6,
+        Kind::Create,
+        Some((1, Value::Text("Second create".to_owned()))),
+        103,
+    );
+    let future_field = new_child_operation(
+        family,
+        author,
+        child,
+        7,
+        Kind::Set,
+        Some((500, Value::Bool(false))),
+        104,
+    );
+    let operations = [
+        create,
+        hostile.clone(),
+        delete,
+        later,
+        restore,
+        conflict,
+        hostile, // Same operation bytes are a deduplication no-op.
+        second_create,
+        future_field,
+    ];
+    let batches: Vec<_> = operations
+        .iter()
+        .enumerate()
+        .map(|(index, operation)| {
+            authenticated_test_batch(
+                family,
+                author,
+                index as u64 + 1,
+                std::slice::from_ref(operation),
+            )
+        })
+        .collect();
+    let mut projection = Projection::new(family);
+    for (index, batch) in batches.iter().enumerate() {
+        let cursor = index as u64 + 1;
+        let outcome = projection.apply_authenticated(batch, cursor).unwrap();
+        if [6, 8].contains(&cursor) {
+            assert!(matches!(outcome, Outcome::Inert(_)));
+        } else {
+            assert_eq!(outcome, Outcome::Applied);
+        }
+        if cursor == 3 || cursor == 4 {
+            assert!(projection.record(&child).unwrap().deleted);
+        }
+    }
+    let record = projection.record(&child).unwrap();
+    assert!(!record.deleted);
+    assert_eq!(record.tombstone_stamp, Some((5, 0)));
+    assert_eq!(
+        record.field(1).unwrap().value,
+        Value::Text("Later".to_owned())
+    );
+    assert_eq!(record.field(1).unwrap().cursor, 4);
+    assert_eq!(record.field(500).unwrap().canonical_bytes, vec![0xf4]);
+    assert_eq!(projection.inert_batches().len(), 2);
+
+    let mut rebuilt = Projection::new(family);
+    for (index, batch) in batches.iter().enumerate() {
+        rebuilt
+            .apply_authenticated(batch, index as u64 + 1)
+            .unwrap();
+    }
+    assert_eq!(rebuilt, projection);
 }

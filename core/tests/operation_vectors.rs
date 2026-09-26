@@ -1,6 +1,6 @@
 use babytrack_core::{
     cbor::{self, Value},
-    operation::{Error, Kind, Operation, Scope},
+    operation::{Error, Kind, NewOperation, Operation, Scope},
 };
 
 fn hex_bytes(hex: &str) -> Vec<u8> {
@@ -41,6 +41,19 @@ fn fixed_family_operation_decodes_and_preserves_bytes() {
     assert_eq!(operation.field_bytes(1), Some(vec![0xa0]));
     assert_eq!(operation.canonical_bytes(), bytes);
     assert_eq!(operation.hlc.device_id, author);
+    let constructed = NewOperation {
+        family_id: family,
+        operation_id: operation.operation_id,
+        record_id: family,
+        scope: Scope::Family,
+        kind: Kind::Create,
+        author_device_id: author,
+        hlc: operation.hlc.clone(),
+        record_type: Some("family".to_owned()),
+        child_id: None,
+        fields: Some(vec![(1, Value::Map(vec![]))]),
+    };
+    assert_eq!(Operation::encode_new(&constructed).unwrap(), bytes);
 }
 
 #[test]

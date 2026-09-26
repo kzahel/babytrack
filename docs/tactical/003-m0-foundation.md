@@ -117,6 +117,10 @@ macOS. All four runtimes seal the fixed child and Family operations to the
 exact expected encrypted envelope bytes, then verify, decrypt, and project
 them. The caller supplies the fixture's nonce, batch ID, and sequence;
 production allocation and retry ownership belong to the durable outbox.
+The core operation encoder also drives a signed encrypted multi-batch replay:
+cursor order beats an extreme HLC, tombstoned fields stay retained, restore
+is explicit, identical operation bytes dedupe, conflicting IDs and second
+creates become inert, and replay from the beginning matches incremental state.
 `bash scripts/check_browser_smoke.sh` launches Playwright's isolated Chromium
 shell, loads the wasm binding, and checks IndexedDB reload, an aborted
 multi-store transaction, and Family-scoped keys and rows. It uses fixture

@@ -18,6 +18,14 @@ pub enum Scope {
 }
 
 impl Scope {
+    fn wire(self) -> u64 {
+        match self {
+            Self::Family => 1,
+            Self::Child => 2,
+            Self::Activity => 3,
+        }
+    }
+
     fn from_wire(number: u64) -> Option<Self> {
         match number {
             1 => Some(Self::Family),
@@ -37,6 +45,15 @@ pub enum Kind {
 }
 
 impl Kind {
+    fn wire(self) -> u64 {
+        match self {
+            Self::Create => 1,
+            Self::Set => 2,
+            Self::Delete => 3,
+            Self::Restore => 4,
+        }
+    }
+
     fn from_wire(number: u64) -> Option<Self> {
         match number {
             1 => Some(Self::Create),
@@ -71,6 +88,22 @@ pub struct Operation {
     raw: Vec<u8>,
 }
 
+/// Caller-allocated IDs and HLC for one new operation. The storage/outbox
+/// transaction must durably reserve these values before network use.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewOperation {
+    pub family_id: [u8; 16],
+    pub operation_id: [u8; 16],
+    pub record_id: [u8; 16],
+    pub scope: Scope,
+    pub kind: Kind,
+    pub author_device_id: [u8; 16],
+    pub hlc: Hlc,
+    pub record_type: Option<String>,
+    pub child_id: Option<[u8; 16]>,
+    pub fields: Option<Vec<(u64, Value)>>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     Cbor(cbor::Error),
@@ -87,6 +120,38 @@ impl From<cbor::Error> for Error {
 }
 
 impl Operation {
+    pub fn encode_new(new: &NewOperation) -> Result<Vec<u8>, Error> {
+        let mut map = vec![
+            (1, Value::Integer(1)),
+            (2, Value::Bytes(new.family_id.to_vec())),
+            (3, Value::Bytes(new.operation_id.to_vec())),
+            (4, Value::Bytes(new.record_id.to_vec())),
+            (5, Value::Integer(new.scope.wire().into())),
+            (6, Value::Integer(new.kind.wire().into())),
+            (7, Value::Bytes(new.author_device_id.to_vec())),
+            (
+                8,
+                Value::Array(vec![
+                    Value::Integer(new.hlc.wall_ms.into()),
+                    Value::Integer(new.hlc.counter.into()),
+                    Value::Bytes(new.hlc.device_id.to_vec()),
+                ]),
+            ),
+        ];
+        if let Some(record_type) = &new.record_type {
+            map.push((9, Value::Text(record_type.clone())));
+        }
+        if let Some(child_id) = &new.child_id {
+            map.push((10, Value::Bytes(child_id.to_vec())));
+        }
+        if let Some(fields) = &new.fields {
+            map.push((11, Value::Map(fields.clone())));
+        }
+        let bytes = cbor::encode(&Value::Map(map))?;
+        Self::decode_bound(&bytes, &new.family_id, &new.author_device_id)?;
+        Ok(bytes)
+    }
+
     /// Decode only in the context of the verified batch Family and signer.
     pub fn decode_bound(
         bytes: &[u8],

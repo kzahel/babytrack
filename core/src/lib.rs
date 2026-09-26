@@ -8,6 +8,8 @@ pub mod cbor;
 pub mod control;
 pub mod control_chain;
 pub mod crypto;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod enrollment;
 pub mod grant;
 pub mod handoff;
 pub mod hlc;

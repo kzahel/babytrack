@@ -1,0 +1,404 @@
+//! Durable keyless recipient enrollment. Candidate and Family-scoped secrets
+//! commit locally before the first claim POST; retries use exact bytes.
+
+use crate::{
+    bootstrap::{self, InvitationBootstrap},
+    cbor::{self, Value},
+    control_chain, crypto, hpke,
+    shared_history::{self, PublicHistorySession},
+    sqlite_store::{self, EnrollmentRow, FamilyHandle, SqliteStore},
+};
+
+#[derive(Debug)]
+pub enum Error {
+    Bootstrap(bootstrap::Error),
+    Chain(control_chain::Error),
+    Cbor(cbor::Error),
+    Crypto(crypto::Error),
+    Hpke(hpke::Error),
+    History(shared_history::Error),
+    Store(sqlite_store::Error),
+    Random(getrandom::Error),
+    Invalid(&'static str),
+}
+impl From<bootstrap::Error> for Error {
+    fn from(value: bootstrap::Error) -> Self {
+        Self::Bootstrap(value)
+    }
+}
+impl From<control_chain::Error> for Error {
+    fn from(value: control_chain::Error) -> Self {
+        Self::Chain(value)
+    }
+}
+impl From<cbor::Error> for Error {
+    fn from(value: cbor::Error) -> Self {
+        Self::Cbor(value)
+    }
+}
+impl From<crypto::Error> for Error {
+    fn from(value: crypto::Error) -> Self {
+        Self::Crypto(value)
+    }
+}
+impl From<hpke::Error> for Error {
+    fn from(value: hpke::Error) -> Self {
+        Self::Hpke(value)
+    }
+}
+impl From<shared_history::Error> for Error {
+    fn from(value: shared_history::Error) -> Self {
+        Self::History(value)
+    }
+}
+impl From<sqlite_store::Error> for Error {
+    fn from(value: sqlite_store::Error) -> Self {
+        Self::Store(value)
+    }
+}
+
+pub struct EnrollmentAttempt {
+    family: FamilyHandle,
+    invitation_id: [u8; 16],
+    bootstrap_fragment: String,
+    candidate_bytes: Vec<u8>,
+    device_sign_seed: [u8; 32],
+    device_agreement_private: [u8; 32],
+}
+
+impl EnrollmentAttempt {
+    pub fn prepare(
+        store: &mut SqliteStore,
+        bootstrap: &InvitationBootstrap,
+        genesis_bytes: &[u8],
+        issue_bytes: &[u8],
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
+        if store.enrollment_attempt(bootstrap.family_id())?.is_some() {
+            let existing = Self::resume(store, bootstrap.family_id(), local_wrapping_key)?;
+            if existing.bootstrap_fragment != bootstrap.to_fragment()? {
+                return Err(Error::Invalid(
+                    "another invitation already owns this Family",
+                ));
+            }
+            return Ok(existing);
+        }
+        let chain = bootstrap.verify_issue(genesis_bytes, issue_bytes)?;
+        let family = FamilyHandle {
+            family_id: bootstrap.family_id(),
+            device_id: random_v4()?,
+        };
+        let device_sign_seed = random::<32>()?;
+        let device_agreement_private = random::<32>()?;
+        let enrollment_nonce = random::<32>()?;
+        let transition_id = random_v4()?;
+        let candidate_bytes = build_claim(
+            bootstrap,
+            &chain,
+            family,
+            &device_sign_seed,
+            &device_agreement_private,
+            &enrollment_nonce,
+            transition_id,
+        )?;
+        let secret = cbor::encode(&Value::Array(vec![
+            Value::Integer(1),
+            Value::Text(bootstrap.to_fragment()?),
+            Value::Bytes(device_sign_seed.to_vec()),
+            Value::Bytes(device_agreement_private.to_vec()),
+            Value::Bytes(enrollment_nonce.to_vec()),
+        ]))?;
+        let secret_nonce = random::<24>()?;
+        let aad = local_aad(family, bootstrap.invitation_id())?;
+        let secret_ciphertext =
+            crypto::seal_with_nonce(local_wrapping_key, &secret_nonce, &aad, &secret)?;
+        store.create_enrollment_attempt(&EnrollmentRow {
+            family,
+            invitation_id: bootstrap.invitation_id(),
+            genesis_bytes: genesis_bytes.to_vec(),
+            issue_bytes: issue_bytes.to_vec(),
+            candidate_bytes: candidate_bytes.clone(),
+            secret_nonce,
+            secret_ciphertext,
+        })?;
+        let mut public = PublicHistorySession::begin(
+            store,
+            family,
+            genesis_bytes,
+            bootstrap.relay_public_key_internal(),
+        )?;
+        if public.cursor() == 1 {
+            public.accept_control(store, issue_bytes)?;
+        }
+        Self::resume(store, family.family_id, local_wrapping_key)
+    }
+
+    pub fn resume(
+        store: &mut SqliteStore,
+        family_id: [u8; 16],
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
+        let row = store
+            .enrollment_attempt(family_id)?
+            .ok_or(Error::Invalid("no durable enrollment attempt"))?;
+        let aad = local_aad(row.family, row.invitation_id)?;
+        let secret = crypto::open(
+            local_wrapping_key,
+            &row.secret_nonce,
+            &aad,
+            &row.secret_ciphertext,
+        )?;
+        let value = cbor::decode_with_limits(
+            &secret,
+            cbor::Limits {
+                max_bytes: 1024,
+                max_depth: 3,
+            },
+        )?;
+        let Value::Array(parts) = value else {
+            return Err(Error::Invalid("enrollment secret not array"));
+        };
+        if parts.len() != 5 || parts[0] != Value::Integer(1) {
+            return Err(Error::Invalid("enrollment secret version invalid"));
+        }
+        let Value::Text(fragment) = &parts[1] else {
+            return Err(Error::Invalid("enrollment fragment not text"));
+        };
+        let bootstrap = InvitationBootstrap::from_fragment(fragment)?;
+        if bootstrap.family_id() != row.family.family_id
+            || bootstrap.invitation_id() != row.invitation_id
+        {
+            return Err(Error::Invalid("stored enrollment context mismatch"));
+        }
+        let chain = bootstrap.verify_issue(&row.genesis_bytes, &row.issue_bytes)?;
+        let device_sign_seed = fixed(&parts[2])?;
+        let device_agreement_private = fixed(&parts[3])?;
+        let enrollment_nonce = fixed(&parts[4])?;
+        let transition_id = candidate_transition_id(&row.candidate_bytes)?;
+        let rebuilt = build_claim(
+            &bootstrap,
+            &chain,
+            row.family,
+            &device_sign_seed,
+            &device_agreement_private,
+            &enrollment_nonce,
+            transition_id,
+        )?;
+        if rebuilt != row.candidate_bytes {
+            return Err(Error::Invalid("stored claim differs from durable keys"));
+        }
+        let mut public = PublicHistorySession::begin(
+            store,
+            row.family,
+            &row.genesis_bytes,
+            bootstrap.relay_public_key_internal(),
+        )?;
+        if public.cursor() == 1 {
+            public.accept_control(store, &row.issue_bytes)?;
+        }
+        let history = store
+            .shared_history(row.family)?
+            .ok_or(Error::Invalid("shared history absent after enrollment"))?;
+        if history
+            .entries
+            .first()
+            .is_none_or(|first| first.kind != 1 || first.committed_bytes != row.issue_bytes)
+        {
+            return Err(Error::Invalid("stored issue differs from pinned history"));
+        }
+        Ok(Self {
+            family: row.family,
+            invitation_id: row.invitation_id,
+            bootstrap_fragment: fragment.clone(),
+            candidate_bytes: row.candidate_bytes,
+            device_sign_seed,
+            device_agreement_private,
+        })
+    }
+
+    pub fn family(&self) -> FamilyHandle {
+        self.family
+    }
+    pub fn invitation_id(&self) -> [u8; 16] {
+        self.invitation_id
+    }
+    pub fn claim_candidate(&self) -> &[u8] {
+        &self.candidate_bytes
+    }
+    pub fn device_sign_public(&self) -> [u8; 32] {
+        crypto::signing_public_key(&self.device_sign_seed)
+    }
+    pub fn device_agreement_public(&self) -> Result<[u8; 32], Error> {
+        Ok(hpke::public_key_from_private(
+            &self.device_agreement_private,
+        )?)
+    }
+}
+
+fn build_claim(
+    bootstrap: &InvitationBootstrap,
+    chain: &crate::control_chain::ControlChain,
+    family: FamilyHandle,
+    device_sign_seed: &[u8; 32],
+    device_agreement_private: &[u8; 32],
+    enrollment_nonce: &[u8; 32],
+    transition_id: [u8; 16],
+) -> Result<Vec<u8>, Error> {
+    let sign_public = crypto::signing_public_key(device_sign_seed);
+    let agree_public = hpke::public_key_from_private(device_agreement_private)?;
+    let claim_input = Value::Array(vec![
+        Value::Bytes(family.family_id.to_vec()),
+        Value::Bytes(chain.relay_id().to_vec()),
+        Value::Bytes(bootstrap.invitation_id().to_vec()),
+        Value::Integer(bootstrap.fixed_role().into()),
+        Value::Bytes(family.device_id.to_vec()),
+        Value::Bytes(sign_public.to_vec()),
+        Value::Bytes(agree_public.to_vec()),
+        Value::Integer(1),
+        Value::Bytes(enrollment_nonce.to_vec()),
+        Value::Bytes(chain.head_hash().to_vec()),
+    ]);
+    let claim_hash = crypto::hash("claim", &cbor::encode(&claim_input)?)?;
+    let mut state = cbor::decode(&chain.state_bytes()?)?;
+    let Value::Map(state_fields) = &mut state else {
+        return Err(Error::Invalid("verified authority state not map"));
+    };
+    let Value::Array(invitations) = &mut state_fields[6].1 else {
+        return Err(Error::Invalid("verified invitations not array"));
+    };
+    let row = invitations
+        .iter_mut()
+        .find(|row| {
+            matches!(row, Value::Array(fields) if fields[0] == Value::Bytes(bootstrap.invitation_id().to_vec()))
+        })
+        .ok_or(Error::Invalid("linked invitation missing"))?;
+    let Value::Array(invitation) = row else {
+        unreachable!()
+    };
+    if invitation[5] != Value::Integer(1) {
+        return Err(Error::Invalid("invitation is already consumed"));
+    }
+    invitation[5] = Value::Integer(2);
+    let Value::Array(pending) = &mut state_fields[5].1 else {
+        return Err(Error::Invalid("verified pending state not array"));
+    };
+    pending.push(Value::Array(vec![
+        Value::Bytes(bootstrap.invitation_id().to_vec()),
+        Value::Bytes(family.device_id.to_vec()),
+        Value::Bytes(sign_public.to_vec()),
+        Value::Bytes(agree_public.to_vec()),
+        Value::Integer(1),
+        Value::Integer(bootstrap.fixed_role().into()),
+        Value::Bytes(claim_hash.to_vec()),
+        Value::Null,
+        Value::Null,
+    ]));
+    pending.sort_by(|left, right| {
+        let (Value::Array(left), Value::Array(right)) = (left, right) else {
+            unreachable!()
+        };
+        let (Value::Bytes(left), Value::Bytes(right)) = (&left[0], &right[0]) else {
+            unreachable!()
+        };
+        left.cmp(right)
+    });
+    let delta = Value::Map(vec![
+        (1, Value::Bytes(bootstrap.invitation_id().to_vec())),
+        (2, Value::Bytes(family.device_id.to_vec())),
+        (3, Value::Bytes(sign_public.to_vec())),
+        (4, Value::Bytes(agree_public.to_vec())),
+        (5, Value::Integer(1)),
+        (6, Value::Bytes(enrollment_nonce.to_vec())),
+        (7, Value::Bytes(claim_hash.to_vec())),
+    ]);
+    let mut parts = vec![
+        Value::Integer(1),
+        Value::Bytes(family.family_id.to_vec()),
+        Value::Bytes(chain.relay_id().to_vec()),
+        Value::Bytes(chain.head_hash().to_vec()),
+        Value::Bytes(transition_id.to_vec()),
+        Value::Integer(4),
+        delta,
+        Value::Bytes(crypto::hash("auth-state", &cbor::encode(&state)?)?.to_vec()),
+        Value::Integer(chain.epoch()?.into()),
+    ];
+    let core_hash = crypto::hash(
+        "transition-core",
+        &cbor::encode(&Value::Array(parts.clone()))?,
+    )?;
+    parts.push(Value::Array(vec![]));
+    parts.push(Value::Bytes(core_hash.to_vec()));
+    let unsigned = Value::Map(
+        parts
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| (index as u64 + 1, value))
+            .collect(),
+    );
+    let unsigned_bytes = cbor::encode(&unsigned)?;
+    let mut signatures = vec![
+        (bootstrap.invitation_id(), bootstrap.invitation_sign_seed()),
+        (family.device_id, *device_sign_seed),
+    ];
+    signatures.sort_by_key(|entry| entry.0);
+    let signatures = Value::Array(
+        signatures
+            .into_iter()
+            .map(|(id, seed)| {
+                Ok(Value::Array(vec![
+                    Value::Bytes(id.to_vec()),
+                    Value::Bytes(
+                        crypto::sign_cbor("control-transition", &unsigned_bytes, &seed)?.to_vec(),
+                    ),
+                ]))
+            })
+            .collect::<Result<Vec<_>, Error>>()?,
+    );
+    Ok(cbor::encode(&Value::Map(vec![
+        (1, unsigned),
+        (2, signatures),
+    ]))?)
+}
+
+fn local_aad(family: FamilyHandle, invitation_id: [u8; 16]) -> Result<[u8; 32], Error> {
+    let bytes = cbor::encode(&Value::Array(vec![
+        Value::Bytes(family.family_id.to_vec()),
+        Value::Bytes(family.device_id.to_vec()),
+        Value::Bytes(invitation_id.to_vec()),
+    ]))?;
+    Ok(crypto::hash("enrollment-local-aad", &bytes)?)
+}
+
+fn candidate_transition_id(bytes: &[u8]) -> Result<[u8; 16], Error> {
+    let value = cbor::decode(bytes)?;
+    let Value::Map(root) = value else {
+        return Err(Error::Invalid("claim candidate not map"));
+    };
+    let Value::Map(unsigned) = &root[0].1 else {
+        return Err(Error::Invalid("claim unsigned not map"));
+    };
+    fixed(&unsigned[4].1)
+}
+
+fn fixed<const N: usize>(value: &Value) -> Result<[u8; N], Error> {
+    let Value::Bytes(bytes) = value else {
+        return Err(Error::Invalid("enrollment field not bytes"));
+    };
+    bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| Error::Invalid("enrollment byte length invalid"))
+}
+
+fn random<const N: usize>() -> Result<[u8; N], Error> {
+    let mut bytes = [0u8; N];
+    getrandom::fill(&mut bytes).map_err(Error::Random)?;
+    Ok(bytes)
+}
+
+fn random_v4() -> Result<[u8; 16], Error> {
+    let mut bytes = random::<16>()?;
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    Ok(bytes)
+}

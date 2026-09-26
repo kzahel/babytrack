@@ -204,8 +204,15 @@ descriptor without contacting the relay. It pins the exact origin, relay
 key, Family/genesis, role, invitation seed, and signed issue hash, then
 verifies the fetched genesis and issue before a claim. The contiguous
 fragment round-trips exactly; altered link fields, padding, extra fragment
-keys, and mismatched signed bytes fail. Durable recipient enrollment keys
-and claim generation are still open.
+keys, and mismatched signed bytes fail. A recipient now prepares one
+Family-scoped signing key, agreement key, enrollment nonce, and exact
+two-signature claim candidate, and atomically saves them before a POST.
+The secret bundle is encrypted under an app-supplied local wrapping key;
+reopen reproduces the same signed bytes and public keys, while a wrong
+wrapping key fails. A synthetic relay-signed commit of the prepared claim
+passes public authority replay. Android still needs to supply the wrapping
+key through its platform key interface, and candidate retry/rebase after a
+definite stale-head response remains open.
 The contiguous byte vector passes through both transitions. Producing
 transitions and a durable joining-device readiness session remain open.
 Public replay now also

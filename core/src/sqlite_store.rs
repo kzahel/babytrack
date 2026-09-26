@@ -119,6 +119,16 @@ pub(crate) struct VerifiedSharedEntry<'a> {
 
 pub(crate) type SharedObjects = Vec<([u8; 16], Vec<u8>)>;
 
+pub(crate) struct EnrollmentRow {
+    pub family: FamilyHandle,
+    pub invitation_id: [u8; 16],
+    pub genesis_bytes: Vec<u8>,
+    pub issue_bytes: Vec<u8>,
+    pub candidate_bytes: Vec<u8>,
+    pub secret_nonce: [u8; 24],
+    pub secret_ciphertext: Vec<u8>,
+}
+
 pub struct SqliteStore {
     connection: Connection,
 }
@@ -216,6 +226,17 @@ impl SqliteStore {
                object_bytes BLOB NOT NULL,
                PRIMARY KEY (family_id, object_id),
                FOREIGN KEY (family_id) REFERENCES shared_roots(family_id)
+             );
+             CREATE TABLE IF NOT EXISTS enrollment_attempts (
+               family_id BLOB PRIMARY KEY CHECK(length(family_id) = 16),
+               device_id BLOB NOT NULL CHECK(length(device_id) = 16),
+               invitation_id BLOB NOT NULL CHECK(length(invitation_id) = 16),
+               genesis_bytes BLOB NOT NULL,
+               issue_bytes BLOB NOT NULL,
+               candidate_bytes BLOB NOT NULL,
+               secret_nonce BLOB NOT NULL CHECK(length(secret_nonce) = 24),
+               secret_ciphertext BLOB NOT NULL,
+               FOREIGN KEY (family_id) REFERENCES families(family_id)
              );
              INSERT OR IGNORE INTO local_sync_state(family_id)
                SELECT family_id FROM families;",
@@ -799,6 +820,87 @@ impl SqliteStore {
                 Ok((id.try_into().map_err(|_| Error::CorruptState)?, bytes))
             })
             .collect::<Result<Vec<_>, Error>>()
+    }
+
+    pub(crate) fn create_enrollment_attempt(&mut self, row: &EnrollmentRow) -> Result<(), Error> {
+        if !ids::is_v4(&row.family.family_id)
+            || !ids::is_v4(&row.family.device_id)
+            || !ids::is_v4(&row.invitation_id)
+        {
+            return Err(Error::InvalidId);
+        }
+        let transaction = self.connection.transaction()?;
+        transaction.execute(
+            "INSERT INTO families(family_id, device_id) VALUES (?1, ?2)",
+            params![
+                row.family.family_id.as_slice(),
+                row.family.device_id.as_slice()
+            ],
+        )?;
+        transaction.execute(
+            "INSERT INTO local_sync_state(family_id) VALUES (?1)",
+            [row.family.family_id.as_slice()],
+        )?;
+        transaction.execute(
+            "INSERT INTO enrollment_attempts
+             (family_id, device_id, invitation_id, genesis_bytes, issue_bytes,
+              candidate_bytes, secret_nonce, secret_ciphertext)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                row.family.family_id.as_slice(),
+                row.family.device_id.as_slice(),
+                row.invitation_id.as_slice(),
+                &row.genesis_bytes,
+                &row.issue_bytes,
+                &row.candidate_bytes,
+                row.secret_nonce.as_slice(),
+                &row.secret_ciphertext
+            ],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn enrollment_attempt(
+        &self,
+        family_id: [u8; 16],
+    ) -> Result<Option<EnrollmentRow>, Error> {
+        self.connection
+            .query_row(
+                "SELECT device_id, invitation_id, genesis_bytes, issue_bytes,
+                        candidate_bytes, secret_nonce, secret_ciphertext
+                 FROM enrollment_attempts WHERE family_id = ?1",
+                [family_id.as_slice()],
+                |row| {
+                    Ok((
+                        row.get::<_, Vec<u8>>(0)?,
+                        row.get::<_, Vec<u8>>(1)?,
+                        row.get::<_, Vec<u8>>(2)?,
+                        row.get::<_, Vec<u8>>(3)?,
+                        row.get::<_, Vec<u8>>(4)?,
+                        row.get::<_, Vec<u8>>(5)?,
+                        row.get::<_, Vec<u8>>(6)?,
+                    ))
+                },
+            )
+            .optional()?
+            .map(|row| {
+                let family = FamilyHandle {
+                    family_id,
+                    device_id: row.0.try_into().map_err(|_| Error::CorruptState)?,
+                };
+                let _ = checked_family(&self.connection, family)?;
+                Ok(EnrollmentRow {
+                    family,
+                    invitation_id: row.1.try_into().map_err(|_| Error::CorruptState)?,
+                    genesis_bytes: row.2,
+                    issue_bytes: row.3,
+                    candidate_bytes: row.4,
+                    secret_nonce: row.5.try_into().map_err(|_| Error::CorruptState)?,
+                    secret_ciphertext: row.6,
+                })
+            })
+            .transpose()
     }
 }
 

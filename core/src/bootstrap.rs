@@ -185,6 +185,12 @@ impl InvitationBootstrap {
     pub fn fixed_role(&self) -> u8 {
         self.fixed_role
     }
+    pub(crate) fn invitation_sign_seed(&self) -> [u8; 32] {
+        self.invitation_sign_seed
+    }
+    pub(crate) fn relay_public_key_internal(&self) -> [u8; 32] {
+        self.relay_public_key
+    }
 
     /// Verify the exact signed genesis and committed issue before a joiner
     /// generates credentials or sends a claim. Neither byte string may be a

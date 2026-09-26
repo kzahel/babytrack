@@ -77,8 +77,9 @@ has no unresolved access or retention blocker.
 
 - [ ] Promote all local history atomically. Connect two CLI clients and the
   real-browser harness through the relay. Inject offline writes, duplicate
-  requests, lost responses, restart, old-epoch rejection, malformed signed
-  payloads, and a withheld latest batch (FS03, FS17-FS18, FS31-FS32,
+  requests, lost WebSocket notices or responses, polling fallback, client
+  and relay restart, old-epoch rejection, malformed signed payloads, and a
+  withheld latest batch (FS03, FS17-FS18, FS31-FS32,
   FS46, FS49-FS50, FS60).
 - [ ] Run the end-of-M0 independent review using the
   [review runbook](../security-review-runbook.md). Review recovery,

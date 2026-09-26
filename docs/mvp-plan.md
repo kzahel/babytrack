@@ -39,9 +39,14 @@ One Rust core shared by every client, with native UI on each platform.
   recovery design, protocol contracts, and threat model. Do not infer that
   naming primitives settles the membership or key-handoff protocol.
 - **Server (Rust, axum).** A dumb relay: an ordered log of encrypted blobs per
-  family. Clients pull everything since a cursor, get live updates over a
-  WebSocket, and receive empty wake pushes sent directly through APNs and FCM
-  (UnifiedPush in M5).
+  family. Clients pull everything since their last verified cursor. A
+  WebSocket wakes connected clients when new log entries arrive; clients
+  fetch and verify the log rather than treating the notification as data.
+  Startup, reconnect, foreground return, and a background wake also trigger
+  a fetch. Connected clients use bounded polling/backoff if the WebSocket is
+  unavailable. Empty APNs/FCM pushes wake suspended phone clients from their
+  platform milestones (UnifiedPush in M5); missing pushes delay progress but
+  never determine accepted state.
   SQLite by default, Postgres optional for the hosted service. The same binary
   serves the static web client, so self-hosting is one container.
 - **iOS and watchOS.** SwiftUI, iOS 17+. WidgetKit, Live Activities for
@@ -210,8 +215,13 @@ are symbolic until M0 gives them executable actions and assertions.
   Start with encoding, encryption, and unknown-field preservation; include
   version skew before treating the protocol as stable.
 - **Sync integration.** A bounded, deterministic test uses a real relay and
-  several CLI clients on relevant PRs. It covers offline reconnect, concurrent
-  edits, membership changes, and recovery. Nightly runs extend this into
+  several CLI clients with independent keys and local stores on relevant PRs.
+  It covers offline reconnect, concurrent edits, membership changes, and
+  recovery. Tests separately cut each client's network, drop wakes and
+  responses, and restart clients or the relay; assertions include verified
+  cursors, pending outboxes, visible stages, and private-copy destinations.
+  WebSocket notifications and polling are wake paths, while cursor fetch and
+  signed acceptance evidence establish state. Nightly runs extend this into
   randomized multi-client and fault-injection tests, retaining failure seeds.
   A plaintext marker test fails if event strings appear in the relay database
   or logs. M0 also exercises a minimal real-browser client with IndexedDB

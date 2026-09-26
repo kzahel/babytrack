@@ -216,6 +216,28 @@ The push sender is an interface with APNs and FCM implementations first and
 UnifiedPush later (see the plan's service interface requirements). Quotas
 limit storage per family and requests per family and IP.
 
+### Transport and wake behavior
+
+The verified ordered log and signed receipts are the durable sync source.
+Clients fetch after their last verified cursor on startup, reconnect,
+foreground return, and a background wake. An online client may keep a
+WebSocket open for low-latency notice of new entries. The notice is only a
+wake hint: the client still fetches, verifies, decrypts, and projects the
+log. If the socket is unavailable while the client can run, bounded
+polling with backoff provides another wake path. No persistent connection
+or simultaneous device availability is required for eventual progress when
+clients later reconnect to an honest relay.
+
+M0 proves this with a real relay and separately stored CLI/browser clients,
+including disconnected clients, lost notices and responses, and restarts.
+No vendor push is needed for M0 protocol correctness. From M1, FCM provides
+an empty background wake to Android through the app-owned push interface;
+APNs does the same for iOS later. These improve automatic progress when an
+app is suspended, but a missed push leaves the durable attempt pending for
+the next available run. A wake never proves a batch, admission, or removal
+committed. The client obtains signed acceptance evidence or a verified log
+entry before showing shared success. The UI exposes each pending stage.
+
 ## Encoding and versioning
 
 - Operations and batch payloads use CBOR with integer keys. Only the Rust

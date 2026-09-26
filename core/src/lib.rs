@@ -4,10 +4,10 @@
 
 pub mod batch;
 pub mod bootstrap;
-pub mod cbor;
+pub use babytrack_wire::cbor;
 pub mod control;
 pub mod control_chain;
-pub mod crypto;
+pub use babytrack_wire::crypto;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod enrollment;
 pub mod grant;

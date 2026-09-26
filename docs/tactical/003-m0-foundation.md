@@ -50,6 +50,12 @@ copy/restore; no Family handle reaches another Family's rows, keys, or file.
 
 ### 3. Relay authority and early security review
 
+Canonical CBOR and domain-separated hash, signature, and AEAD primitives
+now live in a narrow `babytrack-wire` crate. The client core reexports the
+same implementation; the relay can depend on it without importing client
+storage, plaintext operations, or Family keys. The real relay, authority
+validation, and route tests below remain open.
+
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed
   batch receipts, and authenticated reads. Relay stores opaque bytes and

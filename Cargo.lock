@@ -106,8 +106,7 @@ dependencies = [
 name = "babytrack-core"
 version = "0.0.0"
 dependencies = [
- "chacha20poly1305",
- "ed25519-dalek",
+ "babytrack-wire",
  "getrandom",
  "hpke",
  "rand_chacha",
@@ -135,6 +134,15 @@ dependencies = [
 [[package]]
 name = "babytrack-server"
 version = "0.0.0"
+
+[[package]]
+name = "babytrack-wire"
+version = "0.0.0"
+dependencies = [
+ "chacha20poly1305",
+ "ed25519-dalek",
+ "sha2",
+]
 
 [[package]]
 name = "basic-toml"

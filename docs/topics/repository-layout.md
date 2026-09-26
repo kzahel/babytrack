@@ -27,6 +27,7 @@ appear implemented.
 | Path | Responsibility | Introduced |
 |---|---|---|
 | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` | Workspace, reproducible dependency/toolchain choices | Scaffolding |
+| `wire/` | Canonical CBOR and domain-separated wire primitives shared without client storage or event logic | M0 relay |
 | `core/` | Model, operations, projection, storage, crypto, sync, import/export | Scaffold target; behavior in M0 |
 | `core-ffi/` | UniFFI boundary over the core for Swift/Kotlin | Scaffold target; binding proof in M0 |
 | `core-wasm/` | wasm-bindgen boundary over the core for browsers | Scaffold target; binding proof in M0 |
@@ -39,8 +40,10 @@ appear implemented.
 | `apps/web/` | Svelte product UI | M2; M0 browser proof belongs to test infrastructure |
 | `apps/ios/` | iOS/watchOS apps and extensions | M3 phone, M4 watch |
 
-The five Rust targets and root build files now exist. The core now contains
-a canonical CBOR codec, operation decoder, crypto/HPKE primitives, signed
+The six Rust targets and root build files now exist. The narrow `wire/` crate
+contains canonical CBOR and domain-separated hash/signature/AEAD primitives;
+the core reexports these unchanged for its clients. The core contains
+operation decoding, HPKE primitives, signed
 batch bytes, in-memory projection, HLC, and vector tests. `core-wasm/` now
 calls the shared batch/projection path from JavaScript against fixed vectors.
 `core-ffi/` exposes that path through UniFFI and passes selected Swift and
@@ -71,9 +74,10 @@ crate named `core`, and pins Rust 1.92.0. Path names above remain short.
   Validate SQLite/native and IndexedDB/browser transaction behavior before
   freezing the storage API.
 - The relay must build without plaintext event semantics or client key
-  recovery logic. Do not make it depend on the entire client core for
-  convenience. Extract a narrowly shared envelope crate only if a concrete
-  contract demonstrates the need; do not create one speculatively.
+  recovery logic. It may use `wire/` for exact CBOR and public cryptographic
+  primitives, but cannot depend on the entire client core. Relay authority
+  validation remains server-owned and must be cross-checked with client
+  vectors and scenario tests.
 - Keep component unit tests beside their component. Shared scenarios and
   vectors use stable IDs to connect decisions to executable tests.
 

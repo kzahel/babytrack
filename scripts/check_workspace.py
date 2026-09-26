@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 BOUNDARIES = {
+    "babytrack-wire": "wire",
     "babytrack-core": "core",
     "babytrack-core-ffi": "core-ffi",
     "babytrack-core-wasm": "core-wasm",

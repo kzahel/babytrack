@@ -266,18 +266,18 @@ impl FamilySession {
     }
 }
 
-struct AcceptedReceipt {
-    family_id: [u8; 16],
-    relay_id: [u8; 32],
-    batch_id: [u8; 16],
-    object_hash: [u8; 32],
-    cursor: u64,
-    control_head: [u8; 32],
-    device_sequence: u64,
-    next_expected_sequence: u64,
+pub(crate) struct AcceptedReceipt {
+    pub(crate) family_id: [u8; 16],
+    pub(crate) relay_id: [u8; 32],
+    pub(crate) batch_id: [u8; 16],
+    pub(crate) object_hash: [u8; 32],
+    pub(crate) cursor: u64,
+    pub(crate) control_head: [u8; 32],
+    pub(crate) device_sequence: u64,
+    pub(crate) next_expected_sequence: u64,
 }
 
-fn verify_accepted_receipt(
+pub(crate) fn verify_accepted_receipt(
     bytes: &[u8],
     relay_public_key: &[u8; 32],
 ) -> Result<AcceptedReceipt, Error> {

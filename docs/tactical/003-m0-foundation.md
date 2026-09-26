@@ -183,7 +183,13 @@ proved pending device with its active row at the invitation's fixed role
 and commitment; repair names that admission and leaves authority unchanged.
 The contiguous byte vector passes through both transitions. Validating the
 HPKE grant and encrypted membership objects, producing these transitions,
-and rotating after removal remain open.
+and encrypted membership readiness remain open. Public replay now also
+verifies the recipient's accepted signed batch at cursor 8, then the
+manager's active-removal transition at cursor 9. Removal increments the
+epoch, keeps a manager, cancels affected unused invites, clears pending
+challenge/proof state, and rejects a fresh old-key write from the removed
+device. The rotation keyring and recipient grants still need cryptographic
+checks before epoch-two data can be used.
 `FamilySession` now consumes the fixed genesis and `BATCHBYTE01` acceptance
 through a core-owned path: it verifies the manager, head, epoch, sequence,
 object hash, cursor, and relay-signed receipt before projecting the first

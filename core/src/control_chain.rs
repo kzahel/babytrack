@@ -5,9 +5,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
+    batch,
     cbor::{self, Value},
     control::{self, Genesis, array, exact_map, fixed, number, signed_number},
-    crypto,
+    crypto, session,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,6 +16,7 @@ pub enum Error {
     Control(control::Error),
     Cbor(cbor::Error),
     Crypto(crypto::Error),
+    Batch(batch::Error),
     Invalid(&'static str),
     UnsupportedKind,
 }
@@ -33,6 +35,11 @@ impl From<crypto::Error> for Error {
         Self::Crypto(value)
     }
 }
+impl From<batch::Error> for Error {
+    fn from(value: batch::Error) -> Self {
+        Self::Batch(value)
+    }
+}
 
 pub struct ControlChain {
     genesis: Genesis,
@@ -45,6 +52,10 @@ pub struct ControlChain {
     challenges: BTreeMap<[u8; 16], ChallengeRecord>,
     seen_challenge_ids: BTreeSet<[u8; 16]>,
     admissions: BTreeMap<[u8; 16], [u8; 16]>,
+    known_heads: BTreeMap<[u8; 32], u32>,
+    next_sequences: BTreeMap<[u8; 16], u64>,
+    seen_batch_ids: BTreeSet<[u8; 16]>,
+    current_commitment: [u8; 32],
 }
 
 struct ChallengeRecord {
@@ -76,8 +87,10 @@ impl ControlChain {
             (6, Value::Array(vec![])),
             (7, Value::Array(vec![])),
         ]);
+        let genesis_head = genesis.head_hash();
+        let genesis_commitment = genesis.epoch_key_commitment();
         Ok(Self {
-            head_hash: genesis.head_hash(),
+            head_hash: genesis_head,
             last_global_cursor: 1,
             last_commit_ms: genesis.committed_ms(),
             genesis,
@@ -87,6 +100,10 @@ impl ControlChain {
             challenges: BTreeMap::new(),
             seen_challenge_ids: BTreeSet::new(),
             admissions: BTreeMap::new(),
+            known_heads: BTreeMap::from([(genesis_head, 1)]),
+            next_sequences: BTreeMap::new(),
+            seen_batch_ids: BTreeSet::new(),
+            current_commitment: genesis_commitment,
         })
     }
 
@@ -112,7 +129,7 @@ impl ControlChain {
         let unsigned = exact_map(&root[0].1, 11)?;
         if number(&unsigned[0].1)? != 1
             || number(&unsigned[5].1)? != 2
-            || number(&unsigned[8].1)? != 1
+            || number(&unsigned[8].1)? != self.current_epoch()?
             || fixed::<16>(&unsigned[1].1)? != self.genesis.family_id()
             || fixed::<32>(&unsigned[2].1)? != self.genesis.relay_id()
             || fixed::<32>(&unsigned[3].1)? != self.head_hash
@@ -242,10 +259,14 @@ impl ControlChain {
             &self.relay_public_key,
             &fixed::<64>(&root[3].1)?,
         )?;
+        let next_head = crypto::hash("control-head", bytes)?;
+        let epoch = u32::try_from(number(&exact_map(&next_state, 7)?[3].1)?)
+            .map_err(|_| Error::Invalid("epoch outside u32"))?;
         self.state = next_state;
-        self.head_hash = crypto::hash("control-head", bytes)?;
+        self.head_hash = next_head;
         self.last_global_cursor = expected_cursor;
         self.last_commit_ms = committed_ms;
+        self.known_heads.insert(self.head_hash, epoch);
         self.issue_times.insert(invitation_id, committed_ms);
         Ok(())
     }
@@ -262,7 +283,7 @@ impl ControlChain {
         let unsigned = exact_map(&root[0].1, 11)?;
         if number(&unsigned[0].1)? != 1
             || number(&unsigned[5].1)? != 4
-            || number(&unsigned[8].1)? != 1
+            || number(&unsigned[8].1)? != self.current_epoch()?
             || fixed::<16>(&unsigned[1].1)? != self.genesis.family_id()
             || fixed::<32>(&unsigned[2].1)? != self.genesis.relay_id()
             || fixed::<32>(&unsigned[3].1)? != self.head_hash
@@ -472,10 +493,14 @@ impl ControlChain {
             &self.relay_public_key,
             &fixed::<64>(&root[3].1)?,
         )?;
+        let next_head = crypto::hash("control-head", bytes)?;
+        let epoch = u32::try_from(number(&exact_map(&next_state, 7)?[3].1)?)
+            .map_err(|_| Error::Invalid("epoch outside u32"))?;
         self.state = next_state;
-        self.head_hash = crypto::hash("control-head", bytes)?;
+        self.head_hash = next_head;
         self.last_global_cursor = expected_cursor;
         self.last_commit_ms = committed_ms;
+        self.known_heads.insert(self.head_hash, epoch);
         Ok(())
     }
 
@@ -489,7 +514,7 @@ impl ControlChain {
         )?;
         let root = exact_map(&object, 4)?;
         let unsigned = exact_map(&root[0].1, 11)?;
-        self.check_unsigned(unsigned, 11, 1)?;
+        self.check_unsigned(unsigned, 11, self.current_epoch()?)?;
         let delta = exact_map(&unsigned[6].1, 4)?;
         let invitation_id = fixed::<16>(&delta[0].1)?;
         let device_id = fixed::<16>(&delta[1].1)?;
@@ -561,7 +586,7 @@ impl ControlChain {
         )?;
         let root = exact_map(&object, 4)?;
         let unsigned = exact_map(&root[0].1, 11)?;
-        self.check_unsigned(unsigned, 5, 1)?;
+        self.check_unsigned(unsigned, 5, self.current_epoch()?)?;
         let delta = exact_map(&unsigned[6].1, 4)?;
         let invitation_id = fixed::<16>(&delta[0].1)?;
         let device_id = fixed::<16>(&delta[1].1)?;
@@ -631,14 +656,14 @@ impl ControlChain {
         )?;
         let root = exact_map(&object, 4)?;
         let unsigned = exact_map(&root[0].1, 11)?;
-        self.check_unsigned(unsigned, 6, 1)?;
+        self.check_unsigned(unsigned, 6, self.current_epoch()?)?;
         let transition_id = fixed::<16>(&unsigned[4].1)?;
         let delta = exact_map(&unsigned[6].1, 4)?;
         let invitation_id = fixed::<16>(&delta[0].1)?;
         let device_id = fixed::<16>(&delta[1].1)?;
         let role = number(&delta[2].1)?;
         let commitment = fixed::<32>(&delta[3].1)?;
-        if commitment != self.genesis.epoch_key_commitment() {
+        if commitment != self.current_commitment {
             return Err(Error::Invalid(
                 "admission key commitment differs from active epoch",
             ));
@@ -711,13 +736,13 @@ impl ControlChain {
         )?;
         let root = exact_map(&object, 4)?;
         let unsigned = exact_map(&root[0].1, 11)?;
-        self.check_unsigned(unsigned, 10, 1)?;
+        self.check_unsigned(unsigned, 10, self.current_epoch()?)?;
         let delta = exact_map(&unsigned[6].1, 3)?;
         let device_id = fixed::<16>(&delta[0].1)?;
         let admission_id = fixed::<16>(&delta[1].1)?;
         let commitment = fixed::<32>(&delta[2].1)?;
         if self.admissions.get(&device_id) != Some(&admission_id)
-            || commitment != self.genesis.epoch_key_commitment()
+            || commitment != self.current_commitment
         {
             return Err(Error::Invalid(
                 "repair recipient, admission, or epoch commitment mismatch",
@@ -744,6 +769,181 @@ impl ControlChain {
             },
         )?;
         Ok(())
+    }
+
+    /// Verify only public batch authorization and its relay acceptance. Data
+    /// decryption/projection is a separate core step; this is useful for
+    /// following the global cursor before a later control transition.
+    pub fn apply_public_batch(
+        &mut self,
+        envelope_bytes: &[u8],
+        receipt_bytes: &[u8],
+    ) -> Result<(), Error> {
+        let value = cbor::decode_with_limits(
+            envelope_bytes,
+            cbor::Limits {
+                max_bytes: 256 * 1024 + 2048,
+                max_depth: 16,
+            },
+        )?;
+        let envelope = exact_map(&value, 3)?;
+        let header_bytes = cbor::encode(&envelope[0].1)?;
+        let header = batch::Header::decode(&header_bytes)?;
+        let state = exact_map(&self.state, 7)?;
+        let active = find_row(&state[4].1, 5, 0, header.author_device_id)?
+            .ok_or(Error::Invalid("batch author is not active"))?;
+        let signer = fixed::<32>(&active[1])?;
+        let signed = batch::verify_signed_envelope(
+            envelope_bytes,
+            &self.genesis.family_id(),
+            &self.genesis.relay_id(),
+            &signer,
+        )?;
+        let current_epoch: u32 = number(&state[3].1)?
+            .try_into()
+            .map_err(|_| Error::Invalid("epoch outside u32"))?;
+        if header.epoch != current_epoch
+            || self.known_heads.get(&header.control_head) != Some(&current_epoch)
+        {
+            return Err(Error::Invalid(
+                "batch epoch or authoring head not current ancestry",
+            ));
+        }
+        let expected_sequence = self
+            .next_sequences
+            .get(&header.author_device_id)
+            .copied()
+            .unwrap_or(1);
+        if header.device_sequence != expected_sequence
+            || self.seen_batch_ids.contains(&header.batch_id)
+        {
+            return Err(Error::Invalid("batch sequence or ID reused"));
+        }
+        let receipt = session::verify_accepted_receipt(receipt_bytes, &self.relay_public_key)
+            .map_err(|_| Error::Invalid("batch acceptance receipt invalid"))?;
+        let expected_cursor = self
+            .last_global_cursor
+            .checked_add(1)
+            .ok_or(Error::Invalid("cursor overflow"))?;
+        if receipt.family_id != self.genesis.family_id()
+            || receipt.relay_id != self.genesis.relay_id()
+            || receipt.batch_id != header.batch_id
+            || receipt.object_hash != signed.object_hash()
+            || receipt.cursor != expected_cursor
+            || receipt.control_head != self.head_hash
+            || receipt.device_sequence != expected_sequence
+            || receipt.next_expected_sequence
+                != expected_sequence
+                    .checked_add(1)
+                    .ok_or(Error::Invalid("sequence overflow"))?
+        {
+            return Err(Error::Invalid(
+                "batch receipt does not match authorized cursor",
+            ));
+        }
+        self.last_global_cursor = expected_cursor;
+        self.next_sequences
+            .insert(header.author_device_id, receipt.next_expected_sequence);
+        self.seen_batch_ids.insert(header.batch_id);
+        Ok(())
+    }
+
+    pub fn apply_remove_active(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        let object = cbor::decode_with_limits(
+            bytes,
+            cbor::Limits {
+                max_bytes: 1024 * 1024,
+                max_depth: 16,
+            },
+        )?;
+        let root = exact_map(&object, 4)?;
+        let unsigned = exact_map(&root[0].1, 11)?;
+        let next_epoch = self
+            .current_epoch()?
+            .checked_add(1)
+            .ok_or(Error::Invalid("epoch overflow"))?;
+        let _: u32 = next_epoch
+            .try_into()
+            .map_err(|_| Error::Invalid("epoch outside u32"))?;
+        self.check_unsigned(unsigned, 8, next_epoch)?;
+        let delta = exact_map(&unsigned[6].1, 3)?;
+        let target_id = fixed::<16>(&delta[0].1)?;
+        let old_role = number(&delta[1].1)?;
+        let new_commitment = fixed::<32>(&delta[2].1)?;
+        let state = exact_map(&self.state, 7)?;
+        let target = find_row(&state[4].1, 5, 0, target_id)?
+            .ok_or(Error::Invalid("removal target not active"))?;
+        if number(&target[4])? != old_role {
+            return Err(Error::Invalid("removal old role mismatch"));
+        }
+        let signatures = array(&root[1].1, 1)?;
+        let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
+        let signer = find_row(&state[4].1, 5, 0, signer_id)?
+            .ok_or(Error::Invalid("removal signer not active"))?;
+        if number(&signer[4])? != 2 {
+            return Err(Error::Invalid("removal signer not manager"));
+        }
+        let signer_key = fixed::<32>(&signer[1])?;
+        let mut next_state = self.state.clone();
+        let Value::Map(map) = &mut next_state else {
+            unreachable!()
+        };
+        map[3].1 = Value::Integer(next_epoch.into());
+        let Value::Array(active) = &mut map[4].1 else {
+            unreachable!()
+        };
+        active.retain(|row| {
+            !array(row, 5).is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(target_id))
+        });
+        if !active
+            .iter()
+            .any(|row| array(row, 5).is_ok_and(|fields| number(&fields[4]).ok() == Some(2)))
+        {
+            return Err(Error::Invalid("cannot remove final manager"));
+        }
+        let remaining = active.len();
+        let Value::Array(invitations) = &mut map[6].1 else {
+            unreachable!()
+        };
+        for invitation in invitations {
+            let Value::Array(fields) = invitation else {
+                unreachable!()
+            };
+            if fixed::<16>(&fields[1])? == target_id && number(&fields[5])? == 1 {
+                fields[5] = Value::Integer(3);
+            }
+        }
+        let Value::Array(pending) = &mut map[5].1 else {
+            unreachable!()
+        };
+        for row in pending {
+            let Value::Array(fields) = row else {
+                unreachable!()
+            };
+            fields[7] = Value::Null;
+            fields[8] = Value::Null;
+        }
+        let mut kinds = vec![1];
+        kinds.extend(std::iter::repeat_n(4, remaining));
+        kinds.push(5);
+        self.finalize(
+            bytes,
+            root,
+            unsigned,
+            FinalizePlan {
+                next_state,
+                expected_signers: &[(signer_id, signer_key)],
+                manifest_kinds: &kinds,
+                before_ms: None,
+            },
+        )?;
+        self.current_commitment = new_commitment;
+        self.challenges.clear();
+        Ok(())
+    }
+
+    fn current_epoch(&self) -> Result<u64, Error> {
+        Ok(number(&exact_map(&self.state, 7)?[3].1)?)
     }
 
     fn check_unsigned(
@@ -852,10 +1052,15 @@ impl ControlChain {
             &self.relay_public_key,
             &fixed::<64>(&root[3].1)?,
         )?;
+        let next_head = crypto::hash("control-head", bytes)?;
+        let epoch: u32 = number(&exact_map(&next_state, 7)?[3].1)?
+            .try_into()
+            .map_err(|_| Error::Invalid("epoch outside u32"))?;
         self.state = next_state;
-        self.head_hash = crypto::hash("control-head", bytes)?;
+        self.head_hash = next_head;
         self.last_global_cursor = expected_cursor;
         self.last_commit_ms = committed_ms;
+        self.known_heads.insert(self.head_hash, epoch);
         Ok(())
     }
 }

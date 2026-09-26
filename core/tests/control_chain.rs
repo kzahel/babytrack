@@ -1,4 +1,5 @@
 use babytrack_core::{
+    batch::{self, Header},
     cbor::{self, Value},
     control_chain::ControlChain,
     crypto,
@@ -153,6 +154,47 @@ fn admission_moves_proved_pending_device_to_active_and_repair_preserves_role() {
         chain.head_hash(),
         bytes(transitions[6]["head_hash_hex"].as_str().unwrap())
     );
+    let batch = &fixture["batch"];
+    let envelope = hex_bytes(batch["envelope_cbor_hex"].as_str().unwrap());
+    let receipt = hex_bytes(batch["receipt_cbor_hex"].as_str().unwrap());
+    assert_eq!(chain.apply_public_batch(&envelope, &receipt), Ok(()));
+    assert_eq!(chain.last_global_cursor(), 8);
+    assert!(chain.apply_public_batch(&envelope, &receipt).is_err());
+    chain.apply_remove_active(&wire(7)).unwrap();
+    assert_eq!(chain.last_global_cursor(), 9);
+    assert_eq!(
+        chain.state_bytes().unwrap(),
+        hex_bytes(transitions[7]["state_cbor_hex"].as_str().unwrap())
+    );
+    assert_eq!(
+        chain.head_hash(),
+        bytes(transitions[7]["head_hash_hex"].as_str().unwrap())
+    );
+    assert!(chain.apply_public_batch(&envelope, &receipt).is_err());
+    assert_eq!(chain.last_global_cursor(), 9);
+    let mut stale_header =
+        Header::decode(&hex_bytes(batch["header_cbor_hex"].as_str().unwrap())).unwrap();
+    stale_header.batch_id[15] ^= 1;
+    stale_header.nonce[0] ^= 1;
+    stale_header.device_sequence = 2;
+    let old_key = bytes::<32>(
+        fixture["test_only_inputs"]["epoch_1_key_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let recipient_seed = bytes::<32>(
+        fixture["test_only_inputs"]["recipient_sign_seed_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let operation = hex_bytes(batch["operation_cbor_hex"].as_str().unwrap());
+    let stale = batch::seal(&stale_header, &[operation], &old_key, &recipient_seed).unwrap();
+    assert!(
+        chain
+            .apply_public_batch(&stale.envelope_bytes, &receipt)
+            .is_err()
+    );
+    assert_eq!(chain.last_global_cursor(), 9);
 }
 fn bytes<const N: usize>(hex: &str) -> [u8; N] {
     hex_bytes(hex).try_into().unwrap()

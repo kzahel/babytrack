@@ -43,3 +43,73 @@ repos:
     url: https://github.com/suleymansurucu/flutter_sara_baby_tracker_and_sounds
     license: GPL-3.0
     notes: Flutter, Firebase backend
+
+  # Architecture references. See docs/mvp-plan.md. Read for ideas only; do
+  # not copy code from copyleft or source-available repos into this project.
+
+  # Rust core with Swift, Kotlin, and TypeScript bindings
+  - name: libsignal
+    url: https://github.com/signalapp/libsignal
+    license: AGPL-3.0
+    notes: Rust core, Swift/Java/Node bridges, cross-platform CI
+
+  - name: signal-ios
+    url: https://github.com/signalapp/Signal-iOS
+    license: AGPL-3.0
+    notes: QR device linking, consuming libsignal from Swift
+
+  - name: signal-android
+    url: https://github.com/signalapp/Signal-Android
+    license: AGPL-3.0
+    notes: QR device linking, consuming libsignal from Kotlin
+
+  - name: application-services
+    url: https://github.com/mozilla/application-services
+    license: MPL-2.0
+    notes: Rust components shipped in Firefox iOS and Android via UniFFI
+
+  - name: bitwarden-sdk
+    url: https://github.com/bitwarden/sdk-internal
+    license: source-available (Bitwarden SDK License)
+    notes: Rust crypto core with UniFFI and wasm bindings
+
+  - name: uniffi-rs
+    url: https://github.com/mozilla/uniffi-rs
+    license: MPL-2.0
+
+  # Local-first sync and E2EE
+  - name: actual
+    url: https://github.com/actualbudget/actual
+    license: MIT
+    notes: Local-first, HLC-based sync, optional E2EE, self-hostable server
+
+  - name: automerge
+    url: https://github.com/automerge/automerge
+    license: MIT
+    notes: CRDT library, compare against our event log design
+
+  - name: loro
+    url: https://github.com/loro-dev/loro
+    license: MIT
+    notes: CRDT library, compare against our event log design
+
+  - name: ente
+    url: https://github.com/ente/ente
+    license: AGPL-3.0
+    notes: E2EE photos, recovery key UX and key management docs
+
+  # Native client structure
+  - name: horologist
+    url: https://github.com/google/horologist
+    license: Apache-2.0
+    notes: Wear OS Compose libraries
+
+  - name: wear-os-samples
+    url: https://github.com/android/wear-os-samples
+    license: Apache-2.0
+    notes: Tiles, complications, Data Layer
+
+  - name: ice-cubes
+    url: https://github.com/Dimillian/IceCubesApp
+    license: AGPL-3.0
+    notes: Well-structured SwiftUI app with widgets and extensions

@@ -183,8 +183,8 @@ multi-caregiver sync.
 
 ## Open questions
 
-- Native stack choice: Swift plus Kotlin with a shared core (Kotlin
-  Multiplatform or Rust) versus two fully independent apps.
-- Sync design: append-only event log with client merge versus a CRDT library.
+Stack and sync design are settled in [docs/mvp-plan.md](docs/mvp-plan.md):
+a shared Rust core and an append-only operation log. Still open:
+
 - Key recovery UX.
 - Name.

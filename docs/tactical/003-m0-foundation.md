@@ -126,6 +126,12 @@ needs to pull this real relay history into an independent store, open the
 grant, and verify data readiness. Repair, rotation, and batch writes remain
 closed at the relay.
 
+The client core now signs authenticated GET requests and strictly decodes
+bounded control pages and opaque object responses against the published API
+bytes. These response envelopes remain untrusted until each contained
+control and object is checked against the pinned Family history. An
+independent recipient-store fetch through the relay is the next proof.
+
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed
   batch receipts, and authenticated reads. Relay stores opaque bytes and

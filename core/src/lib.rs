@@ -25,6 +25,7 @@ pub mod shared_history;
 pub mod shared_ready;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod sqlite_store;
+pub mod sync_wire;
 
 mod ids;
 mod record_validity;

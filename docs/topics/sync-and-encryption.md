@@ -266,13 +266,14 @@ checks are still required.
 
 ## Validation
 
-The Rust core now executes CB01-CB06 from `tests/vectors/records-v1.json`
-and selected operation bytes from `full-wire-v1.json` and
+The Rust core executes CB01-CB06 and UNIT01-UNIT03 from
+`tests/vectors/records-v1.json`, the fixed signed encrypted batch from
+`full-wire-v1.json`, and the encrypted minor/inert batch cases from
 `negative-batch-v1.json` with `cargo test -p babytrack-core`. This covers
-canonical CBOR, structural operation checks, SHA-256/Ed25519/XChaCha
-known answers, and fixed HPKE decryption; complete field validity, exact
-HPKE sender bytes, other batch bytes, cross-language
-agreement, and the protocol/security gates below remain open.
+canonical CBOR, operation and published field checks, SHA-256/Ed25519/
+XChaCha known answers, fixed HPKE decryption, and in-memory atomic batch
+replay. Exact HPKE sender bytes, durable replay, remaining byte vectors,
+cross-language agreement, and the protocol/security gates below remain open.
 
 - Property tests: random operations delivered in random orders to several
   replicas always converge to identical state.

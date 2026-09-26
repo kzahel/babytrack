@@ -95,10 +95,16 @@ Ed25519, and XChaCha20-Poly1305 pass their known answers in
 in the batch/outbox layer. HPKE opens the fixed `HPKE01` ciphertext and
 round-trips a seeded sender, but the crate's public sender API cannot inject
 the fixture's raw ephemeral private key, so exact fixed seal bytes are not
-yet reproduced. `BATCHBYTE01` now matches header, plaintext, AAD, ciphertext,
+yet reproduced. `BATCHBYTE01` matches header, plaintext, AAD, ciphertext,
 signature, envelope, and object hash exactly, and verifies/decrypts back to
-the original operation. The rest of slice 1 remains open: full field
-validity, other byte vectors, bindings, and browser storage.
+the original operation. The in-memory Rust projection runs CROSSMINORBYTE01
+and INERTBYTE01/PRECREATEBYTE01/WRONGSCOPEBYTE01/PREFSBYTE01: unknown field
+500 retains its canonical bytes, valid replay rebuilds identically, and a
+signed malformed batch consumes its cursor without applying operations.
+Published v1 field checks include UNIT01-UNIT03 and exact rational
+conversions. The caller still owes receipt/authorization checks and an atomic
+log/projection transaction. The rest of slice 1 remains open: other byte
+vectors, bindings, and browser storage.
 
 Every agreed FS case gets a deterministic core/relay action binding with
 assertions for local state, shared state, pending outbox, visible status, and

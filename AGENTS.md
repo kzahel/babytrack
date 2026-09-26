@@ -120,8 +120,9 @@ python3 scripts/check_workspace.py
 cargo deny check advisories bans licenses sources
 ```
 
-The M0 byte, operation, and crypto components run
+The M0 byte, operation, crypto, and in-memory replay components run
 `cargo test -p babytrack-core`; fixture tests cover CBOR, selected operation
-bytes, hash, Ed25519, XChaCha, fixed HPKE decryption, and a full batch byte
-vector. Other targets
+bytes, published unit conversions, hash, Ed25519, XChaCha, fixed HPKE
+decryption, a full batch byte vector, and encrypted minor/inert batches.
+Other targets
 still have no behavioral tests. Add gates for their behavior with M0 work.

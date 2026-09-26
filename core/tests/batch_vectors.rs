@@ -141,3 +141,37 @@ fn fixed_batch_matches_every_wire_byte_and_opens() {
         .is_err()
     );
 }
+
+#[test]
+fn newer_minor_envelope_preserves_unknown_child_field() {
+    let fixtures: serde_json::Value =
+        serde_json::from_str(include_str!("../../tests/vectors/negative-batch-v1.json")).unwrap();
+    let case = fixtures["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["id"] == "CROSSMINORBYTE01")
+        .unwrap();
+    let base = &fixtures["base"];
+    let family_id = bytes::<16>(base["family_id_hex"].as_str().unwrap());
+    let relay_id = bytes::<32>("03396219237f75a64f12aeb7f39723abf400b160c364980a765dac24aeba2464");
+    let epoch_key = bytes::<32>(base["epoch_key_hex"].as_str().unwrap());
+    let signing_seed = bytes::<32>(base["recipient_sign_seed_hex"].as_str().unwrap());
+    let signing_public = crypto::signing_public_key(&signing_seed);
+    let envelope = hex_bytes(case["input"]["envelope_cbor_hex"].as_str().unwrap());
+    let opened = batch::open_verified(
+        &envelope,
+        &family_id,
+        &relay_id,
+        &epoch_key,
+        &signing_public,
+    )
+    .unwrap();
+    assert_eq!(opened.header.minor, 1);
+    assert_eq!(opened.operations.len(), 1);
+    assert_eq!(opened.operations[0].field_bytes(500), Some(vec![0xf4]));
+    assert_eq!(
+        opened.operations[0].canonical_bytes(),
+        hex_bytes(case["input"]["operation_hex"].as_str().unwrap())
+    );
+}

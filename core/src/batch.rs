@@ -45,6 +45,26 @@ pub struct OpenedBatch {
     pub object_hash: [u8; 32],
 }
 
+/// Signature-checked and decrypted bytes. Payload parsing is separate so an
+/// authorized malformed data entry can be recorded as inert at its cursor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthenticatedBatch {
+    pub header: Header,
+    pub object_hash: [u8; 32],
+    plaintext: Vec<u8>,
+}
+
+impl AuthenticatedBatch {
+    pub fn parse(&self) -> Result<OpenedBatch, Error> {
+        let operations = parse_operations(&self.plaintext, &self.header)?;
+        Ok(OpenedBatch {
+            header: self.header.clone(),
+            operations,
+            object_hash: self.object_hash,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     Cbor(cbor::Error),
@@ -196,6 +216,24 @@ pub fn open_verified(
     epoch_key: &[u8; 32],
     signer_public_key: &[u8; 32],
 ) -> Result<OpenedBatch, Error> {
+    open_authenticated(
+        envelope_bytes,
+        family_id,
+        relay_id,
+        epoch_key,
+        signer_public_key,
+    )?
+    .parse()
+}
+
+/// Authenticate and decrypt before parsing the plaintext operation list.
+pub fn open_authenticated(
+    envelope_bytes: &[u8],
+    family_id: &[u8; 16],
+    relay_id: &[u8; 32],
+    epoch_key: &[u8; 32],
+    signer_public_key: &[u8; 32],
+) -> Result<AuthenticatedBatch, Error> {
     let envelope = cbor::decode_with_limits(
         envelope_bytes,
         Limits {
@@ -237,11 +275,19 @@ pub fn open_verified(
     let header_bytes = cbor::encode(&entries[0].1)?;
     let aad = crypto::hash("batch-aad", &header_bytes)?;
     let plaintext = crypto::open(epoch_key, &header.nonce, &aad, ciphertext)?;
+    Ok(AuthenticatedBatch {
+        header,
+        plaintext,
+        object_hash: crypto::hash("object", envelope_bytes)?,
+    })
+}
+
+fn parse_operations(plaintext: &[u8], header: &Header) -> Result<Vec<Operation>, Error> {
     if plaintext.len() != header.plaintext_len as usize {
         return Err(Error::Invalid("decrypted length differs from header"));
     }
     let value = cbor::decode_with_limits(
-        &plaintext,
+        plaintext,
         Limits {
             max_bytes: MAX_PLAINTEXT_BYTES,
             max_depth: 16,
@@ -264,11 +310,7 @@ pub fn open_verified(
             &header.author_device_id,
         )?);
     }
-    Ok(OpenedBatch {
-        header,
-        operations,
-        object_hash: crypto::hash("object", envelope_bytes)?,
-    })
+    Ok(operations)
 }
 
 fn signature_value(header: Value, ciphertext: &[u8]) -> Result<Value, Error> {

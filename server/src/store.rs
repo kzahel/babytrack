@@ -1039,6 +1039,14 @@ impl RelayStore {
         if prefix.join.cursor < 6 {
             return Err(Error::Invalid("initial recipient not admitted"));
         }
+        let later_controls: i64 = self.db.query_row(
+            "SELECT COUNT(*) FROM entries WHERE family_id=?1 AND kind=1 AND cursor>6",
+            params![&path_family[..]],
+            |r| r.get(0),
+        )?;
+        if later_controls != 0 {
+            return Err(Error::Invalid("initial-cohort batch authority superseded"));
+        }
         let admitted: Vec<u8> = self.db.query_row(
             "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=6 AND kind=1",
             params![&path_family[..]],
@@ -1366,6 +1374,14 @@ impl RelayStore {
             .optional()?;
         let (genesis_bytes, cursor, genesis_committed) =
             saved.ok_or(Error::Invalid("Family not active"))?;
+        let later_controls: i64 = self.db.query_row(
+            "SELECT COUNT(*) FROM entries WHERE family_id=?1 AND kind=1 AND cursor>6",
+            params![&family_id[..]],
+            |r| r.get(0),
+        )?;
+        if later_controls != 0 {
+            return Err(Error::Invalid("initial-cohort reader authority superseded"));
+        }
         let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
         let signer = read_auth::claimed_signer(auth_bytes)?;
         let (reader, signing_key) = if signer == genesis.manager_id {

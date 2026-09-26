@@ -21,8 +21,8 @@ structural operation decoding, and first cryptographic primitives including
 HPKE with byte vectors and a signed batch byte proof. A native local-only
 SQLite journal and signed shared-history replay are under construction.
 The development relay implements signed genesis promotion, the first
-manager-issued invitation, and its recipient claim with role-limited
-reads; it cannot yet grant a key or sync batches. No full application
+manager-issued invitation, recipient claim, holder challenge, and key
+proof with role-limited reads; it cannot yet grant a key or sync batches. No full application
 exists yet.
 `babytrack` is a code name.
 

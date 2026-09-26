@@ -144,6 +144,7 @@ async fn stage_control_object(
     let response = match transition_kind(&body, true)? {
         1 => store.stage_genesis_object(family_id, object_id, &body),
         2 => store.stage_first_issue_object(family_id, object_id, &body),
+        11 => store.stage_first_challenge_object(family_id, object_id, &body),
         _ => return Err(StatusCode::NOT_IMPLEMENTED),
     }
     .map_err(|_| StatusCode::CONFLICT)?;
@@ -169,6 +170,8 @@ async fn commit_control(
         1 => store.commit_genesis(family_id, &body, committed_ms),
         2 => store.commit_first_issue(family_id, &body, committed_ms),
         4 => store.commit_first_claim(family_id, &body, committed_ms),
+        11 => store.commit_first_challenge(family_id, &body, committed_ms),
+        5 => store.commit_first_proof(family_id, &body, committed_ms),
         _ => return Err(StatusCode::NOT_IMPLEMENTED),
     }
     .map_err(|_| StatusCode::CONFLICT)?;
@@ -673,5 +676,115 @@ mod tests {
                 crate::receipt::control_commit_response(&claim_committed).unwrap()
             );
         }
+        drop(app);
+        let challenge = &chain["transitions"][3];
+        let challenge_unsigned =
+            cbor::decode(&hex(challenge["unsigned_cbor_hex"].as_str().unwrap())).unwrap();
+        let challenge_signatures =
+            cbor::decode(&hex(challenge["signatures_cbor_hex"].as_str().unwrap())).unwrap();
+        let challenge_candidate = cbor::encode(&Value::Map(vec![
+            (1, challenge_unsigned.clone()),
+            (2, challenge_signatures.clone()),
+        ]))
+        .unwrap();
+        let challenge_committed = hex(challenge["committed_cbor_hex"].as_str().unwrap());
+        let Value::Map(fields) = cbor::decode(&challenge_committed).unwrap() else {
+            panic!()
+        };
+        let Value::Array(receipt) = &fields[2].1 else {
+            panic!()
+        };
+        let Value::Integer(challenge_time) = receipt[4] else {
+            panic!()
+        };
+        let app = router_with_clock(
+            &db,
+            seed,
+            Arc::new(FixedClock(challenge_time.try_into().unwrap())),
+        )
+        .unwrap();
+        for entry in challenge["manifest"].as_array().unwrap() {
+            let kind = entry[0].as_u64().unwrap();
+            let id_text = entry[1].as_str().unwrap();
+            let id = hex(id_text);
+            let object = hex(chain["objects_by_id_hex"][id_text].as_str().unwrap());
+            let body = cbor::encode(&Value::Map(vec![
+                (1, Value::Integer(1)),
+                (2, challenge_unsigned.clone()),
+                (3, challenge_signatures.clone()),
+                (4, Value::Integer(kind.into())),
+                (5, Value::Bytes(id)),
+                (6, Value::Bytes(object)),
+            ]))
+            .unwrap();
+            let path = format!(
+                "/v1/families/{}/objects/{}",
+                genesis["inputs"]["family_id_hex"].as_str().unwrap(),
+                id_text
+            );
+            let request = Request::post(path)
+                .header(CONTENT_TYPE, "application/cbor")
+                .body(Body::from(body))
+                .unwrap();
+            assert_eq!(
+                app.clone().oneshot(request).await.unwrap().status(),
+                StatusCode::OK
+            );
+        }
+        let request = Request::post(claim_path)
+            .header(CONTENT_TYPE, "application/cbor")
+            .body(Body::from(challenge_candidate))
+            .unwrap();
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            to_bytes(response.into_body(), 2 * 1024 * 1024)
+                .await
+                .unwrap()
+                .to_vec(),
+            crate::receipt::control_commit_response(&challenge_committed).unwrap()
+        );
+        drop(app);
+        let proof = &chain["transitions"][4];
+        let proof_candidate = cbor::encode(&Value::Map(vec![
+            (
+                1,
+                cbor::decode(&hex(proof["unsigned_cbor_hex"].as_str().unwrap())).unwrap(),
+            ),
+            (
+                2,
+                cbor::decode(&hex(proof["signatures_cbor_hex"].as_str().unwrap())).unwrap(),
+            ),
+        ]))
+        .unwrap();
+        let proof_committed = hex(proof["committed_cbor_hex"].as_str().unwrap());
+        let Value::Map(fields) = cbor::decode(&proof_committed).unwrap() else {
+            panic!()
+        };
+        let Value::Array(receipt) = &fields[2].1 else {
+            panic!()
+        };
+        let Value::Integer(proof_time) = receipt[4] else {
+            panic!()
+        };
+        let app = router_with_clock(
+            &db,
+            seed,
+            Arc::new(FixedClock(proof_time.try_into().unwrap())),
+        )
+        .unwrap();
+        let request = Request::post(claim_path)
+            .header(CONTENT_TYPE, "application/cbor")
+            .body(Body::from(proof_candidate))
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            to_bytes(response.into_body(), 2 * 1024 * 1024)
+                .await
+                .unwrap()
+                .to_vec(),
+            crate::receipt::control_commit_response(&proof_committed).unwrap()
+        );
     }
 }

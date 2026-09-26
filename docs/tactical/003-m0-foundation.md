@@ -108,9 +108,13 @@ chain but cannot fetch data objects before a grant.
 The relay now also validates, against contiguous signed vectors, the next
 public holder challenge and pending key proof. It checks the target and
 challenge context, two ordered challenge-object manifests, resulting
-pending state hashes, manager or pending signature, and proof hash. These
-validators are not yet connected to durable staging or HTTP routes; the
-pending device still cannot receive the challenge through this relay.
+pending state hashes, manager or pending signature, and proof hash. SQLite
+stages both challenge objects under one exact candidate and commits their
+bytes, cursor, head, and receipt atomically; the proof consumes the next
+cursor without objects. The HTTP test commits both transitions with an
+injected clock and exact fixture bytes. A pending device can fetch only
+its addressed HPKE challenge object, never the holder's verifier object.
+Admission, grant delivery, and batch data remain closed.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

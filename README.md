@@ -11,8 +11,8 @@ AEAD, and HPKE primitives, plus a signed encrypted batch byte proof in Rust,
 JavaScript, Swift, and Kotlin. It has in-memory local/shared projections, a
 native SQLite and browser IndexedDB local-only journals, and a per-Family
 HLC. The development relay can commit a signed Family genesis, its first
-manager-issued invitation, and a recipient claim, then serve role-limited
-authenticated control/object reads. It has no challenge, grant, removal,
+manager-issued invitation, recipient claim, holder challenge, and pending
+key proof, then serve role-limited authenticated control/object reads. It has no grant, removal,
 or batch sync routes yet. No complete application or sharing flow
 exists yet.
 Scenario files

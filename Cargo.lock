@@ -134,6 +134,10 @@ dependencies = [
 [[package]]
 name = "babytrack-server"
 version = "0.0.0"
+dependencies = [
+ "babytrack-wire",
+ "serde_json",
+]
 
 [[package]]
 name = "babytrack-wire"

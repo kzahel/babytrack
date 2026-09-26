@@ -55,6 +55,12 @@ now live in a narrow `babytrack-wire` crate. The client core reexports the
 same implementation; the relay can depend on it without importing client
 storage, plaintext operations, or Family keys. The real relay, authority
 validation, and route tests below remain open.
+The relay crate now encodes candidate-to-committed control receipts, object
+stage responses, and ordered control pages from the narrow wire crate.
+Exact genesis and invite-issue API byte vectors pass, including the relay
+signature. These constructors are internal to the relay and are not yet
+reachable through a server endpoint: authority validation, atomic storage,
+read authentication, and network delivery must precede any write route.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

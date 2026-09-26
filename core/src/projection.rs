@@ -59,6 +59,61 @@ pub enum Error {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LocalError {
+    WrongFamily,
+    WrongAppendIndex,
+    Invalid(&'static str),
+}
+
+/// Projection of local-only operations in durable append order. Shared
+/// history uses `Projection` and verified relay cursors instead.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalProjection {
+    family_id: [u8; 16],
+    last_append_index: u64,
+    records: BTreeMap<[u8; 16], Record>,
+    seen_operations: BTreeMap<[u8; 16], Vec<u8>>,
+}
+
+impl LocalProjection {
+    pub fn new(family_id: [u8; 16]) -> Self {
+        Self {
+            family_id,
+            last_append_index: 0,
+            records: BTreeMap::new(),
+            seen_operations: BTreeMap::new(),
+        }
+    }
+
+    pub fn last_append_index(&self) -> u64 {
+        self.last_append_index
+    }
+
+    pub fn record(&self, id: &[u8; 16]) -> Option<&Record> {
+        self.records.get(id)
+    }
+
+    /// Validate and apply one already decoded local operation atomically.
+    /// Its append index is the field winner before first sharing.
+    pub fn append(&mut self, operation: &Operation, index: u64) -> Result<(), LocalError> {
+        if operation.family_id != self.family_id {
+            return Err(LocalError::WrongFamily);
+        }
+        if self.last_append_index.checked_add(1) != Some(index) {
+            return Err(LocalError::WrongAppendIndex);
+        }
+        let mut records = self.records.clone();
+        let mut seen_operations = self.seen_operations.clone();
+        apply_operation(&mut records, &mut seen_operations, operation, index, 0)
+            .map_err(LocalError::Invalid)?;
+        self.records = records;
+        self.seen_operations = seen_operations;
+        self.last_append_index = index;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Projection {
     family_id: [u8; 16],
     last_cursor: u64,

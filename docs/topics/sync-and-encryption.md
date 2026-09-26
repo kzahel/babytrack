@@ -126,15 +126,17 @@ specify how local storage partitions and backups enforce this boundary.
   data to create an independent copy outside the shared family.
   Competing removals use the first valid relay-committed change; a stale
   request cannot exercise revoked authority. An offline request or missing
-  response must not be presented as a completed change. Both managers may
-  explicitly make independent copies, and unaffected members stay in the
-  original Family. See the product contract's D1 and scenarios FS07-FS12.
+  response must not be presented as a completed change. Either manager may
+  explicitly make an independent copy; the removed device gets one
+  automatically when pending local work needs a destination. Unaffected
+  members stay in the original Family. See product D1/D7 and FS07-FS12.
 - **Removed or departed.** Once the client learns that its device membership
   has ended, it clearly says that sync for this family has stopped. It does not
-  erase local history. The user may keep the old copy as an archive or
-  continue privately from a copy with a new family identity and keys. That
-  copy starts local-only and can be shared as a separate family later; it
-  does not silently rejoin or merge with the original.
+  erase local history. With pending work or a new action targeted at the
+  removed Family, the client creates or reuses one private Family copy with
+  fresh identity and keys. Otherwise it offers an explicit copy and keeps
+  locally held history available. That copy starts local-only and can be
+  shared later; it does not silently rejoin or merge with the original.
 
 ## Invites, removal, and recovery
 
@@ -285,8 +287,8 @@ checks are still required.
 ## M-1 candidate: authority and key handoff
 
 **Review proposal, not a settled wire contract.** This maps the agreed U1-U8,
-D1-D5, D8, and FS cases to one implementable direction. D6-D7 remain product
-choices. Only Family-specific devices receive grants and roles. No person-wide
+D1-D5, D7-D8, and FS cases to one implementable direction. D6 remains a product
+choice. Only Family-specific devices receive grants and roles. No person-wide
 revocation or original-Family self-recovery is promised.
 The exact canonical encoding, domain separators, request authentication,
 failure recovery, and vectors still belong in `docs/protocol/` before M0 code.
@@ -386,8 +388,8 @@ failure recovery, and vectors still belong in `docs/protocol/` before M0 code.
   uncommitted operations in a new batch without changing their IDs or HLCs.
   If the old upload response was lost, pulling its committed IDs prevents a
   duplicate; a crash resumes from the durable local outbox. A removed device
-  cannot publish pending work to the original
-  Family, but keeps it locally and may explicitly copy it into a fresh one.
+  cannot publish pending work to the original Family. After verified removal,
+  D7 saves that work in one automatic private copy.
   A malicious relay hiding the rotation from a stale writer still has the
   documented old-key disclosure limit; this candidate does not claim to
   prevent it. A deliberately malicious authorized manager can still destroy
@@ -461,14 +463,18 @@ failure recovery, and vectors still belong in `docs/protocol/` before M0 code.
   its outbox, construct a new local-only Family with fresh Family/device IDs
   and keys from locally held data operations **including pending work**, and
   publish the new Family only when its log and projection commit together.
+  After verified removal, the retained original outbox is archival and does
+  not resume uploads under the revoked device credential.
   Membership, relay, device, grant, invitation, and recovery credentials are
   never copied. Replayed source operations receive new IDs and the copying
   device's new-Family authorship; provenance remains non-authoritative local
   metadata. Copying cannot invent records a stale device never received, and
-  it never moves another caregiver or silently redirects an action targeting
-  the original Family. A still-authorized holder may also make this copy.
-  Exact conflict-history retention and stale quick-log presentation remain
-  D6-D7.
+  it never moves another caregiver or redirects an action into a different
+  open Family. D7 supplies the automatic trigger and explicit destination
+  for a stale action. A still-authorized holder may also copy deliberately,
+  including a member leaving a stranded Family after sole-manager loss.
+  Exact conflict-history retention remains D6. The copy must be idempotent
+  across a crash, retry, or repeated companion delivery.
 
 ### Local-to-shared promotion
 
@@ -586,10 +592,10 @@ only after review.
 10. **Local-to-shared promotion and fork.** Review the stable-ID, staged
     manifest, watermark, and activation boundary above for **all** existing
     history, which U2 already requires on first share.
-    Define how a removed client learns of removal, how it makes a private
-    copy with new keys and identity, what provenance is retained, and how
-    pending offline edits enter that copy. No automatic merge with the old
-    family is promised.
+    Define how a removed client verifies removal, how D7's single automatic
+    copy handles pending work or a newly attempted targeted action, and what
+    provenance is retained. Unknown upload outcomes must be resolved or
+    preserved without dropping work. No merge with the old Family is promised.
 11. **Promotion and copy durability.** Native storage uses SQLite, with log
     and projection updates in one transaction. Specify transactions for
     promotion and private copy so a crash cannot mix family identities or
@@ -597,9 +603,8 @@ only after review.
 12. **File backup implementation.** D3 settles optional protection and
     restore into a new independent Family. Specify the atomic restore and
     protection format with the event topic. Plain files are an intentional
-    portability feature; they must omit original shared credentials. A
-    phrase restores a key, not missing data. State backup completeness and
-    snapshot time accurately.
+    portability feature; they must omit original shared credentials. State
+    backup completeness and snapshot time accurately.
 13. **Multiple-Family isolation.** Review the per-Family keys, storage scope,
     explicit handles, endpoint bootstrap, and failure isolation above. Specify
     exact database and backup partitioning and negative vectors. Separate keys

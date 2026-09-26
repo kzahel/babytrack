@@ -133,7 +133,7 @@
         "Bob cannot remove Alice using his former authority.",
         "Bob sees access ended and that his removal request did not take effect.",
         "Both retain their respective local histories and pending edits.",
-        "Either may explicitly make an independent copy; neither is automatically moved."
+        "Bob's pending work is saved in one automatic private copy after verified removal; Alice may explicitly make her own copy."
       ],
       "variants": [
         "exchange Alice and Bob and reverse committed order",
@@ -285,12 +285,13 @@
       "given": "Bob has local history and pending work when his shared access ends.",
       "actions": [
         "Reconnect and learn access has ended.",
-        "Choose an independent copy.",
+        "Let the app create one private copy for the pending work.",
         "Restart and export the new Family."
       ],
       "expect": [
         "Existing local records and pending work are preserved according to the event model.",
         "The copy has independent identity and keys and starts local-only.",
+        "The app identifies where the pending work was saved and does not make a second copy after restart.",
         "New records in the copy do not sync into the original.",
         "The export is scoped to the copy."
       ],
@@ -308,14 +309,14 @@
         "U1",
         "U5"
       ],
-      "given": "Bob learns his access ended and has not chosen a copy.",
+      "given": "Bob learns his access ended and has no pending local work or new action targeted at the removed Family.",
       "actions": [
         "Dismiss the notice.",
         "Read and export the locally retained history."
       ],
       "expect": [
         "The app does not erase local data or silently create a shared replacement.",
-        "The archive and independent-copy option remain distinguishable."
+        "No unused private Family is created automatically; the archive and explicit independent-copy option remain distinguishable."
       ]
     },
     {
@@ -370,7 +371,8 @@
       ],
       "expect": [
         "Entries remain locally available.",
-        "The app reports connection/confirmation uncertainty, not an invented removal."
+        "The app reports connection/confirmation uncertainty, not an invented removal.",
+        "No automatic private Family is created merely because sync is unavailable."
       ],
       "variants": [
         "network timeout",
@@ -539,7 +541,7 @@
     },
     {
       "id": "FS25",
-      "status": "proposed",
+      "status": "agreed",
       "requirements": [
         "U1",
         "U5",
@@ -550,9 +552,10 @@
         "Attempt quick logging or stop a running timer."
       ],
       "expect": [
-        "The action and its A target are retained for deliberate resolution.",
+        "The action keeps its A and child target; after verified removal it is saved once in a private copy of locally held A data.",
         "No entry is silently written into B.",
-        "The surface explains changed access and provides a route to an independent copy."
+        "The surface explains changed access and identifies the private destination.",
+        "Repeated delivery of the same action does not create another Family or entry."
       ],
       "variants": [
         "widget log",
@@ -1235,6 +1238,64 @@
       "decisions": [
         "D4",
         "D5"
+      ]
+    },
+    {
+      "id": "FS53",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U5",
+        "U7"
+      ],
+      "given": "The sole manager device for A is lost; Carol remains an authorized member with locally held A data but cannot manage A.",
+      "actions": [
+        "Carol deliberately starts a new Family B from her local A data.",
+        "Carol invites another device into B and stops using A locally."
+      ],
+      "expect": [
+        "B has fresh Family and device identities, and Carol is its manager.",
+        "B contains only history Carol actually held, including her pending local work; incomplete known sync is disclosed before copying.",
+        "Other devices join B only through new invitations; A access and relay history are not remotely revoked or erased by the copy.",
+        "Carol can archive or hide A locally without claiming its lost manager credential was revoked."
+      ],
+      "variants": [
+        "Carol's A history is fully synced",
+        "Carol knows A history is incomplete",
+        "copy interrupted before commit"
+      ],
+      "decisions": [
+        "D4",
+        "D7"
+      ]
+    },
+    {
+      "id": "FS54",
+      "status": "agreed",
+      "requirements": [
+        "U1",
+        "U4",
+        "U5"
+      ],
+      "given": "Bob has a durable local entry for A, but the relay is unreachable and Bob does not know whether an access change occurred.",
+      "actions": [
+        "Keep the entry pending while offline.",
+        "Reconnect and verify that Bob's device was removed before that entry could commit."
+      ],
+      "expect": [
+        "No removal or private fork is inferred from the outage alone.",
+        "Verified removal creates one local-only private copy containing Bob's locally held A data and the uncommitted entry.",
+        "Bob sees where the entry was saved; it is not sent to another open Family or accepted into A after removal.",
+        "A crash, retry, or repeated notice does not create another private Family or duplicate the entry."
+      ],
+      "variants": [
+        "upload definitely rejected after removal",
+        "upload result unknown until queried",
+        "restart before private-copy commit",
+        "restart after private-copy commit before UI notice"
+      ],
+      "decisions": [
+        "D7"
       ]
     }
   ]

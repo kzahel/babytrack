@@ -31,10 +31,12 @@ technical difficulty. Bring back the concrete user-visible tradeoff.
   The relay coordinates shared access and ordering; clients also verify
   authorization. The relay receives no readable family content or data key.
 - **U5: Removal ends shared participation, not possession.** Existing local
-  history remains available. The person can explicitly continue with an
-  independent local-only Family and share that copy later. Copies do not
-  silently rejoin or merge. Nobody needs manager permission to make a copy
-  of data already held locally, including a still-authorized manager.
+  history remains available. Confirmed removal with pending local work
+  automatically creates one independent local-only Family that includes
+  that work. With no pending work, the person can explicitly make a copy.
+  Either copy can be shared later; neither silently rejoins or merges.
+  Nobody needs manager permission to copy data already held locally,
+  including a still-authorized manager or member.
 - **U6: Families remain separate.** Roles, children, records, keys, and sync
   are scoped per Family. A timer retains its original Family and child.
   Quick logging identifies its target; switching Families does not retarget
@@ -61,7 +63,7 @@ technical difficulty. Bring back the concrete user-visible tradeoff.
 | Relay hides or forks history | Sync can be disrupted and not every stale view is detectable. Do not promise universal fork detection or global agreement against a malicious relay. |
 | Relay hides a removal from an authorized writer | Data the writer still encrypts with an old key is not protected from someone who already holds that key. The broad phrase "all data created after removal is protected" is not a guarantee. |
 | Every copy of records is lost | Keys alone cannot recover them. A relay is not an unconditional backup guarantee. |
-| The sole manager device is lost | Other devices may keep read/write access, but cannot invite or remove devices without manager authority. They can make independent copies from data they hold. Members cannot remotely revoke the lost manager credential. |
+| The sole manager device is lost | Other devices may keep read/write access, but cannot invite or remove devices without manager authority. A member can deliberately copy locally held data into a new Family, become its manager, invite others, and stop using the old Family locally. Members cannot remotely revoke the lost manager credential or erase the old relay history. |
 | Hosted web code is compromised | Malicious delivered code can compromise that browser's access. Encrypted server storage does not solve this. |
 
 These limits do not permit silent data loss, accepting forged authority, or
@@ -94,7 +96,8 @@ it cannot authorize a device, restore a role, or decrypt Family data.
 Decision: **agreed**. The first valid removal committed by the relay takes
 effect in the original Family. The race concerns the two named manager
 devices. Other devices held by either person are not implicitly removed.
-Private copies remain optional for both devices. This fixes the user-visible
+The removed device automatically receives a private copy if it has pending
+local work; otherwise copying remains optional. This fixes the user-visible
 outcome; the exact atomic rotation mechanism remains owned by the sync topic.
 
 Example with Alice and Bob as the only managers:
@@ -103,10 +106,12 @@ Example with Alice and Bob as the only managers:
 2. If Alice's request commits first, Alice remains in the original Family.
    Bob's removal of Alice cannot subsequently commit using his former role.
 3. When Bob reconnects, show that his access ended and his request did not
-   take effect. Keep his local history and pending entries. Offer an
-   independent copy and an archive/export path.
+   take effect. Keep his local history and pending entries. If he has pending
+   work, save it in an automatic private copy; otherwise offer a copy. Keep
+   the original as an archive/export source.
 4. Alice can also choose an independent copy, as any local holder can.
-   Neither person is automatically moved into a new Family by the conflict.
+   Neither person is moved into a new Family merely by the conflict; Bob's
+   pending local work is the automatic-copy trigger.
 5. Reverse the commit order and the outcome reverses. Device wall clocks and
    which button was tapped first do not decide the result.
 
@@ -215,7 +220,7 @@ discussion, not decisions hidden in fixtures.
 | D4 | Can I recover access to the original shared Family? | **Decided:** no self-service original-Family recovery from a phrase, platform backup, file, or paid account. A still-active manager can invite a replacement device. Otherwise use an existing local copy or saved full file to create a new Family; unsaved records may be lost. | Agreed for M-1 |
 | D5 | Am I removing a person or one device? | **Decided:** grants and removal are per Family-specific device. Show enrolled devices and revoke each one explicitly; labels do not establish person identity or person-wide removal. | Agreed for M-1 |
 | D6 | What happens to an edit displaced by another edit? | Make the displaced value inspectable and explicitly restorable; retain operations regardless. | M-1, before edit/conflict contract |
-| D7 | A widget/watch targets a Family whose access changed; where does my tap go? | Preserve the explicit target and action, explain the problem, and offer a deliberate private-copy route. Never redirect into the active Family silently. | M-1 targeting contract; UI in M1/M4 |
+| D7 | Where does local work go when shared access changes? | **Decided:** while access is uncertain, retain work for its original Family; on verified removal, create or reuse one private copy for pending work or a newly attempted action and tell the user where it was saved. With no work, offer an explicit copy. Never retarget work to another open Family. | Agreed for M-1; UI in M1/M4 |
 | D8 | When does an unused invitation stop working? | **Decided:** seven days after committed creation, explicit cancellation by any active manager, or loss of the issuer's manager role, whichever occurs first. An already committed enrollment remains pending through later expiry or issuer removal; managers may remove that pending device explicitly. | Agreed for M-1 |
 
 D8 governs initial redemption, not the time needed for asynchronous key
@@ -226,6 +231,25 @@ rejected. A committed pending enrollment does not disappear merely because
 seven days pass or its inviter is removed. A manager can separately remove
 the pending device before activation. The exact timestamp representation,
 clock source, and atomic checks belong in the protocol contract.
+
+D7 distinguishes uncertainty from confirmed loss of access. A network outage,
+timeout, or unknown upload result leaves the original Family and its durable
+outbox intact; the app neither announces removal nor makes an automatic copy.
+After verified removal, a locally pending entry, edit, deletion, or timer
+change triggers one private Family copy from locally held data, including that
+work. A stale widget or watch action targeting the removed Family uses that
+same copy, creating it if needed, and reports the destination. Repeated
+delivery of the same action must not create another Family or duplicate the
+entry. The original remains available as locally held history, not as a
+shared writable destination. With no pending or new action, show the option
+to continue privately without creating a Family the user may never use.
+
+A still-authorized member whose sole manager device was lost can deliberately
+copy locally held data to a new Family, become its manager, and invite others.
+The old Family is not remotely dismantled; the user may stop using or archive
+it locally. A copy must not claim to include history the device never
+received. Show incomplete-sync status before copying when known, and never
+claim the new Family is a continuation of the old shared authority.
 
 The exact wording/layout may evolve without changing these promises. Do not
 present archive, pending-sync, access-ended, and independent-copy states as

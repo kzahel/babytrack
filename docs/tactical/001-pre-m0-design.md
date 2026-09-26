@@ -38,8 +38,9 @@ closure; it does not maintain a second copy of those decisions.
   in the Family sharing topic, without requiring product decisions in terms
   of cryptographic machinery.
 - [x] Decide mutual-removal behavior: first valid relay commit takes effect;
-  both retain local work, copies are optional, and other caregivers remain
-  in the original Family. Record both orders and confirmation-loss cases.
+  both retain local work, the removed device gets a private copy when work is
+  pending, and other caregivers remain in the original Family. Record both
+  orders and confirmation-loss cases.
 - [x] Decide single-use direct join: creating the invitation is manager
   approval; no second manual approval, no reusable membership links.
 - [x] Decide full portable file backup and restore, with optional protection,
@@ -52,8 +53,11 @@ closure; it does not maintain a second copy of those decisions.
 - [x] Decide D8: unused invitation expires after seven days, can be
   canceled by an active manager, and ends when its issuer loses manager
   authority; an already committed enrollment remains pending.
-- [ ] Resolve displaced edits and stale quick-log targeting (D6-D7 in the
-  Family sharing topic).
+- [x] Decide D7: retain work during access uncertainty; after verified
+  removal, make one private copy for pending work or a new targeted action.
+  With no work, offer an explicit copy. A member may deliberately copy a
+  stranded Family after sole-manager loss.
+- [ ] Resolve displaced edits (D6 in the Family sharing topic).
 - [ ] State the exact security limit for removing a lost device, excluding
   all known devices of a departed person, or facing an actively malicious
   manager; define the remaining-manager replacement path and sole-manager
@@ -98,9 +102,9 @@ closure; it does not maintain a second copy of those decisions.
   optionally protected forms, saved record state, metadata, versioning,
   credentials excluded, atomic restore into a new Family, and failure cases.
   Relay ciphertext or a lost device's key cannot reconstruct missing records.
-- [ ] Define the revoked client's notice and private-copy path. The new
-  family needs fresh identity and keys and must carry forward pending local
-  entries without silently merging with the original.
+- [ ] Specify the verified-removal notice and D7 private-copy transaction.
+  The new Family needs fresh identity and keys, must carry pending local
+  work once, and must not merge with the original or retarget another Family.
 - [x] Choose native SQLite with an append-only log and rebuildable current
   record projection, updated together in one transaction.
 - [ ] Specify atomic promotion/private-copy behavior; a crash must not

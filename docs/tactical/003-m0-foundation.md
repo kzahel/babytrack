@@ -67,6 +67,14 @@ state/core hashes, epoch, and ordered promotion manifest. It accepts the
 published candidate and rejects a wrong relay key or altered signature.
 This covers only reservation of a new Family; later control kinds still
 need public relay authorization and state transition checks.
+SQLite now durably reserves one exact genesis candidate for a Family before
+membership exists. Only objects matching its signed manifest can stage;
+none is readable as committed data until every object and the signed
+genesis receipt land in one transaction. Identical staging/commit retries
+return the first bytes. The genesis API fixture passes through staging,
+restart, commit, another retry, and reopen; changing the relay signing key
+on reopen fails. This internal store is not yet an HTTP relay, and it does
+not accept subsequent controls or batches.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

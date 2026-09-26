@@ -26,8 +26,8 @@ One Rust core shared by every client, with native UI on each platform.
   epochs, rotation, and recovery are specified under Requirements.
 - **Server (Rust, axum).** A dumb relay: an ordered log of encrypted blobs per
   family. Clients pull everything since a cursor, get live updates over a
-  WebSocket, and receive empty wake pushes sent directly through APNs, FCM,
-  and UnifiedPush.
+  WebSocket, and receive empty wake pushes sent directly through APNs and FCM
+  (UnifiedPush in M5).
   SQLite by default, Postgres optional for the hosted service. The same binary
   serves the static web client, so self-hosting is one container.
 - **iOS and watchOS.** SwiftUI, iOS 17+. WidgetKit, Live Activities for
@@ -39,8 +39,8 @@ One Rust core shared by every client, with native UI on each platform.
 - **Android and Wear OS.** Kotlin and Jetpack Compose. Glance widgets, an
   ongoing notification for running timers, Wear OS Tiles and complications.
   Wear OS can embed the core since it is a normal Android target. Android is
-  the primary development platform. Separate `foss` and `play` builds support
-  F-Droid (see Requirements).
+  the primary development platform. Google services sit behind interfaces so
+  a later F-Droid build can swap them out (see Requirements).
 - **Web.** Svelte and Vite, static build, wasm core. The family key arrives in
   the URL fragment, which browsers never send to the server.
 - **Dev CLI (Rust).** Exercises sync end to end before any UI exists and
@@ -55,7 +55,7 @@ core-wasm/     wasm-bindgen bindings for web
 server/        Rust relay
 cli/           Rust dev client
 apps/ios/      Xcode project: iOS app, watchOS app, widgets
-apps/android/  Gradle project: phone and Wear OS modules, foss and play flavors
+apps/android/  Gradle project: phone and Wear OS modules, service modules
 apps/web/      Svelte client
 spec/          Protocol spec and cross-language test vectors
 ```
@@ -86,32 +86,53 @@ in place in M0, because changing it after clients exist is expensive.
   the first screen, even though launch is English only.
 - **Key backup and recovery.** The family key is backed up automatically by
   the platform's end-to-end encrypted store: iCloud Keychain (synchronizable
-  item) on iOS and Block Store in the Android `play` build. Every other
-  caregiver device is also a backup. The 24-word recovery phrase is optional,
-  offered at setup and prompted again after the first week of data. The
-  `foss` build has no Block Store, so it prompts for the phrase more firmly.
+  item) on iOS and Block Store on Android. Every other caregiver device is
+  also a backup. The 24-word recovery phrase is optional, offered at setup
+  and prompted again after the first week of data. The later F-Droid build
+  has no Block Store, so it prompts for the phrase more firmly.
 - **Abuse limits.** The server has no accounts, so the hosted service
   enforces per-family storage quotas and per-family and per-IP rate limits.
   App Attest and Play Integrity are added only if abuse appears, and never
-  in the `foss` build.
+  in the F-Droid build.
 
-### Android distribution (from M1)
+### Platform service interfaces (from M1)
 
-The app ships on F-Droid as well as Google Play. F-Droid builds from source
-and rejects proprietary dependencies, so this is structured in from the first
-Android build rather than retrofitted.
+Every vendor service is reached through an interface the app owns, so an
+implementation can be swapped without touching app code. This applies on
+every platform, and it is what makes the later F-Droid build a matter of
+adding implementations rather than refactoring.
 
-- **Two flavors.** `foss` contains no Google Play services or Firebase code.
-  `play` adds FCM push and Block Store key backup. Everything else is shared.
+- **Interfaces.** Push registration and delivery, key backup, device
+  integrity, and the watch link each get a small interface in a module with
+  no vendor dependencies. App code depends only on these.
+- **Implementations in their own modules.** On Android, M1 ships one
+  implementation per interface: FCM for push, Block Store for key backup, the
+  Data Layer API for the Wear OS link. Each lives in its own Gradle module and
+  is wired in at a single composition point. iOS does the same with APNs,
+  iCloud Keychain, and WatchConnectivity.
+- **Server side.** The server's push sender is an interface too, with APNs
+  and FCM implementations first and UnifiedPush added later.
+- **Boundary check.** From M1, CI fails if any module other than the
+  implementation modules depends on Google Play services or Firebase. This
+  keeps the boundary honest long before F-Droid work starts.
+- **Rust built from source.** The core is compiled during the Gradle build
+  (cargo-ndk). No prebuilt native libraries are committed. This costs nothing
+  now and is required by F-Droid later.
+
+### F-Droid (M5)
+
+Deferred to M5. F-Droid builds from source and rejects proprietary
+dependencies.
+
+- **Two flavors.** `foss` swaps in non-Google implementations of the service
+  interfaces. `play` keeps the M1 implementations. Everything else is
+  shared.
 - **Push without Google.** The `foss` build receives wake pushes through
   UnifiedPush (for example with ntfy as the distributor) and syncs over the
-  WebSocket while the app is open. The server supports UnifiedPush endpoints
-  alongside APNs and FCM.
+  WebSocket while the app is open. The server gains a UnifiedPush sender.
 - **Wear OS.** The Data Layer API is part of Google Play services, so the
-  Wear OS companion ships with the `play` build only for the MVP.
-- **Built from source.** The Rust core is compiled during the Gradle build
-  (cargo-ndk). No prebuilt native libraries are committed. Builds aim to be
-  reproducible so F-Droid can publish APKs signed with our key.
+  Wear OS companion ships with the `play` build only.
+- **Reproducible builds**, so F-Droid can publish APKs signed with our key.
 
 ### Before publishing
 
@@ -187,9 +208,8 @@ should be public on GitHub before CI work starts. Every job is path-filtered.
 - **core:** fmt, clippy, tests, property tests, wasm build, `cargo-deny`.
 - **server:** tests against SQLite and Postgres, Docker build, image published
   to GHCR on tags.
-- **android:** build both flavors, unit tests, lint, screenshot tests. Fails
-  if the `foss` dependency tree contains Google Play services or Firebase.
-  Emulator tests nightly. Debug APKs attached as build artifacts for
+- **android:** build, unit tests, lint, screenshot tests, and the service
+  boundary check. Emulator tests nightly. Debug APKs attached as build artifacts for
   dogfooding.
 - **ios:** build and unit tests on the simulator. UI tests nightly.
 - **web:** lint, type-check, Vitest, Playwright.
@@ -208,8 +228,8 @@ app store until M5.
    reachable from phones over the LAN or Tailscale. No UI.
 2. **M1, Android on our own phones.** Logging screens, timers with an
    ongoing notification, widgets, invites, recovery phrase, Nara import.
-   `foss` and `play` flavors from the first build. Installed directly and
-   used daily against the dev server.
+   Google services behind swappable interfaces. Installed directly and used
+   daily against the dev server.
 3. **M2, web.** Mostly UI over the wasm core.
 4. **M3, iOS on our own devices.** Parity with Android, including Live
    Activities, run from Xcode. Free provisioning profiles expire after 7 days
@@ -218,8 +238,8 @@ app store until M5.
 5. **M4, watches.** Wear OS first, then Apple Watch as a phone companion.
    Still developer builds.
 6. **M5, distribution.** Final name, hosted service, and everything under
-   Before publishing. F-Droid inclusion, Play internal testing, and
-   TestFlight betas, then public launch.
+   Before publishing. The F-Droid build and UnifiedPush. F-Droid inclusion,
+   Play internal testing, and TestFlight betas, then public launch.
 
 MVP features: feeding, sleep, diapers, pumping, growth with WHO percentiles,
 medication, multiple children and caregivers, import and export. Voice and

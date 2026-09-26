@@ -315,7 +315,7 @@ fn admission_moves_proved_pending_device_to_active_and_repair_preserves_role() {
     let batch = &fixture["batch"];
     let envelope = hex_bytes(batch["envelope_cbor_hex"].as_str().unwrap());
     let receipt = hex_bytes(batch["receipt_cbor_hex"].as_str().unwrap());
-    assert_eq!(chain.apply_public_batch(&envelope, &receipt), Ok(()));
+    assert!(chain.apply_public_batch(&envelope, &receipt).is_ok());
     assert_eq!(chain.last_global_cursor(), 8);
     assert!(chain.apply_public_batch(&envelope, &receipt).is_err());
     chain.apply_remove_active(&wire(7)).unwrap();

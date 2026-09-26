@@ -91,6 +91,30 @@ pub(crate) struct AcceptedLocalBatch {
     pub receipt_bytes: Vec<u8>,
 }
 
+pub(crate) struct SharedHistoryRow {
+    pub cursor: u64,
+    pub kind: u8,
+    pub committed_bytes: Vec<u8>,
+    pub receipt_bytes: Vec<u8>,
+}
+
+pub(crate) struct SharedHistory {
+    pub relay_public_key: [u8; 32],
+    pub genesis_bytes: Vec<u8>,
+    pub pinned_cursor: u64,
+    pub pinned_head: [u8; 32],
+    pub entries: Vec<SharedHistoryRow>,
+}
+
+pub(crate) struct VerifiedSharedEntry<'a> {
+    pub previous_cursor: u64,
+    pub previous_head: [u8; 32],
+    pub next_head: [u8; 32],
+    pub kind: u8,
+    pub committed_bytes: &'a [u8],
+    pub receipt_bytes: &'a [u8],
+}
+
 pub struct SqliteStore {
     connection: Connection,
 }
@@ -153,6 +177,23 @@ impl SqliteStore {
                PRIMARY KEY (family_id, cursor),
                UNIQUE (family_id, batch_id),
                FOREIGN KEY (family_id) REFERENCES families(family_id)
+             );
+             CREATE TABLE IF NOT EXISTS shared_roots (
+               family_id BLOB PRIMARY KEY CHECK(length(family_id) = 16),
+               relay_public_key BLOB NOT NULL CHECK(length(relay_public_key) = 32),
+               genesis_bytes BLOB NOT NULL,
+               pinned_cursor INTEGER NOT NULL CHECK(pinned_cursor >= 1),
+               pinned_head BLOB NOT NULL CHECK(length(pinned_head) = 32),
+               FOREIGN KEY (family_id) REFERENCES families(family_id)
+             );
+             CREATE TABLE IF NOT EXISTS shared_entries (
+               family_id BLOB NOT NULL,
+               cursor INTEGER NOT NULL CHECK(cursor > 1),
+               kind INTEGER NOT NULL CHECK(kind IN (1, 2)),
+               committed_bytes BLOB NOT NULL,
+               receipt_bytes BLOB NOT NULL,
+               PRIMARY KEY (family_id, cursor),
+               FOREIGN KEY (family_id) REFERENCES shared_roots(family_id)
              );
              INSERT OR IGNORE INTO local_sync_state(family_id)
                SELECT family_id FROM families;",
@@ -452,6 +493,138 @@ impl SqliteStore {
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Error::Sqlite)
+    }
+
+    pub(crate) fn initialize_shared_history(
+        &mut self,
+        family: FamilyHandle,
+        relay_public_key: [u8; 32],
+        genesis_bytes: &[u8],
+        genesis_head: [u8; 32],
+    ) -> Result<(), Error> {
+        let transaction = self.connection.transaction()?;
+        let _ = checked_family(&transaction, family)?;
+        transaction.execute(
+            "INSERT OR IGNORE INTO shared_roots
+             (family_id, relay_public_key, genesis_bytes, pinned_cursor, pinned_head)
+             VALUES (?1, ?2, ?3, 1, ?4)",
+            params![
+                family.family_id.as_slice(),
+                relay_public_key.as_slice(),
+                genesis_bytes,
+                genesis_head.as_slice()
+            ],
+        )?;
+        let row: (Vec<u8>, Vec<u8>) = transaction.query_row(
+            "SELECT relay_public_key, genesis_bytes FROM shared_roots WHERE family_id = ?1",
+            [family.family_id.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if row.0 != relay_public_key || row.1 != genesis_bytes {
+            return Err(Error::CorruptState);
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn shared_history(
+        &self,
+        family: FamilyHandle,
+    ) -> Result<Option<SharedHistory>, Error> {
+        let _ = checked_family(&self.connection, family)?;
+        let root = self
+            .connection
+            .query_row(
+                "SELECT relay_public_key, genesis_bytes, pinned_cursor, pinned_head
+                 FROM shared_roots WHERE family_id = ?1",
+                [family.family_id.as_slice()],
+                |row| {
+                    Ok((
+                        row.get::<_, Vec<u8>>(0)?,
+                        row.get::<_, Vec<u8>>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, Vec<u8>>(3)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((relay, genesis, cursor, head)) = root else {
+            return Ok(None);
+        };
+        let mut statement = self.connection.prepare(
+            "SELECT cursor, kind, committed_bytes, receipt_bytes FROM shared_entries
+             WHERE family_id = ?1 ORDER BY cursor",
+        )?;
+        let entries = statement
+            .query_map([family.family_id.as_slice()], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                    row.get::<_, Vec<u8>>(3)?,
+                ))
+            })?
+            .map(|row| {
+                let (cursor, kind, committed_bytes, receipt_bytes) = row?;
+                Ok(SharedHistoryRow {
+                    cursor: cursor.try_into().map_err(|_| Error::CorruptState)?,
+                    kind: kind.try_into().map_err(|_| Error::CorruptState)?,
+                    committed_bytes,
+                    receipt_bytes,
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        Ok(Some(SharedHistory {
+            relay_public_key: relay.try_into().map_err(|_| Error::CorruptState)?,
+            genesis_bytes: genesis,
+            pinned_cursor: cursor.try_into().map_err(|_| Error::CorruptState)?,
+            pinned_head: head.try_into().map_err(|_| Error::CorruptState)?,
+            entries,
+        }))
+    }
+
+    pub(crate) fn append_verified_shared_entry(
+        &mut self,
+        family: FamilyHandle,
+        entry: VerifiedSharedEntry<'_>,
+    ) -> Result<(), Error> {
+        if entry.kind != 1 && entry.kind != 2 {
+            return Err(Error::CorruptState);
+        }
+        let cursor = entry
+            .previous_cursor
+            .checked_add(1)
+            .ok_or(Error::CorruptState)?;
+        let transaction = self.connection.transaction()?;
+        let _ = checked_family(&transaction, family)?;
+        let changed = transaction.execute(
+            "UPDATE shared_roots SET pinned_cursor = ?4, pinned_head = ?5
+             WHERE family_id = ?1 AND pinned_cursor = ?2 AND pinned_head = ?3",
+            params![
+                family.family_id.as_slice(),
+                i64::try_from(entry.previous_cursor).map_err(|_| Error::CorruptState)?,
+                entry.previous_head.as_slice(),
+                i64::try_from(cursor).map_err(|_| Error::CorruptState)?,
+                entry.next_head.as_slice()
+            ],
+        )?;
+        if changed != 1 {
+            return Err(Error::CorruptState);
+        }
+        transaction.execute(
+            "INSERT INTO shared_entries
+             (family_id, cursor, kind, committed_bytes, receipt_bytes)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                family.family_id.as_slice(),
+                i64::try_from(cursor).map_err(|_| Error::CorruptState)?,
+                i64::from(entry.kind),
+                entry.committed_bytes,
+                entry.receipt_bytes
+            ],
+        )?;
+        transaction.commit()?;
+        Ok(())
     }
 }
 

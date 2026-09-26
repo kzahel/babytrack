@@ -71,6 +71,7 @@ impl From<rotation::Error> for Error {
     }
 }
 
+#[derive(Clone)]
 pub struct ControlChain {
     genesis: Genesis,
     relay_public_key: [u8; 32],
@@ -161,11 +162,41 @@ impl ControlChain {
     pub fn head_hash(&self) -> [u8; 32] {
         self.head_hash
     }
+    pub fn family_id(&self) -> [u8; 16] {
+        self.genesis.family_id()
+    }
+    pub fn relay_id(&self) -> [u8; 32] {
+        self.genesis.relay_id()
+    }
     pub fn last_global_cursor(&self) -> u64 {
         self.last_global_cursor
     }
     pub fn state_bytes(&self) -> Result<Vec<u8>, Error> {
         Ok(cbor::encode(&self.state)?)
+    }
+
+    /// Dispatch one committed control object by its signed kind. Unknown or
+    /// not-yet-implemented kinds fail closed and leave the cursor unchanged.
+    pub fn apply_control(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        let object = cbor::decode_with_limits(
+            bytes,
+            cbor::Limits {
+                max_bytes: 1024 * 1024,
+                max_depth: 16,
+            },
+        )?;
+        let root = exact_map(&object, 4)?;
+        let unsigned = exact_map(&root[0].1, 11)?;
+        match number(&unsigned[5].1)? {
+            2 => self.apply_invite_issue(bytes),
+            4 => self.apply_invite_claim(bytes),
+            5 => self.apply_key_proof(bytes),
+            6 => self.apply_admit_grant(bytes),
+            8 => self.apply_remove_active(bytes),
+            10 => self.apply_grant_repair(bytes),
+            11 => self.apply_holder_challenge(bytes),
+            _ => Err(Error::UnsupportedKind),
+        }
     }
 
     pub fn latest_challenge(&self, invitation_id: &[u8; 16]) -> Option<&VerifiedChallenge> {
@@ -1022,7 +1053,7 @@ impl ControlChain {
         &mut self,
         envelope_bytes: &[u8],
         receipt_bytes: &[u8],
-    ) -> Result<(), Error> {
+    ) -> Result<batch::SignedEnvelope, Error> {
         let value = cbor::decode_with_limits(
             envelope_bytes,
             cbor::Limits {
@@ -1089,7 +1120,7 @@ impl ControlChain {
         self.next_sequences
             .insert(header.author_device_id, receipt.next_expected_sequence);
         self.seen_batch_ids.insert(header.batch_id);
-        Ok(())
+        Ok(signed)
     }
 
     pub fn apply_remove_active(&mut self, bytes: &[u8]) -> Result<(), Error> {

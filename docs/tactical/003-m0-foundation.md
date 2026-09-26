@@ -227,6 +227,16 @@ keyring rejects a raw key repeated from an earlier epoch. Incremental
 authority replay records historical transition, manifest object, and device
 IDs and rejects reuse, including object reuse across kinds. These registries
 must still be rebuilt from a durable verified log on restart.
+Native SQLite now pins the signed genesis and every subsequently verified
+public control or accepted batch entry in one global cursor stream. The
+`PublicHistorySession` replays every byte on reopen, rebuilding historical
+IDs and comparing the derived head/cursor with the durable high-water pin.
+The contiguous nine-cursor vector survives a restart after each entry,
+including the interleaved recipient batch; a missing stored suffix and a
+replayed older prefix fail without lowering the pin. This is an observed
+public-authority journal only. It does not yet make a device data-ready,
+persist enrollment credentials or keyring, project remote data, or clear a
+local outbox atomically with its accepted shared entry.
 `FamilySession` now consumes the fixed genesis and `BATCHBYTE01` acceptance
 through a core-owned path: it verifies the manager, head, epoch, sequence,
 object hash, cursor, and relay-signed receipt before projecting the first

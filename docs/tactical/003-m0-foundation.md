@@ -170,8 +170,12 @@ The public `ControlChain` now verifies the first `invite_issue` after
 genesis against the contiguous-chain vector: manager role/signature,
 relay-signed receipt, parent head, global cursor, state/core hashes, and
 canonical invitation row. Replaying the same transition or altering its
-declared state cannot advance. Claims, proof, grant, rotation, and object
-decryption remain open.
+declared state cannot advance. The recipient claim now requires both the
+invitation and new device signatures, an unchanged issuer manager, matching
+claim transcript and pending state, and a relay-signed commit strictly before
+the seven-day expiry; a boundary test exercises the final millisecond and
+the exact expiry. Challenge/proof, grant, rotation, and object decryption
+remain open.
 `FamilySession` now consumes the fixed genesis and `BATCHBYTE01` acceptance
 through a core-owned path: it verifies the manager, head, epoch, sequence,
 object hash, cursor, and relay-signed receipt before projecting the first

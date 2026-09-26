@@ -1,0 +1,53 @@
+# Dependency updates for the layout planned in docs/mvp-plan.md. Entries for
+# directories that do not exist yet report "no manifest found" in the
+# Dependabot log until M0 and later milestones create them. Keep this file in
+# sync when the layout changes.
+
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # Rust workspace: core, core-ffi, core-wasm, server, cli
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      cargo-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: gradle
+    directory: /apps/android
+    schedule:
+      interval: weekly
+    groups:
+      gradle-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: swift
+    directory: /apps/ios
+    schedule:
+      interval: weekly
+    groups:
+      swift-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /apps/web
+    schedule:
+      interval: weekly
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /server
+    schedule:
+      interval: weekly

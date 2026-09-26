@@ -17,13 +17,42 @@ use axum::{
 use crate::store::RelayStore;
 use babytrack_wire::cbor::{self, Value};
 
-type Shared = Arc<Mutex<RelayStore>>;
+trait Clock: Send + Sync {
+    fn now_ms(&self) -> Result<i64, StatusCode>;
+}
+struct SystemClock;
+impl Clock for SystemClock {
+    fn now_ms(&self) -> Result<i64, StatusCode> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        now.as_millis()
+            .try_into()
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    }
+}
+struct RelayHttpState {
+    store: Mutex<RelayStore>,
+    clock: Arc<dyn Clock>,
+}
+type Shared = Arc<RelayHttpState>;
 
 pub(crate) fn router(
     db_path: impl AsRef<Path>,
     relay_seed: [u8; 32],
 ) -> Result<Router, crate::store::Error> {
-    let store = Arc::new(Mutex::new(RelayStore::open(db_path, relay_seed)?));
+    router_with_clock(db_path, relay_seed, Arc::new(SystemClock))
+}
+
+fn router_with_clock(
+    db_path: impl AsRef<Path>,
+    relay_seed: [u8; 32],
+    clock: Arc<dyn Clock>,
+) -> Result<Router, crate::store::Error> {
+    let store = Arc::new(RelayHttpState {
+        store: Mutex::new(RelayStore::open(db_path, relay_seed)?),
+        clock,
+    });
     Ok(Router::new()
         .route(
             "/v1/families/{family}/objects/{object}",
@@ -109,6 +138,7 @@ async fn stage_control_object(
     let expected = format!("/v1/families/{family}/objects/{object}");
     exact_post(&uri, &expected, &headers)?;
     let mut store = store
+        .store
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let response = match transition_kind(&body, true)? {
@@ -130,19 +160,15 @@ async fn commit_control(
     let family_id = canonical_id(&family)?;
     let expected = format!("/v1/families/{family}/control");
     exact_post(&uri, &expected, &headers)?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let committed_ms: i64 = now
-        .as_millis()
-        .try_into()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let committed_ms = store.clock.now_ms()?;
     let mut store = store
+        .store
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let response = match transition_kind(&body, false)? {
         1 => store.commit_genesis(family_id, &body, committed_ms),
         2 => store.commit_first_issue(family_id, &body, committed_ms),
+        4 => store.commit_first_claim(family_id, &body, committed_ms),
         _ => return Err(StatusCode::NOT_IMPLEMENTED),
     }
     .map_err(|_| StatusCode::CONFLICT)?;
@@ -179,6 +205,7 @@ async fn read_control(
         .ok_or(StatusCode::BAD_REQUEST)?
         .as_str();
     let mut store = store
+        .store
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let response = store
@@ -204,6 +231,7 @@ async fn read_object(
         return Err(StatusCode::BAD_REQUEST);
     }
     let mut store = store
+        .store
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let response = store
@@ -229,6 +257,7 @@ async fn promotion_result(
         return Err(StatusCode::BAD_REQUEST);
     }
     let mut store = store
+        .store
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let response = store
@@ -247,6 +276,12 @@ mod tests {
     use babytrack_wire::cbor::Value;
     use serde_json::Value as Json;
     use tower::ServiceExt;
+    struct FixedClock(i64);
+    impl Clock for FixedClock {
+        fn now_ms(&self) -> Result<i64, StatusCode> {
+            Ok(self.0)
+        }
+    }
     fn hex(value: &str) -> Vec<u8> {
         (0..value.len())
             .step_by(2)
@@ -509,5 +544,134 @@ mod tests {
                 .as_str()
                 .unwrap())
         );
+    }
+
+    #[tokio::test]
+    async fn recipient_claim_http_commits_exact_signed_fixture() {
+        let genesis: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/api-genesis-v1.json").unwrap(),
+        )
+        .unwrap();
+        let issue: Json =
+            serde_json::from_str(&std::fs::read_to_string("../tests/vectors/api-v1.json").unwrap())
+                .unwrap();
+        let chain: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/contiguous-chain-v1.json").unwrap(),
+        )
+        .unwrap();
+        let seed: [u8; 32] = hex(chain["test_only_inputs"]["relay_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let family: [u8; 16] = hex(genesis["inputs"]["family_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let promotion: [u8; 16] = hex(genesis["inputs"]["promotion_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let issue_object: [u8; 16] = hex("083e4567e89b42d3a456426614174000").try_into().unwrap();
+        let transition = &chain["transitions"][2];
+        let claim_candidate = cbor::encode(&Value::Map(vec![
+            (
+                1,
+                cbor::decode(&hex(transition["unsigned_cbor_hex"].as_str().unwrap())).unwrap(),
+            ),
+            (
+                2,
+                cbor::decode(&hex(transition["signatures_cbor_hex"].as_str().unwrap())).unwrap(),
+            ),
+        ]))
+        .unwrap();
+        let claim_committed = hex(transition["committed_cbor_hex"].as_str().unwrap());
+        let Value::Map(fields) = cbor::decode(&claim_committed).unwrap() else {
+            panic!()
+        };
+        let Value::Array(receipt) = &fields[2].1 else {
+            panic!()
+        };
+        let Value::Integer(claim_time) = receipt[4] else {
+            panic!()
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("relay.db");
+        let mut store = RelayStore::open(&db, seed).unwrap();
+        store
+            .stage_genesis_object(
+                family,
+                promotion,
+                &hex(genesis["inputs"]["stage_body_cbor_hex"].as_str().unwrap()),
+            )
+            .unwrap();
+        let genesis_committed = hex(chain["transitions"][0]["committed_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let Value::Map(fields) = cbor::decode(&genesis_committed).unwrap() else {
+            panic!()
+        };
+        let Value::Array(receipt) = &fields[2].1 else {
+            panic!()
+        };
+        let Value::Integer(genesis_time) = receipt[4] else {
+            panic!()
+        };
+        store
+            .commit_genesis(
+                family,
+                &hex(genesis["inputs"]["commit_candidate_cbor_hex"]
+                    .as_str()
+                    .unwrap()),
+                genesis_time.try_into().unwrap(),
+            )
+            .unwrap();
+        store
+            .stage_first_issue_object(
+                family,
+                issue_object,
+                &hex(issue["inputs"]["stage_body_cbor_hex"].as_str().unwrap()),
+            )
+            .unwrap();
+        let issue_committed = hex(chain["transitions"][1]["committed_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let Value::Map(fields) = cbor::decode(&issue_committed).unwrap() else {
+            panic!()
+        };
+        let Value::Array(receipt) = &fields[2].1 else {
+            panic!()
+        };
+        let Value::Integer(issue_time) = receipt[4] else {
+            panic!()
+        };
+        store
+            .commit_first_issue(
+                family,
+                &hex(issue["inputs"]["commit_body_cbor_hex"].as_str().unwrap()),
+                issue_time.try_into().unwrap(),
+            )
+            .unwrap();
+        drop(store);
+        let app = router_with_clock(
+            &db,
+            seed,
+            Arc::new(FixedClock(claim_time.try_into().unwrap())),
+        )
+        .unwrap();
+        let claim_path = issue["inputs"]["commit_path"].as_str().unwrap();
+        for _ in 0..2 {
+            let request = Request::post(claim_path)
+                .header(CONTENT_TYPE, "application/cbor")
+                .body(Body::from(claim_candidate.clone()))
+                .unwrap();
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(
+                to_bytes(response.into_body(), 2 * 1024 * 1024)
+                    .await
+                    .unwrap()
+                    .to_vec(),
+                crate::receipt::control_commit_response(&claim_committed).unwrap()
+            );
+        }
     }
 }

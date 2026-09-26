@@ -20,9 +20,10 @@ Status: M0 implementation in progress. The Rust core has canonical CBOR,
 structural operation decoding, and first cryptographic primitives including
 HPKE with byte vectors and a signed batch byte proof. A native local-only
 SQLite journal and signed shared-history replay are under construction.
-The development relay implements signed genesis promotion and the first
-manager-issued invitation with authenticated reads; it cannot yet join
-devices or sync batches. No full application exists yet.
+The development relay implements signed genesis promotion, the first
+manager-issued invitation, and its recipient claim with role-limited
+reads; it cannot yet grant a key or sync batches. No full application
+exists yet.
 `babytrack` is a code name.
 
 The working tree may contain concurrent human or agent changes. Do not revert,

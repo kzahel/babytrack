@@ -32,6 +32,45 @@ pub(crate) struct VerifiedRead {
     pub request_hash: [u8; 32],
 }
 
+pub(crate) fn claimed_signer(auth_bytes: &[u8]) -> Result<[u8; 16], Error> {
+    let auth = cbor::decode_with_limits(
+        auth_bytes,
+        cbor::Limits {
+            max_bytes: 2048,
+            max_depth: 4,
+        },
+    )?;
+    let Value::Map(fields) = auth else {
+        return Err(Error::Invalid("read auth not map"));
+    };
+    if fields.len() != 2 || fields[0].0 != 1 || fields[1].0 != 2 {
+        return Err(Error::Invalid("read auth keys"));
+    }
+    let Value::Bytes(request_bytes) = &fields[0].1 else {
+        return Err(Error::Invalid("request not bytes"));
+    };
+    let request = cbor::decode_with_limits(
+        request_bytes,
+        cbor::Limits {
+            max_bytes: 1024,
+            max_depth: 3,
+        },
+    )?;
+    let Value::Array(parts) = request else {
+        return Err(Error::Invalid("request not array"));
+    };
+    if parts.len() != 8 {
+        return Err(Error::Invalid("request length"));
+    }
+    let Value::Bytes(signer) = &parts[3] else {
+        return Err(Error::Invalid("signer not bytes"));
+    };
+    signer
+        .as_slice()
+        .try_into()
+        .map_err(|_| Error::Invalid("signer length"))
+}
+
 pub(crate) fn verify_get(
     auth_bytes: &[u8],
     family_id: [u8; 16],

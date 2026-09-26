@@ -95,6 +95,16 @@ through staging and fetch, checks that an uncommitted object is unreadable,
 and confirms the fetched cursor 2 entry equals the commit response. Claims,
 later authority transitions, general object ACLs, encrypted batches, and
 WebSocket wakes remain closed.
+The next relay transition now accepts the recipient's two-signature
+`invite_claim` only for that unused invitation, its exact parent head,
+fixed role/key transcript, and a signed commit strictly before the
+seven-day relay-clock expiry. It atomically consumes the invitation and
+records the keyless pending device at cursor 3. A fixed-clock HTTP test
+matches the contiguous-chain bytes and exact retry; a boundary check
+rejects the claim at expiry. An unused invitation key may read the public
+control chain and its issue object, then loses that read access after
+claim. The pending device's own signing key can read the public control
+chain but cannot fetch data objects before a grant.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

@@ -62,6 +62,12 @@ pub(crate) struct RelayStore {
 
 type SavedReservation = (Vec<u8>, Vec<u8>, i64, Option<Vec<u8>>);
 
+enum ControlReader {
+    Manager,
+    Invitation { issue_object: [u8; 16] },
+    Pending,
+}
+
 #[allow(dead_code)] // The methods become route handlers after read authentication.
 impl RelayStore {
     pub fn open(path: impl AsRef<Path>, relay_seed: [u8; 32]) -> Result<Self, Error> {
@@ -400,12 +406,19 @@ impl RelayStore {
         {
             return Err(Error::Invalid("issue stage differs from path or manifest"));
         }
-        if cursor == 2 {
+        if cursor >= 2 {
+            let first_issue: Vec<u8> = self.db.query_row(
+                "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=2 AND kind=1",
+                params![&path_family[..]],
+                |r| r.get(0),
+            )?;
             let existing: Option<Vec<u8>> = self.db.query_row(
                 "SELECT object_bytes FROM committed_objects WHERE family_id=?1 AND object_id=?2 AND transition_id=?3",
                 params![&path_family[..],&object_id[..],&issue.transition_id[..]], |r| r.get(0),
             ).optional()?;
-            if existing.as_deref() == Some(object_bytes) {
+            if control_candidate(&first_issue)? == candidate_bytes
+                && existing.as_deref() == Some(object_bytes)
+            {
                 return Ok(receipt::object_stage_response(object_bytes)?);
             }
             return Err(Error::Invalid("issue already committed with other bytes"));
@@ -464,7 +477,7 @@ impl RelayStore {
         if issue.family_id != path_family {
             return Err(Error::Invalid("issue path Family mismatch"));
         }
-        if cursor == 2 {
+        if cursor >= 2 {
             let committed: Vec<u8> = self.db.query_row(
                 "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=2",
                 params![&path_family[..]],
@@ -533,6 +546,70 @@ impl RelayStore {
         Ok(receipt::control_commit_response(&committed)?)
     }
 
+    pub fn commit_first_claim(
+        &mut self,
+        path_family: [u8; 16],
+        candidate_bytes: &[u8],
+        committed_ms: i64,
+    ) -> Result<Vec<u8>, Error> {
+        let (genesis_bytes,cursor,head,genesis_committed)=self.db.query_row(
+            "SELECT candidate_bytes,cursor,head_hash,committed_bytes FROM families WHERE family_id=?1 AND active=1",
+            params![&path_family[..]],|r|Ok((r.get::<_,Vec<u8>>(0)?,r.get::<_,i64>(1)?,r.get::<_,Vec<u8>>(2)?,r.get::<_,Vec<u8>>(3)?)),
+        )?;
+        let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
+        let genesis_head = crypto::hash("control-head", &genesis_committed)?;
+        let issue_committed: Vec<u8> = self.db.query_row(
+            "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=2 AND kind=1",
+            params![&path_family[..]],
+            |r| r.get(0),
+        )?;
+        let issue_candidate = control_candidate(&issue_committed)?;
+        let issue = authority::verify_first_invite_issue(&issue_candidate, &genesis, genesis_head)?;
+        let issue_head = crypto::hash("control-head", &issue_committed)?;
+        let claim = authority::verify_first_claim(candidate_bytes, &genesis, &issue, issue_head)?;
+        if claim.family_id != path_family {
+            return Err(Error::Invalid("claim Family path mismatch"));
+        }
+        if cursor == 3 {
+            let committed: Vec<u8> = self.db.query_row(
+                "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=3",
+                params![&path_family[..]],
+                |r| r.get(0),
+            )?;
+            if control_candidate(&committed)? == candidate_bytes {
+                return Ok(receipt::control_commit_response(&committed)?);
+            }
+            return Err(Error::Invalid(
+                "invitation already claimed by another candidate",
+            ));
+        }
+        if cursor != 2 || head != issue_head {
+            return Err(Error::Invalid("claim head stale"));
+        }
+        let issue_time = control_commit_time(&issue_committed)?;
+        let expiry = issue_time
+            .checked_add(604_800_000)
+            .ok_or(Error::Invalid("invite expiry overflow"))?;
+        if committed_ms < issue_time || committed_ms >= expiry {
+            return Err(Error::Invalid("claim expired or relay time moved backward"));
+        }
+        let committed =
+            receipt::commit_control(candidate_bytes, &self.relay_seed, 3, committed_ms)?;
+        let next_head = crypto::hash("control-head", &committed)?;
+        let tx = self.db.transaction()?;
+        tx.execute(
+            "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,3,1,?2)",
+            params![&path_family[..], &committed],
+        )?;
+        let updated=tx.execute("UPDATE families SET cursor=3,head_hash=?2 WHERE family_id=?1 AND cursor=2 AND head_hash=?3",
+            params![&path_family[..],&next_head[..],&issue_head[..]])?;
+        if updated != 1 {
+            return Err(Error::Invalid("claim compare-and-swap failed"));
+        }
+        tx.commit()?;
+        Ok(receipt::control_commit_response(&committed)?)
+    }
+
     pub fn promotion_result_authenticated(
         &mut self,
         family_id: [u8; 16],
@@ -571,22 +648,7 @@ impl RelayStore {
             candidate.manager_signing_key,
             exact_path,
         )?;
-        let tx = self.db.transaction()?;
-        let old: Option<Vec<u8>> = tx.query_row(
-            "SELECT request_hash FROM read_requests WHERE family_id=?1 AND signer_id=?2 AND request_id=?3",
-            params![&family_id[..], &verified.signer_id[..], &verified.request_id[..]], |r| r.get(0),
-        ).optional()?;
-        if let Some(hash) = old {
-            if hash != verified.request_hash {
-                return Err(Error::Invalid("request ID reused with different bytes"));
-            }
-        } else {
-            tx.execute(
-                "INSERT INTO read_requests(family_id,signer_id,request_id,request_hash) VALUES(?1,?2,?3,?4)",
-                params![&family_id[..], &verified.signer_id[..], &verified.request_id[..], &verified.request_hash[..]],
-            )?;
-        }
-        tx.commit()?;
+        self.record_read_id(family_id, &verified)?;
         let body = cbor::encode(&Value::Map(vec![
             (1, Value::Integer(1)),
             (
@@ -615,7 +677,7 @@ impl RelayStore {
         if exact_path != expected_path {
             return Err(Error::Invalid("control read path not canonical"));
         }
-        self.verify_active_manager_read(family_id, exact_path, auth_bytes)?;
+        self.verify_control_reader(family_id, exact_path, auth_bytes)?;
         let mut statement = self.db.prepare(
             "SELECT cursor,committed_bytes FROM entries WHERE family_id=?1 AND kind=1 AND cursor>?2 ORDER BY cursor LIMIT 257"
         )?;
@@ -656,7 +718,12 @@ impl RelayStore {
         if exact_path != expected_path {
             return Err(Error::Invalid("object read path not canonical"));
         }
-        self.verify_active_manager_read(family_id, exact_path, auth_bytes)?;
+        let reader = self.verify_control_reader(family_id, exact_path, auth_bytes)?;
+        match reader {
+            ControlReader::Manager => {}
+            ControlReader::Invitation { issue_object } if issue_object == object_id => {}
+            _ => return Err(Error::Invalid("reader cannot fetch this object")),
+        }
         let object: Option<(i64,Vec<u8>,Vec<u8>)> = self.db.query_row(
             "SELECT kind,object_bytes,transition_id FROM committed_objects WHERE family_id=?1 AND object_id=?2",
             params![&family_id[..],&object_id[..]], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
@@ -673,33 +740,79 @@ impl RelayStore {
         ]))?)
     }
 
-    fn verify_active_manager_read(
+    fn verify_control_reader(
         &mut self,
         family_id: [u8; 16],
         exact_path: &str,
         auth_bytes: &[u8],
-    ) -> Result<(), Error> {
-        let saved: Option<Vec<u8>> = self
+    ) -> Result<ControlReader, Error> {
+        let saved: Option<(Vec<u8>,i64,Vec<u8>)> = self
             .db
             .query_row(
-                "SELECT candidate_bytes FROM families WHERE family_id=?1 AND active=1",
+                "SELECT candidate_bytes,cursor,committed_bytes FROM families WHERE family_id=?1 AND active=1",
                 params![&family_id[..]],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
             )
             .optional()?;
-        let genesis_bytes = saved.ok_or(Error::Invalid("Family not active"))?;
+        let (genesis_bytes, cursor, genesis_committed) =
+            saved.ok_or(Error::Invalid("Family not active"))?;
         let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
-        // Later role/removal transitions must update this ACL before they can
-        // become reachable. The current relay accepts only the first issue.
+        let signer = read_auth::claimed_signer(auth_bytes)?;
+        let (reader, signing_key) = if signer == genesis.manager_id {
+            (ControlReader::Manager, genesis.manager_signing_key)
+        } else {
+            if cursor < 2 {
+                return Err(Error::Invalid("reader has no committed issue"));
+            }
+            let genesis_head = crypto::hash("control-head", &genesis_committed)?;
+            let issue_committed: Vec<u8> = self.db.query_row(
+                "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=2",
+                params![&family_id[..]],
+                |r| r.get(0),
+            )?;
+            let issue = authority::verify_first_invite_issue(
+                &control_candidate(&issue_committed)?,
+                &genesis,
+                genesis_head,
+            )?;
+            if signer == issue.invitation_id && cursor == 2 {
+                (
+                    ControlReader::Invitation {
+                        issue_object: issue.manifest.object_id,
+                    },
+                    issue.invite_public,
+                )
+            } else if cursor == 3 {
+                let claim_committed: Vec<u8> = self.db.query_row(
+                    "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=3",
+                    params![&family_id[..]],
+                    |r| r.get(0),
+                )?;
+                let issue_head = crypto::hash("control-head", &issue_committed)?;
+                let claim = authority::verify_first_claim(
+                    &control_candidate(&claim_committed)?,
+                    &genesis,
+                    &issue,
+                    issue_head,
+                )?;
+                if signer != claim.device_id {
+                    return Err(Error::Invalid("reader not pending device"));
+                }
+                (ControlReader::Pending, claim.signing_public)
+            } else {
+                return Err(Error::Invalid("reader has no control access"));
+            }
+        };
         let verified = read_auth::verify_get(
             auth_bytes,
             family_id,
             genesis.relay_id,
-            genesis.manager_id,
-            genesis.manager_signing_key,
+            signer,
+            signing_key,
             exact_path,
         )?;
-        self.record_read_id(family_id, &verified)
+        self.record_read_id(family_id, &verified)?;
+        Ok(reader)
     }
 
     fn record_read_id(
@@ -798,6 +911,32 @@ mod tests {
             .step_by(2)
             .map(|i| u8::from_str_radix(&value[i..i + 2], 16).unwrap())
             .collect()
+    }
+    fn signed_get(
+        family: [u8; 16],
+        relay: [u8; 32],
+        signer: [u8; 16],
+        seed: [u8; 32],
+        path: &str,
+        request_id: [u8; 16],
+    ) -> Vec<u8> {
+        let request = cbor::encode(&Value::Array(vec![
+            Value::Integer(1),
+            Value::Bytes(family.to_vec()),
+            Value::Bytes(relay.to_vec()),
+            Value::Bytes(signer.to_vec()),
+            Value::Bytes(request_id.to_vec()),
+            Value::Text("GET".into()),
+            Value::Text(path.into()),
+            Value::Bytes(crypto::hash("request-body", &[]).unwrap().to_vec()),
+        ]))
+        .unwrap();
+        let signature = crypto::sign_cbor("read-request", &request, &seed).unwrap();
+        cbor::encode(&Value::Map(vec![
+            (1, Value::Bytes(request)),
+            (2, Value::Bytes(signature.to_vec())),
+        ]))
+        .unwrap()
     }
     #[test]
     fn genesis_reservation_and_commit_are_atomic_and_survive_restart() {
@@ -1019,6 +1158,159 @@ mod tests {
                 .stage_first_issue_object(family, issue_object, &issue_stage)
                 .unwrap(),
             hex(issue["expect"]["stage_response_cbor_hex"].as_str().unwrap())
+        );
+        let genesis_parsed =
+            authority::verify_genesis_candidate(&genesis_candidate, &store.relay_public).unwrap();
+        let genesis_head = crypto::hash("control-head", genesis_committed).unwrap();
+        let issue_parsed =
+            authority::verify_first_invite_issue(&issue_candidate, &genesis_parsed, genesis_head)
+                .unwrap();
+        let invite_seed: [u8; 32] = hex(chain["test_only_inputs"]["invitation_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let control_path = format!("/v1/families/{}/control?after=0", lower_hex(&family));
+        let invite_control = signed_get(
+            family,
+            genesis_parsed.relay_id,
+            issue_parsed.invitation_id,
+            invite_seed,
+            &control_path,
+            [1; 16],
+        );
+        assert!(
+            store
+                .control_page_authenticated(family, 0, &control_path, &invite_control)
+                .is_ok()
+        );
+        let issue_object_path = issue["inputs"]["read_object_path"].as_str().unwrap();
+        let invite_object = signed_get(
+            family,
+            genesis_parsed.relay_id,
+            issue_parsed.invitation_id,
+            invite_seed,
+            issue_object_path,
+            [2; 16],
+        );
+        assert!(
+            store
+                .object_authenticated(family, issue_object, issue_object_path, &invite_object)
+                .is_ok()
+        );
+        let promotion_path = genesis["inputs"]["promotion_result_path"].as_str().unwrap();
+        let invite_promotion = signed_get(
+            family,
+            genesis_parsed.relay_id,
+            issue_parsed.invitation_id,
+            invite_seed,
+            promotion_path,
+            [3; 16],
+        );
+        assert!(
+            store
+                .object_authenticated(family, promotion, promotion_path, &invite_promotion)
+                .is_err()
+        );
+        let claim_transition = &chain["transitions"][2];
+        let claim_candidate = cbor::encode(&Value::Map(vec![
+            (
+                1,
+                cbor::decode(&hex(claim_transition["unsigned_cbor_hex"]
+                    .as_str()
+                    .unwrap()))
+                .unwrap(),
+            ),
+            (
+                2,
+                cbor::decode(&hex(claim_transition["signatures_cbor_hex"]
+                    .as_str()
+                    .unwrap()))
+                .unwrap(),
+            ),
+        ]))
+        .unwrap();
+        let claim_committed = hex(claim_transition["committed_cbor_hex"].as_str().unwrap());
+        let claim_time = control_commit_time(&claim_committed).unwrap();
+        assert!(
+            store
+                .commit_first_claim(family, &claim_candidate, issue_time + 604_800_000)
+                .is_err()
+        );
+        assert_eq!(
+            store
+                .commit_first_claim(family, &claim_candidate, claim_time)
+                .unwrap(),
+            receipt::control_commit_response(&claim_committed).unwrap()
+        );
+        assert_eq!(
+            store
+                .commit_first_claim(family, &claim_candidate, claim_time + 1)
+                .unwrap(),
+            receipt::control_commit_response(&claim_committed).unwrap()
+        );
+        assert_eq!(
+            store
+                .stage_first_issue_object(family, issue_object, &issue_stage)
+                .unwrap(),
+            hex(issue["expect"]["stage_response_cbor_hex"].as_str().unwrap())
+        );
+        assert_eq!(
+            store
+                .commit_first_issue(family, &issue_candidate, issue_time + 1)
+                .unwrap(),
+            issue_expected
+        );
+        let invite_after_claim = signed_get(
+            family,
+            genesis_parsed.relay_id,
+            issue_parsed.invitation_id,
+            invite_seed,
+            &control_path,
+            [4; 16],
+        );
+        assert!(
+            store
+                .control_page_authenticated(family, 0, &control_path, &invite_after_claim)
+                .is_err()
+        );
+        let recipient_seed: [u8; 32] = hex(chain["test_only_inputs"]["recipient_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let claim_parsed = authority::verify_first_claim(
+            &claim_candidate,
+            &genesis_parsed,
+            &issue_parsed,
+            crypto::hash("control-head", issue_committed).unwrap(),
+        )
+        .unwrap();
+        let pending_read = signed_get(
+            family,
+            genesis_parsed.relay_id,
+            claim_parsed.device_id,
+            recipient_seed,
+            &control_path,
+            [5; 16],
+        );
+        assert!(
+            store
+                .control_page_authenticated(family, 0, &control_path, &pending_read)
+                .is_ok()
+        );
+        let pending_object = signed_get(
+            family,
+            genesis_parsed.relay_id,
+            claim_parsed.device_id,
+            recipient_seed,
+            issue_object_path,
+            [6; 16],
+        );
+        assert!(
+            store
+                .object_authenticated(family, issue_object, issue_object_path, &pending_object)
+                .is_err()
         );
     }
 }

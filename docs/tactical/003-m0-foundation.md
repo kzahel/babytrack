@@ -133,7 +133,11 @@ creates become inert, and replay from the beginning matches incremental state.
 `LocalProjection` now applies validated local-only operations by contiguous
 append index, rejects invalid or cross-Family edits before mutation, and
 rebuilds to the same state in `cargo test -p babytrack-core`. Durable storage
-and shared pending-work overlays remain open.
+has begun: native `SqliteStore` atomically appends local-only operation bytes,
+their index, and HLC state; reopen rebuilds the projection from the journal.
+`core/tests/sqlite_store.rs` covers failed append, duplicate ID, restart,
+and two-Family isolation. Materialized projection, accepted shared entries,
+outbox, production browser IndexedDB, and private copy remain open.
 The decoder now enforces UUIDv4 Family/device/batch identities, UUIDv7
 operation/child/activity identities, and a positive batch epoch.
 `bash scripts/check_browser_smoke.sh` launches Playwright's isolated Chromium

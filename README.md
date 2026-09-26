@@ -8,9 +8,9 @@ native phone/watch apps and a web client.
 **Status: M0 implementation in progress.** The Rust core has a strict
 canonical CBOR codec, structural operation decoder, tested hash, signature,
 AEAD, and HPKE primitives, plus a signed encrypted batch byte proof in Rust,
-JavaScript, Swift, and Kotlin. It has an in-memory projection of valid and
-inert batches and a per-Family HLC. No complete application, sharing, or
-relay behavior exists yet. Scenario files
+JavaScript, Swift, and Kotlin. It has in-memory local/shared projections, a
+native SQLite local-only journal, and a per-Family HLC. No complete
+application, sharing, or relay behavior exists yet. Scenario files
 still describe expected behavior; they are not passing product tests.
 
 ## Product and architecture
@@ -62,7 +62,8 @@ Then follow the task-specific links; do not load all documentation by default.
 
 `docs/topics/` holds decisions; `docs/tactical/` holds work plans;
 `docs/scenarios/` holds symbolic acceptance cases. The workspace has byte
-decoding, crypto, projection, and clock behavior in `core/`. `core-wasm/`
+decoding, crypto, projection, local SQLite journal, and clock behavior in
+`core/`. `core-wasm/`
 and `core-ffi/` expose initial JavaScript, Swift, and Kotlin bindings;
 `server/` and `cli/` remain scaffold targets.
 Only the client-facing targets depend on `core/`. The

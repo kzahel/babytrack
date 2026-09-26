@@ -18,8 +18,9 @@ documents contradict, reconcile them or ask; do not silently pick one.
 
 Status: M0 implementation in progress. The Rust core has canonical CBOR,
 structural operation decoding, and first cryptographic primitives including
-HPKE with byte vectors and a signed batch byte proof; no full application or
-relay behavior exists yet.
+HPKE with byte vectors and a signed batch byte proof. A native local-only
+SQLite journal is under construction; no full application or relay behavior
+exists yet.
 `babytrack` is a code name.
 
 The working tree may contain concurrent human or agent changes. Do not revert,
@@ -133,5 +134,7 @@ smoke calls it through Swift and Kotlin with the same selected vectors. All
 four runtimes seal and open one fixed child event. `server` and `cli`
 still have no behavioral tests. The Playwright Chromium smoke exercises wasm
 and IndexedDB with fixture data across reload and rollback. Add gates for
-the remaining behavior with
-M0 work.
+the remaining behavior with M0 work. `core/tests/sqlite_store.rs` covers
+native local-only append, restart replay, HLC transaction, and Family
+isolation; accepted shared history, outbox, and production browser storage
+are not implemented yet.

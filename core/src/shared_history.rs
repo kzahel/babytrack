@@ -213,6 +213,8 @@ impl PublicHistorySession {
                 kind: 1,
                 committed_bytes: bytes,
                 receipt_bytes: &[],
+                own_sequence: None,
+                matching_pending: None,
             },
         )?;
         self.chain = candidate;
@@ -226,7 +228,20 @@ impl PublicHistorySession {
         receipt_bytes: &[u8],
     ) -> Result<(), Error> {
         let mut candidate = self.chain.clone();
-        candidate.apply_public_batch(envelope_bytes, receipt_bytes)?;
+        let signed = candidate.apply_public_batch(envelope_bytes, receipt_bytes)?;
+        let own_sequence = (signed.header().author_device_id == self.family.device_id)
+            .then_some(signed.header().device_sequence);
+        let pending = if own_sequence.is_some() {
+            store.pending_batch(self.family)?
+        } else {
+            None
+        };
+        let matching_pending = pending.as_ref().filter(|pending| {
+            pending.envelope_bytes == envelope_bytes
+                && pending.batch_id == signed.header().batch_id
+                && pending.object_hash == signed.object_hash()
+                && pending.sequence == signed.header().device_sequence
+        });
         store.append_verified_shared_entry(
             self.family,
             VerifiedSharedEntry {
@@ -236,6 +251,8 @@ impl PublicHistorySession {
                 kind: 2,
                 committed_bytes: envelope_bytes,
                 receipt_bytes,
+                own_sequence,
+                matching_pending,
             },
         )?;
         self.chain = candidate;

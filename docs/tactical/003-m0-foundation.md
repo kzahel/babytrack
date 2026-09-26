@@ -162,8 +162,15 @@ uncertain, even after rotation. A signed stale-epoch rejection matching the
 newly pinned head archives the old bytes and receipt without removing the
 local operation; the next stage reserves a new nonce and batch ID at the
 same sequence. Restart retries the replacement bytes exactly. General
-accepted-batch/outbox atomicity, browser outbox, and removed-device private
-copy remain open.
+browser outbox and removed-device private copy remain open. In the public
+shared journal, an own accepted batch now advances the global cursor,
+stores the signed envelope and receipt, clears its exact matching outbox,
+and advances the local accepted index/sequence in one SQLite transaction.
+A forced failure during outbox deletion rolls back both the cursor and
+local progress. A new local operation then stages at the next sequence,
+even after other devices' control entries interleave. The legacy initial
+`FamilySession` remains a narrow epoch-one path and must not be used for
+later control history.
 The decoder now enforces UUIDv4 Family/device/batch identities, UUIDv7
 operation/child/activity identities, and a positive batch epoch.
 The Rust core now verifies the fixed `GENESIS01` committed control object:

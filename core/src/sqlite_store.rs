@@ -113,6 +113,8 @@ pub(crate) struct VerifiedSharedEntry<'a> {
     pub kind: u8,
     pub committed_bytes: &'a [u8],
     pub receipt_bytes: &'a [u8],
+    pub own_sequence: Option<u64>,
+    pub matching_pending: Option<&'a PreparedBatch>,
 }
 
 pub(crate) type SharedObjects = Vec<([u8; 16], Vec<u8>)>;
@@ -608,7 +610,10 @@ impl SqliteStore {
         family: FamilyHandle,
         entry: VerifiedSharedEntry<'_>,
     ) -> Result<(), Error> {
-        if entry.kind != 1 && entry.kind != 2 {
+        if (entry.kind != 1 && entry.kind != 2)
+            || (entry.kind == 1
+                && (entry.own_sequence.is_some() || entry.matching_pending.is_some()))
+        {
             return Err(Error::CorruptState);
         }
         let cursor = entry
@@ -643,6 +648,49 @@ impl SqliteStore {
                 entry.receipt_bytes
             ],
         )?;
+        if let Some(sequence) = entry.own_sequence {
+            let (accepted_index, next_sequence): (i64, i64) = transaction.query_row(
+                "SELECT accepted_index, next_sequence FROM local_sync_state
+                 WHERE family_id = ?1",
+                [family.family_id.as_slice()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+            let sequence = i64::try_from(sequence).map_err(|_| Error::CorruptState)?;
+            if let Some(pending) = entry.matching_pending {
+                if load_pending(&transaction, family)?.as_ref() != Some(pending)
+                    || pending.envelope_bytes != entry.committed_bytes
+                    || pending.sequence != sequence as u64
+                    || pending.from_index
+                        != u64::try_from(accepted_index.checked_add(1).ok_or(Error::CorruptState)?)
+                            .map_err(|_| Error::CorruptState)?
+                    || pending.to_index != pending.from_index
+                    || next_sequence != sequence
+                {
+                    return Err(Error::CorruptState);
+                }
+                transaction.execute(
+                    "UPDATE local_sync_state
+                     SET accepted_index = ?2, next_sequence = ?3 WHERE family_id = ?1",
+                    params![
+                        family.family_id.as_slice(),
+                        i64::try_from(pending.to_index).map_err(|_| Error::CorruptState)?,
+                        sequence.checked_add(1).ok_or(Error::CorruptState)?
+                    ],
+                )?;
+                transaction.execute(
+                    "DELETE FROM local_outbox WHERE family_id = ?1",
+                    [family.family_id.as_slice()],
+                )?;
+            } else if load_pending(&transaction, family)?.is_none() && next_sequence <= sequence {
+                transaction.execute(
+                    "UPDATE local_sync_state SET next_sequence = ?2 WHERE family_id = ?1",
+                    params![
+                        family.family_id.as_slice(),
+                        sequence.checked_add(1).ok_or(Error::CorruptState)?
+                    ],
+                )?;
+            }
+        }
         transaction.commit()?;
         Ok(())
     }

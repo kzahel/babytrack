@@ -64,6 +64,11 @@ remains a later latency option.
 The disposable two-emulator flow now restarts the relay after the manager's
 rotating removal, then checks the recipient's removed state and private copy
 against the reconstructed authority log.
+The same local flow then clears the recipient installation, issues a new
+invitation from the manager at epoch two, and verifies later-device claim,
+challenge, proof, grant, hydration, encrypted upload, and manager readback.
+Android chooses the next manager join action from verified pending state,
+and its invitation control selects a later issue after the first one.
 The early independent authority recheck passed for that implemented cohort
 at `82c0f4c`; [003](003-m0-foundation.md#early-m0-authority-recheck-at-82c0f4c)
 records its limits. No physical two-phone or full M0 exit gate has passed.
@@ -101,8 +106,8 @@ intended Family and child, and remains usable after process death.
 - [x] Exercise first manager and one recipient on separate emulators through
   invite, claim, challenge, proof, grant, encrypted sync, delayed foreground
   passes, scheduled work, and first recipient removal/private copy.
-- [ ] Complete general device membership, manager/role changes, invite
-  cancellation, and key rotation in [003](003-m0-foundation.md) before
+- [ ] Complete admitted-manager membership actions, manager/role changes,
+  invite cancellation, and key rotation in [003](003-m0-foundation.md) before
   exposing those actions as ordinary Android sharing controls.
 - [ ] Make invitation handoff usable through a share/link flow with trusted
   relay pinning and clear pending, accepted, blocked, and removed states.

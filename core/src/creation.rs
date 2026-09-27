@@ -78,6 +78,11 @@ pub struct ManagerCreation {
     agreement_private: [u8; 32],
     epoch_key: [u8; 32],
 }
+pub struct JoinTarget {
+    pub action: u8,
+    pub invitation_id: [u8; 16],
+    pub device_id: [u8; 16],
+}
 type StagedBody = ([u8; 16], Vec<u8>);
 impl ManagerCreation {
     /// Persist keys and exact signed candidate before the first relay POST.
@@ -244,23 +249,44 @@ impl ManagerCreation {
             self.agreement_private,
         )?)
     }
-    /// The initial v1 two-device handoff has fixed control positions.
-    /// Inspect only the fully verified durable chain, never a relay hint.
+    /// Select pending join work from the fully verified durable chain.
+    /// A proved device is admitted before another pending claim is challenged.
+    pub fn join_target(&self, store: &SqliteStore) -> Result<Option<JoinTarget>, Error> {
+        let public = PublicHistorySession::resume(store, self.family)?;
+        let Value::Map(state) = cbor::decode(&public.chain().state_bytes()?)? else {
+            return Err(Error::Invalid("verified authority state not map"));
+        };
+        let Value::Array(pending) = &state[5].1 else {
+            return Err(Error::Invalid("verified pending state not array"));
+        };
+        for action in [2, 1] {
+            for item in pending {
+                let Value::Array(row) = item else {
+                    return Err(Error::Invalid("verified pending row not array"));
+                };
+                if row.len() != 9 {
+                    return Err(Error::Invalid("verified pending row width"));
+                }
+                let chosen = if action == 2 {
+                    matches!(&row[8], Value::Bytes(hash) if hash.len() == 32)
+                } else {
+                    row[7] == Value::Null && row[8] == Value::Null
+                };
+                if chosen {
+                    return Ok(Some(JoinTarget {
+                        action,
+                        invitation_id: fixed(&row[0])?,
+                        device_id: fixed(&row[1])?,
+                    }));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Automatic join work is derived from verified pending state.
     pub fn first_join_action(&self, store: &SqliteStore) -> Result<u8, Error> {
-        PublicHistorySession::resume(store, self.family)?;
-        let history = store
-            .shared_history(self.family)?
-            .ok_or(Error::Invalid("shared genesis absent"))?;
-        let controls = 1 + history
-            .entries
-            .iter()
-            .filter(|entry| entry.kind == 1)
-            .count();
-        Ok(match controls {
-            3 => 1, // claim committed: challenge or exact retry
-            5 => 2, // proof committed: admission or exact retry
-            _ => 0,
-        })
+        Ok(self.join_target(store)?.map_or(0, |target| target.action))
     }
     pub(crate) fn signing_seed(&self) -> [u8; 32] {
         self.signing_seed

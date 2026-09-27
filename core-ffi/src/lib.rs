@@ -14,10 +14,10 @@ use babytrack_core::{
     first_challenge::FirstChallenge,
     first_proof::FirstProof,
     first_removal::FirstRemoval,
-    issue::FirstInviteIssue,
+    issue::{FirstInviteIssue, LaterInviteIssue},
     local_api::{self, ActivityTime, LocalRepository},
     operation,
-    shared_history::{self, PendingBatchResult, PublicHistorySession},
+    shared_history::{PendingBatchResult, PublicHistorySession},
     shared_ready::ReadyFamilySession,
     sqlite_store::{FamilyHandle, SqliteStore},
     sync_wire::{ControlPage, OpaqueObject},
@@ -426,6 +426,85 @@ impl NativeSharedStore {
         })
     }
 
+    /// Issue the first or a later invitation from verified authority state.
+    pub fn prepare_next_invite(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        role: u8,
+    ) -> Result<PreparedInviteRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+            .map_err(rejected)?;
+        if has_issued_invitation(&store, family.handle()?)? {
+            let issue = LaterInviteIssue::prepare_for_initial_manager(
+                &mut store,
+                &manager,
+                &fixed(&wrapping_key)?,
+                role,
+            )
+            .map_err(rejected)?;
+            Ok(PreparedInviteRow {
+                invitation_id: issue.invitation_id().to_vec(),
+                candidate_bytes: issue.candidate_bytes().to_vec(),
+                object: StagedObjectRow {
+                    object_id: issue.object_id().to_vec(),
+                    body: issue.stage_body().map_err(rejected)?,
+                },
+            })
+        } else {
+            let issue =
+                FirstInviteIssue::prepare(&mut store, &manager, &fixed(&wrapping_key)?, role)
+                    .map_err(rejected)?;
+            Ok(PreparedInviteRow {
+                invitation_id: issue.invitation_id().to_vec(),
+                candidate_bytes: issue.candidate_bytes().to_vec(),
+                object: StagedObjectRow {
+                    object_id: issue.object_id().to_vec(),
+                    body: issue.stage_body().map_err(rejected)?,
+                },
+            })
+        }
+    }
+
+    pub fn confirm_next_invite(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        invitation_id: Vec<u8>,
+        commit_response: Vec<u8>,
+        relay_origin: String,
+    ) -> Result<String, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+            .map_err(rejected)?;
+        let committed = committed_control(&commit_response)?;
+        if has_issued_invitation(&store, family.handle()?)? {
+            LaterInviteIssue::resume(
+                &store,
+                family.handle()?,
+                fixed(&invitation_id)?,
+                &fixed(&wrapping_key)?,
+            )
+            .map_err(rejected)?
+            .confirm(&mut store, &committed, &relay_origin)
+            .map_err(rejected)?
+            .to_fragment()
+            .map_err(rejected)
+        } else {
+            let issue = FirstInviteIssue::resume(&store, &manager, &fixed(&wrapping_key)?)
+                .map_err(rejected)?;
+            if issue.invitation_id() != fixed(&invitation_id)? {
+                return Err(BindingError::InvalidBytes);
+            }
+            issue
+                .confirm(&mut store, &manager, &committed, &relay_origin)
+                .map_err(rejected)?
+                .to_fragment()
+                .map_err(rejected)
+        }
+    }
+
     /// The one-use link is available only after the signed issue commits.
     pub fn confirm_invite(
         &self,
@@ -779,9 +858,21 @@ impl NativeSharedStore {
                 .accept_control(&mut store, &entry.committed_bytes)
                 .map_err(rejected)?;
         }
-        let challenge =
-            FirstChallenge::prepare_for_only_pending(&mut store, &manager, &fixed(&wrapping_key)?)
-                .map_err(rejected)?;
+        let target = manager
+            .join_target(&store)
+            .map_err(rejected)?
+            .ok_or(BindingError::InvalidBytes)?;
+        if target.action != 1 {
+            return Err(BindingError::InvalidBytes);
+        }
+        let challenge = FirstChallenge::prepare_later_for_initial_manager(
+            &mut store,
+            &manager,
+            target.invitation_id,
+            target.device_id,
+            &fixed(&wrapping_key)?,
+        )
+        .map_err(rejected)?;
         Ok(PreparedChallengeRow {
             candidate_bytes: challenge.candidate_bytes().to_vec(),
             objects: challenge
@@ -867,17 +958,9 @@ impl NativeSharedStore {
                 .accept_sparse_control(&mut store, &entry.committed_bytes)
                 .map_err(rejected)?;
         }
-        let chain = shared_history::first_join_chain(
-            &store,
-            family.handle()?,
-            attempt.relay_public_key().map_err(rejected)?,
-            4,
-        )
-        .map_err(rejected)?;
-        let challenge = chain
-            .latest_challenge(&attempt.invitation_id())
-            .ok_or(BindingError::InvalidBytes)?;
-        let object_id = challenge.hpke_object_id();
+        let object_id = attempt
+            .pending_challenge_object_id(&store)
+            .map_err(rejected)?;
         let path = format!(
             "/v1/families/{}/objects/{}",
             lower_hex(&family.family_id),
@@ -1005,9 +1088,21 @@ impl NativeSharedStore {
                 .accept_control(&mut store, &entry.committed_bytes)
                 .map_err(rejected)?;
         }
-        let admission =
-            FirstAdmission::prepare_for_only_proved(&mut store, &manager, &fixed(&wrapping_key)?)
-                .map_err(rejected)?;
+        let target = manager
+            .join_target(&store)
+            .map_err(rejected)?
+            .ok_or(BindingError::InvalidBytes)?;
+        if target.action != 2 {
+            return Err(BindingError::InvalidBytes);
+        }
+        let admission = FirstAdmission::prepare(
+            &mut store,
+            &manager,
+            target.invitation_id,
+            target.device_id,
+            &fixed(&wrapping_key)?,
+        )
+        .map_err(rejected)?;
         Ok(PreparedAdmissionRow {
             candidate_bytes: admission.candidate_bytes().to_vec(),
             objects: admission
@@ -3317,6 +3412,19 @@ pub fn seal_one(
     )
     .map_err(rejected)?
     .envelope_bytes)
+}
+
+fn has_issued_invitation(store: &SqliteStore, family: FamilyHandle) -> Result<bool, BindingError> {
+    let public = PublicHistorySession::resume(store, family).map_err(rejected)?;
+    let Value::Map(state) =
+        cbor::decode(&public.chain().state_bytes().map_err(rejected)?).map_err(rejected)?
+    else {
+        return Err(BindingError::InvalidBytes);
+    };
+    let Some((7, Value::Array(invitations))) = state.get(6) else {
+        return Err(BindingError::InvalidBytes);
+    };
+    Ok(!invitations.is_empty())
 }
 
 fn fixed<const N: usize>(bytes: &[u8]) -> Result<[u8; N], BindingError> {

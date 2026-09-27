@@ -608,6 +608,12 @@ impl EnrollmentAttempt {
                 .last_global_cursor(),
         )
     }
+    pub fn pending_challenge_object_id(&self, store: &SqliteStore) -> Result<[u8; 16], Error> {
+        shared_history::sparse_enrollment_chain(store, self.family, self.relay_public_key()?)?
+            .latest_challenge(&self.invitation_id)
+            .map(|challenge| challenge.hpke_object_id())
+            .ok_or(Error::Invalid("recipient challenge absent"))
+    }
     pub fn has_committed_admission(&self, store: &SqliteStore) -> Result<bool, Error> {
         Ok(
             shared_history::sparse_enrollment_chain(store, self.family, self.relay_public_key()?)?

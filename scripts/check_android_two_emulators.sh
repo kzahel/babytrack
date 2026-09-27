@@ -108,6 +108,19 @@ if [[ "$restarted_public" != "$public_key" ]]; then
   exit 1
 fi
 run_step "$recipient" recipientRemovedAndCopied
+run_step "$manager" managerLaterInvite
+later_fragment="$(adb -s "$manager" exec-out run-as org.babytrack.app cat files/two-device-later-link.txt)"
+if [[ ! "$later_fragment" =~ ^#bt-invite=v1\.[A-Za-z0-9_-]+$ ]]; then
+  echo "Later invitation fragment invalid" >&2
+  exit 1
+fi
+adb -s "$recipient" shell pm clear org.babytrack.app >/dev/null
+run_step "$recipient" recipientClaim -e fragment "'$later_fragment'"
+run_step "$manager" managerRespond
+run_step "$recipient" recipientProve
+run_step "$manager" managerAdmit
+run_step "$recipient" recipientLaterReadyAndUpload
+run_step "$manager" managerReadsLaterRecipient
 if rg --text -q 'Care note marker 67' "$scratch/relay.db" "$scratch/relay.log"; then
   echo "Plaintext note reached relay storage or logs" >&2
   exit 1

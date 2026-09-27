@@ -1359,7 +1359,11 @@ membership with the current epoch key, and grants that key to the recipient.
 The recipient verifies its admission, replays the contiguous Family log,
 downloads authenticated objects, and becomes data-ready. Real-relay tests
 cover both epoch one and admission after removal and rotation to epoch two.
-The Android later-device flow and challenge by an admitted manager remain
+Android now uses verified pending state to choose a manager action and can
+issue a later invitation. A separate-emulator relay flow creates and removes
+the first recipient, restarts the relay, then takes a new device through a
+later invitation, claim, challenge, proof, grant, hydration, encrypted upload,
+and manager readback at epoch two. Challenge by an admitted manager remains
 open.
 Ready replay can now start from a later recipient's admission grant at a
 rotated epoch: it verifies that epoch's committed keyring and membership,

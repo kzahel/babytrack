@@ -51,11 +51,11 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         val relay = RelayTransport(origin)
         val wrapping = keys.loadOrCreate()
         try {
-            val prepared = core.prepareInvite(family, wrapping, role)
+            val prepared = core.prepareNextInvite(family, wrapping, role)
             val prefix = "/v1/families/${family.familyId.hex()}"
             relay.post("$prefix/objects/${prepared.`object`.objectId.hex()}", prepared.`object`.body)
             val response = relay.post("$prefix/control", prepared.candidateBytes)
-            return core.confirmInvite(family, wrapping, response, origin)
+            return core.confirmNextInvite(family, wrapping, prepared.invitationId, response, origin)
         } finally {
             wrapping.fill(0)
         }

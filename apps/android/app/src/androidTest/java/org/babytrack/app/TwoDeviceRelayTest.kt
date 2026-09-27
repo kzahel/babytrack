@@ -47,6 +47,35 @@ class TwoDeviceRelayTest {
         }
     }
 
+    @Test fun managerLaterInvite() {
+        ShareCoordinator(context, db.absolutePath).use { sharing ->
+            assertTrue(sharing.syncAndUpload(family(), origin).ready)
+            context.filesDir.resolve("two-device-later-link.txt").writeText(
+                sharing.invite(family(), origin, 2u.toUByte())
+            )
+        }
+    }
+
+    @Test fun recipientLaterReadyAndUpload() {
+        ShareCoordinator(context, db.absolutePath).use { sharing ->
+            val family = sharing.recipientFamilies().single()
+            assertTrue(sharing.syncRecipient(family).ready)
+            val snapshot = sharing.snapshot(family)
+            assertTrue(snapshot.children.any { it.name == "Renamed shared child" })
+            assertTrue(snapshot.children.any { it.name == "Recipient child" })
+            sharing.logNote(family, snapshot.children.first().id,
+                "Later recipient marker 70", ActivityWhen(System.currentTimeMillis(), 0, System.currentTimeMillis()))
+            assertTrue(sharing.syncRecipientAndUpload(family).ready)
+        }
+    }
+
+    @Test fun managerReadsLaterRecipient() {
+        ShareCoordinator(context, db.absolutePath).use { sharing ->
+            assertTrue(sharing.syncAndUpload(family(), origin).ready)
+            assertTrue(sharing.snapshot(family()).activities.any { it.note == "Later recipient marker 70" })
+        }
+    }
+
     @Test fun recipientClaim() {
         val fragment = InstrumentationRegistry.getArguments().getString("fragment")
             ?: error("fragment required")

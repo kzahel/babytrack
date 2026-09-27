@@ -507,6 +507,31 @@ impl LocalRepository {
         Ok(())
     }
 
+    pub fn edit_temperature_c(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        entered_c: &str,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        if child.scope != Scope::Child || child.deleted {
+            return Err(Error::Invalid("target child unavailable"));
+        }
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("activity unavailable"))?;
+        let operation =
+            edit_temperature_c_operation(family, child_id, activity, entered_c, saved_at_ms)?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn log_note(
         &mut self,
         family: FamilyHandle,
@@ -1392,6 +1417,16 @@ pub fn temperature_c_operation(
     entered_c: &str,
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
+    activity_operation(
+        family,
+        child_id,
+        "temperature",
+        temperature_c_fields(entered_c)?,
+        time,
+    )
+}
+
+fn temperature_c_fields(entered_c: &str) -> Result<Vec<(u64, Value)>, Error> {
     let decimal = entered_c.trim();
     if decimal.is_empty() || decimal.len() > 16 {
         return Err(Error::Invalid("temperature decimal empty or too long"));
@@ -1404,20 +1439,43 @@ pub fn temperature_c_operation(
     let base = crate::record_validity::round_ratio(scaled, denominator)
         .map_err(|_| Error::Invalid("temperature decimal overflow"))?;
     i64::try_from(base).map_err(|_| Error::Invalid("temperature outside i64 range"))?;
-    activity_operation(
-        family,
-        child_id,
-        "temperature",
-        vec![(
-            100,
-            Value::Map(vec![
-                (1, Value::Integer(base)),
-                (2, Value::Text(decimal.to_owned())),
-                (3, Value::Integer(30)),
-            ]),
-        )],
-        time,
-    )
+    Ok(vec![(
+        100,
+        Value::Map(vec![
+            (1, Value::Integer(base)),
+            (2, Value::Text(decimal.to_owned())),
+            (3, Value::Integer(30)),
+        ]),
+    )])
+}
+
+pub fn edit_temperature_c_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    entered_c: &str,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    if activity.scope != Scope::Activity
+        || activity.child_id != Some(child_id)
+        || activity.record_type != "temperature"
+        || activity.deleted
+    {
+        return Err(Error::Invalid("temperature target unavailable"));
+    }
+    check_time(saved_at_ms)?;
+    Ok(NewOperation {
+        family_id: family.family_id,
+        operation_id: ids::random_v7(saved_at_ms)?,
+        record_id: activity.id,
+        scope: Scope::Activity,
+        kind: Kind::Set,
+        author_device_id: family.device_id,
+        hlc: placeholder_hlc(family),
+        record_type: None,
+        child_id: None,
+        fields: Some(temperature_c_fields(entered_c)?),
+    })
 }
 
 pub fn medication_operation(

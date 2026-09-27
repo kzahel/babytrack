@@ -149,6 +149,13 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "temperature" && it.temperatureC == "37.50"
             })
+            val temperature = sharing.snapshot(family).activities.single { it.kind == "temperature" }
+            sharing.editTemperatureC(family, temperature.childId, temperature.id,
+                "37.8", System.currentTimeMillis())
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.id.contentEquals(temperature.id) && it.temperatureC == "37.8" &&
+                    it.startUtcMs == temperature.startUtcMs
+            })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "medication" && it.medicationName == "Test medicine marker 68" &&
                     it.medicationDoseAmount == "2.5" && it.medicationDoseUnit == "mL"
@@ -250,6 +257,9 @@ class TwoDeviceRelayTest {
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "growth" && it.growthWeightG == 4_300L && it.growthLengthMm == 540L
+            })
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.kind == "temperature" && it.temperatureC == "37.8"
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "diaper" && it.diaperKind == 2u.toUByte()

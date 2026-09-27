@@ -219,7 +219,25 @@ def main() -> None:
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     find(target, "Sleep · 20 min", scroll=True)
-    print("Android UI Family, child rename, diaper edit/deletion, note, bottle, growth and sleep edits, breast segments, and restart: OK")
+    scroll_up(target, 12)
+    tap(target, "Temperature (°C)", scroll=True)
+    adb(target, "shell", "input", "text", "37.5")
+    adb(target, "shell", "input", "keyevent", "4")
+    tap(target, "Save temperature", scroll=True)
+    find(target, "Temperature · 37.5 °C", scroll=True)
+    tap(target, "Edit temperature", scroll=True)
+    tap(target, "37.5")
+    adb(target, "shell", "input", "keyevent", "123")
+    for _ in range(4):
+        adb(target, "shell", "input", "keyevent", "67")
+    adb(target, "shell", "input", "text", "37.8")
+    adb(target, "shell", "input", "keyevent", "4")
+    tap(target, "Save changes")
+    find(target, "Temperature · 37.8 °C", scroll=True)
+    adb(target, "shell", "am", "force-stop", PACKAGE)
+    adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    find(target, "Temperature · 37.8 °C", scroll=True)
+    print("Android UI Family, child rename, diaper edit/deletion, note, bottle, growth, sleep and temperature edits, breast segments, and restart: OK")
 
 
 if __name__ == "__main__":

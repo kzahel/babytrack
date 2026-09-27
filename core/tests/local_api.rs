@@ -677,6 +677,19 @@ fn entered_celsius_round_trips_through_core_and_file() {
         (1, babytrack_core::cbor::Value::Integer(-1))
     );
     let id = app.log_temperature_c(family, child, "37.50", time).unwrap();
+    let other = app
+        .add_child(family, "Other", time.saved_at_ms + 1)
+        .unwrap();
+    assert!(
+        app.edit_temperature_c(family, other, id, "38.0", time.saved_at_ms + 2)
+            .is_err()
+    );
+    assert!(
+        app.edit_temperature_c(family, child, id, "37,8", time.saved_at_ms + 2)
+            .is_err()
+    );
+    app.edit_temperature_c(family, child, id, " 37.8 ", time.saved_at_ms + 2)
+        .unwrap();
     let before = app.timeline(family, child).unwrap();
     assert_eq!(
         before
@@ -685,13 +698,17 @@ fn entered_celsius_round_trips_through_core_and_file() {
             .unwrap()
             .temperature_c
             .as_deref(),
-        Some("37.50")
+        Some("37.8")
     );
-    let backup = app.backup(family, 1_790_000_000_003).unwrap();
+    assert_eq!(
+        before.iter().find(|row| row.id == id).unwrap().start_utc_ms,
+        time.start_utc_ms
+    );
+    let backup = app.backup(family, 1_790_000_000_005).unwrap();
     drop(app);
     let mut app = LocalRepository::open(&path).unwrap();
     assert_eq!(app.timeline(family, child).unwrap(), before);
-    let restored = app.restore(&backup, 1_790_000_000_004).unwrap();
+    let restored = app.restore(&backup, 1_790_000_000_006).unwrap();
     assert_eq!(app.timeline(restored, child).unwrap(), before);
 }
 

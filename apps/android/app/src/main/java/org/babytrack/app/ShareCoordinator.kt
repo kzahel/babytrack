@@ -371,6 +371,10 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
                    weightG: Long?, lengthMm: Long?, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedGrowth(family, wrapping, childId, activityId, weightG, lengthMm, savedAtMs) }
 
+    fun editTemperatureC(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+                         enteredC: String, savedAtMs: Long): Unit =
+        withWrapping { wrapping -> core.editSharedTemperatureC(family, wrapping, childId, activityId, enteredC, savedAtMs) }
+
     fun logNote(family: FamilyRef, childId: ByteArray, note: String, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedNote(family, wrapping, childId, note, time) }
 

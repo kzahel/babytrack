@@ -47,6 +47,8 @@ restart/file restore and two-emulator encrypted convergence cover this edit.
 Completed sleep duration can likewise be corrected on the same event without
 moving its start time. Rust local restore and two-emulator encrypted sync
 exercise the correction.
+Entered Celsius can be corrected on the existing temperature event without
+changing its time or unknown fields; local restore and encrypted sync cover it.
 The selected child's name can now be corrected through a field-level Rust
 operation without changing its ID, birth date, sex, or existing activities.
 Local restart/file restore and the two-emulator relay flow check the edit.
@@ -81,7 +83,7 @@ handoff. This is still a development flow, not a released product flow.
 - [x] Log sleep timers/completed sleep, notes, growth in whole grams and
   millimetres, and entered Celsius decimals through the local/shared core.
 - [ ] Complete the MVP logging set: growth percentile display and practical
-  edits beyond child name, note, bottle amount, diaper type, solids, growth, and completed sleep. Multi-segment breast
+  edits beyond child name, note, bottle amount, diaper type, solids, growth, completed sleep, and temperature. Multi-segment breast
   feeds, note, bottle, diaper, and solids correction, and
   single-activity deletion now pass
   local restart/file restore, two-emulator encrypted sync, and UI tap flows.

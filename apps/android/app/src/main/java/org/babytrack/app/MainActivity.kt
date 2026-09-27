@@ -198,6 +198,13 @@ private data class PendingSleepEdit(
     val startUtcMs: Long,
     val minutes: String,
 )
+private data class PendingTemperatureEdit(
+    val family: FamilyRef,
+    val childId: ByteArray,
+    val activityId: ByteArray,
+    val shared: Boolean,
+    val enteredC: String,
+)
 private data class ScreenData(
     val families: List<FamilyRef>,
     val activeFamilyKey: String?,
@@ -313,6 +320,7 @@ private fun TrackerScreen(
     var pendingSolidsEdit by remember { mutableStateOf<PendingSolidsEdit?>(null) }
     var pendingGrowthEdit by remember { mutableStateOf<PendingGrowthEdit?>(null) }
     var pendingSleepEdit by remember { mutableStateOf<PendingSleepEdit?>(null) }
+    var pendingTemperatureEdit by remember { mutableStateOf<PendingTemperatureEdit?>(null) }
     var relayOrigin by remember { mutableStateOf("") }
     var relayPublicKey by remember { mutableStateOf("") }
     var shareStage by remember { mutableStateOf<String?>(null) }
@@ -1487,6 +1495,14 @@ private fun TrackerScreen(
                                         )
                                     }) { Text(stringResource(R.string.edit_growth)) }
                                 }
+                                if (entry.kind == "temperature" && entry.temperatureC != null) {
+                                    OutlinedButton(onClick = {
+                                        pendingTemperatureEdit = PendingTemperatureEdit(
+                                            family, entry.childId.copyOf(), entry.id.copyOf(), activeShared,
+                                            entry.temperatureC!!,
+                                        )
+                                    }) { Text(stringResource(R.string.edit_temperature)) }
+                                }
                                 OutlinedButton(onClick = {
                                     pendingDelete = PendingActivityDelete(
                                         family,
@@ -1850,6 +1866,37 @@ private fun TrackerScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { pendingSleepEdit = null }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+    pendingTemperatureEdit?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingTemperatureEdit = null },
+            title = { Text(stringResource(R.string.edit_temperature)) },
+            text = {
+                OutlinedTextField(
+                    value = target.enteredC,
+                    onValueChange = { pendingTemperatureEdit = target.copy(enteredC = it.take(16)) },
+                    label = { Text(stringResource(R.string.temperature_c)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                Button(enabled = target.enteredC.isNotBlank(), onClick = {
+                    pendingTemperatureEdit = null
+                    val savedAtMs = System.currentTimeMillis()
+                    change {
+                        if (target.shared) sharing.editTemperatureC(
+                            target.family, target.childId, target.activityId, target.enteredC, savedAtMs,
+                        ) else store.editTemperatureC(
+                            target.family, target.childId, target.activityId, target.enteredC, savedAtMs,
+                        )
+                    }
+                }) { Text(stringResource(R.string.save_changes)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingTemperatureEdit = null }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }

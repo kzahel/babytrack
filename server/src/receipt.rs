@@ -551,6 +551,17 @@ pub(crate) fn encode_log_page(
     Ok(page)
 }
 
+/// Bound page selection before encoding the whole response. The page map and
+/// array framing need less than 128 bytes beyond these encoded entries.
+pub(crate) fn page_entry_wire_len(entry: &RelayEntry) -> Result<usize, Error> {
+    Ok(cbor::encode(&Value::Array(vec![
+        Value::Integer(entry.cursor.into()),
+        Value::Integer(entry.kind.into()),
+        Value::Bytes(entry.committed_bytes.clone()),
+    ]))?
+    .len())
+}
+
 pub(crate) fn accepted_batch(
     batch: &VerifiedBatch,
     cursor: u64,

@@ -2108,26 +2108,7 @@ impl RelayStore {
             return Err(Error::Invalid("control read path not canonical"));
         }
         self.verify_control_reader(family_id, exact_path, auth_bytes)?;
-        let mut statement = self.db.prepare(
-            "SELECT cursor,committed_bytes FROM entries WHERE family_id=?1 AND kind=1 AND cursor>?2 ORDER BY cursor LIMIT 257"
-        )?;
-        let mut rows = statement.query(params![
-            &family_id[..],
-            i64::try_from(after).map_err(|_| Error::Invalid("cursor range"))?
-        ])?;
-        let mut entries = Vec::new();
-        while let Some(row) = rows.next()? {
-            let cursor: i64 = row.get(0)?;
-            entries.push(receipt::RelayEntry {
-                cursor: cursor
-                    .try_into()
-                    .map_err(|_| Error::Invalid("cursor range"))?,
-                kind: 1,
-                committed_bytes: row.get(1)?,
-            });
-        }
-        let has_more = entries.len() > 256;
-        entries.truncate(256);
+        let (entries, has_more) = load_page_entries(&self.db, family_id, after, Some(1))?;
         Ok(receipt::encode_control_page(
             family_id, after, &entries, has_more,
         )?)
@@ -2153,29 +2134,7 @@ impl RelayStore {
         ) {
             return Err(Error::Invalid("reader cannot fetch batch page"));
         }
-        let mut stmt = self.db.prepare(
-            "SELECT cursor,committed_bytes FROM entries WHERE family_id=?1 AND kind=2 AND cursor>?2 ORDER BY cursor LIMIT 257"
-        )?;
-        let rows = stmt.query_map(
-            params![
-                &family_id[..],
-                i64::try_from(after).map_err(|_| Error::Invalid("cursor range"))?
-            ],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
-        )?;
-        let mut entries = Vec::new();
-        for row in rows {
-            let (cursor, bytes) = row?;
-            entries.push(receipt::RelayEntry {
-                cursor: cursor
-                    .try_into()
-                    .map_err(|_| Error::Invalid("cursor range"))?,
-                kind: 2,
-                committed_bytes: bytes,
-            });
-        }
-        let has_more = entries.len() > 256;
-        entries.truncate(256);
+        let (entries, has_more) = load_page_entries(&self.db, family_id, after, Some(2))?;
         Ok(receipt::encode_batch_page(
             family_id, after, &entries, has_more,
         )?)
@@ -2277,29 +2236,7 @@ impl RelayStore {
             ControlReader::Manager | ControlReader::Active => {}
             _ => return Err(Error::Invalid("reader cannot fetch full log")),
         }
-        let mut stmt = self.db.prepare(
-            "SELECT cursor,kind,committed_bytes FROM entries WHERE family_id=?1 AND cursor>?2 ORDER BY cursor LIMIT 257"
-        )?;
-        let mut rows = stmt.query(params![
-            &family_id[..],
-            i64::try_from(after).map_err(|_| Error::Invalid("cursor range"))?
-        ])?;
-        let mut entries = Vec::new();
-        while let Some(row) = rows.next()? {
-            let cursor: i64 = row.get(0)?;
-            let kind: i64 = row.get(1)?;
-            entries.push(receipt::RelayEntry {
-                cursor: cursor
-                    .try_into()
-                    .map_err(|_| Error::Invalid("cursor range"))?,
-                kind: kind
-                    .try_into()
-                    .map_err(|_| Error::Invalid("entry kind range"))?,
-                committed_bytes: row.get(2)?,
-            });
-        }
-        let has_more = entries.len() > 256;
-        entries.truncate(256);
+        let (entries, has_more) = load_page_entries(&self.db, family_id, after, None)?;
         Ok(receipt::encode_log_page(
             family_id, after, &entries, has_more,
         )?)
@@ -2420,6 +2357,58 @@ fn lower_hex(bytes: &[u8]) -> String {
         out.push(DIGITS[(byte & 15) as usize] as char);
     }
     out
+}
+
+fn load_page_entries(
+    db: &Connection,
+    family: [u8; 16],
+    after: u64,
+    filter_kind: Option<u8>,
+) -> Result<(Vec<receipt::RelayEntry>, bool), Error> {
+    const MAX_ENTRY_BYTES: usize = 4 * 1024 * 1024 - 128;
+    let mut query = db.prepare(
+        "SELECT cursor,kind,committed_bytes FROM entries
+         WHERE family_id=?1 AND cursor>?2 AND (?3=0 OR kind=?3)
+         ORDER BY cursor LIMIT 257",
+    )?;
+    let mut rows = query.query(params![
+        &family[..],
+        i64::try_from(after).map_err(|_| Error::Invalid("cursor range"))?,
+        i64::from(filter_kind.unwrap_or(0)),
+    ])?;
+    let mut entries = Vec::new();
+    let mut used = 0usize;
+    let mut has_more = false;
+    while let Some(row) = rows.next()? {
+        if entries.len() == 256 {
+            has_more = true;
+            break;
+        }
+        let cursor: i64 = row.get(0)?;
+        let kind: i64 = row.get(1)?;
+        let entry = receipt::RelayEntry {
+            cursor: cursor
+                .try_into()
+                .map_err(|_| Error::Invalid("cursor range"))?,
+            kind: kind
+                .try_into()
+                .map_err(|_| Error::Invalid("entry kind range"))?,
+            committed_bytes: row.get(2)?,
+        };
+        let next = used
+            .checked_add(receipt::page_entry_wire_len(&entry)?)
+            .ok_or(Error::Invalid("page byte count overflow"))?;
+        if next > MAX_ENTRY_BYTES {
+            if entries.is_empty() {
+                return Err(Error::Invalid("single entry exceeds page limit"));
+            }
+            has_more = true;
+            break;
+        }
+        used = next;
+        entries.push(entry);
+    }
+    Ok((entries, has_more))
 }
 
 type StagedObjectParts = (Vec<u8>, u16, [u8; 16], Vec<u8>);
@@ -3321,6 +3310,56 @@ mod tests {
             .step_by(2)
             .map(|i| u8::from_str_radix(&value[i..i + 2], 16).unwrap())
             .collect()
+    }
+
+    #[test]
+    fn large_canonical_entry_pages_advance_under_four_mib() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            "CREATE TABLE entries (
+                family_id BLOB NOT NULL, cursor INTEGER NOT NULL,
+                kind INTEGER NOT NULL, committed_bytes BLOB NOT NULL
+            )",
+        )
+        .unwrap();
+        let family = [0x44; 16];
+        let entry = cbor::encode(&Value::Bytes(vec![0x77; 200 * 1024])).unwrap();
+        for cursor in 1..=25 {
+            db.execute(
+                "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,?2,2,?3)",
+                params![&family[..], cursor, &entry],
+            )
+            .unwrap();
+        }
+        let (first, more) = load_page_entries(&db, family, 0, None).unwrap();
+        assert!(more);
+        assert!(!first.is_empty());
+        assert!(first.len() < 25);
+        assert!(
+            receipt::encode_log_page(family, 0, &first, more)
+                .unwrap()
+                .len()
+                <= 4 * 1024 * 1024
+        );
+        let after = first.last().unwrap().cursor;
+        let (second, more) = load_page_entries(&db, family, after, None).unwrap();
+        assert!(!more);
+        assert_eq!(first.len() + second.len(), 25);
+        assert!(
+            receipt::encode_log_page(family, after, &second, more)
+                .unwrap()
+                .len()
+                <= 4 * 1024 * 1024
+        );
+        let (filtered, more) = load_page_entries(&db, family, 0, Some(2)).unwrap();
+        assert!(more);
+        assert_eq!(filtered.len(), first.len());
+        assert!(
+            receipt::encode_batch_page(family, 0, &filtered, more)
+                .unwrap()
+                .len()
+                <= 4 * 1024 * 1024
+        );
     }
 
     #[test]

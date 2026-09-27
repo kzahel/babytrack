@@ -1311,6 +1311,12 @@ signed claim now commits, changes that invitation to consumed, and appears
 only as a pending reader. Its signed pre-admission data upload gets a revoked
 receipt. Challenge, grant, and Android later-device flow are still open.
 
+The relay page selector now stops before the four-MiB encoded response cap
+instead of blindly taking 256 entries and failing the entire read. FS75's
+canonical large-entry regression pages through the full and filtered feeds;
+the two-emulator sync flow still passes. A real signed-large-batch HTTP
+variant remains for the M0 mixed-client gate.
+
 ## Advisory public-ledger restart review at bdbed9e
 
 Daybreak Blue at high thinking reviewed fixed clean commit

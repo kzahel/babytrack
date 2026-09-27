@@ -1505,6 +1505,16 @@
       "expect": ["The relay reconstructs authority from authenticated committed bytes or refuses further commits and protected reads; no mutable derived row alone grants a credential authority."],
       "variants": ["candidate substitution", "receipt mutation", "cursor rollback", "object mismatch", "derived-row substitution"],
       "decisions": ["D4", "D6"]
+    },
+    {
+      "id": "FS75",
+      "status": "agreed",
+      "requirements": ["U1", "U4"],
+      "given": "An active Family has enough large committed batches that the next 256 entries would exceed the four-MiB page limit.",
+      "actions": ["Fetch full-log and filtered-batch pages repeatedly from cursor zero, advancing by each verified next cursor."],
+      "expect": ["Each response contains a nonempty prefix within the byte and entry limits, reports has_more while another matching entry remains, and eventually reaches the complete log without a permanent oversized-page error."],
+      "variants": ["large first entry", "filtered cursor gaps", "exact byte boundary", "mixed control and batch pages"],
+      "decisions": ["D6"]
     }
   ]
 }

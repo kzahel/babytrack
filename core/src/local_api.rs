@@ -52,6 +52,7 @@ pub struct Activity {
     pub note: Option<String>,
     pub diaper_kind: Option<u8>,
     pub bottle_ml: Option<i64>,
+    pub breast_side: Option<u8>,
     pub solids_foods: Option<Vec<String>>,
     pub solids_amount: Option<String>,
     pub growth_weight_g: Option<i64>,
@@ -173,6 +174,20 @@ impl LocalRepository {
     ) -> Result<[u8; 16], Error> {
         let (activity_id, operation) =
             bottle_operation(family, child_id, amount_ml, content, time)?;
+        self.append_activity(family, child_id, operation, time.saved_at_ms)?;
+        Ok(activity_id)
+    }
+
+    pub fn log_breast_feed(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        side: u8,
+        time: ActivityTime,
+        end_utc_ms: i64,
+    ) -> Result<[u8; 16], Error> {
+        let (activity_id, operation) =
+            breast_feed_operation(family, child_id, side, time, end_utc_ms)?;
         self.append_activity(family, child_id, operation, time.saved_at_ms)?;
         Ok(activity_id)
     }
@@ -505,6 +520,43 @@ pub fn bottle_operation(
                 ]),
             ),
             (101, Value::Integer(content.into())),
+        ],
+        time,
+    )
+}
+
+pub fn breast_feed_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    side: u8,
+    time: ActivityTime,
+    end_utc_ms: i64,
+) -> Result<([u8; 16], NewOperation), Error> {
+    if !(1..=2).contains(&side) || end_utc_ms < time.start_utc_ms || end_utc_ms > time.saved_at_ms {
+        return Err(Error::Invalid("breast side or completed interval invalid"));
+    }
+    let start = Value::Array(vec![
+        Value::Integer(time.start_utc_ms.into()),
+        Value::Integer(time.offset_minutes.into()),
+    ]);
+    let end = Value::Array(vec![
+        Value::Integer(end_utc_ms.into()),
+        Value::Integer(time.offset_minutes.into()),
+    ]);
+    activity_operation(
+        family,
+        child_id,
+        "feed.breast",
+        vec![
+            (2, end.clone()),
+            (
+                100,
+                Value::Array(vec![Value::Array(vec![
+                    Value::Integer(side.into()),
+                    start,
+                    end,
+                ])]),
+            ),
         ],
         time,
     )
@@ -854,6 +906,20 @@ fn activity_summary(record: &Record) -> Option<Activity> {
     } else {
         None
     };
+    let breast_side = if record.record_type == "feed.breast" {
+        let Value::Array(segments) = &record.field(100)?.value else {
+            return None;
+        };
+        let [Value::Array(parts)] = segments.as_slice() else {
+            return None;
+        };
+        let [Value::Integer(side), _, _] = parts.as_slice() else {
+            return None;
+        };
+        u8::try_from(*side).ok()
+    } else {
+        None
+    };
     let (solids_foods, solids_amount) = if record.record_type == "feed.solids" {
         let Value::Array(foods) = &record.field(100)?.value else {
             return None;
@@ -932,6 +998,7 @@ fn activity_summary(record: &Record) -> Option<Activity> {
         },
         diaper_kind,
         bottle_ml,
+        breast_side,
         solids_foods,
         solids_amount,
         growth_weight_g: if record.record_type == "growth" {

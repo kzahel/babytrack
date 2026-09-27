@@ -404,3 +404,37 @@ fn solids_foods_and_amount_survive_restart_and_file_restore() {
     let restored = app.restore(&backup, 1_790_000_000_004).unwrap();
     assert_eq!(app.timeline(restored, child).unwrap(), before);
 }
+
+#[test]
+fn completed_breast_feed_keeps_side_and_interval_after_restore() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("breast.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    let child = app.add_child(family, "Baby", 1_790_000_000_001).unwrap();
+    let end = 1_790_000_900_000;
+    let time = ActivityTime {
+        start_utc_ms: end - 15 * 60_000,
+        offset_minutes: 120,
+        saved_at_ms: end,
+    };
+    assert!(app.log_breast_feed(family, child, 0, time, end).is_err());
+    assert!(app.log_breast_feed(family, child, 3, time, end).is_err());
+    assert!(
+        app.log_breast_feed(family, child, 1, time, time.start_utc_ms - 1)
+            .is_err()
+    );
+    let id = app.log_breast_feed(family, child, 2, time, end).unwrap();
+    let before = app.timeline(family, child).unwrap();
+    let row = before.iter().find(|row| row.id == id).unwrap();
+    assert_eq!(row.kind, "feed.breast");
+    assert_eq!(row.breast_side, Some(2));
+    assert_eq!(row.start_utc_ms, time.start_utc_ms);
+    assert_eq!(row.end_utc_ms, Some(end));
+    let backup = app.backup(family, end + 1).unwrap();
+    drop(app);
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.timeline(family, child).unwrap(), before);
+    let restored = app.restore(&backup, end + 2).unwrap();
+    assert_eq!(app.timeline(restored, child).unwrap(), before);
+}

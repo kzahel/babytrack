@@ -228,6 +228,9 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     fun logBottleMl(family: FamilyRef, childId: ByteArray, amountMl: Long, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedBottleMl(family, wrapping, childId, amountMl, 2u.toUByte(), time) }
 
+    fun logBreastFeed(family: FamilyRef, childId: ByteArray, side: UByte, time: ActivityWhen, endUtcMs: Long): ByteArray =
+        withWrapping { wrapping -> core.logSharedBreastFeed(family, wrapping, childId, side, time, endUtcMs) }
+
     fun logSolids(family: FamilyRef, childId: ByteArray, foods: List<String>, amount: String, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedSolids(family, wrapping, childId, foods, amount, time) }
 

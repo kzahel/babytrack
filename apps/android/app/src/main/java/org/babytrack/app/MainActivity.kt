@@ -173,6 +173,8 @@ private fun TrackerScreen(
     var selectedChild by remember { mutableStateOf<String?>(null) }
     var childName by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
+    var breastMinutes by remember { mutableStateOf("") }
+    var breastSide by remember { mutableStateOf(1u.toUByte()) }
     var solidsFoods by remember { mutableStateOf("") }
     var solidsAmount by remember { mutableStateOf("") }
     var sleepMinutes by remember { mutableStateOf("") }
@@ -811,6 +813,37 @@ private fun TrackerScreen(
                             amount = ""
                         }) { Text(stringResource(R.string.log_bottle)) }
                     }
+                    Text(stringResource(R.string.log_breast), style = MaterialTheme.typography.titleLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(1u.toUByte() to R.string.breast_left, 2u.toUByte() to R.string.breast_right).forEach { (side, label) ->
+                            FilterChip(selected = breastSide == side, onClick = { breastSide = side },
+                                label = { Text(stringResource(label)) })
+                        }
+                    }
+                    OutlinedTextField(
+                        value = breastMinutes,
+                        onValueChange = { breastMinutes = it.filter(Char::isDigit).take(3) },
+                        label = { Text(stringResource(R.string.breast_minutes)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                    Button(enabled = (breastMinutes.toLongOrNull() ?: 0L) in 1L..240L, onClick = {
+                        val minutes = breastMinutes.toLongOrNull() ?: return@Button
+                        val side = breastSide
+                        val end = nowTime()
+                        val interval = ActivityWhen(end.startUtcMs - minutes * 60_000L,
+                            end.offsetMinutes, end.savedAtMs)
+                        scope.launch {
+                            runCatching { withContext(Dispatchers.IO) {
+                                if (activeShared) sharing.logBreastFeed(family, child.id, side, interval, end.startUtcMs)
+                                else store.logBreastFeed(family, child.id, side, interval, end.startUtcMs)
+                            } }.onSuccess {
+                                if (breastMinutes.toLongOrNull() == minutes) breastMinutes = ""
+                                version++
+                                message = null
+                            }.onFailure { message = errorText }
+                        }
+                    }) { Text(stringResource(R.string.save_breast)) }
                     Text(stringResource(R.string.log_solids), style = MaterialTheme.typography.titleLarge)
                     OutlinedTextField(
                         value = solidsFoods,
@@ -1002,6 +1035,10 @@ private fun TrackerScreen(
                     entries.forEach { entry ->
                         val label = when {
                             entry.bottleMl != null -> stringResource(R.string.bottle, entry.bottleMl!!)
+                            entry.kind == "feed.breast" && entry.breastSide != null && entry.endUtcMs != null ->
+                                stringResource(R.string.breast_entry,
+                                    stringResource(if (entry.breastSide == 1u.toUByte()) R.string.breast_left else R.string.breast_right),
+                                    (entry.endUtcMs!! - entry.startUtcMs) / 60_000L)
                             entry.kind == "feed.solids" && entry.solidsFoods != null -> {
                                 val foods = entry.solidsFoods!!.joinToString(", ")
                                 if (entry.solidsAmount.isNullOrBlank()) stringResource(R.string.solids_entry, foods)

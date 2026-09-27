@@ -72,6 +72,10 @@ cross-device sync preserve the fields. Other published event types and
 entered units remain M1 work. Solids entry stores one trimmed food per line
 as the published atomic list and preserves optional entered amount text;
 local file restore and encrypted cross-device sync preserve both.
+The first breast-feed path records one completed left or right segment with
+its start and end instants; the published segment array remains atomic so a
+later multi-segment editor can replace it as one field. The local file and
+encrypted shared paths preserve the side and interval.
 
 Growth percentiles are computed from WHO tables when shown, never stored.
 Wake-window hints are computed from sleep events on the device.

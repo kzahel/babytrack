@@ -100,6 +100,7 @@ pub struct ActivityRow {
     pub note: Option<String>,
     pub diaper_kind: Option<u8>,
     pub bottle_ml: Option<i64>,
+    pub breast_side: Option<u8>,
     pub solids_foods: Option<Vec<String>>,
     pub solids_amount: Option<String>,
     pub growth_weight_g: Option<i64>,
@@ -1086,6 +1087,7 @@ impl NativeSharedStore {
                 note: row.note,
                 diaper_kind: row.diaper_kind,
                 bottle_ml: row.bottle_ml,
+                breast_side: row.breast_side,
                 solids_foods: row.solids_foods,
                 solids_amount: row.solids_amount,
                 growth_weight_g: row.growth_weight_g,
@@ -1283,6 +1285,33 @@ impl NativeSharedStore {
         let (id, operation) =
             local_api::bottle_operation(handle, fixed(&child_id)?, amount_ml, content, time.into())
                 .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map_err(rejected)?;
+        Ok(id.to_vec())
+    }
+
+    pub fn log_shared_breast_feed(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        side: u8,
+        time: ActivityWhen,
+        end_utc_ms: i64,
+    ) -> Result<Vec<u8>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let saved_at_ms = time.saved_at_ms;
+        let (id, operation) = local_api::breast_feed_operation(
+            handle,
+            fixed(&child_id)?,
+            side,
+            time.into(),
+            end_utc_ms,
+        )
+        .map_err(rejected)?;
         ready
             .append_local(&mut store, operation, saved_at_ms)
             .map_err(rejected)?;
@@ -1873,6 +1902,29 @@ impl NativeLocalStore {
             .to_vec())
     }
 
+    pub fn log_breast_feed(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        side: u8,
+        time: ActivityWhen,
+        end_utc_ms: i64,
+    ) -> Result<Vec<u8>, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .log_breast_feed(
+                family.handle()?,
+                fixed(&child_id)?,
+                side,
+                time.into(),
+                end_utc_ms,
+            )
+            .map_err(rejected)?
+            .to_vec())
+    }
+
     pub fn log_solids(
         &self,
         family: FamilyRef,
@@ -2057,6 +2109,7 @@ impl NativeLocalStore {
                 note: row.note,
                 diaper_kind: row.diaper_kind,
                 bottle_ml: row.bottle_ml,
+                breast_side: row.breast_side,
                 solids_foods: row.solids_foods,
                 solids_amount: row.solids_amount,
                 growth_weight_g: row.growth_weight_g,

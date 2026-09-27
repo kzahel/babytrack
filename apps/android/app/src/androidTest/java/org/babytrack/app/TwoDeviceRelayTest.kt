@@ -91,6 +91,8 @@ class TwoDeviceRelayTest {
                 MedicationInput("Test medicine marker 68", "2.5", "mL"), ActivityWhen(end, 0, end))
             sharing.logSolids(family, sharing.snapshot(family).children.first().id,
                 listOf("Pear marker 69", "Oatmeal"), "two spoons", ActivityWhen(end, 0, end))
+            sharing.logBreastFeed(family, sharing.snapshot(family).children.first().id,
+                1u.toUByte(), ActivityWhen(end - 15 * 60_000L, 0, end), end)
             sharing.startSleep(family, sharing.snapshot(family).children.first().id,
                 ActivityWhen(end, 0, end))
             assertTrue(sharing.syncRecipientAndUpload(family).ready)
@@ -118,6 +120,10 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "feed.solids" && it.solidsFoods == listOf("Pear marker 69", "Oatmeal") &&
                     it.solidsAmount == "two spoons"
+            })
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.kind == "feed.breast" && it.breastSide == 1u.toUByte() &&
+                    it.endUtcMs != null && it.endUtcMs!! - it.startUtcMs == 15 * 60_000L
             })
             val running = sharing.snapshot(family).activities.single {
                 it.kind == "sleep" && it.endUtcMs == null

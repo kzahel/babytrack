@@ -569,6 +569,16 @@ memory cap can be below the 2 GiB v1 file maximum; it reports that device
 limit rather than risking process termination. The full 2 GiB contract
 requires a streaming import path before it is claimed on Android.
 
+The shared Rust core now has a bounded active-device full-log pull that takes
+an app-owned authenticated GET transport. It verifies each contiguous control
+or batch against the signed relay result before advancing the durable cursor.
+An unknown batch-result fetch leaves that cursor at the last verified entry;
+the FS49 HTTP regression restarts the recipient and retries from there.
+The pull does not establish data readiness or fetch manifest objects by
+itself. A `no_more_visible` result reports the relay's page claim, not proof
+that a withholding relay has no hidden suffix. Network scheduling, object
+hydration, and background polling remain open.
+
 ## Advisory authority and key-handoff preflight
 
 Daybreak Blue at high thinking reviewed fixed commit

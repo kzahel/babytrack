@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod active_pull;
 pub mod batch;
 pub mod bootstrap;
 pub use babytrack_wire::cbor;

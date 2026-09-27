@@ -7,7 +7,7 @@ use axum::{
 };
 
 use babytrack_core::{
-    batch,
+    active_pull,
     bootstrap::InvitationBootstrap,
     cbor::{self, Value},
     creation::ManagerCreation,
@@ -600,48 +600,40 @@ async fn dynamic_flow(early_batch: bool) {
         assert!(
             ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).is_err()
         );
-        let log_path = format!("/v1/families/{}/log?after=0", lower_hex(&family.family_id));
-        let read = resumed_enrollment.sign_get(&log_path).unwrap();
-        let log = LogPage::decode(
-            &http_bytes(&app, Method::GET, &log_path, read.bytes).await,
-            family.family_id,
-            0,
-        )
-        .unwrap();
-        assert_eq!(log.entries.len(), 7);
-        assert_eq!(log.entries[0].cursor, 1);
-        for entry in log.entries.iter().skip(1) {
-            match entry.kind {
-                1 => recipient_public
-                    .accept_control(&mut recipient_store, &entry.committed_bytes)
-                    .unwrap(),
-                2 => {
-                    let Value::Map(envelope) = cbor::decode(&entry.committed_bytes).unwrap() else {
-                        panic!()
-                    };
-                    let header =
-                        batch::Header::decode(&cbor::encode(&envelope[0].1).unwrap()).unwrap();
-                    let result_path = format!(
-                        "/v1/families/{}/batch-results/{}",
-                        lower_hex(&family.family_id),
-                        lower_hex(&header.batch_id)
-                    );
-                    let read = resumed_enrollment.sign_get(&result_path).unwrap();
-                    let result = BatchResult::decode(
-                        &http_bytes(&app, Method::GET, &result_path, read.bytes).await,
-                    )
-                    .unwrap();
-                    recipient_public
-                        .accept_batch(
-                            &mut recipient_store,
-                            &entry.committed_bytes,
-                            result.receipt_bytes.as_ref().unwrap(),
-                        )
-                        .unwrap();
+        let interrupted =
+            active_pull::pull_active_log(&mut recipient_store, enrollment.family(), 2, |path| {
+                let app = app.clone();
+                let read = resumed_enrollment.sign_get(&path).unwrap();
+                async move {
+                    if path.contains("/batch-results/") {
+                        Err(())
+                    } else {
+                        Ok(http_bytes(&app, Method::GET, &path, read.bytes).await)
+                    }
                 }
-                _ => panic!("unexpected log kind"),
-            }
-        }
+            })
+            .await;
+        assert!(matches!(interrupted, Err(active_pull::Error::Transport)));
+        assert_eq!(
+            PublicHistorySession::resume(&recipient_store, enrollment.family())
+                .unwrap()
+                .cursor(),
+            1
+        );
+        drop(recipient_store);
+        recipient_store = SqliteStore::open(&recipient_path).unwrap();
+        let progress =
+            active_pull::pull_active_log(&mut recipient_store, enrollment.family(), 2, |path| {
+                let app = app.clone();
+                let read = resumed_enrollment.sign_get(&path).unwrap();
+                async move { Ok::<_, ()>(http_bytes(&app, Method::GET, &path, read.bytes).await) }
+            })
+            .await
+            .unwrap();
+        assert_eq!(progress.verified_cursor, 7);
+        assert!(progress.no_more_visible);
+        recipient_public =
+            PublicHistorySession::resume(&recipient_store, enrollment.family()).unwrap();
     } else {
         recipient_public
             .accept_control(&mut recipient_store, &page.entries[0].committed_bytes)

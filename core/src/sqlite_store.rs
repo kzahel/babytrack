@@ -417,7 +417,11 @@ impl SqliteStore {
         connection.execute_batch("PRAGMA foreign_keys = ON;")?;
         let schema_version: u32 =
             connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if schema_version == 2 {
+            return Ok(Self { connection });
+        }
         if schema_version == 1 {
+            migrate_invite_issues(&connection)?;
             return Ok(Self { connection });
         }
         if schema_version != 0 {
@@ -622,6 +626,7 @@ impl SqliteStore {
              PRAGMA user_version = 1;
              COMMIT;",
         )?;
+        migrate_invite_issues(&connection)?;
         Ok(Self { connection })
     }
 
@@ -2034,10 +2039,10 @@ impl SqliteStore {
         let transaction = self.connection.transaction()?;
         let _ = checked_family(&transaction, row.family)?;
         transaction.execute(
-            "INSERT INTO first_invite_issues
+            "INSERT INTO invite_issues
              (family_id,device_id,invitation_id,transition_id,object_id,object_bytes,
-              candidate_bytes,secret_nonce,secret_ciphertext)
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+              candidate_bytes,secret_nonce,secret_ciphertext,is_first)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,1)",
             params![
                 &row.family.family_id[..],
                 &row.family.device_id[..],
@@ -2063,7 +2068,7 @@ impl SqliteStore {
             .query_row(
                 "SELECT device_id,invitation_id,transition_id,object_id,object_bytes,
                     candidate_bytes,secret_nonce,secret_ciphertext
-             FROM first_invite_issues WHERE family_id=?1",
+             FROM invite_issues WHERE family_id=?1 AND is_first=1",
                 [&family.family_id[..]],
                 |r| {
                     Ok((
@@ -2159,6 +2164,120 @@ impl SqliteStore {
                 })
             })
             .transpose()
+    }
+}
+
+/// Version two replaces the one-row invitation slot with per-invitation
+/// durable preparation. Copying legacy bytes preserves exact retries and
+/// bearer-link reconstruction after an upgrade.
+fn migrate_invite_issues(connection: &Connection) -> Result<(), Error> {
+    connection.execute_batch(
+        "BEGIN IMMEDIATE;
+         CREATE TABLE invite_issues (
+           family_id BLOB NOT NULL CHECK(length(family_id) = 16),
+           device_id BLOB NOT NULL CHECK(length(device_id) = 16),
+           invitation_id BLOB NOT NULL CHECK(length(invitation_id) = 16),
+           transition_id BLOB NOT NULL CHECK(length(transition_id) = 16),
+           object_id BLOB NOT NULL CHECK(length(object_id) = 16),
+           object_bytes BLOB NOT NULL,
+           candidate_bytes BLOB NOT NULL,
+           secret_nonce BLOB NOT NULL CHECK(length(secret_nonce) = 24),
+           secret_ciphertext BLOB NOT NULL,
+           is_first INTEGER NOT NULL CHECK(is_first IN (0,1)),
+           PRIMARY KEY (family_id, invitation_id),
+           UNIQUE (family_id, transition_id),
+           UNIQUE (family_id, object_id),
+           FOREIGN KEY (family_id) REFERENCES families(family_id)
+         );
+         CREATE UNIQUE INDEX first_invite_per_family
+           ON invite_issues(family_id) WHERE is_first=1;
+         INSERT INTO invite_issues
+           (family_id,device_id,invitation_id,transition_id,object_id,
+            object_bytes,candidate_bytes,secret_nonce,secret_ciphertext,is_first)
+           SELECT family_id,device_id,invitation_id,transition_id,object_id,
+                  object_bytes,candidate_bytes,secret_nonce,secret_ciphertext,1
+           FROM first_invite_issues;
+         PRAGMA user_version = 2;
+         COMMIT;",
+    )?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod invite_migration_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_first_invite_keeps_exact_bytes_after_v2_upgrade() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("legacy-invite.db");
+        let mut store = SqliteStore::open(&path).unwrap();
+        let family = store.create_family(v4(1), v4(2)).unwrap();
+        let row = InviteIssueRow {
+            family,
+            invitation_id: v4(3),
+            transition_id: v4(4),
+            object_id: v4(5),
+            object_bytes: vec![0x81, 0x01],
+            candidate_bytes: vec![0x82, 0x02, 0x03],
+            secret_nonce: [6; 24],
+            secret_ciphertext: vec![0x84, 0x04],
+        };
+        store
+            .connection
+            .execute(
+                "INSERT INTO first_invite_issues
+             (family_id,device_id,invitation_id,transition_id,object_id,
+              object_bytes,candidate_bytes,secret_nonce,secret_ciphertext)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+                params![
+                    family.family_id.as_slice(),
+                    family.device_id.as_slice(),
+                    row.invitation_id.as_slice(),
+                    row.transition_id.as_slice(),
+                    row.object_id.as_slice(),
+                    &row.object_bytes,
+                    &row.candidate_bytes,
+                    row.secret_nonce.as_slice(),
+                    &row.secret_ciphertext,
+                ],
+            )
+            .unwrap();
+        store
+            .connection
+            .execute_batch("DROP TABLE invite_issues; PRAGMA user_version = 1;")
+            .unwrap();
+        drop(store);
+
+        let store = SqliteStore::open(&path).unwrap();
+        let migrated = store.first_invite_issue(family).unwrap().unwrap();
+        assert_eq!(migrated.invitation_id, row.invitation_id);
+        assert_eq!(migrated.transition_id, row.transition_id);
+        assert_eq!(migrated.object_id, row.object_id);
+        assert_eq!(migrated.object_bytes, row.object_bytes);
+        assert_eq!(migrated.candidate_bytes, row.candidate_bytes);
+        assert_eq!(migrated.secret_nonce, row.secret_nonce);
+        assert_eq!(migrated.secret_ciphertext, row.secret_ciphertext);
+        let version: u32 = store
+            .connection
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 2);
+        drop(store);
+        assert!(
+            SqliteStore::open(&path)
+                .unwrap()
+                .first_invite_issue(family)
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    fn v4(fill: u8) -> [u8; 16] {
+        let mut id = [fill; 16];
+        id[6] = 0x40;
+        id[8] = 0x80;
+        id
     }
 }
 

@@ -441,6 +441,11 @@ failed; the corrected implementation passed the focused
 [recheck](#general-authority-advisory-pass-at-98fa0ea). This does not
 substitute for the end-of-M0 gate.
 
+The local SQLite schema now migrates the first invitation's exact prepared
+bytes into a per-invitation table on version-one upgrade. The first-invite
+path uses that table; later issuance, paged recipient ancestry, and general
+handoff remain open.
+
 The next general-device pass follows these ordered implementation proofs:
 
 1. Replace the Family-wide first-invite slot with durable per-invitation

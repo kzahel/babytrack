@@ -600,6 +600,13 @@ the ready session replays and opens every required byte. A
 withholding relay has no hidden suffix. Network scheduling and background
 polling remain open.
 
+The relay now also accepts the existing signed read CBOR in an empty-body
+Authorization header, with exact lowercase-hex syntax. Android's standard
+HTTP transport otherwise rewrites a GET with an output body to POST. The
+server's fixed API vector and HTTP test cover the header, the legacy body,
+and rejection of a request carrying both. This changes only transport
+placement; Rust still verifies the same signed method, path, and authority.
+
 ## Advisory sparse-join crash follow-up
 
 Daybreak Blue reviewed fixed commit

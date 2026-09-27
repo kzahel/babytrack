@@ -10,7 +10,10 @@ use axum::{
     Router,
     body::Bytes,
     extract::{DefaultBodyLimit, OriginalUri, Path as RoutePath, State},
-    http::{HeaderMap, StatusCode, Uri, header::CONTENT_TYPE},
+    http::{
+        HeaderMap, StatusCode, Uri,
+        header::{AUTHORIZATION, CONTENT_TYPE},
+    },
     routing::{get, post},
 };
 
@@ -117,6 +120,49 @@ fn cbor_response(bytes: Vec<u8>) -> ([(axum::http::HeaderName, &'static str); 1]
     ([(CONTENT_TYPE, "application/cbor")], bytes)
 }
 
+fn read_auth(headers: &HeaderMap, body: &Bytes) -> Result<Vec<u8>, StatusCode> {
+    let values: Vec<_> = headers.get_all(AUTHORIZATION).iter().collect();
+    if let [value] = values.as_slice() {
+        if !body.is_empty() {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        let text = value.to_str().map_err(|_| StatusCode::BAD_REQUEST)?;
+        let hex = text
+            .strip_prefix("Babytrack-Read ")
+            .ok_or(StatusCode::BAD_REQUEST)?;
+        if hex.is_empty()
+            || hex.len() > 4096
+            || hex.len() % 2 != 0
+            || !hex
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        return hex
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| {
+                let text = std::str::from_utf8(pair).map_err(|_| StatusCode::BAD_REQUEST)?;
+                u8::from_str_radix(text, 16).map_err(|_| StatusCode::BAD_REQUEST)
+            })
+            .collect();
+    }
+    if !values.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    if headers
+        .get(CONTENT_TYPE)
+        .is_none_or(|v| v.as_bytes() != b"application/cbor")
+    {
+        return Err(StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    }
+    if body.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    Ok(body.to_vec())
+}
+
 fn transition_kind(body: &[u8], staged: bool) -> Result<u64, StatusCode> {
     let value = cbor::decode(body).map_err(|_| StatusCode::BAD_REQUEST)?;
     let Value::Map(fields) = value else {
@@ -213,12 +259,7 @@ async fn read_log(
     body: Bytes,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let family_id = canonical_id(&family)?;
-    if headers
-        .get(CONTENT_TYPE)
-        .is_none_or(|v| v.as_bytes() != b"application/cbor")
-    {
-        return Err(StatusCode::UNSUPPORTED_MEDIA_TYPE);
-    }
+    let auth = read_auth(&headers, &body)?;
     let query = uri.query().ok_or(StatusCode::BAD_REQUEST)?;
     let digits = query
         .strip_prefix("after=")
@@ -239,7 +280,7 @@ async fn read_log(
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let response = store
-        .log_page_authenticated(family_id, after, exact, &body)
+        .log_page_authenticated(family_id, after, exact, &auth)
         .map_err(|_| StatusCode::FORBIDDEN)?;
     Ok(cbor_response(response))
 }
@@ -253,19 +294,16 @@ async fn read_batch_result(
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let family_id = canonical_id(&family)?;
     let batch_id = canonical_id(&batch)?;
-    if uri.query().is_some()
-        || headers
-            .get(CONTENT_TYPE)
-            .is_none_or(|v| v.as_bytes() != b"application/cbor")
-    {
+    if uri.query().is_some() {
         return Err(StatusCode::BAD_REQUEST);
     }
+    let auth = read_auth(&headers, &body)?;
     let mut store = store
         .store
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let response = store
-        .batch_result_authenticated(family_id, batch_id, uri.path(), &body)
+        .batch_result_authenticated(family_id, batch_id, uri.path(), &auth)
         .map_err(|_| StatusCode::FORBIDDEN)?;
     Ok(cbor_response(response))
 }
@@ -278,12 +316,7 @@ async fn read_control(
     body: Bytes,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let family_id = canonical_id(&family)?;
-    if headers
-        .get(CONTENT_TYPE)
-        .is_none_or(|v| v.as_bytes() != b"application/cbor")
-    {
-        return Err(StatusCode::UNSUPPORTED_MEDIA_TYPE);
-    }
+    let auth = read_auth(&headers, &body)?;
     let query = uri.query().ok_or(StatusCode::BAD_REQUEST)?;
     let digits = query
         .strip_prefix("after=")
@@ -304,7 +337,7 @@ async fn read_control(
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let response = store
-        .control_page_authenticated(family_id, after, exact, &body)
+        .control_page_authenticated(family_id, after, exact, &auth)
         .map_err(|_| StatusCode::FORBIDDEN)?;
     Ok(cbor_response(response))
 }
@@ -318,19 +351,16 @@ async fn read_object(
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let family_id = canonical_id(&family)?;
     let object_id = canonical_id(&object)?;
-    if uri.query().is_some()
-        || headers
-            .get(CONTENT_TYPE)
-            .is_none_or(|v| v.as_bytes() != b"application/cbor")
-    {
+    if uri.query().is_some() {
         return Err(StatusCode::BAD_REQUEST);
     }
+    let auth = read_auth(&headers, &body)?;
     let mut store = store
         .store
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let response = store
-        .object_authenticated(family_id, object_id, uri.path(), &body)
+        .object_authenticated(family_id, object_id, uri.path(), &auth)
         .map_err(|_| StatusCode::FORBIDDEN)?;
     Ok(cbor_response(response))
 }
@@ -344,19 +374,16 @@ async fn promotion_result(
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let family_id = canonical_id(&family)?;
     let promotion_id = canonical_id(&promotion)?;
-    if uri.query().is_some()
-        || headers
-            .get(CONTENT_TYPE)
-            .is_none_or(|v| v.as_bytes() != b"application/cbor")
-    {
+    if uri.query().is_some() {
         return Err(StatusCode::BAD_REQUEST);
     }
+    let auth = read_auth(&headers, &body)?;
     let mut store = store
         .store
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let response = store
-        .promotion_result_authenticated(family_id, promotion_id, uri.path(), &body)
+        .promotion_result_authenticated(family_id, promotion_id, uri.path(), &auth)
         .map_err(|_| StatusCode::FORBIDDEN)?;
     Ok(cbor_response(response))
 }
@@ -609,6 +636,29 @@ mod tests {
         let page = to_bytes(response.into_body(), 2 * 1024 * 1024)
             .await
             .unwrap();
+        let auth_hex = issue["inputs"]["read_auth_cbor_hex"].as_str().unwrap();
+        let auth_header = issue["inputs"]["read_auth_header"].as_str().unwrap();
+        assert_eq!(auth_header, format!("Babytrack-Read {auth_hex}"));
+        let header_control = Request::get(issue["inputs"]["read_control_path"].as_str().unwrap())
+            .header(AUTHORIZATION, auth_header)
+            .body(Body::empty())
+            .unwrap();
+        let response = app.clone().oneshot(header_control).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            to_bytes(response.into_body(), 2 * 1024 * 1024)
+                .await
+                .unwrap(),
+            page
+        );
+        let ambiguous = Request::get(issue["inputs"]["read_control_path"].as_str().unwrap())
+            .header(AUTHORIZATION, auth_header)
+            .body(Body::from(hex(auth_hex)))
+            .unwrap();
+        assert_eq!(
+            app.clone().oneshot(ambiguous).await.unwrap().status(),
+            StatusCode::BAD_REQUEST
+        );
         let Value::Map(page) = cbor::decode(&page).unwrap() else {
             panic!()
         };

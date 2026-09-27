@@ -480,7 +480,14 @@ signer_id16, random_request_id16, "GET", exact_path_text,
 H("request-body", empty_bytes)])`, with wire CBOR
 `{1:request_bytes_bstr, 2:signature64}` signed over
 `H("read-request", request_bytes)`. A duplicate request ID with different
-bytes is rejected. Before genesis commits, the declared initial manager may
+bytes is rejected. An HTTP GET carries those signed CBOR bytes in exactly
+one place: either its legacy `application/cbor` request body or an empty-body
+`Authorization: Babytrack-Read <lowercase hex of signed CBOR>` header. The
+relay rejects both together, multiple Authorization fields, malformed or
+oversized hex, and an absent credential. The header form lets Android's
+standard HTTP transport preserve GET. The signed method and exact path are
+the same in both forms; moving the bytes does not change authority or replay
+rules. Before genesis commits, the declared initial manager may
 query only the promotion result using the signing key in the reserved
 genesis candidate. An invitation key uses its invitation ID as signer ID and
 may fetch the public control chain and issue object but no Family data

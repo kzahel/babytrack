@@ -1102,6 +1102,15 @@ it ran no tests, build, lint, emulator, browser, fuzz, or fault campaign.
 | Medium hardening: hash/size checks alone allow public grant envelopes with wrong recipients or key versions. | Validate public envelope shape and bindings without opening ciphertext; add wrong/duplicate/removed recipient and wrong purpose/version cases. |
 | Medium hardening: unchecked cached authority rows can turn writable SQLite corruption into signed invalid decisions. | Rebuild or verify the ledger from signed history on restart; independently corrupt derived rows and require recovery or fail closed. |
 
+The first-cohort claim now opens an immediate SQLite write transaction before
+sampling the relay clock for a new claim. Its expiry check and signed receipt
+use that in-transaction time; an exact committed retry returns its prior
+result without resampling. The server fixture test proves the clock callback
+runs while another connection cannot acquire the write lock, rejects exactly
+at expiry without advancing cursor/head, and preserves the published claim
+bytes and retry. FS65's later-device, restart, and interleaved-batch variants
+remain open. Other general-authority findings in this table remain open.
+
 The corrected [topic proposal](../topics/sync-and-encryption.md#proposed-implementation-seam-for-general-relay-authority)
 uses a public candidate verifier, a relay commit wrapper, and a client
 committed verifier. It needs no v1 wire change if the ledger remains internal;

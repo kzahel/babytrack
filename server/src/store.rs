@@ -7,7 +7,7 @@ use babytrack_wire::{
     cbor::{self, Value},
     crypto,
 };
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 use crate::{authority, batch_authority, read_auth, receipt};
 
@@ -22,6 +22,7 @@ pub enum Error {
     Batch(batch_authority::Error),
     ReadAuth(read_auth::Error),
     Receipt(receipt::Error),
+    Clock,
     Invalid(&'static str),
 }
 impl From<rusqlite::Error> for Error {
@@ -592,14 +593,26 @@ impl RelayStore {
         candidate_bytes: &[u8],
         committed_ms: i64,
     ) -> Result<Vec<u8>, Error> {
-        let (genesis_bytes,cursor,head,genesis_committed)=self.db.query_row(
+        self.commit_first_claim_with_clock(path_family, candidate_bytes, || Ok(committed_ms))
+    }
+
+    pub fn commit_first_claim_with_clock(
+        &mut self,
+        path_family: [u8; 16],
+        candidate_bytes: &[u8],
+        clock: impl FnOnce() -> Result<i64, Error>,
+    ) -> Result<Vec<u8>, Error> {
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (genesis_bytes,cursor,head,genesis_committed)=tx.query_row(
             "SELECT candidate_bytes,cursor,head_hash,committed_bytes FROM families WHERE family_id=?1 AND active=1",
             params![&path_family[..]],|r|Ok((r.get::<_,Vec<u8>>(0)?,r.get::<_,i64>(1)?,r.get::<_,Vec<u8>>(2)?,r.get::<_,Vec<u8>>(3)?)),
         )?;
         let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
-        let controls = control_count(&self.db, path_family)?;
+        let controls = control_count(&tx, path_family)?;
         let genesis_head = crypto::hash("control-head", &genesis_committed)?;
-        let issue_committed = control_at(&self.db, path_family, 1)?;
+        let issue_committed = control_at(&tx, path_family, 1)?;
         let issue_candidate = control_candidate(&issue_committed)?;
         let issue = authority::verify_first_invite_issue(&issue_candidate, &genesis, genesis_head)?;
         let issue_head = crypto::hash("control-head", &issue_committed)?;
@@ -608,7 +621,7 @@ impl RelayStore {
             return Err(Error::Invalid("claim Family path mismatch"));
         }
         if controls >= 3 {
-            let committed = control_at(&self.db, path_family, 2)?;
+            let committed = control_at(&tx, path_family, 2)?;
             if control_candidate(&committed)? == candidate_bytes {
                 return Ok(receipt::control_commit_response(&committed)?);
             }
@@ -623,6 +636,8 @@ impl RelayStore {
         let expiry = issue_time
             .checked_add(604_800_000)
             .ok_or(Error::Invalid("invite expiry overflow"))?;
+        ensure_control_ids(&tx, path_family, candidate_bytes)?;
+        let committed_ms = clock()?;
         if committed_ms < issue_time || committed_ms >= expiry {
             return Err(Error::Invalid("claim expired or relay time moved backward"));
         }
@@ -636,8 +651,6 @@ impl RelayStore {
             committed_ms,
         )?;
         let next_head = crypto::hash("control-head", &committed)?;
-        let tx = self.db.transaction()?;
-        ensure_control_ids(&tx, path_family, candidate_bytes)?;
         tx.execute(
             "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,?2,1,?3)",
             params![&path_family[..], next_cursor, &committed],
@@ -2753,11 +2766,43 @@ mod tests {
         .unwrap();
         let claim_committed = hex(claim_transition["committed_cbor_hex"].as_str().unwrap());
         let claim_time = control_commit_time(&claim_committed).unwrap();
+        let before_claim: (i64, Vec<u8>) = store
+            .db
+            .query_row(
+                "SELECT cursor,head_hash FROM families WHERE family_id=?1",
+                params![&family[..]],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        let mut clock_called = false;
         assert!(
             store
-                .commit_first_claim(family, &claim_candidate, issue_time + 604_800_000)
+                .commit_first_claim_with_clock(family, &claim_candidate, || {
+                    clock_called = true;
+                    let other = Connection::open(&path).unwrap();
+                    other.busy_timeout(std::time::Duration::ZERO).unwrap();
+                    assert!(
+                        other
+                            .execute(
+                                "UPDATE families SET cursor=cursor WHERE family_id=?1",
+                                params![&family[..]],
+                            )
+                            .is_err()
+                    );
+                    Ok(issue_time + 604_800_000)
+                })
                 .is_err()
         );
+        assert!(clock_called);
+        let after_expiry: (i64, Vec<u8>) = store
+            .db
+            .query_row(
+                "SELECT cursor,head_hash FROM families WHERE family_id=?1",
+                params![&family[..]],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(after_expiry, before_claim);
         assert_eq!(
             store
                 .commit_first_claim(family, &claim_candidate, claim_time)
@@ -2766,7 +2811,9 @@ mod tests {
         );
         assert_eq!(
             store
-                .commit_first_claim(family, &claim_candidate, claim_time + 1)
+                .commit_first_claim_with_clock(family, &claim_candidate, || {
+                    panic!("exact claim retry must not recheck expiry or clock")
+                })
                 .unwrap(),
             receipt::control_commit_response(&claim_committed).unwrap()
         );

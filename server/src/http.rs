@@ -17,7 +17,7 @@ use axum::{
     routing::{get, post},
 };
 
-use crate::store::RelayStore;
+use crate::store::{Error as StoreError, RelayStore};
 use babytrack_wire::cbor::{self, Value};
 
 trait Clock: Send + Sync {
@@ -226,22 +226,33 @@ async fn commit_control(
     let family_id = canonical_id(&family)?;
     let expected = format!("/v1/families/{family}/control");
     exact_post(&uri, &expected, &headers)?;
-    let committed_ms = store.clock.now_ms()?;
+    let kind = transition_kind(&body, false)?;
+    let clock = Arc::clone(&store.clock);
     let mut store = store
         .store
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let response = match transition_kind(&body, false)? {
-        1 => store.commit_genesis(family_id, &body, committed_ms),
-        2 => store.commit_first_issue(family_id, &body, committed_ms),
-        4 => store.commit_first_claim(family_id, &body, committed_ms),
-        11 => store.commit_first_challenge(family_id, &body, committed_ms),
-        5 => store.commit_first_proof(family_id, &body, committed_ms),
-        6 => store.commit_first_admission(family_id, &body, committed_ms),
-        8 => store.commit_first_removal(family_id, &body, committed_ms),
-        _ => return Err(StatusCode::NOT_IMPLEMENTED),
+    let response = match kind {
+        4 => store.commit_first_claim_with_clock(family_id, &body, || {
+            clock.now_ms().map_err(|_| StoreError::Clock)
+        }),
+        kind => {
+            let committed_ms = clock.now_ms()?;
+            match kind {
+                1 => store.commit_genesis(family_id, &body, committed_ms),
+                2 => store.commit_first_issue(family_id, &body, committed_ms),
+                11 => store.commit_first_challenge(family_id, &body, committed_ms),
+                5 => store.commit_first_proof(family_id, &body, committed_ms),
+                6 => store.commit_first_admission(family_id, &body, committed_ms),
+                8 => store.commit_first_removal(family_id, &body, committed_ms),
+                _ => return Err(StatusCode::NOT_IMPLEMENTED),
+            }
+        }
     }
-    .map_err(|_| StatusCode::CONFLICT)?;
+    .map_err(|error| match error {
+        StoreError::Clock => StatusCode::INTERNAL_SERVER_ERROR,
+        _ => StatusCode::CONFLICT,
+    })?;
     Ok(cbor_response(response))
 }
 

@@ -161,6 +161,7 @@ pub struct ActivityRow {
     pub pump_total_ml: Option<i64>,
     pub growth_weight_g: Option<i64>,
     pub growth_length_mm: Option<i64>,
+    pub growth_head_mm: Option<i64>,
     pub temperature_c: Option<String>,
     pub medication_name: Option<String>,
     pub medication_dose_amount: Option<String>,
@@ -1554,6 +1555,7 @@ impl NativeSharedStore {
                 pump_total_ml: row.pump_total_ml,
                 growth_weight_g: row.growth_weight_g,
                 growth_length_mm: row.growth_length_mm,
+                growth_head_mm: row.growth_head_mm,
                 temperature_c: row.temperature_c,
                 medication_name: row.medication_name,
                 medication_dose_amount: row.medication_dose_amount,
@@ -2308,6 +2310,48 @@ impl NativeSharedStore {
             .map_err(rejected)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn edit_shared_growth_measurements(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        weight_g: Option<i64>,
+        length_mm: Option<i64>,
+        head_mm: Option<i64>,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let projection = ready.projection_with_pending(&store).map_err(rejected)?;
+        let child_id = fixed(&child_id)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(BindingError::InvalidBytes)?;
+        if child.scope != operation::Scope::Child || child.deleted {
+            return Err(BindingError::InvalidBytes);
+        }
+        let activity = projection
+            .record(&fixed(&activity_id)?)
+            .ok_or(BindingError::InvalidBytes)?;
+        let operation = local_api::edit_growth_measurements_operation(
+            handle,
+            child_id,
+            activity,
+            weight_g,
+            length_mm,
+            head_mm,
+            saved_at_ms,
+        )
+        .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map(|_| ())
+            .map_err(rejected)
+    }
+
     pub fn edit_shared_pump_amounts(
         &self,
         family: FamilyRef,
@@ -2461,6 +2505,36 @@ impl NativeSharedStore {
             fixed(&child_id)?,
             weight_g,
             length_mm,
+            time.into(),
+        )
+        .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map_err(rejected)?;
+        Ok(id.to_vec())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn log_shared_growth_measurements(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        weight_g: Option<i64>,
+        length_mm: Option<i64>,
+        head_mm: Option<i64>,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let saved_at_ms = time.saved_at_ms;
+        let (id, operation) = local_api::growth_measurements_operation(
+            handle,
+            fixed(&child_id)?,
+            weight_g,
+            length_mm,
+            head_mm,
             time.into(),
         )
         .map_err(rejected)?;
@@ -3384,6 +3458,32 @@ impl NativeLocalStore {
             .map_err(rejected)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn edit_growth_measurements(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        weight_g: Option<i64>,
+        length_mm: Option<i64>,
+        head_mm: Option<i64>,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        self.repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .edit_growth_measurements(
+                family.handle()?,
+                fixed(&child_id)?,
+                fixed(&activity_id)?,
+                weight_g,
+                length_mm,
+                head_mm,
+                saved_at_ms,
+            )
+            .map_err(rejected)
+    }
+
     pub fn edit_pump_amounts(
         &self,
         family: FamilyRef,
@@ -3488,6 +3588,31 @@ impl NativeLocalStore {
             .to_vec())
     }
 
+    pub fn log_growth_measurements(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        weight_g: Option<i64>,
+        length_mm: Option<i64>,
+        head_mm: Option<i64>,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .log_growth_measurements(
+                family.handle()?,
+                fixed(&child_id)?,
+                weight_g,
+                length_mm,
+                head_mm,
+                time.into(),
+            )
+            .map_err(rejected)?
+            .to_vec())
+    }
+
     pub fn log_temperature_c(
         &self,
         family: FamilyRef,
@@ -3561,6 +3686,7 @@ impl NativeLocalStore {
                 pump_total_ml: row.pump_total_ml,
                 growth_weight_g: row.growth_weight_g,
                 growth_length_mm: row.growth_length_mm,
+                growth_head_mm: row.growth_head_mm,
                 temperature_c: row.temperature_c,
                 medication_name: row.medication_name,
                 medication_dose_amount: row.medication_dose_amount,

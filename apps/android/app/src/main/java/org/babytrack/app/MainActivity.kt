@@ -211,6 +211,7 @@ private data class PendingGrowthEdit(
     val shared: Boolean,
     val weight: String,
     val length: String,
+    val head: String,
 )
 private data class PendingPumpEdit(
     val family: FamilyRef,
@@ -406,6 +407,7 @@ private fun TrackerScreen(
     var noteText by remember { mutableStateOf("") }
     var growthWeight by remember { mutableStateOf("") }
     var growthLength by remember { mutableStateOf("") }
+    var growthHead by remember { mutableStateOf("") }
     var temperatureC by remember { mutableStateOf("") }
     var medicationName by remember { mutableStateOf("") }
     var doseAmount by remember { mutableStateOf("") }
@@ -1488,24 +1490,36 @@ private fun TrackerScreen(
                             singleLine = true,
                         )
                     }
+                    OutlinedTextField(
+                        value = growthHead,
+                        onValueChange = { growthHead = it.filter(Char::isDigit).take(4) },
+                        label = { Text(stringResource(R.string.head_mm)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
                     val weight = growthWeight.toLongOrNull()
                     val length = growthLength.toLongOrNull()
+                    val head = growthHead.toLongOrNull()
                     Button(
-                        enabled = (weight != null || length != null) &&
+                        enabled = (weight != null || length != null || head != null) &&
                             (growthWeight.isBlank() || (weight != null && weight in 1L..100_000L)) &&
-                            (growthLength.isBlank() || (length != null && length in 1L..2_500L)),
+                            (growthLength.isBlank() || (length != null && length in 1L..2_500L)) &&
+                            (growthHead.isBlank() || (head != null && head in 1L..1_000L)),
                         onClick = {
                             val savedWeight = growthWeight
                             val savedLength = growthLength
+                            val savedHead = growthHead
                             val chosenAt = logAtMs
                             val at = logTime()
                             scope.launch {
                                 runCatching { withContext(Dispatchers.IO) {
-                                    if (activeShared) sharing.logGrowth(family, child.id, weight, length, at)
-                                    else store.logGrowth(family, child.id, weight, length, at)
+                                    if (activeShared) sharing.logGrowthMeasurements(family, child.id, weight, length, head, at)
+                                    else store.logGrowthMeasurements(family, child.id, weight, length, head, at)
                                 } }.onSuccess {
                                     if (growthWeight == savedWeight) growthWeight = ""
                                     if (growthLength == savedLength) growthLength = ""
+                                    if (growthHead == savedHead) growthHead = ""
                                     version++
                                     message = null
                                     resetLogTime(chosenAt)
@@ -1675,12 +1689,15 @@ private fun TrackerScreen(
                                 stringResource(R.string.sleep_duration, (entry.endUtcMs!! - entry.startUtcMs) / 60_000)
                             entry.kind == "sleep" -> stringResource(R.string.sleep_running)
                             entry.note != null -> stringResource(R.string.note_entry, entry.note!!)
-                            entry.kind == "growth" && entry.growthWeightG != null && entry.growthLengthMm != null ->
-                                stringResource(R.string.growth_both, entry.growthWeightG!!, entry.growthLengthMm!!)
-                            entry.kind == "growth" && entry.growthWeightG != null ->
-                                stringResource(R.string.growth_weight, entry.growthWeightG!!)
-                            entry.kind == "growth" && entry.growthLengthMm != null ->
-                                stringResource(R.string.growth_length, entry.growthLengthMm!!)
+                            entry.kind == "growth" -> {
+                                val parts = listOfNotNull(
+                                    entry.growthWeightG?.let { "$it g" },
+                                    entry.growthLengthMm?.let { "$it mm" },
+                                    entry.growthHeadMm?.let { context.getString(R.string.growth_head_part, it) },
+                                )
+                                if (parts.isEmpty()) entry.kind
+                                else stringResource(R.string.growth_summary, parts.joinToString(" · "))
+                            }
                             entry.kind == "temperature" && entry.temperatureC != null ->
                                 stringResource(R.string.temperature_entry, entry.temperatureC!!)
                             entry.kind == "medication" && entry.medicationName != null &&
@@ -1792,6 +1809,7 @@ private fun TrackerScreen(
                                             family, entry.childId.copyOf(), entry.id.copyOf(), activeShared,
                                             entry.growthWeightG?.toString().orEmpty(),
                                             entry.growthLengthMm?.toString().orEmpty(),
+                                            entry.growthHeadMm?.toString().orEmpty(),
                                         )
                                     }) { Text(stringResource(R.string.edit_growth)) }
                                 }
@@ -2124,22 +2142,31 @@ private fun TrackerScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                     )
+                    OutlinedTextField(
+                        value = target.head,
+                        onValueChange = { pendingGrowthEdit = target.copy(head = it.filter(Char::isDigit).take(4)) },
+                        label = { Text(stringResource(R.string.head_mm)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
                     Text(stringResource(R.string.growth_edit_hint))
                 }
             },
             confirmButton = {
                 val weight = target.weight.toLongOrNull()
                 val length = target.length.toLongOrNull()
-                Button(enabled = (weight != null || length != null) &&
+                val head = target.head.toLongOrNull()
+                Button(enabled = (weight != null || length != null || head != null) &&
                     (target.weight.isBlank() || (weight != null && weight in 1L..100_000L)) &&
-                    (target.length.isBlank() || (length != null && length in 1L..2_500L)), onClick = {
+                    (target.length.isBlank() || (length != null && length in 1L..2_500L)) &&
+                    (target.head.isBlank() || (head != null && head in 1L..1_000L)), onClick = {
                     pendingGrowthEdit = null
                     val savedAtMs = System.currentTimeMillis()
                     change {
-                        if (target.shared) sharing.editGrowth(
-                            target.family, target.childId, target.activityId, weight, length, savedAtMs,
-                        ) else store.editGrowth(
-                            target.family, target.childId, target.activityId, weight, length, savedAtMs,
+                        if (target.shared) sharing.editGrowthMeasurements(
+                            target.family, target.childId, target.activityId, weight, length, head, savedAtMs,
+                        ) else store.editGrowthMeasurements(
+                            target.family, target.childId, target.activityId, weight, length, head, savedAtMs,
                         )
                     }
                 }) { Text(stringResource(R.string.save_changes)) }

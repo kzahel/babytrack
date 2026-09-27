@@ -45,6 +45,9 @@ Nara sample mapping remain open for their planned features.
 Caregivers can backdate one completed entry at a time. Bottle logging and
 correction expose the four published content codes through the shared core;
 the Android timeline and analysis CSV show that choice.
+The selected-child timeline groups activity by local day and filters its
+view. Growth entries now carry optional head circumference through local
+restore, encrypted sync, the Android form, and analysis CSV.
 
 | Field | Current answer |
 |---|---|

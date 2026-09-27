@@ -106,6 +106,9 @@
     <string name="log_growth">Log growth</string>
     <string name="weight_g">Weight (g)</string>
     <string name="length_mm">Length (mm)</string>
+    <string name="head_mm">Head circumference (mm)</string>
+    <string name="growth_head_part">head %1$d mm</string>
+    <string name="growth_summary">Growth · %1$s</string>
     <string name="save_growth">Save growth</string>
     <string name="growth_both">Growth · %1$d g · %2$d mm</string>
     <string name="growth_weight">Growth · %1$d g</string>

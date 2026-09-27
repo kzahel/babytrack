@@ -78,7 +78,7 @@ fn growth_correction_keeps_activity_and_survives_restore() {
         saved_at_ms: 1_790_000_000_004,
     };
     let id = app
-        .log_growth(family, child, Some(4_200), Some(540), time)
+        .log_growth_measurements(family, child, Some(4_200), Some(540), Some(350), time)
         .unwrap();
     assert!(
         app.edit_growth(
@@ -99,13 +99,37 @@ fn growth_correction_keeps_activity_and_survives_restore() {
         app.edit_growth(family, child, id, Some(0), None, time.saved_at_ms + 1)
             .is_err()
     );
-    app.edit_growth(family, child, id, Some(4_300), None, time.saved_at_ms + 1)
-        .unwrap();
+    assert!(
+        app.edit_growth_measurements(
+            family,
+            child,
+            id,
+            None,
+            None,
+            Some(1_001),
+            time.saved_at_ms + 1
+        )
+        .is_err()
+    );
+    app.edit_growth_measurements(
+        family,
+        child,
+        id,
+        Some(4_300),
+        None,
+        Some(355),
+        time.saved_at_ms + 1,
+    )
+    .unwrap();
     let before = app.timeline(family, child).unwrap();
     assert_eq!(before[0].id, id);
     assert_eq!(before[0].growth_weight_g, Some(4_300));
     assert_eq!(before[0].growth_length_mm, Some(540));
+    assert_eq!(before[0].growth_head_mm, Some(355));
     assert_eq!(before[0].start_utc_ms, time.start_utc_ms);
+    let csv = String::from_utf8(app.analysis_csv(family).unwrap()).unwrap();
+    assert!(csv.contains(",growth_head_mm,"));
+    assert!(csv.contains("\"355\""));
     let backup = app.backup(family, time.saved_at_ms + 2).unwrap();
     drop(app);
     let mut app = LocalRepository::open(&path).unwrap();

@@ -135,8 +135,8 @@ class TwoDeviceRelayTest {
                 ActivityWhen(end - 30 * 60_000L, 0, end), end, 0)
             sharing.logNote(family, sharing.snapshot(family).children.first().id,
                 "Care note marker 67", ActivityWhen(end, 0, end))
-            sharing.logGrowth(family, sharing.snapshot(family).children.first().id,
-                4_200, 540, ActivityWhen(end, 0, end))
+            sharing.logGrowthMeasurements(family, sharing.snapshot(family).children.first().id,
+                4_200, 540, 350, ActivityWhen(end, 0, end))
             sharing.logTemperatureC(family, sharing.snapshot(family).children.first().id,
                 "37.50", ActivityWhen(end, 0, end))
             sharing.logMedication(family, sharing.snapshot(family).children.first().id,
@@ -184,13 +184,15 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).activities.any { it.note == "Care note marker 67" })
             assertTrue(String(sharing.analysisCsv(family)).contains("Care note marker 67"))
             assertTrue(sharing.snapshot(family).activities.any {
-                it.kind == "growth" && it.growthWeightG == 4_200L && it.growthLengthMm == 540L
+                it.kind == "growth" && it.growthWeightG == 4_200L && it.growthLengthMm == 540L &&
+                    it.growthHeadMm == 350L
             })
             val growth = sharing.snapshot(family).activities.single { it.kind == "growth" }
-            sharing.editGrowth(family, growth.childId, growth.id, 4_300L, null, System.currentTimeMillis())
+            sharing.editGrowthMeasurements(family, growth.childId, growth.id, 4_300L, null, 355L, System.currentTimeMillis())
             assertTrue(sharing.snapshot(family).activities.any {
                 it.id.contentEquals(growth.id) && it.growthWeightG == 4_300L &&
-                    it.growthLengthMm == 540L && it.startUtcMs == growth.startUtcMs
+                    it.growthLengthMm == 540L && it.growthHeadMm == 355L &&
+                    it.startUtcMs == growth.startUtcMs
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "temperature" && it.temperatureC == "37.50"
@@ -331,7 +333,8 @@ class TwoDeviceRelayTest {
                     it.medicationDoseAmount == "3" && it.medicationDoseUnit == "mL"
             })
             assertTrue(sharing.snapshot(family).activities.any {
-                it.kind == "growth" && it.growthWeightG == 4_300L && it.growthLengthMm == 540L
+                it.kind == "growth" && it.growthWeightG == 4_300L && it.growthLengthMm == 540L &&
+                    it.growthHeadMm == 355L
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "temperature" && it.temperatureC == "37.8"

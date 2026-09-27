@@ -61,7 +61,8 @@ complete list, with the other inspectable in history.
 | `note` | text only |
 
 The Android first-cohort build currently records growth as whole grams and
-millimetres, either or both in one event. The core writes the published
+millimetres, with weight, length, and head circumference in any nonempty
+combination in one event. The core writes the published
 measure map with the entered unit and rejects empty or out-of-range values.
 The first Celsius entry path parses decimal text in the core, rounds to
 hundredths using the published rule, and retains the entered text. Local
@@ -112,6 +113,9 @@ Child birth day and growth-chart sex may be corrected by field-set operations
 on the same child ID. A missing input leaves the saved field intact; the
 existing protocol does not clear a previously recorded birth day. Activities
 remain attached to that child.
+Growth corrections may set weight, length, or head circumference on the same
+activity ID. A blank value in the Android edit leaves that measurement as it
+was; deleting the entry removes all its measurements from the timeline.
 
 Growth percentiles are computed from WHO tables when shown, never stored.
 Wake-window hints are computed from sleep events on the device.

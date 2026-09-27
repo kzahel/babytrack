@@ -381,6 +381,10 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
                    weightG: Long?, lengthMm: Long?, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedGrowth(family, wrapping, childId, activityId, weightG, lengthMm, savedAtMs) }
 
+    fun editGrowthMeasurements(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+                               weightG: Long?, lengthMm: Long?, headMm: Long?, savedAtMs: Long): Unit =
+        withWrapping { wrapping -> core.editSharedGrowthMeasurements(family, wrapping, childId, activityId, weightG, lengthMm, headMm, savedAtMs) }
+
     fun editPumpAmounts(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
                         input: uniffi.babytrack_core_ffi.PumpInput, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedPumpAmounts(family, wrapping, childId, activityId, input, savedAtMs) }
@@ -398,6 +402,9 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
 
     fun logGrowth(family: FamilyRef, childId: ByteArray, weightG: Long?, lengthMm: Long?, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedGrowth(family, wrapping, childId, weightG, lengthMm, time) }
+
+    fun logGrowthMeasurements(family: FamilyRef, childId: ByteArray, weightG: Long?, lengthMm: Long?, headMm: Long?, time: ActivityWhen): ByteArray =
+        withWrapping { wrapping -> core.logSharedGrowthMeasurements(family, wrapping, childId, weightG, lengthMm, headMm, time) }
 
     fun logTemperatureC(family: FamilyRef, childId: ByteArray, enteredC: String, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedTemperatureC(family, wrapping, childId, enteredC, time) }

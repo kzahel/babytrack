@@ -44,7 +44,12 @@ Compose content and system bars; emulator captures checked each mode.
 Child creation can also record a birth date and the sex code needed for
 eventual growth charts. The shared core persists these as child metadata in
 local and shared history; growth percentiles are still pending.
-Caregivers can correct weight or length on an existing growth entry through
+Growth entries can now include head circumference in millimetres alongside
+weight and length, or alone. The core projects and exports that measurement;
+local file restore and encrypted two-device sync check its correction. A
+headed emulator UI run logged and corrected the measurement across restart,
+and a separate run saved a head-only growth entry.
+Caregivers can correct weight, length, or head circumference on an existing growth entry through
 the shared Rust operation path. A blank measurement retains its previous
 value; deleting the entry remains the way to remove a measurement. Local
 restart/file restore and two-emulator encrypted convergence cover this edit.

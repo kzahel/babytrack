@@ -64,6 +64,7 @@ pub struct Activity {
     pub pump_total_ml: Option<i64>,
     pub growth_weight_g: Option<i64>,
     pub growth_length_mm: Option<i64>,
+    pub growth_head_mm: Option<i64>,
     pub temperature_c: Option<String>,
     pub medication_name: Option<String>,
     pub medication_dose_amount: Option<String>,
@@ -552,6 +553,41 @@ impl LocalRepository {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn edit_growth_measurements(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        weight_g: Option<i64>,
+        length_mm: Option<i64>,
+        head_mm: Option<i64>,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        if child.scope != Scope::Child || child.deleted {
+            return Err(Error::Invalid("target child unavailable"));
+        }
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("activity unavailable"))?;
+        let operation = edit_growth_measurements_operation(
+            family,
+            child_id,
+            activity,
+            weight_g,
+            length_mm,
+            head_mm,
+            saved_at_ms,
+        )?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn edit_pump_amounts(
         &mut self,
         family: FamilyHandle,
@@ -659,6 +695,21 @@ impl LocalRepository {
     ) -> Result<[u8; 16], Error> {
         let (activity_id, operation) =
             growth_operation(family, child_id, weight_g, length_mm, time)?;
+        self.append_activity(family, child_id, operation, time.saved_at_ms)?;
+        Ok(activity_id)
+    }
+
+    pub fn log_growth_measurements(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        weight_g: Option<i64>,
+        length_mm: Option<i64>,
+        head_mm: Option<i64>,
+        time: ActivityTime,
+    ) -> Result<[u8; 16], Error> {
+        let (activity_id, operation) =
+            growth_measurements_operation(family, child_id, weight_g, length_mm, head_mm, time)?;
         self.append_activity(family, child_id, operation, time.saved_at_ms)?;
         Ok(activity_id)
     }
@@ -1559,19 +1610,32 @@ pub fn growth_operation(
     length_mm: Option<i64>,
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    let fields = growth_fields(weight_g, length_mm)?;
+    growth_measurements_operation(family, child_id, weight_g, length_mm, None, time)
+}
+
+pub fn growth_measurements_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    weight_g: Option<i64>,
+    length_mm: Option<i64>,
+    head_mm: Option<i64>,
+    time: ActivityTime,
+) -> Result<([u8; 16], NewOperation), Error> {
+    let fields = growth_fields(weight_g, length_mm, head_mm)?;
     activity_operation(family, child_id, "growth", fields, time)
 }
 
 fn growth_fields(
     weight_g: Option<i64>,
     length_mm: Option<i64>,
+    head_mm: Option<i64>,
 ) -> Result<Vec<(u64, Value)>, Error> {
-    if weight_g.is_none() && length_mm.is_none() {
-        return Err(Error::Invalid("growth needs weight or length"));
+    if weight_g.is_none() && length_mm.is_none() && head_mm.is_none() {
+        return Err(Error::Invalid("growth needs a measurement"));
     }
     if weight_g.is_some_and(|value| !(1..=100_000).contains(&value))
         || length_mm.is_some_and(|value| !(1..=2_500).contains(&value))
+        || head_mm.is_some_and(|value| !(1..=1_000).contains(&value))
     {
         return Err(Error::Invalid("growth measurement outside supported range"));
     }
@@ -1582,6 +1646,9 @@ fn growth_fields(
     if let Some(value) = length_mm {
         fields.push((101, whole_measure(value, 20)));
     }
+    if let Some(value) = head_mm {
+        fields.push((102, whole_measure(value, 20)));
+    }
     Ok(fields)
 }
 
@@ -1591,6 +1658,27 @@ pub fn edit_growth_operation(
     activity: &Record,
     weight_g: Option<i64>,
     length_mm: Option<i64>,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    edit_growth_measurements_operation(
+        family,
+        child_id,
+        activity,
+        weight_g,
+        length_mm,
+        None,
+        saved_at_ms,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn edit_growth_measurements_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    weight_g: Option<i64>,
+    length_mm: Option<i64>,
+    head_mm: Option<i64>,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
     if activity.scope != Scope::Activity
@@ -1611,7 +1699,7 @@ pub fn edit_growth_operation(
         hlc: placeholder_hlc(family),
         record_type: None,
         child_id: None,
-        fields: Some(growth_fields(weight_g, length_mm)?),
+        fields: Some(growth_fields(weight_g, length_mm, head_mm)?),
     })
 }
 
@@ -2024,6 +2112,11 @@ fn activity_summary(record: &Record) -> Option<Activity> {
         },
         growth_length_mm: if record.record_type == "growth" {
             growth_measure(101)
+        } else {
+            None
+        },
+        growth_head_mm: if record.record_type == "growth" {
+            growth_measure(102)
         } else {
             None
         },

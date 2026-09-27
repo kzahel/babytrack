@@ -399,21 +399,36 @@ while the relay's executable admission and read checks cover only the
 initial manager and first recipient. Before adding later devices, factor
 the deterministic **public** authority transition rules into `wire/`, which
 already supplies canonical CBOR and public cryptography to both sides. The
-shared verifier consumes a previous public state, signed candidate bytes,
-and relevant committed public history. It checks version, Family/relay ID,
-parent head, roles and signers, state hash, manifest metadata, epoch,
-ID reuse, and transition-specific invariants, then returns a next public
-state and object requirements. It never accepts an epoch key, decrypts an
-object, or interprets event data.
+candidate phase consumes the previous public state, a durable public history
+ledger, and signed candidate bytes. It checks canonical bytes, version,
+Family/relay ID, parent head, roles and signers, deterministic state effects,
+state hash, manifest requirements, epoch, ID reuse, and transition-specific
+invariants. It returns a prepared next state and object requirements, with
+no receipt, cursor, time, or data-readiness conclusion. The ledger retains
+historical device credentials and lifecycle status, issue commit times,
+head-to-epoch mappings, accepted per-device sequences, public IDs, and
+admission/grant associations. The canonical seven-field authorization state
+alone cannot answer historical reads or batch ancestry. The shared verifier
+never accepts an epoch key, decrypts an object, or interprets event data.
 
 The client continues to verify relay receipts, pin the committed head,
 open addressed grants and membership objects, and project encrypted data.
-The relay checks staged object hashes/sizes and its SQLite ID ledger,
-assigns a signed receipt only inside the Family compare-and-swap
-transaction, and uses the same public state for batch-write authorization
-and path-specific GET access. Rejected-only batch IDs remain a separate
-durable relay reservation. An offline request or staged object never becomes
-a confirmed authority change. Unknown versions/kinds fail closed.
+The relay resolves exact committed/rejected retries before checking current
+authority. Candidate-scoped staging permits competing proposals at one head;
+staging grants no authority. Inside one SQLite write transaction it reloads
+the public ledger, reruns candidate verification, chooses and checks the
+actual commit time (including invitation expiry), checks staged hashes,
+sizes, and public envelope bindings, then atomically commits the signed
+receipt, global cursor, control head, public ledger, ID reservations, object
+visibility, and exact result. Controls and batches share this cursor CAS;
+head-only CAS is insufficient when a batch advances the cursor. Path-specific
+GET access uses historical credentials/status from the ledger: a removed
+device may prove removal and query its own earlier result but cannot read
+new data, grants, or another author's result. Rejected-only batch IDs remain
+a separate durable relay reservation. The ledger is rebuilt from signed
+history or verified against it after restart, not trusted as an unchecked
+database snapshot. An offline request or staged object never becomes a
+confirmed authority change. Unknown versions/kinds fail closed.
 
 This is an implementation proposal, not a new wire contract. Its first
 regression is byte-identical replay of the reviewed first cohort on both
@@ -421,7 +436,10 @@ sides, including removal and signed post-removal result lookup. Then add a
 third device, manager-to-manager changes, unused-invite cancellation,
 pending removal, role changes, and general rotation, with route-level
 negative and crash/restart cases. Review the factoring and its trust split
-before replacing the relay's current first-cohort checks. The
+before replacing the relay's current first-cohort checks. The focused
+[Daybreak advisory](../tactical/003-m0-foundation.md#advisory-general-authority-seam-review-at-bb68156)
+found the earlier one-phase/current-state sketch unsafe; these transaction,
+history, and retry requirements are its required corrections. The
 [M0 tactical](../tactical/003-m0-foundation.md) tracks delivery.
 
 ## Reconsider if

@@ -436,13 +436,16 @@ outbox. Android distinguishes never-uploaded, accepted, rejected, and
 unknown delivery when showing the new private Family.
 The [proposed public-authority factoring](../topics/sync-and-encryption.md#proposed-implementation-seam-for-general-relay-authority)
 would replace parallel first-cohort relay checks before later-device
-admission expands. Seek a focused independent review of that trust split;
-it does not substitute for the end-of-M0 gate.
+admission expands. Its focused [Daybreak advisory](#advisory-general-authority-seam-review-at-bb68156)
+failed the initial sketch; implement the corrected transaction and history
+requirements before expanding admission. This does not substitute for the
+end-of-M0 gate.
 
 - [ ] Share deterministic public authority replay between client and relay
   without giving the relay epoch keys or event semantics. Preserve reviewed
-  first-cohort bytes and GET/write ACLs; then add third-device and general
-  role/removal route cases.
+  first-cohort bytes and GET/write ACLs; add the public history ledger,
+  two-phase verification, candidate-scoped staging, exact retry first, and
+  global cursor CAS before third-device and general role/removal routes.
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed
   batch receipts, and authenticated reads. Relay stores opaque bytes and
@@ -1076,6 +1079,36 @@ the trust model; a receipt is not globally witnessed inclusion.
 This focused PASS clears the first-cohort early authority review, not the
 M0 exit review or later-device authority. The M1 two-physical-phone and
 power-loss gates remain open.
+
+## Advisory general-authority seam review at bb68156
+
+Daybreak Blue high thinking reviewed fixed clean commit
+`bb681565a40c85c5de6cced27650788222195d76` through Yep Anywhere in
+read-only plan session `01a0e187-dfc1-7160-aa99-1efb5da63b81`. It returned
+**FAIL for the proposed general relay-authority implementation seam**, not
+for the reviewed first-cohort gate or the M0 exit gate. It modeled the
+honest ordered relay, hostile authorized device, compromised storage, and
+malicious relay within the documented trust limits. This was a static review;
+it ran no tests, build, lint, emulator, browser, fuzz, or fault campaign.
+
+| Finding | Required implementation and regression |
+|---|---|
+| High: candidate verification cannot decide expiry from a timestamp captured before the transaction. | Split deterministic candidate preparation from commit-time checks; choose signed time inside the write transaction and test the exact expiry boundary after delayed staging and restart (FS65). |
+| High: current authorization state discards removed credentials needed for narrow historical reads. | Rebuild a public history ledger and test every route for invitation, pending, active, and removed devices, including own-result access and other-device denial (FS66). |
+| High: batch checks need historical head/epoch, sequences, and IDs. | Include these in the public ledger and test old-head/wrong-epoch, same-epoch ancestor, competing sequence, rotation races, and restart (FS67). |
+| High: singleton Family staging can let an incomplete hostile candidate block another manager. | Key staging by candidate; test two same-head proposals, incomplete A, committed B, then stale A after restart (FS68). |
+| High: current authority checks before exact retry lookup can lose a committed result after role loss/removal. | Look up exact bytes and return the original result first; test later controls, removal, restart, and same ID with different bytes (FS69). |
+| High: control-head-only CAS does not serialize batches, which advance the global cursor. | CAS head and cursor with all derived acceptance state in one SQLite transaction; test separate connections, control/batch races, and crash before/after commit (FS70). |
+| Medium hardening: hash/size checks alone allow public grant envelopes with wrong recipients or key versions. | Validate public envelope shape and bindings without opening ciphertext; add wrong/duplicate/removed recipient and wrong purpose/version cases. |
+| Medium hardening: unchecked cached authority rows can turn writable SQLite corruption into signed invalid decisions. | Rebuild or verify the ledger from signed history on restart; independently corrupt derived rows and require recovery or fail closed. |
+
+The corrected [topic proposal](../topics/sync-and-encryption.md#proposed-implementation-seam-for-general-relay-authority)
+uses a public candidate verifier, a relay commit wrapper, and a client
+committed verifier. It needs no v1 wire change if the ledger remains internal;
+first-cohort bytes and ACLs are regression anchors. The reviewer found no
+private-key dependency in this factoring. A malicious relay can still withhold
+or fork valid history or lie about time, and a legitimate holder can disclose
+keys it possesses. General authority and the M0 exit gate remain open.
 
 ## Advisory byte/crypto preflight
 

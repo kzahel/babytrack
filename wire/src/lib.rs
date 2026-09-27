@@ -6,3 +6,4 @@
 pub mod authority;
 pub mod cbor;
 pub mod crypto;
+pub mod epoch_bindings;

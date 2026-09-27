@@ -87,6 +87,26 @@ run_step "$recipient" recipientReadyAndUpload
 run_step "$manager" managerVerifyAndUpload
 run_step "$recipient" recipientVerifyAndSaveOffline
 run_step "$manager" managerRemove
+kill "$relay_pid"
+wait "$relay_pid" 2>/dev/null || true
+relay_pid=""
+: > "$scratch/relay.log"
+target/debug/babytrack-server "$scratch/relay.db" "$scratch/seed" 127.0.0.1:8787 > "$scratch/relay.log" 2>&1 &
+relay_pid=$!
+restarted_public=""
+for _ in {1..100}; do
+  restarted_public="$(sed -n 's/^Relay public key: \([0-9a-f]\{64\}\)$/\1/p' "$scratch/relay.log" | head -1)"
+  if [[ -n "$restarted_public" ]]; then break; fi
+  if ! kill -0 "$relay_pid" 2>/dev/null; then
+    cat "$scratch/relay.log" >&2
+    exit 1
+  fi
+  sleep 0.1
+done
+if [[ "$restarted_public" != "$public_key" ]]; then
+  echo "Relay identity changed or restart failed" >&2
+  exit 1
+fi
 run_step "$recipient" recipientRemovedAndCopied
 if rg --text -q 'Care note marker 67' "$scratch/relay.db" "$scratch/relay.log"; then
   echo "Plaintext note reached relay storage or logs" >&2

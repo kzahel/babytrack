@@ -38,6 +38,9 @@ pub(crate) struct VerifiedControlReceipt {
     pub relay_id: [u8; 32],
     pub transition_id: [u8; 16],
     pub parent_head: [u8; 32],
+    pub kind: u16,
+    pub epoch: u32,
+    pub rotation_commitment: Option<[u8; 32]>,
     pub cursor: u64,
     pub manifest: Vec<CommittedObjectRef>,
 }
@@ -54,6 +57,8 @@ pub(crate) struct StoredAcceptedBatch {
     pub batch_id: [u8; 16],
     pub author_id: [u8; 16],
     pub sequence: u64,
+    pub epoch: u32,
+    pub control_head: [u8; 32],
 }
 
 /// Recreate the exact relay-signed acceptance from the saved envelope. This
@@ -125,6 +130,8 @@ pub(crate) fn verify_stored_accepted_batch(
         batch_id: batch.batch_id,
         author_id: batch.author_id,
         sequence: batch.sequence,
+        epoch: batch.epoch,
+        control_head: batch.control_head,
     })
 }
 
@@ -167,6 +174,29 @@ pub(crate) fn verify_control_receipt(
     let relay_id = fixed::<32>(&unsigned[2].1)?;
     let parent_head = fixed::<32>(&unsigned[3].1)?;
     let transition_id = fixed::<16>(&unsigned[4].1)?;
+    let Value::Integer(kind) = unsigned[5].1 else {
+        return Err(Error::Invalid("control kind"));
+    };
+    let kind: u16 = kind
+        .try_into()
+        .map_err(|_| Error::Invalid("control kind range"))?;
+    let Value::Integer(epoch) = unsigned[8].1 else {
+        return Err(Error::Invalid("control epoch"));
+    };
+    let epoch: u32 = epoch
+        .try_into()
+        .map_err(|_| Error::Invalid("control epoch range"))?;
+    let rotation_commitment = if kind == 8 {
+        let Value::Map(delta) = &unsigned[6].1 else {
+            return Err(Error::Invalid("rotation delta not map"));
+        };
+        if delta.len() != 3 || delta[2].0 != 3 {
+            return Err(Error::Invalid("rotation delta keys"));
+        }
+        Some(fixed::<32>(&delta[2].1)?)
+    } else {
+        None
+    };
     let Value::Array(objects) = &unsigned[9].1 else {
         return Err(Error::Invalid("control manifest not array"));
     };
@@ -242,6 +272,9 @@ pub(crate) fn verify_control_receipt(
         relay_id,
         transition_id,
         parent_head,
+        kind,
+        epoch,
+        rotation_commitment,
         cursor,
         manifest,
     })

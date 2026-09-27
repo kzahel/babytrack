@@ -6,6 +6,7 @@ use std::{collections::BTreeSet, path::Path};
 use babytrack_wire::{
     cbor::{self, Value},
     crypto,
+    epoch_bindings::EpochBindings,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
@@ -270,6 +271,7 @@ impl RelayStore {
             let mut control_count = 0u64;
             let mut batch_count = 0u64;
             let mut object_ids = BTreeSet::new();
+            let mut epochs: Option<EpochBindings> = None;
             while let Some(row) = log.next()? {
                 let position: i64 = row.get(0)?;
                 let kind: i64 = row.get(1)?;
@@ -313,7 +315,31 @@ impl RelayStore {
                                 return Err(Error::Invalid("committed manifest object differs"));
                             }
                         }
-                        head = crypto::hash("control-head", &bytes)?;
+                        let next_head = crypto::hash("control-head", &bytes)?;
+                        if control_count == 0 {
+                            if receipt.kind != 1 || receipt.epoch != 1 {
+                                return Err(Error::Invalid("stored genesis kind or epoch"));
+                            }
+                            epochs = Some(EpochBindings::from_genesis(
+                                next_head,
+                                genesis.epoch_commitment,
+                            ));
+                        } else {
+                            let bindings = epochs
+                                .as_mut()
+                                .ok_or(Error::Invalid("epoch bindings absent"))?;
+                            let commitment = receipt.rotation_commitment.unwrap_or(
+                                bindings
+                                    .commitment_for_epoch(bindings.latest_epoch())
+                                    .ok_or(Error::Invalid("current epoch commitment absent"))?,
+                            );
+                            bindings
+                                .record(next_head, receipt.epoch, commitment)
+                                .map_err(|_| {
+                                    Error::Invalid("stored head or epoch commitment differs")
+                                })?;
+                        }
+                        head = next_head;
                         control_count += 1;
                     }
                     2 => {
@@ -344,6 +370,14 @@ impl RelayStore {
                             || u64::try_from(sequence).ok() != Some(verified.sequence)
                         {
                             return Err(Error::Invalid("stored batch result metadata differs"));
+                        }
+                        let bindings = epochs
+                            .as_ref()
+                            .ok_or(Error::Invalid("batch before genesis"))?;
+                        if bindings.epoch_for_head(&verified.control_head) != Some(verified.epoch)
+                            || bindings.latest_epoch() != verified.epoch
+                        {
+                            return Err(Error::Invalid("stored batch head or epoch differs"));
                         }
                         batch_count += 1;
                     }

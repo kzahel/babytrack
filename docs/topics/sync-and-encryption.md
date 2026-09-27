@@ -435,6 +435,10 @@ a separate durable relay reservation. The ledger is rebuilt from authenticated
 signed controls and receipts or verified against that chain after restart,
 not trusted as an unchecked database snapshot. Each committed head binds one
 epoch; each epoch binds exactly one commitment from verified transition bytes.
+The shared `EpochBindings` type enforces these immutable associations. The
+first-cohort relay reconstructs them on restart and checks accepted batch
+authoring heads against the active epoch; general route commit transactions
+still need to use the same verified history.
 Damaged or incomplete reconstruction refuses further commits and reads.
 An offline request or staged object never becomes a
 confirmed authority change. Unknown versions/kinds fail closed.
@@ -445,8 +449,7 @@ On restart it also checks contiguous cursor positions, control receipt
 signatures and parent links, committed object bytes against signed manifests,
 the saved head and cursor, and accepted batch receipts and metadata against
 their log bytes. Full control and batch semantics, rejected-result rows, and
-other derived-row reconstruction are still required
-for the general ledger.
+other derived-row reconstruction are still required for the general ledger.
 
 The extracted `wire` verifier prepares invitation-issue, two-signature
 claim, holder-challenge, pending key-proof, admission, and active-removal

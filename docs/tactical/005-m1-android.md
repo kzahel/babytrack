@@ -37,6 +37,9 @@ manager, a manager deletion converging to the recipient, offline pending work, m
 recipient proof, and automatic private copy. Foreground polling runs every
 30 seconds; a scheduled job requests sync when Android allows it. Push
 remains a later latency option.
+The disposable two-emulator flow now restarts the relay after the manager's
+rotating removal, then checks the recipient's removed state and private copy
+against the reconstructed authority log.
 The early independent authority recheck passed for that implemented cohort
 at `82c0f4c`; [003](003-m0-foundation.md#early-m0-authority-recheck-at-82c0f4c)
 records its limits. No physical two-phone or full M0 exit gate has passed.

@@ -32,6 +32,9 @@ the content code and original time remain intact.
 Diaper type corrections likewise update the same activity, preserving its
 original time and any other fields. Local restart/file restore and the
 two-emulator encrypted relay flow cover the correction.
+Solids foods and amount can now be corrected together on the same activity;
+the shared core checks the target and retains its original time. Local file
+restore and the two-emulator encrypted relay flow cover the correction.
 The Android surface now follows the device's light or dark mode for both
 Compose content and system bars; emulator captures checked each mode.
 Child creation can also record a birth date and the sex code needed for
@@ -68,8 +71,8 @@ handoff. This is still a development flow, not a released product flow.
 - [x] Log sleep timers/completed sleep, notes, growth in whole grams and
   millimetres, and entered Celsius decimals through the local/shared core.
 - [ ] Complete the MVP logging set: growth percentile display and practical
-  edits beyond note, bottle amount, and diaper type. Multi-segment breast
-  feeds, note, bottle, and diaper correction, and
+  edits beyond note, bottle amount, diaper type, and solids. Multi-segment breast
+  feeds, note, bottle, diaper, and solids correction, and
   single-activity deletion now pass
   local restart/file restore, two-emulator encrypted sync, and UI tap flows.
   Preserve unknown fields and exact Family/child targets. Keep clinical

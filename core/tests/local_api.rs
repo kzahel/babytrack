@@ -655,11 +655,46 @@ fn solids_foods_and_amount_survive_restart_and_file_restore() {
         Some(&["Pear".into(), "Oatmeal".into()][..])
     );
     assert_eq!(row.solids_amount.as_deref(), Some("two spoons"));
-    let backup = app.backup(family, 1_790_000_000_003).unwrap();
+    assert!(
+        app.edit_solids(family, child, id, &[], "", time.saved_at_ms + 1)
+            .is_err()
+    );
+    let other_child = app
+        .add_child(family, "Other", time.saved_at_ms + 1)
+        .unwrap();
+    assert!(
+        app.edit_solids(
+            family,
+            other_child,
+            id,
+            &["Apple".into()],
+            "half",
+            time.saved_at_ms + 1
+        )
+        .is_err()
+    );
+    app.edit_solids(
+        family,
+        child,
+        id,
+        &[" Apple ".into(), "Rice".into()],
+        " half bowl ",
+        time.saved_at_ms + 2,
+    )
+    .unwrap();
+    let before = app.timeline(family, child).unwrap();
+    let row = before.iter().find(|row| row.id == id).unwrap();
+    assert_eq!(
+        row.solids_foods.as_deref(),
+        Some(&["Apple".into(), "Rice".into()][..])
+    );
+    assert_eq!(row.solids_amount.as_deref(), Some("half bowl"));
+    assert_eq!(row.start_utc_ms, time.start_utc_ms);
+    let backup = app.backup(family, 1_790_000_000_005).unwrap();
     drop(app);
     let mut app = LocalRepository::open(&path).unwrap();
     assert_eq!(app.timeline(family, child).unwrap(), before);
-    let restored = app.restore(&backup, 1_790_000_000_004).unwrap();
+    let restored = app.restore(&backup, 1_790_000_000_006).unwrap();
     assert_eq!(app.timeline(restored, child).unwrap(), before);
 }
 

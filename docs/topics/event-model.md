@@ -90,6 +90,10 @@ Bottle amount correction similarly replaces only the whole-millilitre
 measurement field on the same activity. The core validates its live
 Family/child target and amount, retaining the original time, content code,
 and unknown fields for replay and sync.
+Solids correction replaces the complete foods list and entered amount on the
+same activity. The core validates the live Family and child, applies the same
+food and length limits as creation, and retains the original time and unknown
+fields. Both values survive file restore and encrypted shared sync.
 Pumping records a completed interval with either separate left/right
 millilitres or one total, never both forms in one entry. It does not create a
 freezer inventory balance.

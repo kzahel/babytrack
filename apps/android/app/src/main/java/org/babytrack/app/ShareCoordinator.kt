@@ -287,6 +287,10 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     fun editDiaperKind(family: FamilyRef, childId: ByteArray, activityId: ByteArray, kind: UByte, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedDiaperKind(family, wrapping, childId, activityId, kind, savedAtMs) }
 
+    fun editSolids(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+                   foods: List<String>, amount: String, savedAtMs: Long): Unit =
+        withWrapping { wrapping -> core.editSharedSolids(family, wrapping, childId, activityId, foods, amount, savedAtMs) }
+
     fun logNote(family: FamilyRef, childId: ByteArray, note: String, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedNote(family, wrapping, childId, note, time) }
 

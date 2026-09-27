@@ -412,6 +412,32 @@ impl LocalRepository {
         Ok(())
     }
 
+    pub fn edit_solids(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        foods: &[String],
+        amount: &str,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        if child.scope != Scope::Child || child.deleted {
+            return Err(Error::Invalid("target child unavailable"));
+        }
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("activity unavailable"))?;
+        let operation =
+            edit_solids_operation(family, child_id, activity, foods, amount, saved_at_ms)?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn log_note(
         &mut self,
         family: FamilyHandle,
@@ -836,6 +862,16 @@ pub fn solids_operation(
     amount: &str,
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
+    activity_operation(
+        family,
+        child_id,
+        "feed.solids",
+        solids_fields(foods, amount)?,
+        time,
+    )
+}
+
+fn solids_fields(foods: &[String], amount: &str) -> Result<Vec<(u64, Value)>, Error> {
     let normalized: Vec<_> = foods.iter().map(|food| food.trim()).collect();
     let amount = amount.trim();
     if normalized.is_empty()
@@ -847,24 +883,48 @@ pub fn solids_operation(
     {
         return Err(Error::Invalid("solids foods or amount invalid"));
     }
-    activity_operation(
-        family,
-        child_id,
-        "feed.solids",
-        vec![
-            (
-                100,
-                Value::Array(
-                    normalized
-                        .into_iter()
-                        .map(|food| Value::Text(food.into()))
-                        .collect(),
-                ),
+    Ok(vec![
+        (
+            100,
+            Value::Array(
+                normalized
+                    .into_iter()
+                    .map(|food| Value::Text(food.into()))
+                    .collect(),
             ),
-            (101, Value::Text(amount.into())),
-        ],
-        time,
-    )
+        ),
+        (101, Value::Text(amount.into())),
+    ])
+}
+
+pub fn edit_solids_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    foods: &[String],
+    amount: &str,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    if activity.scope != Scope::Activity
+        || activity.child_id != Some(child_id)
+        || activity.record_type != "feed.solids"
+        || activity.deleted
+    {
+        return Err(Error::Invalid("solids target unavailable"));
+    }
+    check_time(saved_at_ms)?;
+    Ok(NewOperation {
+        family_id: family.family_id,
+        operation_id: ids::random_v7(saved_at_ms)?,
+        record_id: activity.id,
+        scope: Scope::Activity,
+        kind: Kind::Set,
+        author_device_id: family.device_id,
+        hlc: placeholder_hlc(family),
+        record_type: None,
+        child_id: None,
+        fields: Some(solids_fields(foods, amount)?),
+    })
 }
 
 pub fn sleep_operation(

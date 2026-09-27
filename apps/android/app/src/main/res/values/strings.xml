@@ -66,6 +66,7 @@
     <string name="save_changes">Save changes</string>
     <string name="edit_bottle">Edit bottle amount</string>
     <string name="edit_diaper">Edit diaper type</string>
+    <string name="edit_solids">Edit solids</string>
     <string name="note_entry">Note · %1$s</string>
     <string name="log_growth">Log growth</string>
     <string name="weight_g">Weight (g)</string>

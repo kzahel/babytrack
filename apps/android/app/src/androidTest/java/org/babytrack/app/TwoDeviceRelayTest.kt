@@ -136,6 +136,20 @@ class TwoDeviceRelayTest {
                 it.kind == "feed.solids" && it.solidsFoods == listOf("Pear marker 69", "Oatmeal") &&
                     it.solidsAmount == "two spoons"
             })
+            val solids = sharing.snapshot(family).activities.single { it.kind == "feed.solids" }
+            val wrongSolidsChild = sharing.snapshot(family).children.single {
+                !it.id.contentEquals(solids.childId)
+            }
+            assertTrue(runCatching {
+                sharing.editSolids(family, wrongSolidsChild.id, solids.id,
+                    listOf("Apple"), "half bowl", System.currentTimeMillis())
+            }.isFailure)
+            sharing.editSolids(family, solids.childId, solids.id,
+                listOf("Apple", "Rice"), "half bowl", System.currentTimeMillis())
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.id.contentEquals(solids.id) && it.solidsFoods == listOf("Apple", "Rice") &&
+                    it.solidsAmount == "half bowl" && it.startUtcMs == solids.startUtcMs
+            })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "feed.breast" && it.breastSide == 1u.toUByte() &&
                     it.endUtcMs != null && it.endUtcMs!! - it.startUtcMs == 15 * 60_000L
@@ -208,6 +222,10 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).activities.any { it.note == "After sync correction" })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "feed.bottle" && it.bottleMl == 120L
+            })
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.kind == "feed.solids" && it.solidsFoods == listOf("Apple", "Rice") &&
+                    it.solidsAmount == "half bowl"
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "diaper" && it.diaperKind == 2u.toUByte()

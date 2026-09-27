@@ -171,6 +171,14 @@ private data class PendingDiaperEdit(
     val shared: Boolean,
     val kind: UByte,
 )
+private data class PendingSolidsEdit(
+    val family: FamilyRef,
+    val childId: ByteArray,
+    val activityId: ByteArray,
+    val shared: Boolean,
+    val foods: String,
+    val amount: String,
+)
 private data class ScreenData(
     val families: List<FamilyRef>,
     val activeFamilyKey: String?,
@@ -251,6 +259,7 @@ private fun TrackerScreen(
     var pendingNoteEdit by remember { mutableStateOf<PendingNoteEdit?>(null) }
     var pendingBottleEdit by remember { mutableStateOf<PendingBottleEdit?>(null) }
     var pendingDiaperEdit by remember { mutableStateOf<PendingDiaperEdit?>(null) }
+    var pendingSolidsEdit by remember { mutableStateOf<PendingSolidsEdit?>(null) }
     var relayOrigin by remember { mutableStateOf("") }
     var relayPublicKey by remember { mutableStateOf("") }
     var shareStage by remember { mutableStateOf<String?>(null) }
@@ -1346,6 +1355,18 @@ private fun TrackerScreen(
                                         )
                                     }) { Text(stringResource(R.string.edit_diaper)) }
                                 }
+                                if (entry.kind == "feed.solids" && entry.solidsFoods != null) {
+                                    OutlinedButton(onClick = {
+                                        pendingSolidsEdit = PendingSolidsEdit(
+                                            family,
+                                            entry.childId.copyOf(),
+                                            entry.id.copyOf(),
+                                            activeShared,
+                                            entry.solidsFoods!!.joinToString("\n"),
+                                            entry.solidsAmount.orEmpty(),
+                                        )
+                                    }) { Text(stringResource(R.string.edit_solids)) }
+                                }
                                 OutlinedButton(onClick = {
                                     pendingDelete = PendingActivityDelete(
                                         family,
@@ -1587,6 +1608,45 @@ private fun TrackerScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { pendingDiaperEdit = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+    pendingSolidsEdit?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingSolidsEdit = null },
+            title = { Text(stringResource(R.string.edit_solids)) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = target.foods,
+                        onValueChange = { pendingSolidsEdit = target.copy(foods = it.take(2048)) },
+                        label = { Text(stringResource(R.string.solids_foods)) },
+                    )
+                    OutlinedTextField(
+                        value = target.amount,
+                        onValueChange = { pendingSolidsEdit = target.copy(amount = it.take(256)) },
+                        label = { Text(stringResource(R.string.solids_amount)) },
+                    )
+                }
+            },
+            confirmButton = {
+                Button(enabled = target.foods.isNotBlank(), onClick = {
+                    pendingSolidsEdit = null
+                    val savedAtMs = System.currentTimeMillis()
+                    val foods = target.foods.lines().map { it.trim() }.filter { it.isNotEmpty() }
+                    change {
+                        if (target.shared) sharing.editSolids(
+                            target.family, target.childId, target.activityId, foods, target.amount, savedAtMs,
+                        ) else store.editSolids(
+                            target.family, target.childId, target.activityId, foods, target.amount, savedAtMs,
+                        )
+                    }
+                }) { Text(stringResource(R.string.save_changes)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingSolidsEdit = null }) {
                     Text(stringResource(R.string.cancel))
                 }
             },

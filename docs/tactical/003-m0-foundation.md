@@ -1173,6 +1173,13 @@ sides compute the same proof hash and pending-state effect. The separate
 private challenge-object opening remains a client concern. Admission and
 later controls still need shared state reducers.
 
+Admission now uses the shared reducer: the fixed role and proof on the
+pending row, current epoch commitment, signer, active-row insertion, and
+grant manifest are checked from public state on both client and relay.
+Encrypted grant and membership object contents remain client checks, and
+historical ID checks remain separate. Repair, cancellation, role change,
+pending removal, rotation, and later-device relay routes remain open.
+
 The corrected [topic proposal](../topics/sync-and-encryption.md#proposed-implementation-seam-for-general-relay-authority)
 uses a public candidate verifier, a relay commit wrapper, and a client
 committed verifier. It needs no v1 wire change if the ledger remains internal;

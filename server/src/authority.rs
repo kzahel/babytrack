@@ -570,80 +570,18 @@ pub(crate) fn verify_first_admission(
     proof: &ProofCandidate,
     proof_head: [u8; 32],
 ) -> Result<AdmissionCandidate, Error> {
-    let value = cbor::decode_with_limits(
-        candidate_bytes,
-        cbor::Limits {
-            max_bytes: 1024 * 1024,
-            max_depth: 16,
-        },
-    )?;
-    let root = exact_map(&value, 2)?;
-    let unsigned = exact_map(&root[0].1, 11)?;
-    let delta = exact_map(&unsigned[6].1, 4)?;
-    let invitation_id = fixed::<16>(&delta[0].1)?;
-    let recipient_id = fixed::<16>(&delta[1].1)?;
-    let role = number(&delta[2].1)?;
-    let commitment = fixed::<32>(&delta[3].1)?;
-    if invitation_id != issue.invitation_id
-        || recipient_id != claim.device_id
-        || role != issue.role
-        || commitment != genesis.epoch_commitment
-    {
-        return Err(Error::Invalid(
-            "admission target, role, or key commitment mismatch",
-        ));
-    }
-    let recipient_row = Value::Array(vec![
-        Value::Bytes(recipient_id.to_vec()),
-        Value::Bytes(claim.signing_public.to_vec()),
-        Value::Bytes(claim.agreement_public.to_vec()),
-        Value::Integer(claim.key_version.into()),
-        Value::Integer(role.into()),
-    ]);
-    let mut active = vec![genesis.manager_row.clone(), recipient_row];
-    active.sort_by(|left, right| {
-        let Value::Array(left) = left else {
-            unreachable!()
-        };
-        let Value::Array(right) = right else {
-            unreachable!()
-        };
-        let Value::Bytes(left) = &left[0] else {
-            unreachable!()
-        };
-        let Value::Bytes(right) = &right[0] else {
-            unreachable!()
-        };
-        left.cmp(right)
-    });
-    let invitation = Value::Array(vec![
-        Value::Bytes(issue.invitation_id.to_vec()),
-        Value::Bytes(genesis.manager_id.to_vec()),
-        Value::Bytes(issue.invite_public.to_vec()),
-        Value::Integer(issue.role.into()),
-        Value::Bytes(issue.transition_id.to_vec()),
-        Value::Integer(2),
-    ]);
-    let resulting = Value::Map(vec![
-        (1, Value::Integer(1)),
-        (2, Value::Bytes(genesis.family_id.to_vec())),
-        (3, Value::Bytes(genesis.relay_id.to_vec())),
-        (4, Value::Integer(1)),
-        (5, Value::Array(active)),
-        (6, Value::Array(vec![])),
-        (7, Value::Array(vec![invitation])),
-    ]);
-    let header = verify_following(
-        candidate_bytes,
+    let state = state_with_pending(
         genesis,
-        FollowingPlan {
-            parent: proof_head,
-            kind: 6,
-            epoch: 1,
-            resulting: &resulting,
-            expected_signers: &[(genesis.manager_id, genesis.manager_signing_key)],
-            manifest_kinds: &[1, 4],
-        },
+        issue,
+        claim,
+        Some(challenge.challenge_id),
+        Some(proof.proof_hash),
+    );
+    let prepared = public_authority::prepare_admission(
+        candidate_bytes,
+        &state,
+        proof_head,
+        genesis.epoch_commitment,
     )?;
     if [
         genesis.transition_id,
@@ -652,9 +590,9 @@ pub(crate) fn verify_first_admission(
         challenge.transition_id,
         proof.transition_id,
     ]
-    .contains(&header.transition_id)
-        || header.manifest[0].object_id == header.manifest[1].object_id
-        || header.manifest.iter().any(|entry| {
+    .contains(&prepared.transition_id)
+        || prepared.manifest[0].object_id == prepared.manifest[1].object_id
+        || prepared.manifest.iter().any(|entry| {
             genesis
                 .manifest
                 .iter()
@@ -669,9 +607,18 @@ pub(crate) fn verify_first_admission(
         return Err(Error::Invalid("admission transition or object ID reused"));
     }
     Ok(AdmissionCandidate {
-        transition_id: header.transition_id,
-        recipient_id,
-        manifest: header.manifest,
+        transition_id: prepared.transition_id,
+        recipient_id: prepared.device_id,
+        manifest: prepared
+            .manifest
+            .into_iter()
+            .map(|entry| ManifestEntry {
+                kind: entry.kind,
+                object_id: entry.object_id,
+                object_hash: entry.object_hash,
+                object_len: entry.object_len,
+            })
+            .collect(),
     })
 }
 

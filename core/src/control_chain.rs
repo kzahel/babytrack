@@ -806,98 +806,44 @@ impl ControlChain {
         let root = exact_map(&object, 4)?;
         let unsigned = exact_map(&root[0].1, 11)?;
         self.check_unsigned(unsigned, 6, self.current_epoch()?)?;
-        let transition_id = fixed::<16>(&unsigned[4].1)?;
-        let delta = exact_map(&unsigned[6].1, 4)?;
-        let invitation_id = fixed::<16>(&delta[0].1)?;
-        let device_id = fixed::<16>(&delta[1].1)?;
-        let role = number(&delta[2].1)?;
-        let commitment = fixed::<32>(&delta[3].1)?;
-        if commitment != self.current_commitment {
-            return Err(Error::Invalid(
-                "admission key commitment differs from active epoch",
-            ));
-        }
-        let state = exact_map(&self.state, 7)?;
-        let pending = find_row(&state[5].1, 9, 0, invitation_id)?
-            .ok_or(Error::Invalid("admission invitation not pending"))?;
-        if fixed::<16>(&pending[1])? != device_id
-            || number(&pending[5])? != role
-            || !matches!(pending[8], Value::Bytes(ref bytes) if bytes.len() == 32)
-        {
-            return Err(Error::Invalid(
-                "admission needs the fixed role and committed proof",
-            ));
-        }
-        let sign_public = fixed::<32>(&pending[2])?;
-        let agree_public = fixed::<32>(&pending[3])?;
-        let key_version = number(&pending[4])?;
-        let manifest = array(&unsigned[9].1, 2)?;
-        let grant_entry = array(&manifest[1], 4)?;
-        if number(&grant_entry[0])? != 4 {
-            return Err(Error::Invalid("admission grant manifest kind invalid"));
-        }
+        self.check_new_control_ids(unsigned)?;
+        let signed_candidate = cbor::encode(&Value::Map(vec![
+            (1, root[0].1.clone()),
+            (2, root[1].1.clone()),
+        ]))?;
+        let prepared = babytrack_wire::authority::prepare_admission(
+            &signed_candidate,
+            &self.state,
+            self.head_hash,
+            self.current_commitment,
+        )?;
         let grant = VerifiedAdmissionGrant {
             family_id: self.genesis.family_id(),
-            epoch: self
-                .current_epoch()?
-                .try_into()
-                .map_err(|_| Error::Invalid("epoch outside u32"))?,
-            epoch_commitment: self.current_commitment,
-            core_hash: fixed::<32>(&unsigned[10].1)?,
-            invitation_id,
-            device_id,
-            role: role
-                .try_into()
-                .map_err(|_| Error::Invalid("admission role outside u8"))?,
-            agree_public,
-            key_version: key_version
-                .try_into()
-                .map_err(|_| Error::Invalid("key version outside u32"))?,
-            grant_id: fixed::<16>(&grant_entry[1])?,
-            object_hash: fixed::<32>(&grant_entry[2])?,
+            epoch: self.epoch()?,
+            epoch_commitment: prepared.commitment,
+            core_hash: prepared.core_hash,
+            invitation_id: prepared.invitation_id,
+            device_id: prepared.device_id,
+            role: prepared.role,
+            agree_public: prepared.agreement_public,
+            key_version: prepared.key_version,
+            grant_id: prepared.manifest[1].object_id,
+            object_hash: prepared.manifest[1].object_hash,
         };
-        let signatures = array(&root[1].1, 1)?;
-        let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
-        let active = find_row(&state[4].1, 5, 0, signer_id)?
-            .ok_or(Error::Invalid("grant signer not active"))?;
-        let signer_key = fixed::<32>(&active[1])?;
-        if find_row(&state[4].1, 5, 0, device_id)?.is_some() {
-            return Err(Error::Invalid("recipient already active"));
-        }
-        let mut next_state = self.state.clone();
-        let Value::Map(map) = &mut next_state else {
-            unreachable!()
-        };
-        let Value::Array(next_pending) = &mut map[5].1 else {
-            unreachable!()
-        };
-        next_pending.retain(|row| {
-            !array(row, 9).is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(invitation_id))
-        });
-        let Value::Array(next_active) = &mut map[4].1 else {
-            unreachable!()
-        };
-        next_active.push(Value::Array(vec![
-            Value::Bytes(device_id.to_vec()),
-            Value::Bytes(sign_public.to_vec()),
-            Value::Bytes(agree_public.to_vec()),
-            Value::Integer(key_version.into()),
-            Value::Integer(role.into()),
-        ]));
-        sort_rows_by_id(next_active);
         self.finalize(
             bytes,
             root,
             unsigned,
             FinalizePlan {
-                next_state,
-                expected_signers: &[(signer_id, signer_key)],
+                next_state: prepared.next_state,
+                expected_signers: &[(prepared.signer_id, prepared.signer_key)],
                 manifest_kinds: &[1, 4],
                 before_ms: None,
             },
         )?;
-        self.admissions.insert(device_id, transition_id);
-        self.admission_grants.insert(device_id, grant);
+        self.admissions
+            .insert(prepared.device_id, prepared.transition_id);
+        self.admission_grants.insert(prepared.device_id, grant);
         Ok(())
     }
 
@@ -1366,24 +1312,6 @@ fn find_row(
         }
     }
     Ok(None)
-}
-
-fn sort_rows_by_id(rows: &mut [Value]) {
-    rows.sort_by(|left, right| {
-        let Value::Array(left) = left else {
-            unreachable!()
-        };
-        let Value::Array(right) = right else {
-            unreachable!()
-        };
-        let Value::Bytes(left) = &left[0] else {
-            unreachable!()
-        };
-        let Value::Bytes(right) = &right[0] else {
-            unreachable!()
-        };
-        left.cmp(right)
-    });
 }
 
 fn membership_from_unsigned(

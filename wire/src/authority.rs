@@ -91,6 +91,157 @@ pub struct PreparedProof {
     pub next_state: Value,
 }
 
+#[derive(Debug, Clone)]
+pub struct PreparedAdmission {
+    pub transition_id: [u8; 16],
+    pub invitation_id: [u8; 16],
+    pub device_id: [u8; 16],
+    pub role: u8,
+    pub agreement_public: [u8; 32],
+    pub key_version: u32,
+    pub commitment: [u8; 32],
+    pub core_hash: [u8; 32],
+    pub signer_id: [u8; 16],
+    pub signer_key: [u8; 32],
+    pub manifest: Vec<ManifestEntry>,
+    pub next_state: Value,
+}
+
+/// Move a proved pending device into active membership for the current epoch.
+/// Callers check that the membership and grant objects match their manifests.
+pub fn prepare_admission(
+    candidate_bytes: &[u8],
+    state: &Value,
+    head: [u8; 32],
+    current_commitment: [u8; 32],
+) -> Result<PreparedAdmission, Error> {
+    let candidate = cbor::decode_with_limits(
+        candidate_bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?;
+    let root = exact_map(&candidate, 2)?;
+    let unsigned = exact_map(&root[0].1, 11)?;
+    let delta = exact_map(&unsigned[6].1, 4)?;
+    let invitation_id = fixed::<16>(&delta[0].1)?;
+    let device_id = fixed::<16>(&delta[1].1)?;
+    let role: u8 = number(&delta[2].1)?
+        .try_into()
+        .map_err(|_| Error::Invalid("admission role range"))?;
+    let commitment = fixed::<32>(&delta[3].1)?;
+    if commitment != current_commitment {
+        return Err(Error::Invalid("admission epoch commitment"));
+    }
+    let old = exact_map(state, 7)?;
+    if number(&old[0].1)? != 1 {
+        return Err(Error::Invalid("admission state version"));
+    }
+    let family_id = fixed::<16>(&old[1].1)?;
+    let relay_id = fixed::<32>(&old[2].1)?;
+    let epoch = number(&old[3].1)?;
+    let Value::Array(pending) = &old[5].1 else {
+        return Err(Error::Invalid("admission pending state not array"));
+    };
+    let row = pending
+        .iter()
+        .find_map(|row| {
+            let fields = array(row, 9).ok()?;
+            (fixed::<16>(&fields[0]).ok()? == invitation_id).then_some(fields)
+        })
+        .ok_or(Error::Invalid("admission invitation not pending"))?;
+    if fixed::<16>(&row[1])? != device_id
+        || number(&row[5])? != u64::from(role)
+        || !matches!(&row[8], Value::Bytes(bytes) if bytes.len() == 32)
+    {
+        return Err(Error::Invalid("admission role, device, or proof"));
+    }
+    let signing_public = fixed::<32>(&row[2])?;
+    let agreement_public = fixed::<32>(&row[3])?;
+    let key_version: u32 = number(&row[4])?
+        .try_into()
+        .map_err(|_| Error::Invalid("admission key version range"))?;
+    let Value::Array(active) = &old[4].1 else {
+        return Err(Error::Invalid("admission active state not array"));
+    };
+    if active.iter().any(|row| {
+        array(row, 5).is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(device_id))
+    }) {
+        return Err(Error::Invalid("admission recipient already active"));
+    }
+    let signatures = array(&root[1].1, 1)?;
+    let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
+    let signer = active
+        .iter()
+        .find_map(|row| {
+            let fields = array(row, 5).ok()?;
+            (fixed::<16>(&fields[0]).ok()? == signer_id).then_some(fields)
+        })
+        .ok_or(Error::Invalid("admission signer not active"))?;
+    let signer_key = fixed::<32>(&signer[1])?;
+    let mut next_state = state.clone();
+    let Value::Map(next) = &mut next_state else {
+        unreachable!()
+    };
+    let Value::Array(next_pending) = &mut next[5].1 else {
+        unreachable!()
+    };
+    next_pending.retain(|row| {
+        !array(row, 9).is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(invitation_id))
+    });
+    let Value::Array(next_active) = &mut next[4].1 else {
+        unreachable!()
+    };
+    next_active.push(Value::Array(vec![
+        Value::Bytes(device_id.to_vec()),
+        Value::Bytes(signing_public.to_vec()),
+        Value::Bytes(agreement_public.to_vec()),
+        Value::Integer(key_version.into()),
+        Value::Integer(role.into()),
+    ]));
+    next_active.sort_by(|left, right| {
+        let Value::Array(left) = left else {
+            unreachable!()
+        };
+        let Value::Array(right) = right else {
+            unreachable!()
+        };
+        let Value::Bytes(left) = &left[0] else {
+            unreachable!()
+        };
+        let Value::Bytes(right) = &right[0] else {
+            unreachable!()
+        };
+        left.cmp(right)
+    });
+    let header = prepare_following(
+        candidate_bytes,
+        family_id,
+        relay_id,
+        head,
+        6,
+        epoch,
+        &next_state,
+        &[(signer_id, signer_key)],
+        &[1, 4],
+    )?;
+    Ok(PreparedAdmission {
+        transition_id: header.transition_id,
+        invitation_id,
+        device_id,
+        role,
+        agreement_public,
+        key_version,
+        commitment,
+        core_hash: fixed::<32>(&unsigned[10].1)?,
+        signer_id,
+        signer_key,
+        manifest: header.manifest,
+        next_state,
+    })
+}
+
 /// Bind a device-signed proof transition to the latest verified challenge.
 /// The challenge object's private proof is checked when opened by a client.
 pub fn prepare_proof(

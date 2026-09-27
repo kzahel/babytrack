@@ -68,6 +68,12 @@ without recreating the child or moving its activities. A blank date in this
 edit keeps the previous value; local restore and encrypted sync cover changes.
 The selected-child controls now include a direct action that scrolls to the
 timeline below the logging forms.
+The timeline now groups entries under the viewer's local calendar day and
+filters the selected child's entries by feeds, sleep, diapers, growth/care,
+or notes. The Rust core still supplies the ordered activity projection;
+filtering only changes the Android view.
+An emulator UI pass hid a diaper under Feeds, restored it under All, and
+showed its local calendar-day heading.
 The Android logging screen also lets a caregiver choose an earlier local date
 and time for the next completed entry. It records the offset at that instant
 and returns to current time after a successful save; running sleep timers

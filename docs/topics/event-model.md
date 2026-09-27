@@ -159,6 +159,8 @@ the UI offers to merge them rather than guessing.
 - A day is a calendar day in the viewing device's current time zone. Events
   are listed on the day they start. Daily totals, such as sleep, split a
   duration that crosses midnight between the two days.
+  Android's timeline groups current entries by that local start day; its
+  category filters do not change the saved records or their order.
 - The MVP uses midnight as day start and has no configurable day boundary.
   Family reports use the viewer's zone too, so caregivers in different zones
   may see different daily totals for the same instants.

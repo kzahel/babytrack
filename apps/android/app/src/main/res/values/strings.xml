@@ -24,6 +24,13 @@
     <string name="no_children">Add a child to start tracking.</string>
     <string name="timeline">Timeline</string>
     <string name="no_entries">No entries yet.</string>
+    <string name="no_matching_entries">No entries in this view.</string>
+    <string name="timeline_all">All</string>
+    <string name="timeline_feeds">Feeds</string>
+    <string name="timeline_sleep">Sleep</string>
+    <string name="timeline_diapers">Diapers</string>
+    <string name="timeline_care">Growth &amp; care</string>
+    <string name="timeline_notes">Notes</string>
     <string name="log_diaper">Log diaper</string>
     <string name="wet">Wet</string>
     <string name="dirty">Dirty</string>

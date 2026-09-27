@@ -78,6 +78,7 @@ import uniffi.babytrack_core_ffi.SharedSyncRow
 import java.text.DateFormat
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.Instant
 import java.time.ZoneId
 import java.util.Date
 import java.util.TimeZone
@@ -154,6 +155,19 @@ private fun deviceLabelKey(familyId: ByteArray, deviceId: ByteArray): String =
     familyId.key() + ":" + deviceId.key()
 
 private data class CompletedSave(val atMs: Long, val revision: ULong)
+private enum class TimelineFilter {
+    ALL, FEEDS, SLEEP, DIAPERS, CARE, NOTES;
+
+    fun includes(kind: String): Boolean = when (this) {
+        ALL -> true
+        FEEDS -> kind.startsWith("feed.") || kind == "pump"
+        SLEEP -> kind == "sleep"
+        DIAPERS -> kind == "diaper"
+        CARE -> kind == "growth" || kind == "temperature" || kind == "medication"
+        NOTES -> kind == "note"
+    }
+}
+
 private data class PendingActivityDelete(
     val family: FamilyRef,
     val childId: ByteArray,
@@ -397,6 +411,7 @@ private fun TrackerScreen(
     var doseAmount by remember { mutableStateOf("") }
     var doseUnit by remember { mutableStateOf("") }
     var logAtMs by remember { mutableStateOf<Long?>(null) }
+    var timelineFilter by remember { mutableStateOf(TimelineFilter.ALL) }
     var message by remember { mutableStateOf<String?>(null) }
     var automaticSyncDelayed by remember { mutableStateOf(false) }
     var automaticSyncBlocked by remember { mutableStateOf(false) }
@@ -456,6 +471,7 @@ private fun TrackerScreen(
         breastMinutes = ""
         childRename = null
         logAtMs = null
+        timelineFilter = TimelineFilter.ALL
     }
     var pendingBackup by remember { mutableStateOf<BackupFileRow?>(null) }
     var pendingAnalysisCsv by remember { mutableStateOf<ByteArray?>(null) }
@@ -1596,8 +1612,34 @@ private fun TrackerScreen(
                         }
                     }) { Text(stringResource(R.string.save_note)) }
                     Text(stringResource(R.string.timeline), style = MaterialTheme.typography.titleLarge)
-                    if (entries.isEmpty()) Text(stringResource(R.string.no_entries))
-                    entries.forEach { entry ->
+                    listOf(
+                        TimelineFilter.ALL to R.string.timeline_all,
+                        TimelineFilter.FEEDS to R.string.timeline_feeds,
+                        TimelineFilter.SLEEP to R.string.timeline_sleep,
+                        TimelineFilter.DIAPERS to R.string.timeline_diapers,
+                        TimelineFilter.CARE to R.string.timeline_care,
+                        TimelineFilter.NOTES to R.string.timeline_notes,
+                    ).chunked(3).forEach { options ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            options.forEach { (filter, label) ->
+                                FilterChip(selected = timelineFilter == filter,
+                                    onClick = { timelineFilter = filter },
+                                    label = { Text(stringResource(label)) })
+                            }
+                        }
+                    }
+                    val visibleEntries = entries.filter { timelineFilter.includes(it.kind) }
+                    if (visibleEntries.isEmpty()) Text(stringResource(
+                        if (entries.isEmpty()) R.string.no_entries else R.string.no_matching_entries))
+                    var previousDay: LocalDate? = null
+                    visibleEntries.forEach { entry ->
+                        val day = Instant.ofEpochMilli(entry.startUtcMs)
+                            .atZone(ZoneId.systemDefault()).toLocalDate()
+                        if (day != previousDay) {
+                            Text(DateFormat.getDateInstance(DateFormat.FULL).format(Date(entry.startUtcMs)),
+                                style = MaterialTheme.typography.titleMedium)
+                            previousDay = day
+                        }
                         val label = when {
                             entry.bottleMl != null -> stringResource(R.string.bottle_with_content,
                                 entry.bottleMl!!, stringResource(when (entry.bottleContent) {

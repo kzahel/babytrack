@@ -100,19 +100,52 @@ jobs:
       - name: Keep dogfood artifact
         uses: actions/upload-artifact@v4
         with:
-          name: babytrack-android-debug
-          path: apps/android/app/build/outputs/apk/debug/app-debug.apk
+          name: babytrack-android-apks
+          path: |
+            apps/android/app/build/outputs/apk/debug/app-debug.apk
+            apps/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+
+  android-relay:
+    name: Android real-relay emulator
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: actions/download-artifact@v4
+        with:
+          name: babytrack-android-apks
+          path: apps/android/app/build/outputs/apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify Android sharing on a disposable relay
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          script: bash scripts/check_android_relay_emulator.sh
 
   required:
     name: Required checks
     if: always()
-    needs: [rust, native, browser, android]
+    needs: [rust, native, browser, android, android-relay]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Require the Rust, native, browser, and Android jobs
+      - name: Require the Rust, native, browser, Android, and relay jobs
         run: |
           test '${{ needs.rust.result }}' = success
           test '${{ needs.native.result }}' = success
           test '${{ needs.browser.result }}' = success
           test '${{ needs.android.result }}' = success
+          test '${{ needs['android-relay'].result }}' = success

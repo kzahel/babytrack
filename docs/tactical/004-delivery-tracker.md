@@ -36,7 +36,7 @@ on an emulator. The current passing checks do not close an M0 slice.
 | Next dependent slice | Shared current-state export and explicit idempotent private copy now reach the Android manager and recipient views; an emulator covers pending edits, protected file, restore, and copy reuse. Automatic copy on verified removal, browser outbox, and crash campaigns remain before the M0 exit gate. |
 | Next independent review | The required early M0 authority review follows implemented invite, grant, and rotation. |
 | Open advisory | The [Android sync review](003-m0-foundation.md#advisory-android-sync-review-at-6b10805) failed on outbox rejection recovery, recipient restart, and hidden inert batches. The first two have tested implementation fixes; the Android view now warns of inert history. A fixed-revision follow-up, full Activity recreation, and injected hostile-batch display proof remain. |
-| CI signal today | Read-only Rust, native-binding, browser, and Android APK jobs are required on every push/PR. Local checks passed; a remote Actions result has not been verified here. |
+| CI signal today | Rust, native-binding, browser, Android APK, and real-relay emulator jobs are now required on every push/PR. The emulator runner passed locally against a relay, and `actionlint` passed. A remote Actions result has not been verified here. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.
@@ -77,12 +77,13 @@ preflight can reduce rework but never substitutes for a named gate.
 
 ## CI growth and evidence
 
-The [current workflow](../../.github/workflows/scaffold.yml) is a foundation
-gate: Rust, native bindings, wasm/browser storage, dependency direction, and
-licenses. Its always-running required job is useful at this maturity. As
+The [current workflow](../../.github/workflows/scaffold.yml) checks Rust,
+native bindings, wasm/browser storage, Android build and real-relay emulator
+flow, dependency direction, and licenses. Its always-running required job
+matches the current sharing surface, subject to remote-run verification. As
 the corresponding behavior exists, add local crash/replay and property tests,
-bounded real-relay scenario tests, nightly randomized/fault/fuzz runs with
-saved seeds, and then Android build/UI checks. Keep CI assertions tied to
+broader bounded real-relay scenarios, nightly randomized/fault/fuzz runs with
+saved seeds, and richer Android UI checks. Keep CI assertions tied to
 implemented behavior; a green scaffold build does not establish sharing or
 recovery correctness. Add path-based job selection and caching as the suite
 grows, while core/protocol/vector changes still trigger every affected check.

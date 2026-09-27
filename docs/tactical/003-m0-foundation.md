@@ -197,6 +197,12 @@ Android now shows an explicit blocked-upload message in foreground and manual
 sync paths. The edits remain in the durable outbox, and the UI points to the
 available private-copy action. Recovery after a verified removal still needs
 the automatic copy path; this message does not claim the relay accepted work.
+The Android real-relay instrumentation suite now has a CI emulator job. It
+uses the APKs built by the Android compile job, starts a disposable relay,
+forces the scheduled job, and fails if instrumentation does not report tests
+passing. The runner script passed locally against an existing relay, and
+`actionlint` accepts the workflow. A remote Actions run has not yet been
+observed; it must be checked before treating this new required job as proven.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

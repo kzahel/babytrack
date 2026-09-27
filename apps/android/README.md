@@ -2,10 +2,11 @@
 
 The debug app tracks local Families and runs the first two-device sharing
 handoff on a development relay: promotion, invitation, claim, challenge,
-proof, grant, and recipient history verification. The shared tracking view,
-background wake, removal, and shared backup UI are still being implemented.
-While the app is in the foreground it polls the relay every 30 seconds and
-advances the first join and encrypted data sync without further buttons. The release
+proof, grant, and recipient history verification. Both devices can edit and
+sync; each can save a shared backup or make an independent private copy.
+While the app is in the foreground it polls the relay every 30 seconds. A
+persisted Android job also requests network sync when the OS allows it.
+Removal and automatic copy after verified removal remain open. The release
 manifest does not allow cleartext HTTP.
 
 To exercise the current relay slice on an emulator:
@@ -51,14 +52,17 @@ To exercise the current relay slice on an emulator:
 9. After app restart, select the joined Family in the join preview to resume
    proof, history loading, or manual sync without pasting the invitation
    again. The manager's relay origin is saved after sharing is confirmed.
-   If both apps run at different times, each foreground pass advances the
-   next verified protocol step. A failed pass leaves local work saved and
-   shows a delayed-sync message until a later attempt succeeds.
+   If both apps run at different times, each foreground or scheduled pass
+   advances the next verified protocol step. A failed pass leaves local work
+   saved and shows delayed or blocked status until resolved.
 
 The on-device integration test calls the same Keystore and transport adapter
-through a real relay. With the emulator and `adb reverse` running, build it
-with `apps/android/gradlew :app:assembleDebugAndroidTest`, install the test
-APK, then run:
+through a real relay. With an emulator running, build both APKs with
+`apps/android/gradlew :app:assembleDebug :app:assembleDebugAndroidTest`, then
+run `bash scripts/check_android_relay_emulator.sh`. The script starts a
+disposable relay. To use an already running relay, set
+`BABYTRACK_RELAY_PUBLIC_KEY` to its public key. For a direct instrumentation
+run after `adb reverse` and both APK installs, use:
 
 ```sh
 adb shell am instrument -w -e relayPublicKey PUBLIC_KEY_HEX \
@@ -79,6 +83,7 @@ the recipient pulls it. The test reopens the recipient store and resumes by
 Family identity without the fragment. It also drops one accepted upload
 response and recovers through the signed log. A second test alternates
 manager and recipient foreground passes to finish the join without another
-manual holder action. The
-default Android CI compiles this test, while
-execution currently uses the local emulator and relay.
+manual holder action. A third test forces the scheduled background job and
+checks that a saved manager edit uploads without the UI. Android CI now runs
+the suite in an emulator against a disposable relay; its remote result is
+unverified until an Actions run is inspected.

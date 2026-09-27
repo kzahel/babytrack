@@ -40,6 +40,10 @@ Compose content and system bars; emulator captures checked each mode.
 Child creation can also record a birth date and the sex code needed for
 eventual growth charts. The shared core persists these as child metadata in
 local and shared history; growth percentiles are still pending.
+Caregivers can correct weight or length on an existing growth entry through
+the shared Rust operation path. A blank measurement retains its previous
+value; deleting the entry remains the way to remove a measurement. Local
+restart/file restore and two-emulator encrypted convergence cover this edit.
 The selected child's name can now be corrected through a field-level Rust
 operation without changing its ID, birth date, sex, or existing activities.
 Local restart/file restore and the two-emulator relay flow check the edit.
@@ -74,7 +78,7 @@ handoff. This is still a development flow, not a released product flow.
 - [x] Log sleep timers/completed sleep, notes, growth in whole grams and
   millimetres, and entered Celsius decimals through the local/shared core.
 - [ ] Complete the MVP logging set: growth percentile display and practical
-  edits beyond child name, note, bottle amount, diaper type, and solids. Multi-segment breast
+  edits beyond child name, note, bottle amount, diaper type, solids, and growth. Multi-segment breast
   feeds, note, bottle, diaper, and solids correction, and
   single-activity deletion now pass
   local restart/file restore, two-emulator encrypted sync, and UI tap flows.

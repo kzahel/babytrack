@@ -49,6 +49,56 @@ fn child_birth_day_and_sex_survive_restart_and_file_restore() {
 }
 
 #[test]
+fn growth_correction_keeps_activity_and_survives_restore() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("growth-edit.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    let child = app.add_child(family, "Baby", 1_790_000_000_001).unwrap();
+    let other_child = app.add_child(family, "Other", 1_790_000_000_002).unwrap();
+    let time = ActivityTime {
+        start_utc_ms: 1_790_000_000_003,
+        offset_minutes: 60,
+        saved_at_ms: 1_790_000_000_004,
+    };
+    let id = app
+        .log_growth(family, child, Some(4_200), Some(540), time)
+        .unwrap();
+    assert!(
+        app.edit_growth(
+            family,
+            other_child,
+            id,
+            Some(4_300),
+            None,
+            time.saved_at_ms + 1
+        )
+        .is_err()
+    );
+    assert!(
+        app.edit_growth(family, child, id, None, None, time.saved_at_ms + 1)
+            .is_err()
+    );
+    assert!(
+        app.edit_growth(family, child, id, Some(0), None, time.saved_at_ms + 1)
+            .is_err()
+    );
+    app.edit_growth(family, child, id, Some(4_300), None, time.saved_at_ms + 1)
+        .unwrap();
+    let before = app.timeline(family, child).unwrap();
+    assert_eq!(before[0].id, id);
+    assert_eq!(before[0].growth_weight_g, Some(4_300));
+    assert_eq!(before[0].growth_length_mm, Some(540));
+    assert_eq!(before[0].start_utc_ms, time.start_utc_ms);
+    let backup = app.backup(family, time.saved_at_ms + 2).unwrap();
+    drop(app);
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.timeline(family, child).unwrap(), before);
+    let restored = app.restore(&backup, time.saved_at_ms + 3).unwrap();
+    assert_eq!(app.timeline(restored, child).unwrap(), before);
+}
+
+#[test]
 fn analysis_csv_exports_current_activity_and_neutralizes_formula_text() {
     let dir = tempfile::tempdir().unwrap();
     let mut app = LocalRepository::open(dir.path().join("analysis.db")).unwrap();

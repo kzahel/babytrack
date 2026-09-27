@@ -455,6 +455,32 @@ impl LocalRepository {
         Ok(())
     }
 
+    pub fn edit_growth(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        weight_g: Option<i64>,
+        length_mm: Option<i64>,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        if child.scope != Scope::Child || child.deleted {
+            return Err(Error::Invalid("target child unavailable"));
+        }
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("activity unavailable"))?;
+        let operation =
+            edit_growth_operation(family, child_id, activity, weight_g, length_mm, saved_at_ms)?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn log_note(
         &mut self,
         family: FamilyHandle,
@@ -1220,6 +1246,14 @@ pub fn growth_operation(
     length_mm: Option<i64>,
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
+    let fields = growth_fields(weight_g, length_mm)?;
+    activity_operation(family, child_id, "growth", fields, time)
+}
+
+fn growth_fields(
+    weight_g: Option<i64>,
+    length_mm: Option<i64>,
+) -> Result<Vec<(u64, Value)>, Error> {
     if weight_g.is_none() && length_mm.is_none() {
         return Err(Error::Invalid("growth needs weight or length"));
     }
@@ -1235,7 +1269,37 @@ pub fn growth_operation(
     if let Some(value) = length_mm {
         fields.push((101, whole_measure(value, 20)));
     }
-    activity_operation(family, child_id, "growth", fields, time)
+    Ok(fields)
+}
+
+pub fn edit_growth_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    weight_g: Option<i64>,
+    length_mm: Option<i64>,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    if activity.scope != Scope::Activity
+        || activity.child_id != Some(child_id)
+        || activity.record_type != "growth"
+        || activity.deleted
+    {
+        return Err(Error::Invalid("growth target unavailable"));
+    }
+    check_time(saved_at_ms)?;
+    Ok(NewOperation {
+        family_id: family.family_id,
+        operation_id: ids::random_v7(saved_at_ms)?,
+        record_id: activity.id,
+        scope: Scope::Activity,
+        kind: Kind::Set,
+        author_device_id: family.device_id,
+        hlc: placeholder_hlc(family),
+        record_type: None,
+        child_id: None,
+        fields: Some(growth_fields(weight_g, length_mm)?),
+    })
 }
 
 pub fn temperature_c_operation(

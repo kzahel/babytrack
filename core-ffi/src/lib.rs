@@ -1942,6 +1942,46 @@ impl NativeSharedStore {
             .map_err(rejected)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn edit_shared_growth(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        weight_g: Option<i64>,
+        length_mm: Option<i64>,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let projection = ready.projection_with_pending(&store).map_err(rejected)?;
+        let child_id = fixed(&child_id)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(BindingError::InvalidBytes)?;
+        if child.scope != operation::Scope::Child || child.deleted {
+            return Err(BindingError::InvalidBytes);
+        }
+        let activity = projection
+            .record(&fixed(&activity_id)?)
+            .ok_or(BindingError::InvalidBytes)?;
+        let operation = local_api::edit_growth_operation(
+            handle,
+            child_id,
+            activity,
+            weight_g,
+            length_mm,
+            saved_at_ms,
+        )
+        .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map(|_| ())
+            .map_err(rejected)
+    }
+
     pub fn log_shared_note(
         &self,
         family: FamilyRef,
@@ -2808,6 +2848,30 @@ impl NativeLocalStore {
                 fixed(&activity_id)?,
                 &foods,
                 &amount,
+                saved_at_ms,
+            )
+            .map_err(rejected)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn edit_growth(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        weight_g: Option<i64>,
+        length_mm: Option<i64>,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        self.repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .edit_growth(
+                family.handle()?,
+                fixed(&child_id)?,
+                fixed(&activity_id)?,
+                weight_g,
+                length_mm,
                 saved_at_ms,
             )
             .map_err(rejected)

@@ -130,6 +130,12 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "growth" && it.growthWeightG == 4_200L && it.growthLengthMm == 540L
             })
+            val growth = sharing.snapshot(family).activities.single { it.kind == "growth" }
+            sharing.editGrowth(family, growth.childId, growth.id, 4_300L, null, System.currentTimeMillis())
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.id.contentEquals(growth.id) && it.growthWeightG == 4_300L &&
+                    it.growthLengthMm == 540L && it.startUtcMs == growth.startUtcMs
+            })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "temperature" && it.temperatureC == "37.50"
             })
@@ -231,6 +237,9 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "feed.solids" && it.solidsFoods == listOf("Apple", "Rice") &&
                     it.solidsAmount == "half bowl"
+            })
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.kind == "growth" && it.growthWeightG == 4_300L && it.growthLengthMm == 540L
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "diaper" && it.diaperKind == 2u.toUByte()

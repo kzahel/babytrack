@@ -182,6 +182,14 @@ private data class PendingSolidsEdit(
     val foods: String,
     val amount: String,
 )
+private data class PendingGrowthEdit(
+    val family: FamilyRef,
+    val childId: ByteArray,
+    val activityId: ByteArray,
+    val shared: Boolean,
+    val weight: String,
+    val length: String,
+)
 private data class ScreenData(
     val families: List<FamilyRef>,
     val activeFamilyKey: String?,
@@ -295,6 +303,7 @@ private fun TrackerScreen(
     var pendingBottleEdit by remember { mutableStateOf<PendingBottleEdit?>(null) }
     var pendingDiaperEdit by remember { mutableStateOf<PendingDiaperEdit?>(null) }
     var pendingSolidsEdit by remember { mutableStateOf<PendingSolidsEdit?>(null) }
+    var pendingGrowthEdit by remember { mutableStateOf<PendingGrowthEdit?>(null) }
     var relayOrigin by remember { mutableStateOf("") }
     var relayPublicKey by remember { mutableStateOf("") }
     var shareStage by remember { mutableStateOf<String?>(null) }
@@ -1451,6 +1460,15 @@ private fun TrackerScreen(
                                         )
                                     }) { Text(stringResource(R.string.edit_solids)) }
                                 }
+                                if (entry.kind == "growth") {
+                                    OutlinedButton(onClick = {
+                                        pendingGrowthEdit = PendingGrowthEdit(
+                                            family, entry.childId.copyOf(), entry.id.copyOf(), activeShared,
+                                            entry.growthWeightG?.toString().orEmpty(),
+                                            entry.growthLengthMm?.toString().orEmpty(),
+                                        )
+                                    }) { Text(stringResource(R.string.edit_growth)) }
+                                }
                                 OutlinedButton(onClick = {
                                     pendingDelete = PendingActivityDelete(
                                         family,
@@ -1733,6 +1751,51 @@ private fun TrackerScreen(
                 OutlinedButton(onClick = { pendingSolidsEdit = null }) {
                     Text(stringResource(R.string.cancel))
                 }
+            },
+        )
+    }
+    pendingGrowthEdit?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingGrowthEdit = null },
+            title = { Text(stringResource(R.string.edit_growth)) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = target.weight,
+                        onValueChange = { pendingGrowthEdit = target.copy(weight = it.filter(Char::isDigit).take(6)) },
+                        label = { Text(stringResource(R.string.weight_g)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = target.length,
+                        onValueChange = { pendingGrowthEdit = target.copy(length = it.filter(Char::isDigit).take(4)) },
+                        label = { Text(stringResource(R.string.length_mm)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                    Text(stringResource(R.string.growth_edit_hint))
+                }
+            },
+            confirmButton = {
+                val weight = target.weight.toLongOrNull()
+                val length = target.length.toLongOrNull()
+                Button(enabled = (weight != null || length != null) &&
+                    (target.weight.isBlank() || (weight != null && weight in 1L..100_000L)) &&
+                    (target.length.isBlank() || (length != null && length in 1L..2_500L)), onClick = {
+                    pendingGrowthEdit = null
+                    val savedAtMs = System.currentTimeMillis()
+                    change {
+                        if (target.shared) sharing.editGrowth(
+                            target.family, target.childId, target.activityId, weight, length, savedAtMs,
+                        ) else store.editGrowth(
+                            target.family, target.childId, target.activityId, weight, length, savedAtMs,
+                        )
+                    }
+                }) { Text(stringResource(R.string.save_changes)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingGrowthEdit = null }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }

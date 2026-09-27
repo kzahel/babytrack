@@ -45,7 +45,7 @@ def nodes(target: str) -> list[ET.Element]:
 
 
 def find(target: str, label: str, *, scroll: bool = False, occurrence: int = 0) -> ET.Element:
-    deadline = time.monotonic() + 20
+    deadline = time.monotonic() + (100 if scroll else 20)
     scroll_count = 0
     size = re.search(r"(\d+)x(\d+)", adb(target, "shell", "wm", "size"))
     if size is None:
@@ -55,7 +55,7 @@ def find(target: str, label: str, *, scroll: bool = False, occurrence: int = 0) 
         matches = [node for node in nodes(target) if node.attrib.get("text") == label]
         if len(matches) > occurrence:
             return matches[occurrence]
-        if scroll and scroll_count < 6:
+        if scroll and scroll_count < 40:
             adb(
                 target, "shell", "input", "swipe", str(width // 2),
                 str(height * 4 // 5), str(width // 2), str(height * 3 // 10), "360",

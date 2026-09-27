@@ -3845,8 +3845,169 @@ mod tests {
             batch_rejection_reason(&store.commit_batch(family, &current).unwrap()),
             None
         );
+        let ledger =
+            RelayStore::verify_saved_family(&store.db, family, store.relay_public, &seed).unwrap();
+        let (candidate, stage, invitation, object_id) = later_issue_candidate(
+            &ledger,
+            &transitions[1],
+            family,
+            manager,
+            manager_seed,
+            hex(fixture["test_only_inputs"]["epoch_2_key_hex"]
+                .as_str()
+                .unwrap())
+            .try_into()
+            .unwrap(),
+        );
+        store
+            .stage_general_control_object(family, object_id, &stage)
+            .unwrap();
+        let issue_response = store
+            .commit_general_control_with_clock(family, &candidate, || {
+                Ok(ledger.last_commit_ms() + 1_000)
+            })
+            .unwrap();
+        assert_eq!(
+            store
+                .commit_general_control_with_clock(family, &candidate, || panic!("retry clock"))
+                .unwrap(),
+            issue_response
+        );
+        let after =
+            RelayStore::verify_saved_family(&store.db, family, store.relay_public, &seed).unwrap();
+        assert!(matches!(
+            after.reader(invitation).unwrap(),
+            Some(public_ledger::PublicReader::Invitation { .. })
+        ));
         drop(store);
         assert!(RelayStore::open(&path, seed).is_ok());
+    }
+    fn later_issue_candidate(
+        ledger: &public_ledger::PublicLedger,
+        first_issue: &Json,
+        family: [u8; 16],
+        manager: [u8; 16],
+        manager_seed: [u8; 32],
+        epoch_key: [u8; 32],
+    ) -> (Vec<u8>, Vec<u8>, [u8; 16], [u8; 16]) {
+        let unsigned =
+            cbor::decode(&hex(first_issue["unsigned_cbor_hex"].as_str().unwrap())).unwrap();
+        let signatures =
+            cbor::decode(&hex(first_issue["signatures_cbor_hex"].as_str().unwrap())).unwrap();
+        let prior = cbor::encode(&Value::Map(vec![(1, unsigned), (2, signatures)])).unwrap();
+        let ids = control_birth_ids(&prior).unwrap();
+        let mut transition = ids[0];
+        transition[15] ^= 0x81;
+        let mut object_id = ids[1];
+        object_id[15] ^= 0x82;
+        let mut invitation = ids[2];
+        invitation[15] ^= 0x83;
+        let invite_public = crypto::signing_public_key(&[0x77; 32]);
+        let delta = Value::Map(vec![
+            (1, Value::Bytes(invitation.to_vec())),
+            (2, Value::Bytes(manager.to_vec())),
+            (3, Value::Bytes(invite_public.to_vec())),
+            (4, Value::Integer(1)),
+        ]);
+        let mut next = ledger.state().clone();
+        let Value::Map(fields) = &mut next else {
+            panic!()
+        };
+        let Value::Array(invitations) = &mut fields[6].1 else {
+            panic!()
+        };
+        invitations.push(Value::Array(vec![
+            Value::Bytes(invitation.to_vec()),
+            Value::Bytes(manager.to_vec()),
+            Value::Bytes(invite_public.to_vec()),
+            Value::Integer(1),
+            Value::Bytes(transition.to_vec()),
+            Value::Integer(1),
+        ]));
+        invitations.sort_by_key(|row| match row {
+            Value::Array(parts) => match &parts[0] {
+                Value::Bytes(id) => id.clone(),
+                _ => panic!(),
+            },
+            _ => panic!(),
+        });
+        let state_hash = crypto::hash("auth-state", &cbor::encode(&next).unwrap()).unwrap();
+        let core = Value::Array(vec![
+            Value::Integer(1),
+            Value::Bytes(family.to_vec()),
+            Value::Bytes(ledger.relay_id().to_vec()),
+            Value::Bytes(ledger.head().to_vec()),
+            Value::Bytes(transition.to_vec()),
+            Value::Integer(2),
+            delta.clone(),
+            Value::Bytes(state_hash.to_vec()),
+            Value::Integer(ledger.current_epoch().unwrap().into()),
+        ]);
+        let core_hash = crypto::hash("transition-core", &cbor::encode(&core).unwrap()).unwrap();
+        let membership = cbor::encode(&Value::Map(vec![
+            (1, Value::Bytes(transition.to_vec())),
+            (2, Value::Bytes(ledger.head().to_vec())),
+            (3, Value::Bytes(state_hash.to_vec())),
+            (4, Value::Integer(ledger.current_epoch().unwrap().into())),
+            (5, delta),
+        ]))
+        .unwrap();
+        let nonce = [0x44; 24];
+        let aad = crypto::hash("membership-aad", &core_hash).unwrap();
+        let ciphertext = crypto::seal_with_nonce(&epoch_key, &nonce, &aad, &membership).unwrap();
+        let object = cbor::encode(&Value::Map(vec![
+            (1, Value::Integer(1)),
+            (2, Value::Bytes(nonce.to_vec())),
+            (3, Value::Bytes(ciphertext)),
+        ]))
+        .unwrap();
+        let Value::Array(core_fields) = core else {
+            panic!()
+        };
+        let unsigned = Value::Map(
+            core_fields
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| (index as u64 + 1, value))
+                .chain([
+                    (
+                        10,
+                        Value::Array(vec![Value::Array(vec![
+                            Value::Integer(1),
+                            Value::Bytes(object_id.to_vec()),
+                            Value::Bytes(crypto::hash("object", &object).unwrap().to_vec()),
+                            Value::Integer(object.len() as i128),
+                        ])]),
+                    ),
+                    (11, Value::Bytes(core_hash.to_vec())),
+                ])
+                .collect(),
+        );
+        let signature = crypto::sign_cbor(
+            "control-transition",
+            &cbor::encode(&unsigned).unwrap(),
+            &manager_seed,
+        )
+        .unwrap();
+        let signatures = Value::Array(vec![Value::Array(vec![
+            Value::Bytes(manager.to_vec()),
+            Value::Bytes(signature.to_vec()),
+        ])]);
+        let candidate = cbor::encode(&Value::Map(vec![
+            (1, unsigned.clone()),
+            (2, signatures.clone()),
+        ]))
+        .unwrap();
+        let stage = cbor::encode(&Value::Map(vec![
+            (1, Value::Integer(1)),
+            (2, unsigned),
+            (3, signatures),
+            (4, Value::Integer(1)),
+            (5, Value::Bytes(object_id.to_vec())),
+            (6, Value::Bytes(object)),
+        ]))
+        .unwrap();
+        (candidate, stage, invitation, object_id)
     }
     fn batch_rejection_reason(response: &[u8]) -> Option<u64> {
         let Value::Map(fields) = cbor::decode(response).unwrap() else {

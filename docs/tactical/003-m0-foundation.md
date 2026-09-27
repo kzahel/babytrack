@@ -1303,6 +1303,11 @@ FS67 now has a signed relay regression after rotation: an old-epoch upload
 and a new-epoch upload naming an old head receive distinct signed rejections;
 the manager's next sequence with the new epoch and removal head commits and
 survives restart. Competing writers and a later-device role loss remain.
+A fresh signed manager invitation with a correctly encrypted membership
+object now stages and commits after rotation and data upload. Its unused
+invitation credential appears in the replayed reader state, proving the
+writer is no longer tied to the original join positions. A second recipient's
+claim, grant, and Android flow are still open.
 
 ## Advisory public-ledger restart review at bdbed9e
 

@@ -1491,9 +1491,9 @@
       "status": "agreed",
       "requirements": ["U3", "U4"],
       "given": "A candidate stages an object ID that is still uncommitted, reserving its Family-wide ID-to-hash binding.",
-      "actions": ["Try competing bytes under another transition kind, a signed batch with that ID, and a control using it as a transition, device, or invitation ID; clean up candidate staging, restart, and retry the original binding."],
-      "expect": ["The Family-wide reservation remains durable despite candidate cleanup; competing bytes and public cross-category IDs are rejected without changing committed authority or visibility.", "An exact retry with the original bytes remains possible according to the staging contract."],
-      "variants": ["same head competitors", "accepted batch ID", "rejected batch ID", "transition/device/invitation ID", "cleanup", "restart"],
+      "actions": ["Try competing bytes under another transition kind, a signed batch with that ID, and a control using it as a transition, device, or invitation ID; clean up candidate staging, restart, and retry the original binding.", "Reverse the order: commit an accepted or rejected batch ID, then try to stage a valid manager object with that ID before submitting unrelated writes after restart."],
+      "expect": ["The Family-wide reservation remains durable despite candidate cleanup; competing bytes and public cross-category IDs are rejected without changing committed authority or visibility.", "An exact retry with the original bytes remains possible according to the staging contract.", "A stage colliding with an already public batch ID fails without recording a permanent reservation; a distinct signed batch and control still commit after restart."],
+      "variants": ["same head competitors", "accepted batch ID", "rejected batch ID", "batch-first ordering", "transition/device/invitation ID", "cleanup", "restart"],
       "decisions": ["D4"]
     },
     {

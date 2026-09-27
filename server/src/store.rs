@@ -272,7 +272,37 @@ impl RelayStore {
             store.relay_public,
             allow_legacy_checkpoint,
         )?;
+        store.verify_uncommitted_reservations()?;
         Ok(store)
+    }
+
+    fn verify_uncommitted_reservations(&self) -> Result<(), Error> {
+        let mut rows = self.db.prepare(
+            "SELECT r.family_id,r.object_id FROM object_reservations r
+             LEFT JOIN committed_objects o USING(family_id,object_id)
+             WHERE o.object_id IS NULL ORDER BY r.family_id,r.object_id",
+        )?;
+        let mut query = rows.query([])?;
+        let mut family_ids = BTreeMap::new();
+        while let Some(row) = query.next()? {
+            let family: [u8; 16] = row
+                .get::<_, Vec<u8>>(0)?
+                .try_into()
+                .map_err(|_| Error::Invalid("stored reservation Family ID length"))?;
+            let object_id: [u8; 16] = row
+                .get::<_, Vec<u8>>(1)?
+                .try_into()
+                .map_err(|_| Error::Invalid("stored reservation object ID length"))?;
+            if let std::collections::btree_map::Entry::Vacant(entry) = family_ids.entry(family) {
+                entry.insert(committed_protocol_ids(&self.db, family)?);
+            }
+            if family_ids[&family].contains(&object_id) {
+                return Err(Error::Invalid(
+                    "uncommitted object reservation overlaps public ID",
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Reject a damaged durable log before serving a reopened relay. Derived
@@ -2597,6 +2627,22 @@ fn reserve_staged_object(
     kind: u16,
     hash: [u8; 32],
 ) -> Result<(), Error> {
+    let committed: Option<(i64, Vec<u8>)> = tx
+        .query_row(
+            "SELECT kind,object_hash FROM committed_objects WHERE family_id=?1 AND object_id=?2",
+            params![&family[..], &object_id[..]],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    if let Some((committed_kind, committed_hash)) = committed {
+        if committed_kind != i64::from(kind) || committed_hash != hash {
+            return Err(Error::Invalid(
+                "object ID already committed with other bytes",
+            ));
+        }
+    } else if committed_protocol_ids(tx, family)?.contains(&object_id) {
+        return Err(Error::Invalid("object ID already used by public protocol"));
+    }
     let existing: Option<(i64, Vec<u8>)> = tx
         .query_row(
             "SELECT kind,object_hash FROM object_reservations WHERE family_id=?1 AND object_id=?2",
@@ -3023,23 +3069,7 @@ fn control_birth_ids(bytes: &[u8]) -> Result<Vec<[u8; 16]>, Error> {
 
 /// Existing committed controls and durable batch results form the first
 /// cohort's per-Family ID registry, including rejected uploads.
-fn ensure_new_protocol_ids(
-    db: &Connection,
-    family: [u8; 16],
-    candidate_ids: &[[u8; 16]],
-    candidate_objects: &[([u8; 16], u16, [u8; 32])],
-) -> Result<(), Error> {
-    let relay_public: Vec<u8> = db.query_row(
-        "SELECT public_key FROM relay_identity WHERE singleton=1",
-        [],
-        |row| row.get(0),
-    )?;
-    verify_private_integrity(
-        db,
-        relay_public
-            .try_into()
-            .map_err(|_| Error::Invalid("relay public key length"))?,
-    )?;
+fn committed_protocol_ids(db: &Connection, family: [u8; 16]) -> Result<BTreeSet<[u8; 16]>, Error> {
     let mut seen = BTreeSet::new();
     let mut controls = db.prepare(
         "SELECT committed_bytes FROM entries WHERE family_id=?1 AND kind=1 ORDER BY cursor",
@@ -3065,6 +3095,27 @@ fn ensure_new_protocol_ids(
             }
         }
     }
+    Ok(seen)
+}
+
+fn ensure_new_protocol_ids(
+    db: &Connection,
+    family: [u8; 16],
+    candidate_ids: &[[u8; 16]],
+    candidate_objects: &[([u8; 16], u16, [u8; 32])],
+) -> Result<(), Error> {
+    let relay_public: Vec<u8> = db.query_row(
+        "SELECT public_key FROM relay_identity WHERE singleton=1",
+        [],
+        |row| row.get(0),
+    )?;
+    verify_private_integrity(
+        db,
+        relay_public
+            .try_into()
+            .map_err(|_| Error::Invalid("relay public key length"))?,
+    )?;
+    let mut seen = committed_protocol_ids(db, family)?;
     let mut reservations = db
         .prepare("SELECT object_id,kind,object_hash FROM object_reservations WHERE family_id=?1")?;
     let rows = reservations.query_map([&family[..]], |row| {
@@ -4548,6 +4599,51 @@ mod tests {
         )
     }
 
+    fn issue_with_object_id(
+        candidate_bytes: &[u8],
+        stage_bytes: &[u8],
+        object_id: [u8; 16],
+        manager_id: [u8; 16],
+        manager_seed: [u8; 32],
+    ) -> (Vec<u8>, Vec<u8>) {
+        let Value::Map(mut candidate) = cbor::decode(candidate_bytes).unwrap() else {
+            panic!()
+        };
+        let Value::Map(mut unsigned) = candidate[0].1.clone() else {
+            panic!()
+        };
+        let Value::Array(mut manifest) = unsigned[9].1.clone() else {
+            panic!()
+        };
+        let Value::Array(mut entry) = manifest[0].clone() else {
+            panic!()
+        };
+        entry[1] = Value::Bytes(object_id.to_vec());
+        manifest[0] = Value::Array(entry);
+        unsigned[9].1 = Value::Array(manifest);
+        let signature = crypto::sign_cbor(
+            "control-transition",
+            &cbor::encode(&Value::Map(unsigned.clone())).unwrap(),
+            &manager_seed,
+        )
+        .unwrap();
+        candidate[0].1 = Value::Map(unsigned);
+        candidate[1].1 = Value::Array(vec![Value::Array(vec![
+            Value::Bytes(manager_id.to_vec()),
+            Value::Bytes(signature.to_vec()),
+        ])]);
+        let Value::Map(mut stage) = cbor::decode(stage_bytes).unwrap() else {
+            panic!()
+        };
+        stage[1].1 = candidate[0].1.clone();
+        stage[2].1 = candidate[1].1.clone();
+        stage[4].1 = Value::Bytes(object_id.to_vec());
+        (
+            cbor::encode(&Value::Map(candidate)).unwrap(),
+            cbor::encode(&Value::Map(stage)).unwrap(),
+        )
+    }
+
     fn issue_stage_with_changed_object(
         stage_bytes: &[u8],
         manager_id: [u8; 16],
@@ -5137,6 +5233,152 @@ mod tests {
                 .commit_first_issue(family, &competing_candidate, time)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn public_batch_id_cannot_poison_later_object_staging() {
+        let genesis: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/api-genesis-v1.json").unwrap(),
+        )
+        .unwrap();
+        let issue: Json =
+            serde_json::from_str(&std::fs::read_to_string("../tests/vectors/api-v1.json").unwrap())
+                .unwrap();
+        let chain: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/contiguous-chain-v1.json").unwrap(),
+        )
+        .unwrap();
+        let seed: [u8; 32] = hex(chain["test_only_inputs"]["relay_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let manager_seed: [u8; 32] = hex(chain["test_only_inputs"]["manager_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let family: [u8; 16] = hex(genesis["inputs"]["family_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let promotion: [u8; 16] = hex(genesis["inputs"]["promotion_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let colliding_id: [u8; 16] = hex("083e4567e89b42d3a456426614174000").try_into().unwrap();
+        let distinct_id: [u8; 16] = hex("183e4567e89b42d3a456426614174000").try_into().unwrap();
+        let genesis_stage = hex(genesis["inputs"]["stage_body_cbor_hex"].as_str().unwrap());
+        let genesis_candidate = hex(genesis["inputs"]["commit_candidate_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let issue_stage = hex(issue["inputs"]["stage_body_cbor_hex"].as_str().unwrap());
+        let issue_candidate = hex(issue["inputs"]["commit_body_cbor_hex"].as_str().unwrap());
+        let parsed = authority::verify_genesis_candidate(
+            &genesis_candidate,
+            &crypto::signing_public_key(&seed),
+        )
+        .unwrap();
+        let (valid_issue, valid_stage) = issue_with_object_id(
+            &issue_candidate,
+            &issue_stage,
+            distinct_id,
+            parsed.manager_id,
+            manager_seed,
+        );
+        let genesis_response = hex(genesis["expect"]["commit_response_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let Value::Map(response) = cbor::decode(&genesis_response).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(genesis_committed) = &response[1].1 else {
+            panic!()
+        };
+        let time = control_commit_time(genesis_committed).unwrap();
+        let template = signed_manager_batch(genesis_committed, &parsed, manager_seed);
+        for rejected in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("relay.sqlite");
+            let mut store = RelayStore::open(&path, seed).unwrap();
+            store
+                .stage_genesis_object(family, promotion, &genesis_stage)
+                .unwrap();
+            store
+                .commit_genesis(family, &genesis_candidate, time)
+                .unwrap();
+            if rejected {
+                store.commit_batch(family, &template).unwrap();
+            }
+            let colliding = resign_batch_author(
+                &template,
+                parsed.manager_id,
+                if rejected { 3 } else { 1 },
+                Some(colliding_id),
+                manager_seed,
+            );
+            store.commit_batch(family, &colliding).unwrap();
+            let table = if rejected {
+                "rejected_batch_results"
+            } else {
+                "batch_results"
+            };
+            let count: i64 = store
+                .db
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM {table} WHERE family_id=?1 AND batch_id=?2"),
+                    params![&family[..], &colliding_id[..]],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 1);
+            assert!(
+                store
+                    .stage_first_issue_object(family, colliding_id, &issue_stage)
+                    .is_err()
+            );
+            let reservations: i64 = store
+                .db
+                .query_row(
+                    "SELECT COUNT(*) FROM object_reservations WHERE family_id=?1 AND object_id=?2",
+                    params![&family[..], &colliding_id[..]],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(reservations, 0);
+            drop(store);
+            let mut store = RelayStore::open(&path, seed).unwrap();
+            let mut followup_id = [0xa9; 16];
+            followup_id[6] = 0x49;
+            followup_id[8] = 0x89;
+            let followup = resign_batch_author(
+                &template,
+                parsed.manager_id,
+                2,
+                Some(followup_id),
+                manager_seed,
+            );
+            store.commit_batch(family, &followup).unwrap();
+            let accepted: i64 = store
+                .db
+                .query_row(
+                    "SELECT COUNT(*) FROM batch_results WHERE family_id=?1 AND batch_id=?2",
+                    params![&family[..], &followup_id[..]],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(accepted, 1);
+            store
+                .stage_first_issue_object(family, distinct_id, &valid_stage)
+                .unwrap();
+            store
+                .commit_first_issue(family, &valid_issue, time)
+                .unwrap();
+            assert!(
+                store
+                    .committed_object(family, distinct_id)
+                    .unwrap()
+                    .is_some()
+            );
+        }
     }
     #[test]
     fn staged_object_id_keeps_its_hash_across_competitors_cleanup_and_restart() {

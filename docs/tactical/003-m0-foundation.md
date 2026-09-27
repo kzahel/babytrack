@@ -1377,6 +1377,30 @@ stale-epoch writer limits. Local Rust, bindings, browser, and two-emulator
 validation for subsequent commits is separate evidence and does not change
 the reviewed SHA or this review verdict.
 
+## General-authority advisory recheck at f55289a
+
+The first plan-mode recheck was canceled at the user's request and has no
+verdict. Daybreak Blue then reviewed clean fixed commit
+`f55289abe3ff3931bd8207fe0eb1945ff0a6429e` in a disposable detached
+checkout, high thinking, bypass-permissions mode, read only, through Yep
+Anywhere session `01a0e2ae-044d-72a2-acc9-90e018b610f5`. It reached
+verified idle with no source edits. Result: **focused advisory FAIL**.
+The pagination and object-manifest findings were closed. The remaining
+medium availability finding was a batch-first ID collision: after an
+accepted or rejected batch used ID X, a valid manager could stage a
+membership object with ID X. Staging permanently reserved X, issue commit
+rejected, and subsequent unrelated Family writes failed because public
+and private ID registries now conflicted.
+
+The relay now rejects a newly staged object ID already present in the
+authenticated public control and accepted/rejected batch registry before
+creating a reservation. Restart rejects an existing uncommitted reservation
+that conflicts with that registry. FS73/IDCOLL01 and the executable signed
+relay regression cover both accepted and rejected batch-first orderings,
+absence of a poison reservation, restart, and subsequent unrelated signed
+batch and valid control commits. A new fixed-SHA recheck is still required;
+this focused result does not close the M0 exit gate.
+
 ## Completion condition
 
 All slice gates pass in CI and on the designated local testbeds, the

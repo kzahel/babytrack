@@ -488,8 +488,8 @@
       "id": "IDCOLL01",
       "scenario": "FS64",
       "initial": {"family": "genesis-plus-first-cohort-history", "id_scope": "one-Family-all-protocol-categories"},
-      "actions": ["reuse a historical transition ID as a new invitation ID", "reuse a device ID as a new transition ID", "reuse an accepted or rejected batch ID as a new object or transition ID", "stage an object ID then try it as an accepted or rejected batch ID or transition/device/invitation ID before and after restart", "replay exact committed bytes"],
-      "expect": {"new_cross_category_ids": "commit-rejects-without-cursor-or-head-change", "staging": "may-accept-before-commit-rejection; an uncommitted reserved object ID blocks other public categories", "client_replay": "rejects-collisions-in-committed-chain", "rejected_batch_id": "relay-private-durable-reservation", "exact_object_restage": "same-reserved-kind-and-hash", "exact_committed_retry": "same-result"}
+      "actions": ["reuse a historical transition ID as a new invitation ID", "reuse a device ID as a new transition ID", "reuse an accepted or rejected batch ID as a new object or transition ID", "stage an object ID then try it as an accepted or rejected batch ID or transition/device/invitation ID before and after restart", "commit an accepted or rejected batch ID first and stage a signed manager object with that ID, then restart and commit unrelated writes", "replay exact committed bytes"],
+      "expect": {"new_cross_category_ids": "commit-rejects-without-cursor-or-head-change", "staging": "may-accept-before-commit-rejection; an uncommitted reserved object ID blocks other public categories; a stage colliding with an already public batch ID fails without reserving it", "unrelated_after_collision": "signed-batch-and-control-commit-after-restart", "client_replay": "rejects-collisions-in-committed-chain", "rejected_batch_id": "relay-private-durable-reservation", "exact_object_restage": "same-reserved-kind-and-hash", "exact_committed_retry": "same-result"}
     },
     {
       "id": "APIPAGE02",

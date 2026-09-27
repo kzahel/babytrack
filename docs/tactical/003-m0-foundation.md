@@ -135,6 +135,17 @@ and wet-diaper actions and labels them as awaiting upload. Its real-relay
 emulator test checks keyless write denial, wrong-child rejection, local
 overlay visibility, and persistence across restart. Batch upload and remote
 convergence remain open.
+The Android byte transport now uploads exact signed batches from the durable
+Rust outbox, then performs an authenticated full-log pull before reporting
+acceptance. Both manager and recipient can run a bounded manual sync pass;
+uncertain responses leave the saved envelope for exact retry. The manager's
+main tracker now reads and writes through the verified shared session after
+promotion; the local-only API rejects that Family so it cannot silently
+diverge. The real-relay emulator test has the recipient save and upload a
+child and diaper, the manager pull them, then the manager save and upload a
+child that the recipient pulls. Both stores reopen and retry without duplicate
+records. This is manual foreground sync; wake scheduling, removal races,
+shared backup UI, and general epoch handling remain open.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

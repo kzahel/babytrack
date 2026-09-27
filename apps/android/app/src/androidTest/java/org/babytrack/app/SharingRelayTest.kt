@@ -34,6 +34,9 @@ class SharingRelayTest {
         val fragment = ShareCoordinator(context, database.absolutePath).use { sharing ->
             assertEquals(1uL, sharing.promote(family, origin, publicKey))
             assertEquals("Relay test child", sharing.snapshot(family).children.single().name)
+            NativeLocalStore.open(database.absolutePath).use { local ->
+                assertTrue(runCatching { local.addChild(family, "Wrong surface", System.currentTimeMillis()) }.isFailure)
+            }
             val fragment = sharing.invite(family, origin, 1u.toUByte())
             assertTrue(fragment.startsWith("#bt-invite=v1."))
             fragment
@@ -95,6 +98,18 @@ class SharingRelayTest {
             assertTrue(sharing.syncRecipient(fragment).ready)
             assertEquals(2, sharing.snapshot(first.family).children.size)
             assertEquals(1, sharing.snapshot(first.family).activities.size)
+            assertTrue(sharing.syncAndUpload(first.family, origin).ready)
+        }
+        ShareCoordinator(context, database.absolutePath).use { sharing ->
+            assertTrue(sharing.syncAndUpload(family, origin).ready)
+            assertEquals(2, sharing.snapshot(family).children.size)
+            assertEquals(1, sharing.snapshot(family).activities.size)
+            sharing.addChild(family, "Manager later", System.currentTimeMillis())
+            assertTrue(sharing.syncAndUpload(family, origin).ready)
+        }
+        ShareCoordinator(context, recipient.absolutePath).use { sharing ->
+            assertTrue(sharing.syncAndUpload(first.family, origin).ready)
+            assertEquals(3, sharing.snapshot(first.family).children.size)
         }
         ShareCoordinator(context, database.absolutePath).use { sharing ->
             sharing.admitProvedDevice(family, origin)

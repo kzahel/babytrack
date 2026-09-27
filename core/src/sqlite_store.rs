@@ -1212,6 +1212,10 @@ impl SqliteStore {
         Ok(())
     }
 
+    pub fn is_shared_family(&self, family: FamilyHandle) -> Result<bool, Error> {
+        Ok(self.shared_history(family)?.is_some())
+    }
+
     pub(crate) fn shared_history(
         &self,
         family: FamilyHandle,

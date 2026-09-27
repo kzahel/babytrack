@@ -2,6 +2,7 @@
     <string name="app_name">Babytrack</string>
     <string name="screen_title">Today</string>
     <string name="local_only">On this device</string>
+    <string name="shared_family">Shared Family · sync to check changes</string>
     <string name="families">Families</string>
     <string name="new_family">New Family</string>
     <string name="family_number">Family %1$d</string>
@@ -44,7 +45,7 @@
     <string name="confirm_restore">Restore as new Family</string>
     <string name="error">Could not complete the action. Try again.</string>
     <string name="dev_share_title">Sharing setup preview</string>
-    <string name="dev_share_description">Connect to a development relay. This screen can prepare sharing and an invitation; key handoff and automatic sync are still in progress. Use a local relay only for test data.</string>
+    <string name="dev_share_description">Connect to a development relay. This screen prepares sharing, invitation, and key handoff. Use Sync shared Family for updates; automatic sync is still in progress. Use a local relay only for test data.</string>
     <string name="relay_origin">Relay origin (HTTPS or localhost)</string>
     <string name="relay_public_key">Relay public key (64 hex digits)</string>
     <string name="share_preparing">Preparing encrypted history and contacting the relay…</string>
@@ -58,7 +59,7 @@
     <string name="create_invite">Create or retry invitation</string>
     <string name="invite_fragment_label">Invitation fragment for development testing</string>
     <string name="dev_join_title">Join preview</string>
-    <string name="dev_join_description">Paste a one-device invitation fragment. This commits a keyless claim to the relay. A key holder still needs to respond; the receiving and sync screens are in progress.</string>
+    <string name="dev_join_description">Paste a one-device invitation fragment. The joining device stays pending until a key holder responds and full history loads. Use Sync shared Family after joining.</string>
     <string name="received_fragment">Invitation fragment</string>
     <string name="join_preparing">Checking invitation and submitting a keyless claim…</string>
     <string name="join_pending">Claim committed. Waiting for a Family key holder; shared data is not available yet.</string>
@@ -79,6 +80,8 @@
     <string name="history_pending">Verified through cursor %1$d. Waiting for more history or objects; retry on the next sync opportunity.</string>
     <string name="history_ready">Shared history verified. %1$d children loaded.</string>
     <string name="shared_children">Verified shared children</string>
-    <string name="shared_pending_sync">New shared entries are saved on this device. Upload is still in progress.</string>
+    <string name="shared_manual_sync">New entries save on this device. Use Sync shared Family to upload and check for changes.</string>
+    <string name="sync_shared">Sync shared Family</string>
+    <string name="shared_synced">Verified relay history through cursor %1$d.</string>
     <string name="shared_entry">%1$s · %2$s</string>
 </resources>

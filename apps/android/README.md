@@ -3,7 +3,7 @@
 The debug app tracks local Families and runs the first two-device sharing
 handoff on a development relay: promotion, invitation, claim, challenge,
 proof, grant, and recipient history verification. The shared tracking view,
-shared upload, automatic sync, and removal are still being implemented. The release
+automatic sync, removal, and shared backup UI are still being implemented. The release
 manifest does not allow cleartext HTTP.
 
 To exercise the current relay slice on an emulator:
@@ -39,7 +39,10 @@ To exercise the current relay slice on an emulator:
    encrypted objects, and opens the grant. It reports the verified cursor or
    readiness; repeat after a pending result. The join preview then shows
    verified shared children and entries. Adding a child or wet diaper saves
-   offline in the Rust shared outbox; upload is not connected yet.
+   offline in the Rust shared outbox; **Sync shared Family** uploads the next
+   signed batches and verifies the relay log. The manager can use the same
+   button for its Family. A newly shared manager Family uses the shared Rust
+   view and edit path; the local-only API rejects it.
 
 The on-device integration test calls the same Keystore and transport adapter
 through a real relay. With the emulator and `adb reverse` running, build it
@@ -59,6 +62,8 @@ recipient fetches its addressed object and commits and retries its proof. The
 holder commits and retries admission. The recipient loads the full history,
 including the manager's child, then reopens the store and verifies readiness
 again. All three handoff steps are retried after later controls have
-committed. The
+committed. The recipient then saves a child and diaper offline, uploads them,
+and the manager pulls them. The manager saves another child, uploads it, and
+the recipient pulls it. The test verifies durable restart and retry. The
 default Android CI compiles this test, while
 execution currently uses the local emulator and relay.

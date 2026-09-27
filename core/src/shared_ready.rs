@@ -333,6 +333,14 @@ impl ReadyFamilySession {
         self.stage_next_local(store, &enrollment.signing_seed())
     }
 
+    pub fn has_unsent_local(&self, store: &SqliteStore) -> Result<bool, Error> {
+        let public = PublicHistorySession::resume(store, self.family)?;
+        if public.cursor() != self.observed_cursor || public.head_hash() != self.observed_head {
+            return Err(Error::Invalid("ready view is behind verified history"));
+        }
+        Ok(!store.unsent_operations(self.family)?.is_empty())
+    }
+
     pub fn projection(&self) -> &Projection {
         &self.projection
     }

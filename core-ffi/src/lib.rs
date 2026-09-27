@@ -205,6 +205,14 @@ pub struct SharedSnapshotRow {
     pub activities: Vec<ActivityRow>,
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct SharedSyncRow {
+    pub verified_cursor: u64,
+    pub no_more_visible: bool,
+    pub remaining_objects: bool,
+    pub ready: bool,
+}
+
 #[uniffi::export(callback_interface)]
 pub trait RelayReadTransport: Send + Sync {
     fn get(&self, path: String, auth: Vec<u8>) -> Result<Vec<u8>, BindingError>;
@@ -847,6 +855,14 @@ impl NativeSharedStore {
         })
     }
 
+    pub fn is_shared(&self, family: FamilyRef) -> Result<bool, BindingError> {
+        self.store
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .is_shared_family(family.handle()?)
+            .map_err(rejected)
+    }
+
     pub fn add_shared_child(
         &self,
         family: FamilyRef,
@@ -906,6 +922,127 @@ impl NativeSharedStore {
             .append_local(&mut store, operation, saved_at_ms)
             .map_err(rejected)?;
         Ok(id.to_vec())
+    }
+
+    /// Return the exact durable next envelope. A lost HTTP response must
+    /// retry these bytes until the signed log or rejection resolves it.
+    pub fn prepare_shared_upload(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+    ) -> Result<Option<Vec<u8>>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let wrapping = fixed(&wrapping_key)?;
+        let ready = ready_session_for(&mut store, handle, &wrapping)?;
+        if !ready.has_unsent_local(&store).map_err(rejected)? {
+            return Ok(None);
+        }
+        let staged = if store
+            .has_enrollment_attempt(handle.family_id)
+            .map_err(rejected)?
+        {
+            let attempt = EnrollmentAttempt::resume(&mut store, handle.family_id, &wrapping)
+                .map_err(rejected)?;
+            ready
+                .stage_enrolled_local(&mut store, &attempt)
+                .map_err(rejected)?
+        } else {
+            let manager = ManagerCreation::resume(&store, handle, &wrapping).map_err(rejected)?;
+            manager
+                .stage_next_local(&ready, &mut store)
+                .map_err(rejected)?
+        };
+        let batch = match staged {
+            babytrack_core::shared_ready::NextUpload::Fresh(value)
+            | babytrack_core::shared_ready::NextUpload::RetryExact(value) => value,
+        };
+        Ok(Some(batch.envelope_bytes))
+    }
+
+    /// Pull the active log and referenced objects through a byte transport.
+    /// Only full Rust verification advances the durable cursor and outbox.
+    pub fn sync_shared(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        transport: Box<dyn RelayReadTransport>,
+    ) -> Result<SharedSyncRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let wrapping = fixed(&wrapping_key)?;
+        let signer = if store
+            .has_enrollment_attempt(handle.family_id)
+            .map_err(rejected)?
+        {
+            let attempt = EnrollmentAttempt::resume(&mut store, handle.family_id, &wrapping)
+                .map_err(rejected)?;
+            if attempt.family() != handle
+                || !attempt.has_committed_admission(&store).map_err(rejected)?
+            {
+                return Err(BindingError::InvalidBytes);
+            }
+            ActiveReadSigner::Recipient(attempt)
+        } else {
+            ActiveReadSigner::Manager(
+                ManagerCreation::resume(&store, handle, &wrapping).map_err(rejected)?,
+            )
+        };
+        let signer = Arc::new(signer);
+        let transport: Arc<dyn RelayReadTransport> = Arc::from(transport);
+        let pull = futures::executor::block_on(active_pull::pull_active_log(
+            &mut store,
+            handle,
+            4,
+            |path| {
+                let signer = Arc::clone(&signer);
+                let transport = Arc::clone(&transport);
+                async move {
+                    let auth = signer.sign_get(&path)?.bytes;
+                    transport.get(path, auth)
+                }
+            },
+        ))
+        .map_err(rejected)?;
+        let hydration = futures::executor::block_on(active_pull::hydrate_manifest_objects(
+            &mut store,
+            handle,
+            16,
+            |path| {
+                let signer = Arc::clone(&signer);
+                let transport = Arc::clone(&transport);
+                async move {
+                    let auth = signer.sign_get(&path)?.bytes;
+                    transport.get(path, auth)
+                }
+            },
+        ))
+        .map_err(rejected)?;
+        let ready = if pull.no_more_visible && !hydration.remaining {
+            ready_session_for(&mut store, handle, &wrapping)?;
+            true
+        } else {
+            false
+        };
+        Ok(SharedSyncRow {
+            verified_cursor: pull.verified_cursor,
+            no_more_visible: pull.no_more_visible,
+            remaining_objects: hydration.remaining,
+            ready,
+        })
+    }
+}
+
+enum ActiveReadSigner {
+    Recipient(EnrollmentAttempt),
+    Manager(ManagerCreation),
+}
+impl ActiveReadSigner {
+    fn sign_get(&self, path: &str) -> Result<babytrack_core::sync_wire::SignedRead, BindingError> {
+        match self {
+            Self::Recipient(value) => value.sign_get(path).map_err(rejected),
+            Self::Manager(value) => value.sign_get(path).map_err(rejected),
+        }
     }
 }
 

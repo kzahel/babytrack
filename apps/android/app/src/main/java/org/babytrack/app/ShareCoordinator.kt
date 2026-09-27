@@ -8,6 +8,7 @@ import uniffi.babytrack_core_ffi.PreparedJoinRow
 import uniffi.babytrack_core_ffi.RecipientSyncRow
 import uniffi.babytrack_core_ffi.RelayReadTransport
 import uniffi.babytrack_core_ffi.SharedSnapshotRow
+import uniffi.babytrack_core_ffi.SharedSyncRow
 import uniffi.babytrack_core_ffi.previewInvitation
 import uniffi.babytrack_core_ffi.validateRelayOrigin
 
@@ -150,6 +151,8 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         }
     }
 
+    fun isShared(family: FamilyRef): Boolean = core.isShared(family)
+
     fun snapshotForFragment(fragment: String): SharedSnapshotRow {
         val wrapping = keys.loadOrCreate()
         try {
@@ -170,6 +173,29 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
 
     fun logBottleMl(family: FamilyRef, childId: ByteArray, amountMl: Long, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedBottleMl(family, wrapping, childId, amountMl, 2u.toUByte(), time) }
+
+    fun syncAndUpload(family: FamilyRef, origin: String): SharedSyncRow {
+        validateRelayOrigin(origin)
+        val relay = RelayTransport(origin)
+        return withWrapping { wrapping ->
+            val reads = object : RelayReadTransport {
+                override fun get(path: String, auth: ByteArray): ByteArray = relay.get(path, auth)
+            }
+            var progress = core.syncShared(family, wrapping, reads)
+            repeat(16) {
+                if (!progress.ready) return@withWrapping progress
+                val bytes = core.prepareSharedUpload(family, wrapping) ?: return@withWrapping progress
+                relay.post("/v1/families/${family.familyId.hex()}/batches", bytes)
+                progress = core.syncShared(family, wrapping, reads)
+            }
+            progress
+        }
+    }
+
+    fun syncRecipientAndUpload(fragment: String): SharedSyncRow {
+        val preview = previewInvitation(fragment)
+        return syncAndUpload(snapshotForFragment(fragment).family, preview.relayOrigin)
+    }
 
     private inline fun <T> withWrapping(action: (ByteArray) -> T): T {
         val wrapping = keys.loadOrCreate()

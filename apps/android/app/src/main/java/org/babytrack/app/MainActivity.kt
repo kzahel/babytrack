@@ -108,10 +108,12 @@ private fun ByteArray.key(): String = joinToString("") { "%02x".format(it) }
 private data class CompletedSave(val atMs: Long, val revision: ULong)
 private data class ScreenData(
     val families: List<FamilyRef>,
+    val activeFamilyKey: String?,
     val children: List<ChildRow>,
     val entries: List<ActivityRow>,
     val revision: ULong,
     val restoredOrigin: RestoredOriginRow?,
+    val shared: Boolean,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -134,6 +136,8 @@ private fun TrackerScreen(
     var entries by remember { mutableStateOf<List<ActivityRow>>(emptyList()) }
     var revision by remember { mutableStateOf(0uL) }
     var restoredOrigin by remember { mutableStateOf<RestoredOriginRow?>(null) }
+    var isShared by remember { mutableStateOf(false) }
+    var loadedFamilyKey by remember { mutableStateOf<String?>(null) }
     var saveStatusVersion by remember { mutableStateOf(0) }
     var selectedFamily by remember { mutableStateOf<String?>(null) }
     var selectedChild by remember { mutableStateOf<String?>(null) }
@@ -204,13 +208,19 @@ private fun TrackerScreen(
             withContext(Dispatchers.IO) {
                 val all = store.families()
                 val family = all.find { it.familyId.key() == selectedFamily } ?: all.firstOrNull()
-                val kids = family?.let(store::children).orEmpty()
+                val shared = family?.let(sharing::isShared) ?: false
+                val snapshot = if (shared) sharing.snapshot(family) else null
+                val kids = snapshot?.children ?: family?.let(store::children).orEmpty()
                 val child = kids.find { it.id.key() == selectedChild } ?: kids.firstOrNull()
-                val history = if (family != null && child != null) store.timeline(family, child.id) else emptyList()
+                val history = if (family != null && child != null) {
+                    snapshot?.activities?.filter { it.childId.contentEquals(child.id) }
+                        ?: store.timeline(family, child.id)
+                } else emptyList()
                 ScreenData(
-                    all, kids, history,
-                    family?.let(store::revision) ?: 0uL,
-                    family?.let(store::restoredOrigin),
+                    all, family?.familyId?.key(), kids, history,
+                    if (!shared) family?.let(store::revision) ?: 0uL else 0uL,
+                    if (!shared) family?.let(store::restoredOrigin) else null,
+                    shared,
                 )
             }
         }.onSuccess { data ->
@@ -223,10 +233,13 @@ private fun TrackerScreen(
             entries = data.entries
             revision = data.revision
             restoredOrigin = data.restoredOrigin
+            isShared = data.shared
+            loadedFamilyKey = data.activeFamilyKey
         }.onFailure { message = errorText }
     }
     val family = families.find { it.familyId.key() == selectedFamily }
     val child = children.find { it.id.key() == selectedChild }
+    val activeShared = isShared && loadedFamilyKey == selectedFamily
     val completed = remember(selectedFamily, saveStatusVersion) { family?.let(lastSave) }
     val filename = stringResource(R.string.backup_filename)
     val protectedFilename = stringResource(R.string.protected_backup_filename)
@@ -236,7 +249,7 @@ private fun TrackerScreen(
             modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(stringResource(R.string.local_only), style = MaterialTheme.typography.labelMedium)
+            Text(stringResource(if (activeShared) R.string.shared_family else R.string.local_only), style = MaterialTheme.typography.labelMedium)
             Text(stringResource(R.string.families), style = MaterialTheme.typography.titleLarge)
             families.forEachIndexed { index, item ->
                 FilterChip(
@@ -326,7 +339,21 @@ private fun TrackerScreen(
                         joinStage?.let { Text(it) }
                         sharedSnapshot?.let { snapshot ->
                             Text(stringResource(R.string.shared_children), style = MaterialTheme.typography.titleMedium)
-                            Text(stringResource(R.string.shared_pending_sync))
+                            Text(stringResource(R.string.shared_manual_sync))
+                            OutlinedButton(onClick = {
+                                scope.launch {
+                                    runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            val progress = sharing.syncRecipientAndUpload(receivedFragment.trim())
+                                            progress to sharing.snapshot(snapshot.family)
+                                        }
+                                    }.onSuccess { (progress, updated) ->
+                                        sharedSnapshot = updated
+                                        joinStage = context.getString(R.string.shared_synced, progress.verifiedCursor.toLong())
+                                        message = null
+                                    }.onFailure { message = errorText }
+                                }
+                            }) { Text(stringResource(R.string.sync_shared)) }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedTextField(
                                     value = sharedChildName,
@@ -420,6 +447,7 @@ private fun TrackerScreen(
                                         }
                                     }.onSuccess { cursor ->
                                         shareStage = context.getString(R.string.share_confirmed, cursor.toLong())
+                                        version++
                                         message = null
                                     }.onFailure {
                                         shareStage = context.getString(R.string.share_retry)
@@ -497,6 +525,19 @@ private fun TrackerScreen(
                                     }
                                 }
                             }) { Text(stringResource(R.string.admit_device)) }
+                            OutlinedButton(onClick = {
+                                scope.launch {
+                                    runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            sharing.syncAndUpload(family, relayOrigin.trim())
+                                        }
+                                    }.onSuccess { progress ->
+                                        shareStage = context.getString(R.string.shared_synced, progress.verifiedCursor.toLong())
+                                        version++
+                                        message = null
+                                    }.onFailure { message = errorText }
+                                }
+                            }) { Text(stringResource(R.string.sync_shared)) }
                         }
                     }
                 }
@@ -524,7 +565,10 @@ private fun TrackerScreen(
                     Button(enabled = childName.isNotBlank(), onClick = {
                         val name = childName.trim()
                         scope.launch {
-                            runCatching { withContext(Dispatchers.IO) { store.addChild(family, name, System.currentTimeMillis()) } }
+                            runCatching { withContext(Dispatchers.IO) {
+                                if (activeShared) sharing.addChild(family, name, System.currentTimeMillis())
+                                else store.addChild(family, name, System.currentTimeMillis())
+                            } }
                                 .onSuccess { created ->
                                     selectedChild = created.key()
                                     childName = ""
@@ -539,7 +583,10 @@ private fun TrackerScreen(
                     Text(stringResource(R.string.log_diaper), style = MaterialTheme.typography.titleLarge)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(1u.toUByte() to R.string.wet, 2u.toUByte() to R.string.dirty, 3u.toUByte() to R.string.both).forEach { (kind, label) ->
-                            Button(onClick = { change { store.logDiaper(family, child.id, kind, nowTime()) } }) {
+                            Button(onClick = { change {
+                                if (activeShared) sharing.logDiaper(family, child.id, kind, nowTime())
+                                else store.logDiaper(family, child.id, kind, nowTime())
+                            } }) {
                                 Text(stringResource(label))
                             }
                         }
@@ -556,7 +603,10 @@ private fun TrackerScreen(
                         )
                         Button(enabled = (amount.toLongOrNull() ?: 0) > 0, onClick = {
                             val ml = amount.toLongOrNull() ?: return@Button
-                            change { store.logBottleMl(family, child.id, ml, 2u.toUByte(), nowTime()) }
+                            change {
+                                if (activeShared) sharing.logBottleMl(family, child.id, ml, nowTime())
+                                else store.logBottleMl(family, child.id, ml, 2u.toUByte(), nowTime())
+                            }
                             amount = ""
                         }) { Text(stringResource(R.string.log_bottle)) }
                     }
@@ -581,6 +631,7 @@ private fun TrackerScreen(
                     }
                 }
 
+                if (!activeShared) {
                 Spacer(Modifier.height(8.dp))
                 Text(stringResource(R.string.backup_title), style = MaterialTheme.typography.titleLarge)
                 completed?.let { saved ->
@@ -620,6 +671,7 @@ private fun TrackerScreen(
                             .onFailure { message = errorText }
                     }
                 }, enabled = !protectBackup || backupPassword.isNotEmpty()) { Text(stringResource(R.string.save_backup)) }
+                }
             }
             OutlinedButton(onClick = { restoreLauncher.launch(arrayOf("application/octet-stream", "*/*")) }) {
                 Text(stringResource(R.string.restore_backup))

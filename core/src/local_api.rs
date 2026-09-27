@@ -104,6 +104,9 @@ impl LocalRepository {
                 "recipient enrollment is not a local-only Family",
             ));
         }
+        if self.store.shared_history(family)?.is_some() {
+            return Err(Error::Invalid("shared Family requires verified session"));
+        }
         Ok(())
     }
 

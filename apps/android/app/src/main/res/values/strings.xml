@@ -56,6 +56,10 @@
     <string name="start_sleep">Start sleep timer</string>
     <string name="stop_sleep">Stop sleep</string>
     <string name="sleep_running">Sleep · running</string>
+    <string name="sleep_notification_channel">Sleep timers</string>
+    <string name="sleep_notification_title">Sleep timer running</string>
+    <string name="sleep_notification_one">Tap to view and stop the timer</string>
+    <string name="sleep_notification_many">%1$d timers running · tap to view</string>
     <string name="sleep_minutes">Minutes slept</string>
     <string name="save_sleep">Save sleep</string>
     <string name="sleep_duration">Sleep · %1$d min</string>

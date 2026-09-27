@@ -121,7 +121,12 @@ delivered, and removed access cannot obtain new Family data.
   column mapping and sample-backed validation remain open.
 - [ ] Add an ongoing notification for timers and basic widgets without
   reimplementing event semantics in Android. Confirm stale actions after
-  removal target a private copy or fail visibly.
+  removal target a private copy or fail visibly. The Android sleep notification
+  now reflects open timers across local and ready shared Families, opens the
+  tracker on tap, and refreshes after foreground edits and scheduled sync.
+  It requests Android's notification permission after a timer starts. The
+  local journal start/stop notification case passes on an emulator; widgets,
+  reboot restoration, and physical-phone checks remain.
 
 Gate: caregivers can move a saved point to another phone and understand
 what it contains; daily logging and recovery require no relay account.

@@ -2,6 +2,8 @@ package org.babytrack.app
 
 import android.view.accessibility.AccessibilityNodeInfo
 import android.content.Intent
+import android.Manifest
+import android.app.NotificationManager
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -19,6 +21,38 @@ import uniffi.babytrack_core_ffi.previewInvitation
 
 @RunWith(AndroidJUnit4::class)
 class SharingRelayTest {
+
+    @Test
+    fun localTimerNotificationTracksSavedStartAndStop() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        instrumentation.uiAutomation.grantRuntimePermission(
+            context.packageName, Manifest.permission.POST_NOTIFICATIONS,
+        )
+        val path = context.filesDir.resolve("timer-notification-${System.nanoTime()}.db")
+        val manager = context.getSystemService(NotificationManager::class.java)
+        NativeLocalStore.open(path.absolutePath).use { local ->
+            ShareCoordinator(context, path.absolutePath).use { sharing ->
+                val now = System.currentTimeMillis()
+                val family = local.createFamily(now)
+                val child = local.addChild(family, "Timer child", now)
+                val activity = local.startSleep(family, child, ActivityWhen(now, 0, now))
+                val running = runningSleepCount(local, sharing, listOf(family), emptyList())
+                assertEquals(1, running)
+                SleepTimerNotifications.update(context, running)
+                assertTrue(manager.activeNotifications.any {
+                    it.notification.extras.getString("android.title") == context.getString(R.string.sleep_notification_title)
+                })
+                local.stopSleep(family, child, activity, now + 60_000, 0, now + 60_000)
+                val stopped = runningSleepCount(local, sharing, listOf(family), emptyList())
+                assertEquals(0, stopped)
+                SleepTimerNotifications.update(context, stopped)
+                assertTrue(manager.activeNotifications.none {
+                    it.notification.extras.getString("android.title") == context.getString(R.string.sleep_notification_title)
+                })
+            }
+        }
+    }
 
     @Test
     fun claimedLinkReturnsVerifiedTerminalReasonToSecondDevice() {

@@ -1533,6 +1533,33 @@ before and after coordinator restart. Other terminal fault cases and the
 fixed-revision independent recheck remain due. The 64-page/16-MiB history
 ceiling remains separate hardening.
 
+## Advisory automatic-status recheck at ad42d78
+
+Daybreak Blue at high thinking reviewed clean fixed commit
+`ad42d781e132730b3222e3a0e45715b07f2e34d1` in a detached read-only
+checkout through Yep Anywhere session
+`01a0e364-2a07-7522-b3e9-ae9044b584f4`. The process reached verified
+idle with an empty queue and no checkout edits. Result: **focused advisory
+FAIL**; this is not the M0 exit review. The reviewer ran core, server, CLI,
+Android build, and eight real-relay Android instrumentation tests. Remote CI
+run `36328066358` passed all required jobs.
+
+Two medium findings remain open. First, a signed `claimed` status does not
+identify the claimant. A lost response to our own committed claim can make
+the newly durable status row permanently stop a valid pending join. The
+existing Android test checks a competing claim but not an in-call lost POST
+response. Second, the read and `INSERT OR IGNORE` of a terminal status use
+separate transactions, so concurrent foreground and scheduled callers can
+display different signed reasons even though one row won storage. FS37 and
+FS77 need regression cases before these guarantees close. The current build
+is a development MVP and is not cleared for real Family data. The reviewer
+also noted that the 64-page/16-MiB join history ceiling and full later-device
+admission remain open.
+
+The implementation priority now returns to missing MVP flows. These advisory
+findings stay tracked for the M0 exit gate; the focused FAIL does not halt
+independent feature work or call for a review after each small repair.
+
 ## Completion condition
 
 All slice gates pass in CI and on the designated local testbeds, the

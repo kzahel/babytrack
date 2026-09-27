@@ -1,9 +1,12 @@
 package org.babytrack.app
 
+import android.Manifest
 import android.os.Bundle
+import android.os.Build
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -190,7 +193,35 @@ private data class ScreenData(
     val mainSharedSnapshot: SharedSnapshotRow?,
     val recipients: List<FamilyRef>,
     val joinedSnapshot: SharedSnapshotRow?,
+    val activeSleepCount: Int,
 )
+
+internal fun runningSleepCount(
+    store: NativeLocalStore,
+    sharing: ShareCoordinator,
+    families: List<FamilyRef>,
+    recipients: List<FamilyRef>,
+): Int {
+    val running = HashSet<String>()
+    fun add(family: FamilyRef, activities: List<ActivityRow>) {
+        for (entry in activities) {
+            if (entry.kind == "sleep" && entry.endUtcMs == null) {
+                running.add(family.familyId.key() + entry.id.key())
+            }
+        }
+    }
+    for (family in families) {
+        if (sharing.isShared(family)) {
+            runCatching { sharing.snapshot(family).activities }.getOrNull()?.let { add(family, it) }
+        } else {
+            for (child in store.children(family)) add(family, store.timeline(family, child.id))
+        }
+    }
+    for (family in recipients) {
+        runCatching { sharing.snapshot(family).activities }.getOrNull()?.let { add(family, it) }
+    }
+    return running.size
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -219,6 +250,9 @@ private fun TrackerScreen(
     }
     val scope = rememberCoroutineScope()
     var version by remember { mutableStateOf(0) }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        if (it) version++
+    }
     var families by remember { mutableStateOf<List<FamilyRef>>(emptyList()) }
     var children by remember { mutableStateOf<List<ChildRow>>(emptyList()) }
     var entries by remember { mutableStateOf<List<ActivityRow>>(emptyList()) }
@@ -387,10 +421,10 @@ private fun TrackerScreen(
             }.onFailure { message = if (it is BackupTooLarge) tooLargeError else errorText }
         }
     }
-    fun change(action: () -> Unit) {
+    fun change(onSaved: (() -> Unit)? = null, action: () -> Unit) {
         scope.launch {
             runCatching { withContext(Dispatchers.IO) { action() } }
-                .onSuccess { version++; message = null }
+                .onSuccess { version++; message = null; onSaved?.invoke() }
                 .onFailure { message = errorText }
         }
     }
@@ -418,6 +452,7 @@ private fun TrackerScreen(
                     snapshot,
                     recipients,
                     joinedSnapshot,
+                    runningSleepCount(store, sharing, all, recipients),
                 )
             }
         }.onSuccess { data ->
@@ -437,6 +472,8 @@ private fun TrackerScreen(
             selectedRecipient = data.recipients.find { it.familyId.key() == selectedRecipient }
                 ?.familyId?.key() ?: data.recipients.firstOrNull()?.familyId?.key()
             sharedSnapshot = data.joinedSnapshot
+            runCatching { SleepTimerNotifications.update(context, data.activeSleepCount) }
+                .onFailure { android.util.Log.w("BabytrackTimer", "Could not update sleep notification", it) }
         }.onFailure { message = errorText }
     }
     val family = families.find { it.familyId.key() == selectedFamily }
@@ -1109,10 +1146,16 @@ private fun TrackerScreen(
                         }
                     }) { Text(stringResource(R.string.save_solids)) }
                     Text(stringResource(R.string.log_sleep), style = MaterialTheme.typography.titleLarge)
-                    Button(onClick = { change {
-                        if (activeShared) sharing.startSleep(family, child.id, nowTime())
-                        else store.startSleep(family, child.id, nowTime())
-                    } }) { Text(stringResource(R.string.start_sleep)) }
+                    Button(onClick = {
+                        change(onSaved = {
+                            if (Build.VERSION.SDK_INT >= 33 &&
+                                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                            ) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }) {
+                            if (activeShared) sharing.startSleep(family, child.id, nowTime())
+                            else store.startSleep(family, child.id, nowTime())
+                        }
+                    }) { Text(stringResource(R.string.start_sleep)) }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = sleepMinutes,

@@ -6,6 +6,7 @@ import android.app.job.JobScheduler
 import android.app.job.JobService
 import android.content.ComponentName
 import android.content.Context
+import android.util.Log
 import uniffi.babytrack_core_ffi.NativeLocalStore
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -38,6 +39,12 @@ class SharedSyncJobService : JobService() {
                             runCatching { sharing.advanceRecipient(family) }
                                 .onFailure { if (it !is InvitationTerminal) failed = true }
                         }
+                        runCatching {
+                            SleepTimerNotifications.update(
+                                this,
+                                runningSleepCount(local, sharing, local.families(), sharing.recipientFamilies()),
+                            )
+                        }.onFailure { Log.w("BabytrackTimer", "Could not refresh sleep notification", it) }
                     }
                 }
             } catch (_: Exception) {

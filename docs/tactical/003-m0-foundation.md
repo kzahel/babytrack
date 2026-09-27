@@ -434,12 +434,31 @@ batch result after losing a POST response. The core verifies that receipt
 against the exact saved envelope without clearing the archived source
 outbox. Android distinguishes never-uploaded, accepted, rejected, and
 unknown delivery when showing the new private Family.
-The [proposed public-authority factoring](../topics/sync-and-encryption.md#proposed-implementation-seam-for-general-relay-authority)
-would replace parallel first-cohort relay checks before later-device
-admission expands. Its focused [Daybreak advisory](#advisory-general-authority-seam-review-at-bb68156)
-failed the initial sketch; implement the corrected transaction and history
-requirements before expanding admission. This does not substitute for the
-end-of-M0 gate.
+The [public-authority factoring](../topics/sync-and-encryption.md#proposed-implementation-seam-for-general-relay-authority)
+now supports ledger-backed general relay routes. Its initial
+[Daybreak advisory](#advisory-general-authority-seam-review-at-bb68156)
+failed; the corrected implementation passed the focused
+[recheck](#general-authority-advisory-pass-at-98fa0ea). This does not
+substitute for the end-of-M0 gate.
+
+The next general-device pass follows these ordered implementation proofs:
+
+1. Replace the Family-wide first-invite slot with durable per-invitation
+   preparation. Build against the current verified control head and epoch,
+   retain exact staged bytes through restart, and reveal a link only after
+   its signed issue commits. A stale or removed manager cannot issue.
+2. Let a joining device page the entire filtered public control ancestry
+   through the issue named by its link. Verify every signed transition and
+   cursor across intervening batches and page boundaries, then atomically
+   save that prefix with its new credentials and claim before the first POST.
+   A pending device remains keyless until grant and full-log hydration.
+3. Extend holder challenge, proof, admission, repair, and epoch-key recovery
+   to that later device, including a grant after rotation. Reuse the shared
+   public verifier for both relay acceptance and client replay.
+4. Run a three-device real-relay scenario with delayed wakes, restart,
+   multi-page controls, cancellation/expiry, role changes, and removal.
+   Review its implemented authority and recovery boundary at the M0 exit
+   gate before using real Family data.
 
 - [ ] Share deterministic public authority replay between client and relay
   without giving the relay epoch keys or event semantics. Preserve reviewed

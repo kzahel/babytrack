@@ -178,6 +178,17 @@ class TwoDeviceRelayTest {
                 sharing.editBottleMl(family, otherChild.id, bottle, 120, System.currentTimeMillis())
             }.isFailure)
             sharing.editBottleMl(family, note.childId, bottle, 120, System.currentTimeMillis())
+            val diaperTime = System.currentTimeMillis()
+            val diaper = sharing.logDiaper(
+                family, note.childId, 1u.toUByte(), ActivityWhen(diaperTime, 0, diaperTime)
+            )
+            assertTrue(runCatching {
+                sharing.editDiaperKind(family, otherChild.id, diaper, 2u.toUByte(), System.currentTimeMillis())
+            }.isFailure)
+            sharing.editDiaperKind(family, note.childId, diaper, 2u.toUByte(), System.currentTimeMillis())
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.id.contentEquals(diaper) && it.diaperKind == 2u.toUByte()
+            })
             val running = sharing.snapshot(family).activities.single {
                 it.kind == "sleep" && it.endUtcMs == null
             }
@@ -197,6 +208,9 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).activities.any { it.note == "After sync correction" })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "feed.bottle" && it.bottleMl == 120L
+            })
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.kind == "diaper" && it.diaperKind == 2u.toUByte()
             })
             assertTrue(sharing.snapshot(family).activities.count { it.kind == "sleep" && it.endUtcMs != null } == 2)
             sharing.addChild(family, "Pending at removal", System.currentTimeMillis())

@@ -29,6 +29,9 @@ timeline can correct a note's text through the shared Rust edit path while
 retaining its Family, child, activity ID, original time, and other fields.
 It can also correct a bottle's whole-millilitre amount on the same event;
 the content code and original time remain intact.
+Diaper type corrections likewise update the same activity, preserving its
+original time and any other fields. Local restart/file restore and the
+two-emulator encrypted relay flow cover the correction.
 The Android surface now follows the device's light or dark mode for both
 Compose content and system bars; emulator captures checked each mode.
 Child creation can also record a birth date and the sex code needed for
@@ -65,8 +68,8 @@ handoff. This is still a development flow, not a released product flow.
 - [x] Log sleep timers/completed sleep, notes, growth in whole grams and
   millimetres, and entered Celsius decimals through the local/shared core.
 - [ ] Complete the MVP logging set: growth percentile display and practical
-  edits beyond notes and bottle amount. Multi-segment breast feeds, note and
-  bottle correction, and
+  edits beyond note, bottle amount, and diaper type. Multi-segment breast
+  feeds, note, bottle, and diaper correction, and
   single-activity deletion now pass
   local restart/file restore, two-emulator encrypted sync, and UI tap flows.
   Preserve unknown fields and exact Family/child targets. Keep clinical

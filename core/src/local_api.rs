@@ -388,6 +388,30 @@ impl LocalRepository {
         Ok(())
     }
 
+    pub fn edit_diaper_kind(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        kind: u8,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        if child.scope != Scope::Child || child.deleted {
+            return Err(Error::Invalid("target child unavailable"));
+        }
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("activity unavailable"))?;
+        let operation = edit_diaper_kind_operation(family, child_id, activity, kind, saved_at_ms)?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn log_note(
         &mut self,
         family: FamilyHandle,
@@ -1049,6 +1073,38 @@ pub fn edit_bottle_ml_operation(
                 (3, Value::Integer(1)),
             ]),
         )]),
+    })
+}
+
+pub fn edit_diaper_kind_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    kind: u8,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    if activity.scope != Scope::Activity
+        || activity.child_id != Some(child_id)
+        || activity.record_type != "diaper"
+        || activity.deleted
+    {
+        return Err(Error::Invalid("diaper target unavailable"));
+    }
+    check_time(saved_at_ms)?;
+    if !(1..=4).contains(&kind) {
+        return Err(Error::Invalid("diaper kind outside published codes"));
+    }
+    Ok(NewOperation {
+        family_id: family.family_id,
+        operation_id: ids::random_v7(saved_at_ms)?,
+        record_id: activity.id,
+        scope: Scope::Activity,
+        kind: Kind::Set,
+        author_device_id: family.device_id,
+        hlc: placeholder_hlc(family),
+        record_type: None,
+        child_id: None,
+        fields: Some(vec![(100, Value::Integer(kind.into()))]),
     })
 }
 

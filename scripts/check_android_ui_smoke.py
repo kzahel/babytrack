@@ -101,10 +101,14 @@ def main() -> None:
     find(target, "UITestChild", scroll=True)
     tap(target, "Wet", scroll=True)
     find(target, "Diaper · Wet", scroll=True)
+    tap(target, "Edit diaper type", scroll=True)
+    tap(target, "Dirty")
+    tap(target, "Save changes")
+    find(target, "Diaper · Dirty", scroll=True)
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     find(target, "UITestChild", scroll=True)
-    find(target, "Diaper · Wet", scroll=True)
+    find(target, "Diaper · Dirty", scroll=True)
     tap(target, "Delete entry", scroll=True)
     find(target, "Remove this entry from the Family timeline? Shared devices receive the change when they sync.")
     tap(target, "Delete")
@@ -160,7 +164,7 @@ def main() -> None:
     find(target, "Breast · Left 5 min → Right 8 min", scroll=True)
     scroll_up(target)
     find(target, "Bottle · 120 mL", scroll=True)
-    print("Android UI Family, diaper deletion, note and bottle edits, breast segments, and restart: OK")
+    print("Android UI Family, diaper edit/deletion, note and bottle edits, breast segments, and restart: OK")
 
 
 if __name__ == "__main__":

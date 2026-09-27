@@ -218,6 +218,52 @@ fn bottle_amount_edit_keeps_activity_and_reaches_restored_copy() {
 }
 
 #[test]
+fn diaper_kind_edit_keeps_activity_and_reaches_restored_copy() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("edit-diaper.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    let other_family = app.create_family(1_790_000_000_001).unwrap();
+    let child = app.add_child(family, "Baby", 1_790_000_000_002).unwrap();
+    let other_child = app.add_child(family, "Other", 1_790_000_000_003).unwrap();
+    let time = ActivityTime {
+        start_utc_ms: 1_790_000_000_004,
+        offset_minutes: 0,
+        saved_at_ms: 1_790_000_000_005,
+    };
+    let diaper = app.log_diaper(family, child, 1, time).unwrap();
+    let bottle = app.log_bottle_ml(family, child, 90, 2, time).unwrap();
+    assert!(
+        app.edit_diaper_kind(other_family, child, diaper, 2, time.saved_at_ms + 1)
+            .is_err()
+    );
+    assert!(
+        app.edit_diaper_kind(family, other_child, diaper, 2, time.saved_at_ms + 1)
+            .is_err()
+    );
+    assert!(
+        app.edit_diaper_kind(family, child, bottle, 2, time.saved_at_ms + 1)
+            .is_err()
+    );
+    assert!(
+        app.edit_diaper_kind(family, child, diaper, 5, time.saved_at_ms + 1)
+            .is_err()
+    );
+    app.edit_diaper_kind(family, child, diaper, 2, time.saved_at_ms + 1)
+        .unwrap();
+    let before = app.timeline(family, child).unwrap();
+    let row = before.iter().find(|row| row.id == diaper).unwrap();
+    assert_eq!(row.diaper_kind, Some(2));
+    assert_eq!(row.start_utc_ms, time.start_utc_ms);
+    let backup = app.backup(family, time.saved_at_ms + 2).unwrap();
+    drop(app);
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.timeline(family, child).unwrap(), before);
+    let restored = app.restore(&backup, time.saved_at_ms + 3).unwrap();
+    assert_eq!(app.timeline(restored, child).unwrap(), before);
+}
+
+#[test]
 fn local_tracking_targets_explicit_family_and_survives_restart() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("phone.db");

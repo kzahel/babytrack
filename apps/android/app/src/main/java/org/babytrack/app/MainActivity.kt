@@ -164,6 +164,13 @@ private data class PendingBottleEdit(
     val shared: Boolean,
     val amount: String,
 )
+private data class PendingDiaperEdit(
+    val family: FamilyRef,
+    val childId: ByteArray,
+    val activityId: ByteArray,
+    val shared: Boolean,
+    val kind: UByte,
+)
 private data class ScreenData(
     val families: List<FamilyRef>,
     val activeFamilyKey: String?,
@@ -243,6 +250,7 @@ private fun TrackerScreen(
     var pendingDelete by remember { mutableStateOf<PendingActivityDelete?>(null) }
     var pendingNoteEdit by remember { mutableStateOf<PendingNoteEdit?>(null) }
     var pendingBottleEdit by remember { mutableStateOf<PendingBottleEdit?>(null) }
+    var pendingDiaperEdit by remember { mutableStateOf<PendingDiaperEdit?>(null) }
     var relayOrigin by remember { mutableStateOf("") }
     var relayPublicKey by remember { mutableStateOf("") }
     var shareStage by remember { mutableStateOf<String?>(null) }
@@ -1286,7 +1294,8 @@ private fun TrackerScreen(
                             entry.diaperKind != null -> stringResource(R.string.diaper, when (entry.diaperKind!!.toInt()) {
                                 1 -> stringResource(R.string.wet)
                                 2 -> stringResource(R.string.dirty)
-                                else -> stringResource(R.string.both)
+                                3 -> stringResource(R.string.both)
+                                else -> stringResource(R.string.dry)
                             })
                             else -> entry.kind
                         }
@@ -1325,6 +1334,17 @@ private fun TrackerScreen(
                                             entry.bottleMl.toString(),
                                         )
                                     }) { Text(stringResource(R.string.edit_bottle)) }
+                                }
+                                if (entry.kind == "diaper" && entry.diaperKind != null) {
+                                    OutlinedButton(onClick = {
+                                        pendingDiaperEdit = PendingDiaperEdit(
+                                            family,
+                                            entry.childId.copyOf(),
+                                            entry.id.copyOf(),
+                                            activeShared,
+                                            entry.diaperKind!!,
+                                        )
+                                    }) { Text(stringResource(R.string.edit_diaper)) }
                                 }
                                 OutlinedButton(onClick = {
                                     pendingDelete = PendingActivityDelete(
@@ -1527,6 +1547,46 @@ private fun TrackerScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { pendingBottleEdit = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+    pendingDiaperEdit?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDiaperEdit = null },
+            title = { Text(stringResource(R.string.edit_diaper)) },
+            text = {
+                Column {
+                    listOf(
+                        1u.toUByte() to R.string.wet,
+                        2u.toUByte() to R.string.dirty,
+                        3u.toUByte() to R.string.both,
+                        4u.toUByte() to R.string.dry,
+                    ).forEach { (kind, label) ->
+                        FilterChip(
+                            selected = target.kind == kind,
+                            onClick = { pendingDiaperEdit = target.copy(kind = kind) },
+                            label = { Text(stringResource(label)) },
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    pendingDiaperEdit = null
+                    val savedAtMs = System.currentTimeMillis()
+                    change {
+                        if (target.shared) sharing.editDiaperKind(
+                            target.family, target.childId, target.activityId, target.kind, savedAtMs,
+                        ) else store.editDiaperKind(
+                            target.family, target.childId, target.activityId, target.kind, savedAtMs,
+                        )
+                    }
+                }) { Text(stringResource(R.string.save_changes)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingDiaperEdit = null }) {
                     Text(stringResource(R.string.cancel))
                 }
             },

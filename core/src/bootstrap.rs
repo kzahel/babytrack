@@ -292,7 +292,7 @@ impl InvitationBootstrap {
         self.verify_issue_inner(genesis_bytes, issue_bytes, &[], &[], true)
     }
 
-    pub(crate) fn verify_issue_sparse_with_controls(
+    pub fn verify_issue_sparse_with_controls(
         &self,
         genesis_bytes: &[u8],
         issue_bytes: &[u8],

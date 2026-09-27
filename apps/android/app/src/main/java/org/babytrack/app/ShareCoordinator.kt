@@ -12,6 +12,8 @@ import uniffi.babytrack_core_ffi.RelayReadTransport
 import uniffi.babytrack_core_ffi.SharedSnapshotRow
 import uniffi.babytrack_core_ffi.SharedSyncRow
 import uniffi.babytrack_core_ffi.previewInvitation
+import uniffi.babytrack_core_ffi.invitationControlRead
+import uniffi.babytrack_core_ffi.invitationControlPageProgress
 import uniffi.babytrack_core_ffi.validateRelayOrigin
 
 internal class SharedUploadBlocked : IllegalStateException("Signed relay rejection retained the saved batch")
@@ -60,8 +62,21 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         val wrapping = keys.loadOrCreate()
         try {
             val prepared = core.resumeJoin(fragment, wrapping) ?: run {
-                val page = relay.get(preview.controlPath, preview.readAuth)
-                core.prepareJoin(fragment, page, wrapping)
+                val pages = mutableListOf<ByteArray>()
+                var after = 0uL
+                var totalBytes = 0L
+                while (true) {
+                    check(pages.size < 64) { "Invitation control history exceeds the current page limit" }
+                    val read = invitationControlRead(fragment, after)
+                    val page = relay.get(read.path, read.auth)
+                    totalBytes += page.size
+                    check(totalBytes <= 16L * 1024 * 1024) { "Invitation control history exceeds the current size limit" }
+                    val progress = invitationControlPageProgress(fragment, page, after)
+                    pages.add(page)
+                    if (!progress.hasMore) break
+                    after = progress.nextAfter
+                }
+                core.prepareJoinPages(fragment, pages, wrapping)
             }
             val path = "/v1/families/${prepared.family.familyId.hex()}/control"
             val response = relay.post(path, prepared.candidateBytes)

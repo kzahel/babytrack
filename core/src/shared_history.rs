@@ -778,10 +778,7 @@ pub(crate) fn sparse_enrollment_chain(
         return Err(Error::Invalid("sparse enrollment genesis pin differs"));
     }
     let controls = store.enrollment_controls(family)?;
-    if controls
-        .first()
-        .is_none_or(|(_, bytes)| *bytes != row.issue_bytes)
-    {
+    if !controls.iter().any(|(_, bytes)| *bytes == row.issue_bytes) {
         return Err(Error::Invalid("sparse enrollment issue absent"));
     }
     let mut chain = ControlChain::from_genesis(&row.genesis_bytes, relay_public)?;

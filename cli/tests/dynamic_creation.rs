@@ -28,7 +28,7 @@ use babytrack_core::{
     sqlite_store::{FamilyHandle, SqliteStore},
     sync_wire::{BatchResult, ControlPage, LogPage, OpaqueObject},
 };
-use babytrack_server::{RelayStore, test_router};
+use babytrack_server::{RelayEntry, RelayStore, encode_control_page, test_router};
 use tower::ServiceExt;
 
 async fn http_bytes(app: &Router, method: Method, path: &str, body: Vec<u8>) -> Vec<u8> {
@@ -259,6 +259,100 @@ async fn later_issue_keeps_exact_candidate_and_commits_after_first_issue() {
             .observed_cursor(),
         3
     );
+
+    let path = format!(
+        "/v1/families/{}/control?after=0",
+        lower_hex(&family.family_id)
+    );
+    let auth = link.sign_get(&path).unwrap();
+    let page = ControlPage::decode(
+        &http_bytes(&app, Method::GET, &path, auth.bytes).await,
+        family.family_id,
+        0,
+    )
+    .unwrap();
+    assert_eq!(page.entries.len(), 3);
+    let controls: Vec<(u64, Vec<u8>)> = page
+        .entries
+        .iter()
+        .map(|entry| (entry.cursor, entry.committed_bytes.clone()))
+        .collect();
+    let relay_entries: Vec<RelayEntry> = controls
+        .iter()
+        .map(|(cursor, bytes)| RelayEntry {
+            cursor: *cursor,
+            kind: 1,
+            committed_bytes: bytes.clone(),
+        })
+        .collect();
+    let first_page = encode_control_page(family.family_id, 0, &relay_entries[..2], true).unwrap();
+    let second_page = encode_control_page(family.family_id, 2, &relay_entries[2..], false).unwrap();
+    let first_decoded = ControlPage::decode(&first_page, family.family_id, 0).unwrap();
+    let second_decoded =
+        ControlPage::decode(&second_page, family.family_id, first_decoded.next_after).unwrap();
+    assert!(!second_decoded.has_more);
+    let paged_controls: Vec<(u64, Vec<u8>)> = first_decoded
+        .entries
+        .into_iter()
+        .chain(second_decoded.entries)
+        .map(|entry| (entry.cursor, entry.committed_bytes))
+        .collect();
+    assert_eq!(paged_controls, controls);
+    let recipient_path = dir.path().join("second-recipient.db");
+    let recipient_wrap = [0x44; 32];
+    let mut recipient = SqliteStore::open(&recipient_path).unwrap();
+    let mut wrong_cursor = controls.clone();
+    wrong_cursor[1].0 += 1;
+    assert!(
+        EnrollmentAttempt::prepare_sparse_prefix(
+            &mut recipient,
+            &link,
+            &wrong_cursor,
+            &recipient_wrap,
+        )
+        .is_err()
+    );
+    assert!(
+        EnrollmentAttempt::prepare_sparse(
+            &mut recipient,
+            &link,
+            &controls[0].1,
+            &controls[2].1,
+            &recipient_wrap,
+        )
+        .is_err()
+    );
+    let prepared = EnrollmentAttempt::prepare_sparse_prefix(
+        &mut recipient,
+        &link,
+        &paged_controls,
+        &recipient_wrap,
+    )
+    .unwrap();
+    assert_eq!(prepared.pending_control_cursor(&recipient).unwrap(), 3);
+    let saved_claim = prepared.claim_candidate().to_vec();
+    drop(recipient);
+    let mut recipient = SqliteStore::open(&recipient_path).unwrap();
+    let resumed =
+        EnrollmentAttempt::resume(&mut recipient, family.family_id, &recipient_wrap).unwrap();
+    assert_eq!(resumed.claim_candidate(), saved_claim);
+    assert_eq!(resumed.pending_control_cursor(&recipient).unwrap(), 3);
+    let claim_response = commit_control(&app, family.family_id, &saved_claim).await;
+    assert_eq!(
+        commit_control(&app, family.family_id, &saved_claim).await,
+        claim_response
+    );
+    let Value::Map(claim_result) = cbor::decode(&claim_response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(committed_claim) = &claim_result[1].1 else {
+        panic!()
+    };
+    resumed
+        .confirm_sparse_claim(&mut recipient, committed_claim)
+        .unwrap();
+    assert_eq!(resumed.pending_control_cursor(&recipient).unwrap(), 4);
+    assert!(!resumed.has_committed_admission(&recipient).unwrap());
 }
 
 async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {

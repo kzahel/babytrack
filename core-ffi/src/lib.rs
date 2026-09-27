@@ -242,6 +242,12 @@ pub struct SignedReadRow {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct ControlPageProgressRow {
+    pub next_after: u64,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct PreparedChallengeRow {
     pub candidate_bytes: Vec<u8>,
     pub objects: Vec<StagedObjectRow>,
@@ -503,6 +509,67 @@ impl NativeSharedStore {
             &bootstrap,
             &page.entries[0].committed_bytes,
             &page.entries[1].committed_bytes,
+            &fixed(&wrapping_key)?,
+        )
+        .map_err(rejected)?;
+        Ok(PreparedJoinRow {
+            family: attempt.family().into(),
+            candidate_bytes: attempt.claim_candidate().to_vec(),
+        })
+    }
+
+    /// Decode every bounded relay page, then require the invitation's exact
+    /// issue and all preceding signed controls before saving a claim.
+    pub fn prepare_join_pages(
+        &self,
+        fragment: String,
+        control_pages: Vec<Vec<u8>>,
+        wrapping_key: Vec<u8>,
+    ) -> Result<PreparedJoinRow, BindingError> {
+        let bootstrap = InvitationBootstrap::from_fragment(&fragment).map_err(rejected)?;
+        let mut after = 0;
+        let mut controls = Vec::new();
+        let page_count = control_pages.len();
+        if page_count == 0
+            || page_count > 64
+            || control_pages.iter().map(Vec::len).sum::<usize>() > 16 * 1024 * 1024
+        {
+            return Err(BindingError::InvalidBytes);
+        }
+        for (index, bytes) in control_pages.iter().enumerate() {
+            let page =
+                ControlPage::decode(bytes, bootstrap.family_id(), after).map_err(rejected)?;
+            if page.has_more && page.entries.is_empty() {
+                return Err(BindingError::InvalidBytes);
+            }
+            if page.has_more != (index + 1 < page_count) {
+                return Err(BindingError::InvalidBytes);
+            }
+            after = page.next_after;
+            controls.extend(
+                page.entries
+                    .into_iter()
+                    .map(|entry| (entry.cursor, entry.committed_bytes)),
+            );
+        }
+        if controls.len() < 2 || controls[0].0 != 1 {
+            return Err(BindingError::InvalidBytes);
+        }
+        let issue_index = (1..controls.len()).find(|index| {
+            let prior: Vec<&[u8]> = controls[1..*index]
+                .iter()
+                .map(|(_, bytes)| bytes.as_slice())
+                .collect();
+            bootstrap
+                .verify_issue_sparse_with_controls(&controls[0].1, &controls[*index].1, &prior)
+                .is_ok()
+        });
+        let issue_index = issue_index.ok_or(BindingError::InvalidBytes)?;
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let attempt = EnrollmentAttempt::prepare_sparse_prefix(
+            &mut store,
+            &bootstrap,
+            &controls[..=issue_index],
             &fixed(&wrapping_key)?,
         )
         .map_err(rejected)?;
@@ -2027,6 +2094,38 @@ pub fn preview_invitation(fragment: String) -> Result<InvitationPreviewRow, Bind
         role: bootstrap.fixed_role(),
         control_path: path,
         read_auth: read.bytes,
+    })
+}
+
+#[uniffi::export]
+pub fn invitation_control_read(
+    fragment: String,
+    after: u64,
+) -> Result<SignedReadRow, BindingError> {
+    let bootstrap = InvitationBootstrap::from_fragment(&fragment).map_err(rejected)?;
+    let path = format!(
+        "/v1/families/{}/control?after={after}",
+        lower_hex(&bootstrap.family_id())
+    );
+    let auth = bootstrap.sign_get(&path).map_err(rejected)?.bytes;
+    Ok(SignedReadRow { path, auth, after })
+}
+
+#[uniffi::export]
+pub fn invitation_control_page_progress(
+    fragment: String,
+    control_page: Vec<u8>,
+    after: u64,
+) -> Result<ControlPageProgressRow, BindingError> {
+    let bootstrap = InvitationBootstrap::from_fragment(&fragment).map_err(rejected)?;
+    let page =
+        ControlPage::decode(&control_page, bootstrap.family_id(), after).map_err(rejected)?;
+    if page.has_more && page.entries.is_empty() {
+        return Err(BindingError::InvalidBytes);
+    }
+    Ok(ControlPageProgressRow {
+        next_after: page.next_after,
+        has_more: page.has_more,
     })
 }
 

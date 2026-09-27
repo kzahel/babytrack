@@ -109,7 +109,7 @@ impl EnrollmentAttempt {
             genesis_bytes,
             issue_bytes,
             local_wrapping_key,
-            false,
+            None,
         )
     }
 
@@ -123,13 +123,38 @@ impl EnrollmentAttempt {
         issue_bytes: &[u8],
         local_wrapping_key: &[u8; 32],
     ) -> Result<Self, Error> {
+        let chain = bootstrap.verify_issue_sparse(genesis_bytes, issue_bytes)?;
+        let controls = [(chain.last_global_cursor(), issue_bytes.to_vec())];
         Self::prepare_mode(
             store,
             bootstrap,
             genesis_bytes,
             issue_bytes,
             local_wrapping_key,
-            true,
+            Some(&controls),
+        )
+    }
+
+    /// Persist the complete signed public control ancestry through this
+    /// invitation before any recipient credential or claim is sent.
+    pub fn prepare_sparse_prefix(
+        store: &mut SqliteStore,
+        bootstrap: &InvitationBootstrap,
+        controls: &[(u64, Vec<u8>)],
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
+        if controls.len() < 2 || controls[0].0 != 1 {
+            return Err(Error::Invalid("invitation control ancestry incomplete"));
+        }
+        let genesis = &controls[0].1;
+        let issue = &controls[controls.len() - 1].1;
+        Self::prepare_mode(
+            store,
+            bootstrap,
+            genesis,
+            issue,
+            local_wrapping_key,
+            Some(&controls[1..]),
         )
     }
 
@@ -139,13 +164,38 @@ impl EnrollmentAttempt {
         genesis_bytes: &[u8],
         issue_bytes: &[u8],
         local_wrapping_key: &[u8; 32],
-        sparse: bool,
+        sparse_controls: Option<&[(u64, Vec<u8>)]>,
     ) -> Result<Self, Error> {
         if let Some(existing) = Self::resume_for_invitation(store, bootstrap, local_wrapping_key)? {
             return Ok(existing);
         }
-        let chain = if sparse {
-            bootstrap.verify_issue_sparse(genesis_bytes, issue_bytes)?
+        let chain = if let Some(controls) = sparse_controls {
+            if controls
+                .last()
+                .is_none_or(|(_, bytes)| bytes != issue_bytes)
+            {
+                return Err(Error::Invalid("invitation issue missing from ancestry"));
+            }
+            let prior: Vec<&[u8]> = controls[..controls.len() - 1]
+                .iter()
+                .map(|(_, bytes)| bytes.as_slice())
+                .collect();
+            let chain =
+                bootstrap.verify_issue_sparse_with_controls(genesis_bytes, issue_bytes, &prior)?;
+            let mut checked = control_chain::ControlChain::from_genesis(
+                genesis_bytes,
+                bootstrap.relay_public_key_internal(),
+            )?;
+            for (cursor, bytes) in controls {
+                checked.apply_sparse_control(bytes)?;
+                if checked.last_global_cursor() != *cursor {
+                    return Err(Error::Invalid("invitation control cursor mismatch"));
+                }
+            }
+            if chain.last_global_cursor() != checked.last_global_cursor() {
+                return Err(Error::Invalid("invitation ancestry differs"));
+            }
+            chain
         } else {
             bootstrap.verify_issue(genesis_bytes, issue_bytes)?
         };
@@ -187,7 +237,7 @@ impl EnrollmentAttempt {
                 secret_nonce,
                 secret_ciphertext,
             },
-            sparse.then_some(chain.last_global_cursor()),
+            sparse_controls.unwrap_or(&[]),
             bootstrap.relay_public_key_internal(),
             crypto::hash("control-head", genesis_bytes)?,
         )?;
@@ -197,7 +247,7 @@ impl EnrollmentAttempt {
             genesis_bytes,
             bootstrap.relay_public_key_internal(),
         )?;
-        if !sparse {
+        if sparse_controls.is_none() {
             public.accept_control(store, issue_bytes)?;
         }
         Self::resume(store, family.family_id, local_wrapping_key)
@@ -262,7 +312,19 @@ impl EnrollmentAttempt {
                 row.family,
                 bootstrap.relay_public_key_internal(),
             )?;
-            bootstrap.verify_issue_sparse(&row.genesis_bytes, &row.issue_bytes)?
+            let issue_index = sparse_controls
+                .iter()
+                .position(|(_, bytes)| bytes == &row.issue_bytes)
+                .ok_or(Error::Invalid("stored invitation issue missing"))?;
+            let prior: Vec<&[u8]> = sparse_controls[..issue_index]
+                .iter()
+                .map(|(_, bytes)| bytes.as_slice())
+                .collect();
+            bootstrap.verify_issue_sparse_with_controls(
+                &row.genesis_bytes,
+                &row.issue_bytes,
+                &prior,
+            )?
         } else {
             bootstrap.verify_issue_with_batches(
                 &row.genesis_bytes,

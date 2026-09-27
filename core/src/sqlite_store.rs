@@ -225,7 +225,12 @@ mod enrollment_atomicity_tests {
             .unwrap();
         assert!(
             store
-                .create_enrollment_attempt(&row, Some(3), [0x36; 32], [0x37; 32])
+                .create_enrollment_attempt(
+                    &row,
+                    &[(3, row.issue_bytes.clone())],
+                    [0x36; 32],
+                    [0x37; 32]
+                )
                 .is_err()
         );
         drop(store);
@@ -250,7 +255,12 @@ mod enrollment_atomicity_tests {
             .execute_batch("DROP TRIGGER fail_sparse_insert")
             .unwrap();
         store
-            .create_enrollment_attempt(&row, Some(3), [0x36; 32], [0x37; 32])
+            .create_enrollment_attempt(
+                &row,
+                &[(3, row.issue_bytes.clone())],
+                [0x36; 32],
+                [0x37; 32],
+            )
             .unwrap();
         drop(store);
         let store = SqliteStore::open(&path).unwrap();
@@ -1763,7 +1773,7 @@ impl SqliteStore {
     pub(crate) fn create_enrollment_attempt(
         &mut self,
         row: &EnrollmentRow,
-        sparse_issue_cursor: Option<u64>,
+        sparse_controls: &[(u64, Vec<u8>)],
         relay_public_key: [u8; 32],
         genesis_head: [u8; 32],
     ) -> Result<(), Error> {
@@ -1812,13 +1822,13 @@ impl SqliteStore {
                 &row.secret_ciphertext
             ],
         )?;
-        if let Some(cursor) = sparse_issue_cursor {
+        for (cursor, bytes) in sparse_controls {
             transaction.execute(
                 "INSERT INTO enrollment_controls(family_id,cursor,committed_bytes) VALUES(?1,?2,?3)",
                 params![
                     row.family.family_id.as_slice(),
-                    i64::try_from(cursor).map_err(|_| Error::CorruptState)?,
-                    &row.issue_bytes,
+                    i64::try_from(*cursor).map_err(|_| Error::CorruptState)?,
+                    bytes,
                 ],
             )?;
         }

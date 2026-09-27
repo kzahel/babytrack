@@ -448,8 +448,15 @@ verified shared head, reopen its exact candidate and membership object,
 commit both through the real relay, and obtain a link only after verifying
 the signed issue and encrypted membership. The CLI also commits a new
 invitation from the remaining manager after epoch-two removal and rotation.
-Recipient paging, later key handoff, a second manager acting as issuer, and
-Android exposure remain open.
+The recipient core now verifies every signed control before the later issue,
+checks each signed global cursor, and saves the complete sparse prefix with
+its encrypted credentials and exact claim in one transaction. Android fetches
+bounded control pages before calling that verifier. The existing two-emulator
+first-cohort flow passes with the paged join path. A real multi-page relay
+scenario, later key handoff, a second manager acting as issuer, and Android
+later-issue controls remain open. The CLI commits and retries the later
+recipient's exact claim through HTTP after a simulated page boundary; it
+remains keyless pending admission.
 
 The next general-device pass follows these ordered implementation proofs:
 

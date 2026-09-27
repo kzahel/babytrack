@@ -1780,6 +1780,31 @@ impl NativeSharedStore {
             .map_err(rejected)
     }
 
+    pub fn edit_shared_child_metadata(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        birth_day: Option<i64>,
+        sex: Option<u8>,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let projection = ready.projection_with_pending(&store).map_err(rejected)?;
+        let child = projection
+            .record(&fixed(&child_id)?)
+            .ok_or(BindingError::InvalidBytes)?;
+        let operation =
+            local_api::edit_child_metadata_operation(handle, child, birth_day, sex, saved_at_ms)
+                .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map(|_| ())
+            .map_err(rejected)
+    }
+
     pub fn log_shared_diaper(
         &self,
         family: FamilyRef,
@@ -2915,6 +2940,27 @@ impl NativeLocalStore {
             .lock()
             .map_err(|_| BindingError::LockPoisoned)?
             .rename_child(family.handle()?, fixed(&child_id)?, &name, saved_at_ms)
+            .map_err(rejected)
+    }
+
+    pub fn edit_child_metadata(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        birth_day: Option<i64>,
+        sex: Option<u8>,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        self.repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .edit_child_metadata(
+                family.handle()?,
+                fixed(&child_id)?,
+                birth_day,
+                sex,
+                saved_at_ms,
+            )
             .map_err(rejected)
     }
 

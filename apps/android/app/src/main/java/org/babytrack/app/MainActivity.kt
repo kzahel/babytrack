@@ -211,6 +211,13 @@ private data class PendingMedicationEdit(
     val doseAmount: String,
     val doseUnit: String,
 )
+private data class PendingChildMetadataEdit(
+    val family: FamilyRef,
+    val childId: ByteArray,
+    val shared: Boolean,
+    val birthDate: String,
+    val sex: UByte,
+)
 private data class PendingSleepEdit(
     val family: FamilyRef,
     val childId: ByteArray,
@@ -362,6 +369,7 @@ private fun TrackerScreen(
     var selectedChild by remember { mutableStateOf<String?>(null) }
     var childName by remember { mutableStateOf("") }
     var childRename by remember { mutableStateOf<String?>(null) }
+    var pendingChildMetadataEdit by remember { mutableStateOf<PendingChildMetadataEdit?>(null) }
     var childBirthDate by remember { mutableStateOf("") }
     var childSex by remember { mutableStateOf(3u.toUByte()) }
     var amount by remember { mutableStateOf("") }
@@ -1093,6 +1101,15 @@ private fun TrackerScreen(
                             }
                         }
                     }
+                    OutlinedButton(onClick = {
+                        pendingChildMetadataEdit = PendingChildMetadataEdit(
+                            family, child.id.copyOf(), activeShared,
+                            child.birthDay?.let { day ->
+                                runCatching { LocalDate.ofEpochDay(day).toString() }.getOrDefault("")
+                            }.orEmpty(),
+                            child.sex ?: 3u.toUByte(),
+                        )
+                    }) { Text(stringResource(R.string.edit_child_growth_details)) }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
@@ -2082,6 +2099,54 @@ private fun TrackerScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { pendingMedicationEdit = null }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+    pendingChildMetadataEdit?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingChildMetadataEdit = null },
+            title = { Text(stringResource(R.string.edit_child_growth_details)) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = target.birthDate,
+                        onValueChange = { pendingChildMetadataEdit = target.copy(birthDate = it.take(10)) },
+                        label = { Text(stringResource(R.string.birth_date)) },
+                        singleLine = true,
+                    )
+                    Text(stringResource(R.string.birth_date_edit_hint))
+                    Text(stringResource(R.string.growth_chart_sex))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            1u.toUByte() to R.string.sex_female,
+                            2u.toUByte() to R.string.sex_male,
+                            3u.toUByte() to R.string.sex_unspecified,
+                        ).forEach { (code, label) ->
+                            FilterChip(
+                                selected = target.sex == code,
+                                onClick = { pendingChildMetadataEdit = target.copy(sex = code) },
+                                label = { Text(stringResource(label)) },
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val birthDay = runCatching {
+                        target.birthDate.takeIf { it.isNotBlank() }?.let { LocalDate.parse(it).toEpochDay() }
+                    }.getOrElse { message = context.getString(R.string.birth_date_invalid); return@Button }
+                    change(onSaved = { pendingChildMetadataEdit = null }) {
+                        if (target.shared) sharing.editChildMetadata(
+                            target.family, target.childId, birthDay, target.sex, System.currentTimeMillis(),
+                        ) else store.editChildMetadata(
+                            target.family, target.childId, birthDay, target.sex, System.currentTimeMillis(),
+                        )
+                    }
+                }) { Text(stringResource(R.string.save_changes)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingChildMetadataEdit = null }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }

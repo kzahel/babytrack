@@ -59,6 +59,9 @@ checked across local restore and encrypted two-device sync.
 Medication name, amount, and unit can now be corrected together on the same
 activity without moving its time; local restore and encrypted two-device sync
 check the result.
+The selected child's birth date and growth-chart sex can also be corrected
+without recreating the child or moving its activities. A blank date in this
+edit keeps the previous value; local restore and encrypted sync cover changes.
 
 Two separate emulator installations and a disposable relay pass first-cohort
 join without simultaneous foreground use, reciprocal encrypted edits,
@@ -128,7 +131,7 @@ handoff. This is still a development flow, not a released product flow.
 - [x] Log sleep timers/completed sleep, notes, growth in whole grams and
   millimetres, and entered Celsius decimals through the local/shared core.
 - [ ] Complete the MVP logging set: growth percentile display and practical
-  edits beyond child name, note, bottle amount, diaper type, solids, growth,
+  edits beyond child name and growth details, note, bottle amount, diaper type, solids, growth,
   pumping amounts, medication, completed sleep, and temperature. Multi-segment breast
   feeds, note, bottle, diaper, and solids correction, and
   single-activity deletion now pass

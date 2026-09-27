@@ -103,6 +103,10 @@ and unknown fields.
 Medication name and entered dose corrections likewise update the same live
 activity, preserving its original time and other fields. They remain entered
 facts; the app does not interpret or recommend doses.
+Child birth day and growth-chart sex may be corrected by field-set operations
+on the same child ID. A missing input leaves the saved field intact; the
+existing protocol does not clear a previously recorded birth day. Activities
+remain attached to that child.
 
 Growth percentiles are computed from WHO tables when shown, never stored.
 Wake-window hints are computed from sleep events on the device.

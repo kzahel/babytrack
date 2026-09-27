@@ -320,6 +320,9 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     fun renameChild(family: FamilyRef, childId: ByteArray, name: String, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.renameSharedChild(family, wrapping, childId, name, savedAtMs) }
 
+    fun editChildMetadata(family: FamilyRef, childId: ByteArray, birthDay: Long?, sex: UByte?, savedAtMs: Long): Unit =
+        withWrapping { wrapping -> core.editSharedChildMetadata(family, wrapping, childId, birthDay, sex, savedAtMs) }
+
     fun logDiaper(family: FamilyRef, childId: ByteArray, kind: UByte, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedDiaper(family, wrapping, childId, kind, time) }
 

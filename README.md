@@ -21,7 +21,8 @@ completed sleep, notes, growth, Celsius, medication, solids, breast-feed
 segments, and pumping entries locally or in a shared Family. Existing pumping
 amounts can be corrected without replacing the entry. A home-screen widget
 shows saved running sleep timers, and the access list can label each enrolled
-device on this phone. The app can promote
+device on this phone. Child birth date and growth-chart sex can be corrected
+on the existing child. The app can promote
 a Family, invite another device, complete keyless
 claim/challenge/proof/admission, and converge both devices through
 the relay. It resumes enrollment after restart, polls while open, schedules

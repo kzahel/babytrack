@@ -51,6 +51,8 @@
     <string name="pump_sides_entry">Pump · L %1$d mL · R %2$d mL · %3$d min</string>
     <string name="edit_pump">Edit pumping amounts</string>
     <string name="edit_medication">Edit medication entry</string>
+    <string name="edit_child_growth_details">Edit child growth details</string>
+    <string name="birth_date_edit_hint">Leave the date blank to keep the saved birth date.</string>
     <string name="pump_edit_hint">Enter separate left/right amounts or one total. Clear the other fields when switching.</string>
     <string name="log_solids">Log solids</string>
     <string name="solids_foods">Foods (one per line)</string>

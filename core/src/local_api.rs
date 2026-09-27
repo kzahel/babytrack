@@ -203,6 +203,24 @@ impl LocalRepository {
         Ok(())
     }
 
+    pub fn edit_child_metadata(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        birth_day: Option<i64>,
+        sex: Option<u8>,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        let operation = edit_child_metadata_operation(family, child, birth_day, sex, saved_at_ms)?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn log_diaper(
         &mut self,
         family: FamilyHandle,
@@ -868,6 +886,44 @@ pub fn rename_child_operation(
         record_type: None,
         child_id: None,
         fields: Some(vec![(1, Value::Text(name.to_owned()))]),
+    })
+}
+
+pub fn edit_child_metadata_operation(
+    family: FamilyHandle,
+    child: &Record,
+    birth_day: Option<i64>,
+    sex: Option<u8>,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    if child.scope != Scope::Child || child.record_type != "child" || child.deleted {
+        return Err(Error::Invalid("target child unavailable"));
+    }
+    check_time(saved_at_ms)?;
+    if sex.is_some_and(|code| !(1..=3).contains(&code)) {
+        return Err(Error::Invalid("child sex code outside published range"));
+    }
+    let mut fields = Vec::new();
+    if let Some(day) = birth_day {
+        fields.push((2, Value::Integer(day.into())));
+    }
+    if let Some(code) = sex {
+        fields.push((3, Value::Integer(code.into())));
+    }
+    if fields.is_empty() {
+        return Err(Error::Invalid("child metadata correction is empty"));
+    }
+    Ok(NewOperation {
+        family_id: family.family_id,
+        operation_id: ids::random_v7(saved_at_ms)?,
+        record_id: child.id,
+        scope: Scope::Child,
+        kind: Kind::Set,
+        author_device_id: family.device_id,
+        hlc: placeholder_hlc(family),
+        record_type: None,
+        child_id: None,
+        fields: Some(fields),
     })
 }
 

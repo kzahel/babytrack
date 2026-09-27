@@ -39,7 +39,7 @@ one through the text share target, prefilled for an explicit join action.
 | Next dependent slice | The early first-cohort authority recheck passed. The general-authority seam advisory failed its initial sketch. First-cohort claim expiry, batch retry-first lookup and cursor CAS, candidate-scoped staging, and control/batch serialization have focused regressions. Client and relay now share invitation-issue, claim, holder-challenge, key-proof, admission, and active-removal preparation. Move remaining state rules and history into a rebuildable public ledger before later-device authority. Browser outbox, signed ID-collision coverage, and crash campaigns remain before M0 exit. |
 | Next independent review | The [early M0 authority recheck at `82c0f4c`](003-m0-foundation.md#early-m0-authority-recheck-at-82c0f4c) returned PASS for the implemented first cohort. The broader end-of-M0 recovery and mixed-client gate remains. |
 | Open advisory | The [Android sync recheck](003-m0-foundation.md#advisory-android-sync-recheck-at-00e827b) passed its two prior high findings at fixed revision `00e827b`. Activity recreation and forced recipient job retry pass on the real-relay emulator. Injected hostile-batch display proof and full M0 authority review remain. |
-| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Run `36306915747` passed Rust, native, browser, and Android build; seven emulator instrumentation cases passed, then the job stopped at a missing `rg` command. The assertion now uses portable `grep`; a green remote rerun remains open. |
+| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Run `36307785165` passed Rust, native, browser, and Android build; the emulator exposed a SQLite writer collision between scheduled sync and a foreground sharing action. A bounded local-store busy timeout and competing-connection regression pass locally; a green remote rerun remains open. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.
@@ -117,7 +117,12 @@ Remote run `36306915747` at `443c259` passed Rust, both native binding jobs,
 browser wasm, and Android APK build. The real-relay Android job booted the
 emulator and passed all seven instrumentation cases, then failed because the
 runner lacks `rg` for the script's final result assertion. That assertion
-now uses `grep -E`; the emulator flow still needs a green remote rerun.
+now uses `grep -E`. Remote run `36307785165` at `ccfd5c4` passed the same
+non-emulator jobs but exposed a `DatabaseBusy` collision in the scheduled-job
+sharing test. The shared Rust local store now waits up to ten seconds for a
+competing writer. The competing-connection Rust regression, seven real-relay
+emulator instrumentation cases, one-emulator UI smoke, and ten-step
+two-emulator sharing flow pass locally. A green remote run remains open.
 
 For each gate, the owning tactical records the fixed commit, local commands,
 observed CI run, scenario IDs, security session/disposition if applicable,

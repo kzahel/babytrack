@@ -413,6 +413,7 @@ pub struct SqliteStore {
 impl SqliteStore {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
         let connection = Connection::open(path)?;
+        connection.busy_timeout(std::time::Duration::from_secs(10))?;
         connection.execute_batch(
             "PRAGMA foreign_keys = ON;
              PRAGMA journal_mode = WAL;

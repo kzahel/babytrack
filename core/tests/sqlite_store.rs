@@ -1,6 +1,10 @@
 #![cfg(not(target_arch = "wasm32"))]
 
-use std::{fs, path::PathBuf, time::SystemTime};
+use std::{
+    fs,
+    path::PathBuf,
+    time::{Duration, SystemTime},
+};
 
 use babytrack_core::{
     cbor::Value,
@@ -59,6 +63,36 @@ fn child_operation(
         child_id: None,
         fields: Some(vec![(1, Value::Text(name.to_owned()))]),
     }
+}
+
+#[test]
+fn second_connection_waits_for_background_writer() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("busy.db");
+    SqliteStore::open(&path).unwrap();
+    let mut writer = rusqlite::Connection::open(&path).unwrap();
+    let transaction = writer
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .unwrap();
+    let other_path = path.clone();
+    let (started, receiver) = std::sync::mpsc::channel();
+    let opening = std::thread::spawn(move || {
+        started.send(()).unwrap();
+        let mut store = SqliteStore::open(other_path).unwrap();
+        store.create_family(v4(70), v4(71)).unwrap();
+    });
+    receiver.recv().unwrap();
+    std::thread::sleep(Duration::from_millis(250));
+    transaction.commit().unwrap();
+    opening.join().unwrap();
+    let store = SqliteStore::open(&path).unwrap();
+    assert!(
+        store
+            .families()
+            .unwrap()
+            .iter()
+            .any(|family| family.family_id == v4(70))
+    );
 }
 
 #[test]

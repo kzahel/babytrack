@@ -392,6 +392,38 @@ vector agreement. A browser on a shared computer may expose its local
 Family keys to anyone with that browser profile; an optional local app lock
 is M2 product work and is not an original-Family recovery credential.
 
+### Proposed implementation seam for general relay authority
+
+The current client control chain replays all published transition kinds,
+while the relay's executable admission and read checks cover only the
+initial manager and first recipient. Before adding later devices, factor
+the deterministic **public** authority transition rules into `wire/`, which
+already supplies canonical CBOR and public cryptography to both sides. The
+shared verifier consumes a previous public state, signed candidate bytes,
+and relevant committed public history. It checks version, Family/relay ID,
+parent head, roles and signers, state hash, manifest metadata, epoch,
+ID reuse, and transition-specific invariants, then returns a next public
+state and object requirements. It never accepts an epoch key, decrypts an
+object, or interprets event data.
+
+The client continues to verify relay receipts, pin the committed head,
+open addressed grants and membership objects, and project encrypted data.
+The relay checks staged object hashes/sizes and its SQLite ID ledger,
+assigns a signed receipt only inside the Family compare-and-swap
+transaction, and uses the same public state for batch-write authorization
+and path-specific GET access. Rejected-only batch IDs remain a separate
+durable relay reservation. An offline request or staged object never becomes
+a confirmed authority change. Unknown versions/kinds fail closed.
+
+This is an implementation proposal, not a new wire contract. Its first
+regression is byte-identical replay of the reviewed first cohort on both
+sides, including removal and signed post-removal result lookup. Then add a
+third device, manager-to-manager changes, unused-invite cancellation,
+pending removal, role changes, and general rotation, with route-level
+negative and crash/restart cases. Review the factoring and its trust split
+before replacing the relay's current first-cohort checks. The
+[M0 tactical](../tactical/003-m0-foundation.md) tracks delivery.
+
 ## Reconsider if
 
 - The log grows large enough that full replay is slow on a low-end phone:

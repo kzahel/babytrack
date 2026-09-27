@@ -434,7 +434,15 @@ batch result after losing a POST response. The core verifies that receipt
 against the exact saved envelope without clearing the archived source
 outbox. Android distinguishes never-uploaded, accepted, rejected, and
 unknown delivery when showing the new private Family.
+The [proposed public-authority factoring](../topics/sync-and-encryption.md#proposed-implementation-seam-for-general-relay-authority)
+would replace parallel first-cohort relay checks before later-device
+admission expands. Seek a focused independent review of that trust split;
+it does not substitute for the end-of-M0 gate.
 
+- [ ] Share deterministic public authority replay between client and relay
+  without giving the relay epoch keys or event semantics. Preserve reviewed
+  first-cohort bytes and GET/write ACLs; then add third-device and general
+  role/removal route cases.
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed
   batch receipts, and authenticated reads. Relay stores opaque bytes and

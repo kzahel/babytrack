@@ -247,6 +247,9 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         withWrapping { wrapping -> core.stopSharedSleep(family, wrapping, childId, activityId,
             ActivityWhen(endUtcMs, endOffsetMinutes, endUtcMs)) }
 
+    fun deleteActivity(family: FamilyRef, childId: ByteArray, activityId: ByteArray, savedAtMs: Long): Unit =
+        withWrapping { wrapping -> core.deleteSharedActivity(family, wrapping, childId, activityId, savedAtMs) }
+
     fun logNote(family: FamilyRef, childId: ByteArray, note: String, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedNote(family, wrapping, childId, note, time) }
 

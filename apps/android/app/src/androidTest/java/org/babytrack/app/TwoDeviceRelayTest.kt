@@ -132,6 +132,13 @@ class TwoDeviceRelayTest {
                 it.kind == "pump" && it.pumpLeftMl == 20L && it.pumpRightMl == 15L &&
                     it.pumpTotalMl == null
             })
+            val note = sharing.snapshot(family).activities.single { it.note == "Care note marker 67" }
+            val otherChild = sharing.snapshot(family).children.single { !it.id.contentEquals(note.childId) }
+            assertTrue(runCatching {
+                sharing.deleteActivity(family, otherChild.id, note.id, System.currentTimeMillis())
+            }.isFailure)
+            sharing.deleteActivity(family, note.childId, note.id, System.currentTimeMillis())
+            assertTrue(sharing.snapshot(family).activities.none { it.id.contentEquals(note.id) })
             val running = sharing.snapshot(family).activities.single {
                 it.kind == "sleep" && it.endUtcMs == null
             }
@@ -147,6 +154,7 @@ class TwoDeviceRelayTest {
             val family = sharing.recipientFamilies().single()
             assertTrue(sharing.syncRecipientAndUpload(family).ready)
             assertTrue(sharing.snapshot(family).children.any { it.name == "Manager child" })
+            assertTrue(sharing.snapshot(family).activities.none { it.note == "Care note marker 67" })
             assertTrue(sharing.snapshot(family).activities.count { it.kind == "sleep" && it.endUtcMs != null } == 2)
             sharing.addChild(family, "Pending at removal", System.currentTimeMillis())
             assertEquals(1uL, sharing.snapshot(family).unsentCount)

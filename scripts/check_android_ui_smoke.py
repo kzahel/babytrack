@@ -95,7 +95,15 @@ def main() -> None:
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     find(target, "UITestChild", scroll=True)
     find(target, "Diaper · Wet", scroll=True)
-    print("Android UI Family, child, diaper, and restart: OK")
+    tap(target, "Delete entry", scroll=True)
+    find(target, "Remove this entry from the Family timeline? Shared devices receive the change when they sync.")
+    tap(target, "Delete")
+    find(target, "No entries yet.", scroll=True)
+    adb(target, "shell", "am", "force-stop", PACKAGE)
+    adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    find(target, "UITestChild", scroll=True)
+    find(target, "No entries yet.", scroll=True)
+    print("Android UI Family, child, diaper, delete, and restart: OK")
 
 
 if __name__ == "__main__":

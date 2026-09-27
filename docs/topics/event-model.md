@@ -76,6 +76,10 @@ The first breast-feed path records one completed left or right segment with
 its start and end instants; the published segment array remains atomic so a
 later multi-segment editor can replace it as one field. The local file and
 encrypted shared paths preserve the side and interval.
+The Android timeline can delete one activity. The shared core checks its
+Family and child target and records a tombstone operation; the entry leaves
+the current timeline locally and on devices that later sync. Deletion does
+not erase an already received copy or rewrite the historical operation log.
 Pumping records a completed interval with either separate left/right
 millilitres or one total, never both forms in one entry. It does not create a
 freezer inventory balance.

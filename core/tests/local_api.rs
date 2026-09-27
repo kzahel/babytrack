@@ -6,6 +6,42 @@ use babytrack_core::{
 };
 
 #[test]
+fn activity_delete_targets_one_child_and_survives_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("delete.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let first = app.create_family(1_790_000_000_000).unwrap();
+    let second = app.create_family(1_790_000_000_001).unwrap();
+    let child = app.add_child(first, "A", 1_790_000_000_002).unwrap();
+    let other = app.add_child(first, "B", 1_790_000_000_003).unwrap();
+    let time = ActivityTime {
+        start_utc_ms: 1_790_000_000_004,
+        offset_minutes: 0,
+        saved_at_ms: 1_790_000_000_005,
+    };
+    let note = app.log_note(first, child, "Mistaken entry", time).unwrap();
+    assert!(
+        app.delete_activity(second, child, note, time.saved_at_ms + 1)
+            .is_err()
+    );
+    assert!(
+        app.delete_activity(first, other, note, time.saved_at_ms + 1)
+            .is_err()
+    );
+    assert_eq!(app.timeline(first, child).unwrap().len(), 1);
+    app.delete_activity(first, child, note, time.saved_at_ms + 1)
+        .unwrap();
+    assert!(app.timeline(first, child).unwrap().is_empty());
+    assert!(
+        app.delete_activity(first, child, note, time.saved_at_ms + 2)
+            .is_err()
+    );
+    drop(app);
+    let app = LocalRepository::open(&path).unwrap();
+    assert!(app.timeline(first, child).unwrap().is_empty());
+}
+
+#[test]
 fn local_tracking_targets_explicit_family_and_survives_restart() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("phone.db");

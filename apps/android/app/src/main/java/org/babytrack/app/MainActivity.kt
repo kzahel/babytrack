@@ -139,6 +139,12 @@ private fun invitationFrom(intent: Intent?): String? {
 private fun ByteArray.key(): String = joinToString("") { "%02x".format(it) }
 
 private data class CompletedSave(val atMs: Long, val revision: ULong)
+private data class PendingActivityDelete(
+    val family: FamilyRef,
+    val childId: ByteArray,
+    val activityId: ByteArray,
+    val shared: Boolean,
+)
 private data class ScreenData(
     val families: List<FamilyRef>,
     val activeFamilyKey: String?,
@@ -212,6 +218,7 @@ private fun TrackerScreen(
     var automaticSyncDelayed by remember { mutableStateOf(false) }
     var automaticSyncBlocked by remember { mutableStateOf(false) }
     var removalTarget by remember { mutableStateOf<ByteArray?>(null) }
+    var pendingDelete by remember { mutableStateOf<PendingActivityDelete?>(null) }
     var relayOrigin by remember { mutableStateOf("") }
     var relayPublicKey by remember { mutableStateOf("") }
     var shareStage by remember { mutableStateOf<String?>(null) }
@@ -1192,6 +1199,14 @@ private fun TrackerScreen(
                                         }
                                     }) { Text(stringResource(R.string.stop_sleep)) }
                                 }
+                                OutlinedButton(onClick = {
+                                    pendingDelete = PendingActivityDelete(
+                                        family,
+                                        entry.childId.copyOf(),
+                                        entry.id.copyOf(),
+                                        activeShared,
+                                    )
+                                }) { Text(stringResource(R.string.delete_entry)) }
                             }
                         }
                     }
@@ -1290,6 +1305,31 @@ private fun TrackerScreen(
             }
             message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
+    }
+    pendingDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(stringResource(R.string.delete_entry)) },
+            text = { Text(stringResource(R.string.delete_entry_warning)) },
+            confirmButton = {
+                Button(onClick = {
+                    pendingDelete = null
+                    val savedAtMs = System.currentTimeMillis()
+                    change {
+                        if (target.shared) sharing.deleteActivity(
+                            target.family, target.childId, target.activityId, savedAtMs,
+                        ) else store.deleteActivity(
+                            target.family, target.childId, target.activityId, savedAtMs,
+                        )
+                    }
+                }) { Text(stringResource(R.string.confirm_delete_entry)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingDelete = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
     }
     removalTarget?.let { target ->
         AlertDialog(

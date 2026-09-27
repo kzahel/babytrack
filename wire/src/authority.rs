@@ -58,6 +58,105 @@ pub struct PreparedClaim {
     pub next_state: Value,
 }
 
+#[derive(Debug, Clone)]
+pub struct PreparedFollowing {
+    pub transition_id: [u8; 16],
+    pub manifest: Vec<ManifestEntry>,
+}
+
+/// Verify the common signed envelope for a deterministic public transition.
+/// The caller derives `next_state` and signer authority for the particular
+/// transition; historical IDs, receipts, and object bytes remain external.
+#[allow(clippy::too_many_arguments)]
+pub fn prepare_following(
+    candidate_bytes: &[u8],
+    family_id: [u8; 16],
+    relay_id: [u8; 32],
+    head: [u8; 32],
+    kind: u64,
+    epoch: u64,
+    next_state: &Value,
+    expected_signers: &[([u8; 16], [u8; 32])],
+    manifest_kinds: &[u64],
+) -> Result<PreparedFollowing, Error> {
+    let candidate = cbor::decode_with_limits(
+        candidate_bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?;
+    let root = exact_map(&candidate, 2)?;
+    let unsigned = exact_map(&root[0].1, 11)?;
+    if number(&unsigned[0].1)? != 1
+        || fixed::<16>(&unsigned[1].1)? != family_id
+        || fixed::<32>(&unsigned[2].1)? != relay_id
+        || fixed::<32>(&unsigned[3].1)? != head
+        || number(&unsigned[5].1)? != kind
+        || number(&unsigned[8].1)? != epoch
+    {
+        return Err(Error::Invalid("transition context"));
+    }
+    let transition_id = fixed::<16>(&unsigned[4].1)?;
+    if fixed::<32>(&unsigned[7].1)? != crypto::hash("auth-state", &cbor::encode(next_state)?)? {
+        return Err(Error::Invalid("transition state hash"));
+    }
+    let core = Value::Array(
+        unsigned[..9]
+            .iter()
+            .map(|(_, value)| value.clone())
+            .collect(),
+    );
+    if fixed::<32>(&unsigned[10].1)? != crypto::hash("transition-core", &cbor::encode(&core)?)? {
+        return Err(Error::Invalid("transition core hash"));
+    }
+    let listed = array(&unsigned[9].1, manifest_kinds.len())?;
+    let mut manifest = Vec::with_capacity(listed.len());
+    let mut prior = None;
+    for (entry, expected_kind) in listed.iter().zip(manifest_kinds) {
+        let fields = array(entry, 4)?;
+        let kind = number(&fields[0])?;
+        let object_id = fixed::<16>(&fields[1])?;
+        let object_hash = fixed::<32>(&fields[2])?;
+        let object_len = number(&fields[3])?;
+        if kind != *expected_kind
+            || kind > u16::MAX as u64
+            || object_len > 1024 * 1024
+            || prior.is_some_and(|p| (kind, object_id) <= p)
+        {
+            return Err(Error::Invalid("transition manifest kind, size, or order"));
+        }
+        prior = Some((kind, object_id));
+        manifest.push(ManifestEntry {
+            kind: kind as u16,
+            object_id,
+            object_hash,
+            object_len: object_len as u32,
+        });
+    }
+    let signatures = array(&root[1].1, expected_signers.len())?;
+    let mut prior = None;
+    let unsigned_bytes = cbor::encode(&root[0].1)?;
+    for (entry, (expected_id, public_key)) in signatures.iter().zip(expected_signers) {
+        let fields = array(entry, 2)?;
+        let signer_id = fixed::<16>(&fields[0])?;
+        if signer_id != *expected_id || prior.is_some_and(|p| signer_id <= p) {
+            return Err(Error::Invalid("transition signer set or order"));
+        }
+        prior = Some(signer_id);
+        crypto::verify_cbor(
+            "control-transition",
+            &unsigned_bytes,
+            public_key,
+            &fixed::<64>(&fields[1])?,
+        )?;
+    }
+    Ok(PreparedFollowing {
+        transition_id,
+        manifest,
+    })
+}
+
 /// Prepare a two-signature claim against verified public state. Historical ID
 /// reuse and commit-time invitation expiry remain the callers' checks.
 pub fn prepare_claim(

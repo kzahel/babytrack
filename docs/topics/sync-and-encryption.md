@@ -434,8 +434,10 @@ The extracted `wire` verifier prepares invitation-issue and two-signature
 claim candidates for both the client control chain and relay. It checks the
 public state effects, hashes, manifests, and applicable signatures without
 time, receipt, or object opening. Historical ID checks still live in the
-callers, and the other transition kinds still use their existing paths. The
-public ledger and general relay authority are not complete.
+callers. The shared verifier also checks the common signed envelope for the
+remaining controls against caller-derived next state and signer sets; their
+transition-specific state rules are still separate. The public ledger and
+general relay authority are not complete.
 
 This is an implementation proposal, not a new wire contract. Its first
 regression is byte-identical replay of the reviewed first cohort on both

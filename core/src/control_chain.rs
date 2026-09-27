@@ -1370,53 +1370,22 @@ impl ControlChain {
             before_ms,
         } = plan;
         let (new_transition_id, new_object_ids, all_ids) = self.check_new_control_ids(unsigned)?;
-        if fixed::<32>(&unsigned[7].1)? != crypto::hash("auth-state", &cbor::encode(&next_state)?)?
-        {
-            return Err(Error::Invalid("resulting authority state hash mismatch"));
-        }
-        let core = Value::Array(
-            unsigned[0..9]
-                .iter()
-                .map(|(_, value)| value.clone())
-                .collect(),
-        );
-        if fixed::<32>(&unsigned[10].1)? != crypto::hash("transition-core", &cbor::encode(&core)?)?
-        {
-            return Err(Error::Invalid("transition core hash mismatch"));
-        }
-        let manifest = array(&unsigned[9].1, manifest_kinds.len())?;
+        let signed_candidate = cbor::encode(&Value::Map(vec![
+            (1, root[0].1.clone()),
+            (2, root[1].1.clone()),
+        ]))?;
+        babytrack_wire::authority::prepare_following(
+            &signed_candidate,
+            self.genesis.family_id(),
+            self.genesis.relay_id(),
+            self.head_hash,
+            number(&unsigned[5].1)?,
+            number(&unsigned[8].1)?,
+            &next_state,
+            expected_signers,
+            manifest_kinds,
+        )?;
         let membership_check = membership_from_unsigned(self.genesis.family_id(), unsigned)?;
-        let mut prior_manifest: Option<(u64, [u8; 16])> = None;
-        for (item, kind) in manifest.iter().zip(manifest_kinds) {
-            let fields = array(item, 4)?;
-            let actual_kind = number(&fields[0])?;
-            let object_id = fixed::<16>(&fields[1])?;
-            let _hash = fixed::<32>(&fields[2])?;
-            if actual_kind != *kind
-                || number(&fields[3])? > 1024 * 1024
-                || prior_manifest.is_some_and(|prior| (actual_kind, object_id) <= prior)
-            {
-                return Err(Error::Invalid("manifest kind, length, or order invalid"));
-            }
-            prior_manifest = Some((actual_kind, object_id));
-        }
-        let signatures = array(&root[1].1, expected_signers.len())?;
-        let unsigned_bytes = cbor::encode(&root[0].1)?;
-        let mut prior_signer = None;
-        for (entry, (expected_id, public_key)) in signatures.iter().zip(expected_signers) {
-            let fields = array(entry, 2)?;
-            let signer_id = fixed::<16>(&fields[0])?;
-            if signer_id != *expected_id || prior_signer.is_some_and(|prior| signer_id <= prior) {
-                return Err(Error::Invalid("control signer set/order invalid"));
-            }
-            prior_signer = Some(signer_id);
-            crypto::verify_cbor(
-                "control-transition",
-                &unsigned_bytes,
-                public_key,
-                &fixed::<64>(&fields[1])?,
-            )?;
-        }
         let receipt = array(&root[2].1, 6)?;
         let expected_cursor = self
             .last_global_cursor

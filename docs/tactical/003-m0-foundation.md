@@ -1153,6 +1153,14 @@ genesis or issue IDs across categories, matching the client history check.
 The control-chain and relay fixtures pass; later-device claims still need the
 general public ledger and route.
 
+The shared `wire` verifier now checks the common signed envelope for the
+remaining control kinds on both sides: Family/relay/head/epoch context,
+state and core hashes, manifest sizes and order, and signer signatures.
+Transition-specific next-state and signer selection still live in the
+respective callers. This removes duplicate envelope validation without
+claiming a complete common authority reducer; the public ledger and later
+device behavior remain open.
+
 The corrected [topic proposal](../topics/sync-and-encryption.md#proposed-implementation-seam-for-general-relay-authority)
 uses a public candidate verifier, a relay commit wrapper, and a client
 committed verifier. It needs no v1 wire change if the ledger remains internal;

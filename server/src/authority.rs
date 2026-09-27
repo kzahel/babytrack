@@ -312,83 +312,34 @@ fn verify_following(
     genesis: &GenesisCandidate,
     plan: FollowingPlan<'_>,
 ) -> Result<TransitionHeader, Error> {
-    let value = cbor::decode_with_limits(
+    let kinds: Vec<u64> = plan
+        .manifest_kinds
+        .iter()
+        .map(|kind| u64::from(*kind))
+        .collect();
+    let prepared = public_authority::prepare_following(
         candidate_bytes,
-        cbor::Limits {
-            max_bytes: 1024 * 1024,
-            max_depth: 16,
-        },
+        genesis.family_id,
+        genesis.relay_id,
+        plan.parent,
+        plan.kind,
+        plan.epoch,
+        plan.resulting,
+        plan.expected_signers,
+        &kinds,
     )?;
-    let root = exact_map(&value, 2)?;
-    let unsigned = exact_map(&root[0].1, 11)?;
-    if number(&unsigned[0].1)? != 1
-        || fixed::<16>(&unsigned[1].1)? != genesis.family_id
-        || fixed::<32>(&unsigned[2].1)? != genesis.relay_id
-        || fixed::<32>(&unsigned[3].1)? != plan.parent
-        || number(&unsigned[5].1)? != plan.kind
-        || number(&unsigned[8].1)? != plan.epoch
-    {
-        return Err(Error::Invalid("transition context mismatch"));
-    }
-    let transition_id = fixed::<16>(&unsigned[4].1)?;
-    if fixed::<32>(&unsigned[7].1)? != crypto::hash("auth-state", &cbor::encode(plan.resulting)?)? {
-        return Err(Error::Invalid("resulting state hash mismatch"));
-    }
-    let core = Value::Array(
-        unsigned[..9]
-            .iter()
-            .map(|(_, value)| value.clone())
-            .collect(),
-    );
-    if fixed::<32>(&unsigned[10].1)? != crypto::hash("transition-core", &cbor::encode(&core)?)? {
-        return Err(Error::Invalid("transition core hash mismatch"));
-    }
-    let manifest = array(&unsigned[9].1, plan.manifest_kinds.len())?;
-    let mut parsed = Vec::with_capacity(manifest.len());
-    let mut prior = None;
-    for (item, expected_kind) in manifest.iter().zip(plan.manifest_kinds) {
-        let fields = array(item, 4)?;
-        let kind: u16 = number(&fields[0])?
-            .try_into()
-            .map_err(|_| Error::Invalid("manifest kind range"))?;
-        let object_id = fixed::<16>(&fields[1])?;
-        let object_hash = fixed::<32>(&fields[2])?;
-        let object_len: u32 = number(&fields[3])?
-            .try_into()
-            .map_err(|_| Error::Invalid("manifest length range"))?;
-        if kind != *expected_kind
-            || object_len > 1024 * 1024
-            || prior.is_some_and(|p| (kind, object_id) <= p)
-        {
-            return Err(Error::Invalid("manifest kind or order invalid"));
-        }
-        prior = Some((kind, object_id));
-        parsed.push(ManifestEntry {
-            kind,
-            object_id,
-            object_hash,
-            object_len,
-        });
-    }
-    let signatures = array(&root[1].1, plan.expected_signers.len())?;
-    let mut prior = None;
-    for (signature, (expected_id, key)) in signatures.iter().zip(plan.expected_signers) {
-        let pair = array(signature, 2)?;
-        let signer = fixed::<16>(&pair[0])?;
-        if signer != *expected_id || prior.is_some_and(|p| signer <= p) {
-            return Err(Error::Invalid("transition signer or order invalid"));
-        }
-        prior = Some(signer);
-        crypto::verify_cbor(
-            "control-transition",
-            &cbor::encode(&root[0].1)?,
-            key,
-            &fixed::<64>(&pair[1])?,
-        )?;
-    }
     Ok(TransitionHeader {
-        transition_id,
-        manifest: parsed,
+        transition_id: prepared.transition_id,
+        manifest: prepared
+            .manifest
+            .into_iter()
+            .map(|entry| ManifestEntry {
+                kind: entry.kind,
+                object_id: entry.object_id,
+                object_hash: entry.object_hash,
+                object_len: entry.object_len,
+            })
+            .collect(),
     })
 }
 

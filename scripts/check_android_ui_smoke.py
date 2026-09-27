@@ -115,6 +115,9 @@ def main() -> None:
     adb(target, "shell", "input", "keyevent", "4")
     tap(target, "Add child", scroll=True)
     find(target, "UITestChild", scroll=True)
+    tap(target, "View timeline", scroll=True)
+    find(target, "No entries yet.")
+    scroll_up(target, 12)
     tap(target, "Wet", scroll=True)
     find(target, "Diaper · Wet", scroll=True)
     tap(target, "Edit diaper type", scroll=True)
@@ -252,7 +255,7 @@ def main() -> None:
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     find(target, "Temperature · 37.8 °C", scroll=True)
-    print("Android UI Family, child rename, diaper edit/deletion, note, bottle, growth, sleep and temperature edits, breast segments, and restart: OK")
+    print("Android UI Family, timeline shortcut, child rename, diaper edit/deletion, note, bottle, growth, sleep and temperature edits, breast segments, and restart: OK")
 
 
 if __name__ == "__main__":

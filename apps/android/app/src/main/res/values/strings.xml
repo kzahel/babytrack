@@ -52,6 +52,7 @@
     <string name="edit_pump">Edit pumping amounts</string>
     <string name="edit_medication">Edit medication entry</string>
     <string name="edit_child_growth_details">Edit child growth details</string>
+    <string name="view_timeline">View timeline</string>
     <string name="birth_date_edit_hint">Leave the date blank to keep the saved birth date.</string>
     <string name="pump_edit_hint">Enter separate left/right amounts or one total. Clear the other fields when switching.</string>
     <string name="log_solids">Log solids</string>

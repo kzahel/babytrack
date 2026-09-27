@@ -62,6 +62,8 @@ check the result.
 The selected child's birth date and growth-chart sex can also be corrected
 without recreating the child or moving its activities. A blank date in this
 edit keeps the previous value; local restore and encrypted sync cover changes.
+The selected-child controls now include a direct action that scrolls to the
+timeline below the logging forms.
 
 Two separate emulator installations and a disposable relay pass first-cohort
 join without simultaneous foreground use, reciprocal encrypted edits,

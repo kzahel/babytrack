@@ -585,10 +585,11 @@ private fun TrackerScreen(
     val completed = remember(selectedFamily, saveStatusVersion) { family?.let(lastSave) }
     val filename = stringResource(R.string.backup_filename)
     val protectedFilename = stringResource(R.string.protected_backup_filename)
+    val scrollState = rememberScrollState()
 
     Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.screen_title)) }) }) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(scrollState).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(stringResource(if (activeShared) R.string.shared_family else R.string.local_only), style = MaterialTheme.typography.labelMedium)
@@ -1162,6 +1163,9 @@ private fun TrackerScreen(
                 }
 
                 if (child != null) {
+                    OutlinedButton(onClick = {
+                        scope.launch { scrollState.animateScrollTo(scrollState.maxValue) }
+                    }) { Text(stringResource(R.string.view_timeline)) }
                     Text(stringResource(R.string.log_diaper), style = MaterialTheme.typography.titleLarge)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(1u.toUByte() to R.string.wet, 2u.toUByte() to R.string.dirty, 3u.toUByte() to R.string.both).forEach { (kind, label) ->

@@ -1398,8 +1398,29 @@ creating a reservation. Restart rejects an existing uncommitted reservation
 that conflicts with that registry. FS73/IDCOLL01 and the executable signed
 relay regression cover both accepted and rejected batch-first orderings,
 absence of a poison reservation, restart, and subsequent unrelated signed
-batch and valid control commits. A new fixed-SHA recheck is still required;
-this focused result does not close the M0 exit gate.
+batch and valid control commits.
+
+## General-authority advisory PASS at 98fa0ea
+
+Daybreak Blue reviewed clean fixed commit
+`98fa0ea078764f938cf192deb4573e7b1feef2a7` in detached checkout,
+high thinking and bypass-permissions mode, through Yep Anywhere session
+`01a0e2be-f107-7be1-b4bd-541c111cde3a`. The process reached verified
+idle and left the checkout unchanged. Result: **focused advisory PASS**.
+It found no substantive security or availability issue in the batch-first
+reservation repair. It confirmed accepted and rejected batch-first order,
+transaction rollback of failed staging, valid unrelated batch and control
+after restart, and no regression of page bounding or the v1 per-kind
+manifest rules. It ran `cargo test -p babytrack-server --locked` (23 tests),
+three focused server tests, `cargo test -p babytrack-core --locked --test
+control_chain` (7 tests), and `cargo test -p babytrack-cli --locked`
+(4 integration tests). The signed large-control page and later-device
+hydration variants were inspected but not exercised. A relay already
+poisoned by the earlier undeployed build fails startup and needs inspected
+operator recovery; it is not automatically healed. Coherent whole-database
+rollback, malicious relay withholding/forks, and signed-time lies remain
+the documented trust limits. This scoped PASS does not close the end-of-M0
+recovery, mixed-client, or physical-device gates.
 
 ## Completion condition
 

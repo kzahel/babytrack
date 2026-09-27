@@ -1122,6 +1122,15 @@ exact-retry and same-envelope cursor portion of FS69-FS70. Distinct control
 versus batch and rotation races, later-role-loss retries, and crash points
 remain open for general authority.
 
+First-cohort control objects now stage under their signed transition ID.
+An interrupted single-slot relay database migrates its staged candidate on
+open. A regression stages a different signed issue proposal, restarts,
+stages and commits the valid fixture proposal, then rejects the stale one
+after another restart; committing one candidate clears the competing staged
+rows. This covers the candidate-isolation and restart part of FS68. The
+multi-object incomplete-A case and general later-device contenders remain
+open with the broader public-authority work.
+
 The corrected [topic proposal](../topics/sync-and-encryption.md#proposed-implementation-seam-for-general-relay-authority)
 uses a public candidate verifier, a relay commit wrapper, and a client
 committed verifier. It needs no v1 wire change if the ledger remains internal;

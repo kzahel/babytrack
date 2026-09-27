@@ -7,7 +7,7 @@ use babytrack_wire::{
     cbor::{self, Value},
     crypto,
 };
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::{authority, batch_authority, read_auth, receipt};
 
@@ -93,7 +93,7 @@ impl RelayStore {
         Self::initialize(db, relay_seed)
     }
 
-    fn initialize(db: Connection, relay_seed: [u8; 32]) -> Result<Self, Error> {
+    fn initialize(mut db: Connection, relay_seed: [u8; 32]) -> Result<Self, Error> {
         db.execute_batch(
             "PRAGMA foreign_keys=ON;
              PRAGMA synchronous=FULL;
@@ -126,6 +126,17 @@ impl RelayStore {
                family_id BLOB PRIMARY KEY, transition_id BLOB NOT NULL,
                candidate_bytes BLOB NOT NULL
              );
+             CREATE TABLE IF NOT EXISTS staged_controls (
+               family_id BLOB NOT NULL, transition_id BLOB NOT NULL,
+               candidate_bytes BLOB NOT NULL,
+               PRIMARY KEY (family_id, transition_id)
+             );
+             CREATE TABLE IF NOT EXISTS staged_control_objects (
+               family_id BLOB NOT NULL, transition_id BLOB NOT NULL,
+               object_id BLOB NOT NULL, kind INTEGER NOT NULL,
+               object_hash BLOB NOT NULL, object_bytes BLOB NOT NULL,
+               PRIMARY KEY (family_id, transition_id, object_id)
+             );
              CREATE TABLE IF NOT EXISTS committed_objects (
                family_id BLOB NOT NULL, object_id BLOB NOT NULL, kind INTEGER NOT NULL,
                object_hash BLOB NOT NULL, object_bytes BLOB NOT NULL,
@@ -155,6 +166,28 @@ impl RelayStore {
                PRIMARY KEY (family_id, batch_id)
              );",
         )?;
+        // Existing development relays used one staging slot per Family. Move
+        // an interrupted candidate into the candidate-scoped tables before
+        // accepting new staging requests. Genesis keeps its own staging table.
+        let migration = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        migration.execute_batch(
+            "INSERT INTO staged_controls(family_id,transition_id,candidate_bytes)
+               SELECT family_id,transition_id,candidate_bytes FROM staged_issues
+               UNION ALL SELECT family_id,transition_id,candidate_bytes FROM staged_challenges
+               UNION ALL SELECT family_id,transition_id,candidate_bytes FROM staged_admissions
+               UNION ALL SELECT family_id,transition_id,candidate_bytes FROM staged_removals;
+             INSERT INTO staged_control_objects(family_id,transition_id,object_id,kind,object_hash,object_bytes)
+               SELECT o.family_id,c.transition_id,o.object_id,o.kind,o.object_hash,o.object_bytes
+               FROM staged_objects o JOIN staged_controls c ON c.family_id=o.family_id
+               JOIN families f ON f.family_id=o.family_id AND f.active=1;
+             DELETE FROM staged_objects WHERE family_id IN
+               (SELECT family_id FROM families WHERE active=1);
+             DELETE FROM staged_issues;
+             DELETE FROM staged_challenges;
+             DELETE FROM staged_admissions;
+             DELETE FROM staged_removals;",
+        )?;
+        migration.commit()?;
         let relay_public = crypto::signing_public_key(&relay_seed);
         db.execute(
             "INSERT OR IGNORE INTO relay_identity(singleton, public_key) VALUES(1, ?1)",
@@ -463,36 +496,14 @@ impl RelayStore {
             return Err(Error::Invalid("first issue only"));
         }
         let tx = self.db.transaction()?;
-        let prior: Option<Vec<u8>> = tx
-            .query_row(
-                "SELECT candidate_bytes FROM staged_issues WHERE family_id=?1",
-                params![&path_family[..]],
-                |r| r.get(0),
-            )
-            .optional()?;
-        if let Some(saved) = prior {
-            if saved != candidate_bytes {
-                return Err(Error::Invalid("another issue already staged"));
-            }
-        } else {
-            tx.execute("INSERT INTO staged_issues(family_id,transition_id,candidate_bytes) VALUES(?1,?2,?3)",
-                params![&path_family[..],&issue.transition_id[..],&candidate_bytes])?;
-        }
-        let prior: Option<Vec<u8>> = tx
-            .query_row(
-                "SELECT object_bytes FROM staged_objects WHERE family_id=?1 AND object_id=?2",
-                params![&path_family[..], &object_id[..]],
-                |r| r.get(0),
-            )
-            .optional()?;
-        if let Some(saved) = prior {
-            if saved != *object_bytes {
-                return Err(Error::Invalid("staged object ID collision"));
-            }
-        } else {
-            tx.execute("INSERT INTO staged_objects(family_id,object_id,kind,object_hash,object_bytes) VALUES(?1,?2,?3,?4,?5)",
-                params![&path_family[..],&object_id[..],i64::from(kind),&issue.manifest.object_hash[..],object_bytes])?;
-        }
+        stage_control_object(
+            &tx,
+            path_family,
+            issue.transition_id,
+            &candidate_bytes,
+            &issue.manifest,
+            object_bytes,
+        )?;
         tx.commit()?;
         Ok(receipt::object_stage_response(object_bytes)?)
     }
@@ -532,7 +543,7 @@ impl RelayStore {
         ensure_control_ids(&tx, path_family, candidate_bytes)?;
         let staged_candidate: Option<Vec<u8>> = tx
             .query_row(
-                "SELECT candidate_bytes FROM staged_issues WHERE family_id=?1 AND transition_id=?2",
+                "SELECT candidate_bytes FROM staged_controls WHERE family_id=?1 AND transition_id=?2",
                 params![&path_family[..], &issue.transition_id[..]],
                 |r| r.get(0),
             )
@@ -541,8 +552,8 @@ impl RelayStore {
             return Err(Error::Invalid("issue candidate not staged"));
         }
         let staged: Option<(i64,Vec<u8>,Vec<u8>)> = tx.query_row(
-            "SELECT kind,object_hash,object_bytes FROM staged_objects WHERE family_id=?1 AND object_id=?2",
-            params![&path_family[..],&issue.manifest.object_id[..]], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
+            "SELECT kind,object_hash,object_bytes FROM staged_control_objects WHERE family_id=?1 AND transition_id=?2 AND object_id=?3",
+            params![&path_family[..],&issue.transition_id[..],&issue.manifest.object_id[..]], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
         ).optional()?;
         let Some((kind, hash, bytes)) = staged else {
             return Err(Error::Invalid("issue membership object missing"));
@@ -576,12 +587,12 @@ impl RelayStore {
             return Err(Error::Invalid("issue compare-and-swap failed"));
         }
         tx.execute(
-            "DELETE FROM staged_issues WHERE family_id=?1",
+            "DELETE FROM staged_controls WHERE family_id=?1",
             params![&path_family[..]],
         )?;
         tx.execute(
-            "DELETE FROM staged_objects WHERE family_id=?1 AND object_id=?2",
-            params![&path_family[..], &issue.manifest.object_id[..]],
+            "DELETE FROM staged_control_objects WHERE family_id=?1",
+            params![&path_family[..]],
         )?;
         tx.commit()?;
         Ok(receipt::control_commit_response(&committed)?)
@@ -707,36 +718,14 @@ impl RelayStore {
             return Err(Error::Invalid("challenge head stale"));
         }
         let tx = self.db.transaction()?;
-        let prior: Option<Vec<u8>> = tx
-            .query_row(
-                "SELECT candidate_bytes FROM staged_challenges WHERE family_id=?1",
-                params![&path_family[..]],
-                |r| r.get(0),
-            )
-            .optional()?;
-        if let Some(saved) = prior {
-            if saved != candidate_bytes {
-                return Err(Error::Invalid("another challenge staged"));
-            }
-        } else {
-            tx.execute("INSERT INTO staged_challenges(family_id,transition_id,candidate_bytes) VALUES(?1,?2,?3)",
-                params![&path_family[..],&challenge.transition_id[..],&candidate_bytes])?;
-        }
-        let prior: Option<Vec<u8>> = tx
-            .query_row(
-                "SELECT object_bytes FROM staged_objects WHERE family_id=?1 AND object_id=?2",
-                params![&path_family[..], &object_id[..]],
-                |r| r.get(0),
-            )
-            .optional()?;
-        if let Some(saved) = prior {
-            if saved != object_bytes {
-                return Err(Error::Invalid("challenge object ID collision"));
-            }
-        } else {
-            tx.execute("INSERT INTO staged_objects(family_id,object_id,kind,object_hash,object_bytes) VALUES(?1,?2,?3,?4,?5)",
-                params![&path_family[..],&object_id[..],i64::from(kind),&listed.object_hash[..],&object_bytes])?;
-        }
+        stage_control_object(
+            &tx,
+            path_family,
+            challenge.transition_id,
+            &candidate_bytes,
+            listed,
+            &object_bytes,
+        )?;
         tx.commit()?;
         Ok(receipt::object_stage_response(&object_bytes)?)
     }
@@ -770,15 +759,15 @@ impl RelayStore {
         }
         let tx = self.db.transaction()?;
         ensure_control_ids(&tx, path_family, candidate_bytes)?;
-        let staged:Option<Vec<u8>>=tx.query_row("SELECT candidate_bytes FROM staged_challenges WHERE family_id=?1 AND transition_id=?2",
+        let staged:Option<Vec<u8>>=tx.query_row("SELECT candidate_bytes FROM staged_controls WHERE family_id=?1 AND transition_id=?2",
             params![&path_family[..],&challenge.transition_id[..]],|r|r.get(0)).optional()?;
         if staged.as_deref() != Some(candidate_bytes) {
             return Err(Error::Invalid("challenge candidate not staged"));
         }
         for entry in &challenge.manifest {
             let staged:Option<(i64,Vec<u8>,Vec<u8>)>=tx.query_row(
-                "SELECT kind,object_hash,object_bytes FROM staged_objects WHERE family_id=?1 AND object_id=?2",
-                params![&path_family[..],&entry.object_id[..]],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
+                "SELECT kind,object_hash,object_bytes FROM staged_control_objects WHERE family_id=?1 AND transition_id=?2 AND object_id=?3",
+                params![&path_family[..],&challenge.transition_id[..],&entry.object_id[..]],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
             ).optional()?;
             let Some((kind, hash, bytes)) = staged else {
                 return Err(Error::Invalid("challenge object missing"));
@@ -814,15 +803,13 @@ impl RelayStore {
             return Err(Error::Invalid("challenge compare-and-swap failed"));
         }
         tx.execute(
-            "DELETE FROM staged_challenges WHERE family_id=?1",
+            "DELETE FROM staged_controls WHERE family_id=?1",
             params![&path_family[..]],
         )?;
-        for entry in &challenge.manifest {
-            tx.execute(
-                "DELETE FROM staged_objects WHERE family_id=?1 AND object_id=?2",
-                params![&path_family[..], &entry.object_id[..]],
-            )?;
-        }
+        tx.execute(
+            "DELETE FROM staged_control_objects WHERE family_id=?1",
+            params![&path_family[..]],
+        )?;
         tx.commit()?;
         Ok(receipt::control_commit_response(&committed)?)
     }
@@ -938,36 +925,14 @@ impl RelayStore {
             return Err(Error::Invalid("admission head stale"));
         }
         let tx = self.db.transaction()?;
-        let prior: Option<Vec<u8>> = tx
-            .query_row(
-                "SELECT candidate_bytes FROM staged_admissions WHERE family_id=?1",
-                params![&path_family[..]],
-                |r| r.get(0),
-            )
-            .optional()?;
-        if let Some(saved) = prior {
-            if saved != candidate_bytes {
-                return Err(Error::Invalid("another admission staged"));
-            }
-        } else {
-            tx.execute("INSERT INTO staged_admissions(family_id,transition_id,candidate_bytes) VALUES(?1,?2,?3)",
-                params![&path_family[..],&admission.transition_id[..],&candidate_bytes])?;
-        }
-        let prior: Option<Vec<u8>> = tx
-            .query_row(
-                "SELECT object_bytes FROM staged_objects WHERE family_id=?1 AND object_id=?2",
-                params![&path_family[..], &object_id[..]],
-                |r| r.get(0),
-            )
-            .optional()?;
-        if let Some(saved) = prior {
-            if saved != object_bytes {
-                return Err(Error::Invalid("admission object ID collision"));
-            }
-        } else {
-            tx.execute("INSERT INTO staged_objects(family_id,object_id,kind,object_hash,object_bytes) VALUES(?1,?2,?3,?4,?5)",
-                params![&path_family[..],&object_id[..],i64::from(kind),&listed.object_hash[..],&object_bytes])?;
-        }
+        stage_control_object(
+            &tx,
+            path_family,
+            admission.transition_id,
+            &candidate_bytes,
+            listed,
+            &object_bytes,
+        )?;
         tx.commit()?;
         Ok(receipt::object_stage_response(&object_bytes)?)
     }
@@ -1003,15 +968,15 @@ impl RelayStore {
         }
         let tx = self.db.transaction()?;
         ensure_control_ids(&tx, path_family, candidate_bytes)?;
-        let staged:Option<Vec<u8>>=tx.query_row("SELECT candidate_bytes FROM staged_admissions WHERE family_id=?1 AND transition_id=?2",
+        let staged:Option<Vec<u8>>=tx.query_row("SELECT candidate_bytes FROM staged_controls WHERE family_id=?1 AND transition_id=?2",
             params![&path_family[..],&admission.transition_id[..]],|r|r.get(0)).optional()?;
         if staged.as_deref() != Some(candidate_bytes) {
             return Err(Error::Invalid("admission candidate not staged"));
         }
         for entry in &admission.manifest {
             let staged:Option<(i64,Vec<u8>,Vec<u8>)>=tx.query_row(
-                "SELECT kind,object_hash,object_bytes FROM staged_objects WHERE family_id=?1 AND object_id=?2",
-                params![&path_family[..],&entry.object_id[..]],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
+                "SELECT kind,object_hash,object_bytes FROM staged_control_objects WHERE family_id=?1 AND transition_id=?2 AND object_id=?3",
+                params![&path_family[..],&admission.transition_id[..],&entry.object_id[..]],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
             ).optional()?;
             let Some((kind, hash, bytes)) = staged else {
                 return Err(Error::Invalid("admission object missing"));
@@ -1048,15 +1013,13 @@ impl RelayStore {
             return Err(Error::Invalid("admission compare-and-swap failed"));
         }
         tx.execute(
-            "DELETE FROM staged_admissions WHERE family_id=?1",
+            "DELETE FROM staged_controls WHERE family_id=?1",
             params![&path_family[..]],
         )?;
-        for entry in &admission.manifest {
-            tx.execute(
-                "DELETE FROM staged_objects WHERE family_id=?1 AND object_id=?2",
-                params![&path_family[..], &entry.object_id[..]],
-            )?;
-        }
+        tx.execute(
+            "DELETE FROM staged_control_objects WHERE family_id=?1",
+            params![&path_family[..]],
+        )?;
         tx.commit()?;
         Ok(receipt::control_commit_response(&committed)?)
     }
@@ -1113,50 +1076,14 @@ impl RelayStore {
         }
         ensure_first_removal_ids_unused(&self.db, path_family, &removal)?;
         let tx = self.db.transaction()?;
-        let prior: Option<Vec<u8>> = tx
-            .query_row(
-                "SELECT candidate_bytes FROM staged_removals WHERE family_id=?1",
-                params![&path_family[..]],
-                |r| r.get(0),
-            )
-            .optional()?;
-        if let Some(saved) = prior {
-            if saved != candidate_bytes {
-                return Err(Error::Invalid("another removal staged"));
-            }
-        } else {
-            tx.execute(
-                "INSERT INTO staged_removals(family_id,transition_id,candidate_bytes) VALUES(?1,?2,?3)",
-                params![&path_family[..], &removal.transition_id[..], &candidate_bytes],
-            )?;
-        }
-        let prior: Option<Vec<u8>> = tx
-            .query_row(
-                "SELECT object_bytes FROM staged_objects WHERE family_id=?1 AND object_id=?2",
-                params![&path_family[..], &object_id[..]],
-                |r| r.get(0),
-            )
-            .optional()?;
-        if let Some(saved) = prior {
-            if saved != object_bytes {
-                return Err(Error::Invalid("removal object ID collision"));
-            }
-        } else {
-            let committed: Option<i64> = tx
-                .query_row(
-                    "SELECT 1 FROM committed_objects WHERE family_id=?1 AND object_id=?2",
-                    params![&path_family[..], &object_id[..]],
-                    |r| r.get(0),
-                )
-                .optional()?;
-            if committed.is_some() {
-                return Err(Error::Invalid("removal object ID reused"));
-            }
-            tx.execute(
-                "INSERT INTO staged_objects(family_id,object_id,kind,object_hash,object_bytes) VALUES(?1,?2,?3,?4,?5)",
-                params![&path_family[..], &object_id[..], i64::from(kind), &listed.object_hash[..], &object_bytes],
-            )?;
-        }
+        stage_control_object(
+            &tx,
+            path_family,
+            removal.transition_id,
+            &candidate_bytes,
+            listed,
+            &object_bytes,
+        )?;
         tx.commit()?;
         Ok(receipt::object_stage_response(&object_bytes)?)
     }
@@ -1193,7 +1120,7 @@ impl RelayStore {
         let tx = self.db.transaction()?;
         ensure_control_ids(&tx, path_family, candidate_bytes)?;
         let saved: Option<Vec<u8>> = tx.query_row(
-            "SELECT candidate_bytes FROM staged_removals WHERE family_id=?1 AND transition_id=?2",
+            "SELECT candidate_bytes FROM staged_controls WHERE family_id=?1 AND transition_id=?2",
             params![&path_family[..], &removal.transition_id[..]], |r| r.get(0),
         ).optional()?;
         if saved.as_deref() != Some(candidate_bytes) {
@@ -1201,8 +1128,8 @@ impl RelayStore {
         }
         for entry in &removal.manifest {
             let staged: Option<(i64, Vec<u8>, Vec<u8>)> = tx.query_row(
-                "SELECT kind,object_hash,object_bytes FROM staged_objects WHERE family_id=?1 AND object_id=?2",
-                params![&path_family[..], &entry.object_id[..]],
+                "SELECT kind,object_hash,object_bytes FROM staged_control_objects WHERE family_id=?1 AND transition_id=?2 AND object_id=?3",
+                params![&path_family[..], &removal.transition_id[..], &entry.object_id[..]],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             ).optional()?;
             let Some((kind, hash, bytes)) = staged else {
@@ -1252,15 +1179,13 @@ impl RelayStore {
             return Err(Error::Invalid("removal compare-and-swap failed"));
         }
         tx.execute(
-            "DELETE FROM staged_removals WHERE family_id=?1",
+            "DELETE FROM staged_controls WHERE family_id=?1",
             params![&path_family[..]],
         )?;
-        for entry in &removal.manifest {
-            tx.execute(
-                "DELETE FROM staged_objects WHERE family_id=?1 AND object_id=?2",
-                params![&path_family[..], &entry.object_id[..]],
-            )?;
-        }
+        tx.execute(
+            "DELETE FROM staged_control_objects WHERE family_id=?1",
+            params![&path_family[..]],
+        )?;
         tx.commit()?;
         Ok(receipt::control_commit_response(&committed)?)
     }
@@ -1984,6 +1909,53 @@ fn stage_parts(body: &[u8]) -> Result<StagedObjectParts, Error> {
     Ok((candidate, kind, object_id, bytes.clone()))
 }
 
+fn stage_control_object(
+    tx: &Transaction<'_>,
+    family: [u8; 16],
+    transition: [u8; 16],
+    candidate: &[u8],
+    entry: &authority::ManifestEntry,
+    object_bytes: &[u8],
+) -> Result<(), Error> {
+    let prior: Option<Vec<u8>> = tx
+        .query_row(
+            "SELECT candidate_bytes FROM staged_controls WHERE family_id=?1 AND transition_id=?2",
+            params![&family[..], &transition[..]],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(prior) = prior {
+        if prior != candidate {
+            return Err(Error::Invalid(
+                "transition ID staged with different candidate",
+            ));
+        }
+    } else {
+        tx.execute(
+            "INSERT INTO staged_controls(family_id,transition_id,candidate_bytes) VALUES(?1,?2,?3)",
+            params![&family[..], &transition[..], candidate],
+        )?;
+    }
+    let prior: Option<Vec<u8>> = tx.query_row(
+        "SELECT object_bytes FROM staged_control_objects WHERE family_id=?1 AND transition_id=?2 AND object_id=?3",
+        params![&family[..], &transition[..], &entry.object_id[..]],
+        |r| r.get(0),
+    ).optional()?;
+    if let Some(prior) = prior {
+        if prior != object_bytes {
+            return Err(Error::Invalid(
+                "candidate object ID staged with different bytes",
+            ));
+        }
+    } else {
+        tx.execute(
+            "INSERT INTO staged_control_objects(family_id,transition_id,object_id,kind,object_hash,object_bytes) VALUES(?1,?2,?3,?4,?5,?6)",
+            params![&family[..], &transition[..], &entry.object_id[..], i64::from(entry.kind), &entry.object_hash[..], object_bytes],
+        )?;
+    }
+    Ok(())
+}
+
 fn validate_first_removal_object(
     kind: u16,
     object_id: [u8; 16],
@@ -2475,6 +2447,215 @@ mod tests {
             (2, Value::Bytes(signature.to_vec())),
         ]))
         .unwrap()
+    }
+
+    fn competing_issue(
+        candidate_bytes: &[u8],
+        stage_bytes: &[u8],
+        genesis: &authority::GenesisCandidate,
+        manager_seed: [u8; 32],
+    ) -> (Vec<u8>, Vec<u8>) {
+        let Value::Map(mut root) = cbor::decode(candidate_bytes).unwrap() else {
+            panic!()
+        };
+        let Value::Map(mut unsigned) = root[0].1.clone() else {
+            panic!()
+        };
+        let Value::Map(delta) = unsigned[6].1.clone() else {
+            panic!()
+        };
+        let transition = [0xa7; 16];
+        unsigned[4].1 = Value::Bytes(transition.to_vec());
+        let invitation = Value::Array(vec![
+            delta[0].1.clone(),
+            delta[1].1.clone(),
+            delta[2].1.clone(),
+            delta[3].1.clone(),
+            Value::Bytes(transition.to_vec()),
+            Value::Integer(1),
+        ]);
+        let state = Value::Map(vec![
+            (1, Value::Integer(1)),
+            (2, Value::Bytes(genesis.family_id.to_vec())),
+            (3, Value::Bytes(genesis.relay_id.to_vec())),
+            (4, Value::Integer(1)),
+            (5, Value::Array(vec![genesis.manager_row.clone()])),
+            (6, Value::Array(vec![])),
+            (7, Value::Array(vec![invitation])),
+        ]);
+        unsigned[7].1 = Value::Bytes(
+            crypto::hash("auth-state", &cbor::encode(&state).unwrap())
+                .unwrap()
+                .to_vec(),
+        );
+        let core = Value::Array(
+            unsigned[..9]
+                .iter()
+                .map(|(_, value)| value.clone())
+                .collect(),
+        );
+        unsigned[10].1 = Value::Bytes(
+            crypto::hash("transition-core", &cbor::encode(&core).unwrap())
+                .unwrap()
+                .to_vec(),
+        );
+        let unsigned_bytes = cbor::encode(&Value::Map(unsigned.clone())).unwrap();
+        let signature =
+            crypto::sign_cbor("control-transition", &unsigned_bytes, &manager_seed).unwrap();
+        root[0].1 = Value::Map(unsigned);
+        root[1].1 = Value::Array(vec![Value::Array(vec![
+            Value::Bytes(genesis.manager_id.to_vec()),
+            Value::Bytes(signature.to_vec()),
+        ])]);
+        let Value::Map(mut stage) = cbor::decode(stage_bytes).unwrap() else {
+            panic!()
+        };
+        stage[1].1 = root[0].1.clone();
+        stage[2].1 = root[1].1.clone();
+        (
+            cbor::encode(&Value::Map(root)).unwrap(),
+            cbor::encode(&Value::Map(stage)).unwrap(),
+        )
+    }
+
+    #[test]
+    fn competing_staged_issue_does_not_block_valid_issue_after_restart() {
+        let genesis: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/api-genesis-v1.json").unwrap(),
+        )
+        .unwrap();
+        let issue: Json =
+            serde_json::from_str(&std::fs::read_to_string("../tests/vectors/api-v1.json").unwrap())
+                .unwrap();
+        let chain: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/contiguous-chain-v1.json").unwrap(),
+        )
+        .unwrap();
+        let seed: [u8; 32] = hex(chain["test_only_inputs"]["relay_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let manager_seed: [u8; 32] = hex(chain["test_only_inputs"]["manager_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let family: [u8; 16] = hex(genesis["inputs"]["family_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let promotion: [u8; 16] = hex(genesis["inputs"]["promotion_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let issue_object: [u8; 16] = hex("083e4567e89b42d3a456426614174000").try_into().unwrap();
+        let genesis_stage = hex(genesis["inputs"]["stage_body_cbor_hex"].as_str().unwrap());
+        let genesis_candidate = hex(genesis["inputs"]["commit_candidate_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let issue_stage = hex(issue["inputs"]["stage_body_cbor_hex"].as_str().unwrap());
+        let issue_candidate = hex(issue["inputs"]["commit_body_cbor_hex"].as_str().unwrap());
+        let parsed = authority::verify_genesis_candidate(
+            &genesis_candidate,
+            &crypto::signing_public_key(&seed),
+        )
+        .unwrap();
+        let (competing_candidate, competing_stage) =
+            competing_issue(&issue_candidate, &issue_stage, &parsed, manager_seed);
+        let genesis_commit = hex(genesis["expect"]["commit_response_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let Value::Map(genesis_response) = cbor::decode(&genesis_commit).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(genesis_committed) = &genesis_response[1].1 else {
+            panic!()
+        };
+        let time = control_commit_time(genesis_committed).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("relay.sqlite");
+        let mut store = RelayStore::open(&path, seed).unwrap();
+        store
+            .stage_genesis_object(family, promotion, &genesis_stage)
+            .unwrap();
+        store
+            .commit_genesis(family, &genesis_candidate, time)
+            .unwrap();
+        let head = crypto::hash("control-head", genesis_committed).unwrap();
+        authority::verify_first_invite_issue(&competing_candidate, &parsed, head).unwrap();
+        store
+            .stage_first_issue_object(family, issue_object, &competing_stage)
+            .unwrap();
+        // Simulate a database interrupted under the original single-slot
+        // schema, then let open() migrate that staged candidate.
+        store.db.execute(
+            "INSERT INTO staged_issues SELECT family_id,transition_id,candidate_bytes FROM staged_controls WHERE family_id=?1",
+            params![&family[..]],
+        ).unwrap();
+        store.db.execute(
+            "INSERT INTO staged_objects SELECT family_id,object_id,kind,object_hash,object_bytes FROM staged_control_objects WHERE family_id=?1",
+            params![&family[..]],
+        ).unwrap();
+        store
+            .db
+            .execute(
+                "DELETE FROM staged_controls WHERE family_id=?1",
+                params![&family[..]],
+            )
+            .unwrap();
+        store
+            .db
+            .execute(
+                "DELETE FROM staged_control_objects WHERE family_id=?1",
+                params![&family[..]],
+            )
+            .unwrap();
+        drop(store);
+        let mut store = RelayStore::open(&path, seed).unwrap();
+        store
+            .stage_first_issue_object(family, issue_object, &issue_stage)
+            .unwrap();
+        assert_eq!(
+            store
+                .db
+                .query_row(
+                    "SELECT COUNT(*) FROM staged_controls WHERE family_id=?1",
+                    params![&family[..]],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+            2
+        );
+        store
+            .commit_first_issue(family, &issue_candidate, time)
+            .unwrap();
+        assert!(
+            store
+                .commit_first_issue(family, &competing_candidate, time)
+                .is_err()
+        );
+        assert_eq!(
+            store
+                .db
+                .query_row(
+                    "SELECT COUNT(*) FROM staged_controls WHERE family_id=?1",
+                    params![&family[..]],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+            0
+        );
+        drop(store);
+        let mut store = RelayStore::open(&path, seed).unwrap();
+        assert!(
+            store
+                .stage_first_issue_object(family, issue_object, &competing_stage)
+                .is_err()
+        );
+        assert!(
+            store
+                .commit_first_issue(family, &competing_candidate, time)
+                .is_err()
+        );
     }
     #[test]
     fn genesis_reservation_and_commit_are_atomic_and_survive_restart() {

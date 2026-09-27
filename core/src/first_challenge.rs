@@ -77,6 +77,46 @@ pub struct FirstChallenge {
 }
 
 impl FirstChallenge {
+    /// Select the sole pending device from verified authority state. Platform
+    /// adapters never parse claim deltas to choose a challenge recipient.
+    pub fn prepare_for_only_pending(
+        store: &mut SqliteStore,
+        manager: &ManagerCreation,
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
+        if store.prepared_control(manager.family(), 11)?.is_some() {
+            return Self::resume(store, manager, local_wrapping_key);
+        }
+        let chain = shared_history::first_join_chain(
+            store,
+            manager.family(),
+            manager.relay_public_key(),
+            3,
+        )?;
+        let Value::Map(state) = cbor::decode(&chain.state_bytes()?)? else {
+            return Err(Error::Invalid("auth state not map"));
+        };
+        let Value::Array(pending) = &state[5].1 else {
+            return Err(Error::Invalid("pending state not array"));
+        };
+        if pending.len() != 1 {
+            return Err(Error::Invalid("first challenge expects one pending device"));
+        }
+        let Value::Array(row) = &pending[0] else {
+            return Err(Error::Invalid("pending row not array"));
+        };
+        if row.len() != 9 {
+            return Err(Error::Invalid("pending row width"));
+        }
+        Self::prepare(
+            store,
+            manager,
+            fixed::<16>(&row[0])?,
+            fixed::<16>(&row[1])?,
+            local_wrapping_key,
+        )
+    }
+
     pub fn prepare(
         store: &mut SqliteStore,
         manager: &ManagerCreation,
@@ -410,7 +450,7 @@ fn base_chain(
     family: FamilyHandle,
     relay_public: [u8; 32],
 ) -> Result<ControlChain, Error> {
-    Ok(shared_history::first_join_chain(
+    Ok(shared_history::first_join_prefix_chain(
         store,
         family,
         relay_public,

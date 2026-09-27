@@ -58,5 +58,11 @@ class SharingRelayTest {
                 }.isFailure,
             )
         }
+        ShareCoordinator(context, database.absolutePath).use { sharing ->
+            sharing.respondToClaim(family, origin)
+        }
+        ShareCoordinator(context, database.absolutePath).use { sharing ->
+            sharing.respondToClaim(family, origin)
+        }
     }
 }

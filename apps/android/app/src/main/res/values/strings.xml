@@ -64,4 +64,7 @@
     <string name="join_pending">Claim committed. Waiting for a Family key holder; shared data is not available yet.</string>
     <string name="join_retry">Could not confirm this claim. Keep the fragment and retry; the saved identity and claim stay the same.</string>
     <string name="join_or_retry">Join or retry claim</string>
+    <string name="respond_to_claim">Respond to pending device</string>
+    <string name="challenge_preparing">Checking the claim and preparing the key challenge…</string>
+    <string name="challenge_confirmed">Challenge committed. Waiting for the joining device to prove its key.</string>
 </resources>

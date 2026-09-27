@@ -91,6 +91,13 @@ subsequent edit sync, and removal remain open.
 The local-only tracker hides this pending recipient Family and rejects writes
 through its handle; the emulator test checks that boundary. A verified shared
 session will supply the recipient's usable view after handoff and hydration.
+The holder can now fetch the new claim with a signed GET, let Rust select the
+sole pending device from verified authority state, stage both challenge
+objects, and confirm the committed challenge. The emulator test repeats this
+after reopening the holder store. The prepared challenge rebuild uses the
+verified three-control historical prefix even when the current log already
+contains the challenge, so exact retry survives commit and restart. Recipient
+proof and admission remain open on Android.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

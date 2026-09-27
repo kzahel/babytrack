@@ -9,8 +9,10 @@ use babytrack_core::{
     cbor::{self, Value},
     creation::ManagerCreation,
     enrollment::EnrollmentAttempt,
+    first_challenge::FirstChallenge,
     issue::FirstInviteIssue,
     local_api::{ActivityTime, LocalRepository},
+    shared_history::PublicHistorySession,
     sqlite_store::{FamilyHandle, SqliteStore},
     sync_wire::ControlPage,
 };
@@ -152,6 +154,19 @@ pub struct InvitationPreviewRow {
 pub struct PreparedJoinRow {
     pub family: FamilyRef,
     pub candidate_bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct SignedReadRow {
+    pub path: String,
+    pub auth: Vec<u8>,
+    pub after: u64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PreparedChallengeRow {
+    pub candidate_bytes: Vec<u8>,
+    pub objects: Vec<StagedObjectRow>,
 }
 
 #[derive(uniffi::Object)]
@@ -333,6 +348,92 @@ impl NativeSharedStore {
         }
         attempt
             .confirm_sparse_claim(&mut store, &committed_control(&commit_response)?)
+            .map_err(rejected)
+    }
+
+    pub fn manager_control_read(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+    ) -> Result<SignedReadRow, BindingError> {
+        let store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+            .map_err(rejected)?;
+        let after = PublicHistorySession::resume(&store, family.handle()?)
+            .map_err(rejected)?
+            .cursor();
+        let path = format!(
+            "/v1/families/{}/control?after={after}",
+            lower_hex(&family.family_id)
+        );
+        let read = manager.sign_get(&path).map_err(rejected)?;
+        Ok(SignedReadRow {
+            path,
+            auth: read.bytes,
+            after,
+        })
+    }
+
+    /// Accept verified controls before choosing the sole pending device
+    /// from Rust authority state and preparing exact challenge bytes.
+    pub fn prepare_first_challenge(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        read: SignedReadRow,
+        control_page: Vec<u8>,
+    ) -> Result<PreparedChallengeRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+            .map_err(rejected)?;
+        let mut public =
+            PublicHistorySession::resume(&store, family.handle()?).map_err(rejected)?;
+        if read.after != public.cursor()
+            || read.path
+                != format!(
+                    "/v1/families/{}/control?after={}",
+                    lower_hex(&family.family_id),
+                    read.after
+                )
+        {
+            return Err(BindingError::InvalidBytes);
+        }
+        let page = ControlPage::decode(&control_page, family.handle()?.family_id, read.after)
+            .map_err(rejected)?;
+        for entry in page.entries {
+            public
+                .accept_control(&mut store, &entry.committed_bytes)
+                .map_err(rejected)?;
+        }
+        let challenge =
+            FirstChallenge::prepare_for_only_pending(&mut store, &manager, &fixed(&wrapping_key)?)
+                .map_err(rejected)?;
+        Ok(PreparedChallengeRow {
+            candidate_bytes: challenge.candidate_bytes().to_vec(),
+            objects: challenge
+                .stage_bodies()
+                .map_err(rejected)?
+                .into_iter()
+                .map(|(object_id, body)| StagedObjectRow {
+                    object_id: object_id.to_vec(),
+                    body,
+                })
+                .collect(),
+        })
+    }
+
+    pub fn confirm_first_challenge(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        commit_response: Vec<u8>,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+            .map_err(rejected)?;
+        FirstChallenge::resume(&store, &manager, &fixed(&wrapping_key)?)
+            .map_err(rejected)?
+            .confirm(&mut store, &committed_control(&commit_response)?)
             .map_err(rejected)
     }
 }

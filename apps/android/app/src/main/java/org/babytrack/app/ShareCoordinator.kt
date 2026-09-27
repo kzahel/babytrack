@@ -63,6 +63,25 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         }
     }
 
+    fun respondToClaim(family: FamilyRef, origin: String) {
+        validateRelayOrigin(origin)
+        val relay = RelayTransport(origin)
+        val wrapping = keys.loadOrCreate()
+        try {
+            val read = core.managerControlRead(family, wrapping)
+            val page = relay.get(read.path, read.auth)
+            val prepared = core.prepareFirstChallenge(family, wrapping, read, page)
+            val prefix = "/v1/families/${family.familyId.hex()}"
+            for (objectRow in prepared.objects) {
+                relay.post("$prefix/objects/${objectRow.objectId.hex()}", objectRow.body)
+            }
+            val response = relay.post("$prefix/control", prepared.candidateBytes)
+            core.confirmFirstChallenge(family, wrapping, response)
+        } finally {
+            wrapping.fill(0)
+        }
+    }
+
     override fun close() = core.close()
 }
 

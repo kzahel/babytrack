@@ -25,6 +25,10 @@ To exercise the current relay slice on an emulator:
    for a key holder; this stage does not provide shared data yet. Retrying
    after restart resubmits the saved claim without rereading through the
    invitation credential, whose read access closes at claim commit.
+5. On the holder's debug screen, use **Respond to pending device**. The app
+   verifies the claim, commits a challenge addressed to the recipient, and
+   reports that it is waiting for the recipient's proof. Retrying after
+   restart reuses the exact saved challenge.
 
 The on-device integration test calls the same Keystore and transport adapter
 through a real relay. With the emulator and `adb reverse` running, build it
@@ -39,5 +43,6 @@ adb shell am instrument -w -e relayPublicKey PUBLIC_KEY_HEX \
 The test creates its own Family, promotes a child record, commits an invite,
 reopens its store, and retries both requests. A separate recipient store then
 claims the invitation and retries after restart with the same device identity
-and candidate bytes. The default Android CI compiles this test, while
+and candidate bytes. The holder then commits and retries the challenge. The
+default Android CI compiles this test, while
 execution currently uses the local emulator and relay.

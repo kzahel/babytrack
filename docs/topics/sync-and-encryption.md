@@ -119,6 +119,9 @@ relay, then hydrates the full log after admission.
 An enrollment attempt does not appear in the local-only tracker Family list,
 and the local-only API rejects activity or backup access through its handle.
 Its later shared data view must come from the verified shared-session API.
+Prepared holder challenges are reconstructed from the verified historical
+claim prefix on retry, including after later controls commit. The holder
+chooses the recipient from verified pending authority state in Rust.
 
 Per-holder keypairs are needed because a removed device that knows the old
 shared key could otherwise read the new key while it is handed to the

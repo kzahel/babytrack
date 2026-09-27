@@ -434,6 +434,45 @@ pub fn first_join_chain(
     Ok(PublicHistorySession::resume(store, family)?.chain().clone())
 }
 
+/// Reconstruct an earlier verified control prefix after later entries have
+/// committed. The full durable log is verified first, then the saved prefix
+/// is replayed with every interleaved batch and its receipt.
+pub fn first_join_prefix_chain(
+    store: &SqliteStore,
+    family: FamilyHandle,
+    relay_public: [u8; 32],
+    expected_controls: usize,
+) -> Result<ControlChain, Error> {
+    PublicHistorySession::resume(store, family)?;
+    let history = store
+        .shared_history(family)?
+        .ok_or(Error::Invalid("genesis missing"))?;
+    if history.relay_public_key != relay_public || expected_controls == 0 {
+        return Err(Error::Invalid("first join prefix relay mismatch"));
+    }
+    let mut chain = ControlChain::from_genesis(&history.genesis_bytes, relay_public)?;
+    let mut controls = 1;
+    for entry in history.entries {
+        if controls == expected_controls {
+            break;
+        }
+        match entry.kind {
+            1 => {
+                chain.apply_control(&entry.committed_bytes)?;
+                controls += 1;
+            }
+            2 => {
+                chain.apply_public_batch(&entry.committed_bytes, &entry.receipt_bytes)?;
+            }
+            _ => return Err(Error::Invalid("first join prefix entry kind")),
+        }
+    }
+    if controls != expected_controls {
+        return Err(Error::Invalid("first join control prefix absent"));
+    }
+    Ok(chain)
+}
+
 /// Pending devices verify the signed control ancestry without treating
 /// missing data cursors as verified. This never advances the contiguous
 /// shared history high-water mark.

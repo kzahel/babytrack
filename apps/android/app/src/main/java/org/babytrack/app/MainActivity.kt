@@ -363,6 +363,22 @@ private fun TrackerScreen(
                                 Text(stringResource(R.string.invite_fragment_label))
                                 SelectionContainer { Text(fragment) }
                             }
+                            OutlinedButton(onClick = {
+                                shareStage = context.getString(R.string.challenge_preparing)
+                                scope.launch {
+                                    runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            sharing.respondToClaim(family, relayOrigin.trim())
+                                        }
+                                    }.onSuccess {
+                                        shareStage = context.getString(R.string.challenge_confirmed)
+                                        message = null
+                                    }.onFailure {
+                                        shareStage = context.getString(R.string.share_retry)
+                                        message = errorText
+                                    }
+                                }
+                            }) { Text(stringResource(R.string.respond_to_claim)) }
                         }
                     }
                 }

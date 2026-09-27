@@ -1,7 +1,10 @@
 //! Durable genesis reservation and commit. All methods are internal until
 //! authenticated routes and the remaining authority transitions are ready.
 
-use std::{collections::BTreeSet, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
 
 use babytrack_wire::{
     cbor::{self, Value},
@@ -286,6 +289,7 @@ impl RelayStore {
         let mut control_count = 0u64;
         let mut batch_count = 0u64;
         let mut object_ids = BTreeSet::new();
+        let mut historical_heads = BTreeMap::new();
         let mut ledger: Option<public_ledger::PublicLedger> = None;
         while let Some(row) = log.next()? {
             let position: i64 = row.get(0)?;
@@ -381,6 +385,7 @@ impl RelayStore {
                 }
                 _ => return Err(Error::Invalid("stored log kind")),
             }
+            historical_heads.insert(cursor, head);
         }
         if control_count == 0
             || i64::try_from(cursor).ok() != Some(saved_cursor)
@@ -405,7 +410,34 @@ impl RelayStore {
         if u64::try_from(saved_batches).ok() != Some(batch_count) {
             return Err(Error::Invalid("batch results outside committed log"));
         }
-        ledger.ok_or(Error::Invalid("public ledger absent"))
+        let ledger = ledger.ok_or(Error::Invalid("public ledger absent"))?;
+        let mut rejected = snapshot.prepare(
+            "SELECT batch_id,envelope_bytes,receipt_bytes FROM rejected_batch_results WHERE family_id=?1",
+        )?;
+        let rows = rejected.query_map(params![&family[..]], |row| {
+            Ok((
+                row.get::<_, Vec<u8>>(0)?,
+                row.get::<_, Vec<u8>>(1)?,
+                row.get::<_, Vec<u8>>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (id, envelope, signed_result) = row?;
+            let parsed = receipt::verify_stored_rejected_batch(
+                &envelope,
+                &signed_result,
+                family,
+                genesis.relay_id,
+                &relay_public,
+            )?;
+            if id != parsed.batch_id
+                || ledger.contains_id(&parsed.batch_id)
+                || historical_heads.get(&parsed.cursor) != Some(&parsed.control_head)
+            {
+                return Err(Error::Invalid("stored rejected result differs"));
+            }
+        }
+        Ok(ledger)
     }
 
     pub fn relay_public_key(&self) -> [u8; 32] {
@@ -3272,6 +3304,7 @@ mod tests {
         envelope: &[u8],
         author_id: [u8; 16],
         sequence: u64,
+        batch_id: Option<[u8; 16]>,
         author_seed: [u8; 32],
     ) -> Vec<u8> {
         let Value::Map(mut outer) = cbor::decode(envelope).unwrap() else {
@@ -3282,6 +3315,9 @@ mod tests {
         };
         header[6].1 = Value::Bytes(author_id.to_vec());
         header[7].1 = Value::Integer(sequence.into());
+        if let Some(batch_id) = batch_id {
+            header[5].1 = Value::Bytes(batch_id.to_vec());
+        }
         let Value::Bytes(ciphertext) = &outer[1].1 else {
             panic!()
         };
@@ -3428,7 +3464,7 @@ mod tests {
             .unwrap())
         .try_into()
         .unwrap();
-        let forged = resign_batch_author(&original_envelope, recipient_id, 1, recipient_seed);
+        let forged = resign_batch_author(&original_envelope, recipient_id, 1, None, recipient_seed);
         let forged_batch = batch_authority::verify(
             &forged,
             family,
@@ -3460,7 +3496,8 @@ mod tests {
         )
         .unwrap();
         assert!(RelayStore::open(&path, seed).is_ok());
-        let skipped = resign_batch_author(&original_envelope, parsed.manager_id, 2, manager_seed);
+        let skipped =
+            resign_batch_author(&original_envelope, parsed.manager_id, 2, None, manager_seed);
         let skipped_batch = batch_authority::verify(
             &skipped,
             family,
@@ -3489,6 +3526,41 @@ mod tests {
         db.execute(
             "UPDATE batch_results SET envelope_bytes=?2,receipt_bytes=?3,sequence=1 WHERE family_id=?1",
             params![&family[..], &original_envelope, &saved_receipt],
+        )
+        .unwrap();
+        assert!(RelayStore::open(&path, seed).is_ok());
+        let (mut rejected_id, _) = batch_authority::claimed_identity(&original_envelope).unwrap();
+        rejected_id[15] ^= 1;
+        let rejected_envelope = resign_batch_author(
+            &original_envelope,
+            parsed.manager_id,
+            1,
+            Some(rejected_id),
+            manager_seed,
+        );
+        let mut writer = RelayStore::open(&path, seed).unwrap();
+        let rejected_response = writer
+            .commit_initial_cohort_batch(family, &rejected_envelope)
+            .unwrap();
+        drop(writer);
+        let Value::Map(rejected_fields) = cbor::decode(&rejected_response).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(rejected_receipt) = &rejected_fields[1].1 else {
+            panic!()
+        };
+        assert!(RelayStore::open(&path, seed).is_ok());
+        let mut changed_rejection = rejected_receipt.clone();
+        *changed_rejection.last_mut().unwrap() ^= 1;
+        db.execute(
+            "UPDATE rejected_batch_results SET receipt_bytes=?3 WHERE family_id=?1 AND batch_id=?2",
+            params![&family[..], &rejected_id[..], &changed_rejection],
+        )
+        .unwrap();
+        assert!(RelayStore::open(&path, seed).is_err());
+        db.execute(
+            "UPDATE rejected_batch_results SET receipt_bytes=?3 WHERE family_id=?1 AND batch_id=?2",
+            params![&family[..], &rejected_id[..], rejected_receipt],
         )
         .unwrap();
         assert!(RelayStore::open(&path, seed).is_ok());

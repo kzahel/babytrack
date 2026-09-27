@@ -246,6 +246,10 @@ impl PublicLedger {
         self.head
     }
 
+    pub(crate) fn contains_id(&self, id: &[u8; 16]) -> bool {
+        self.seen_ids.contains(id)
+    }
+
     /// Recheck an accepted data entry at its historical authority position.
     /// A valid relay receipt alone cannot establish author or sequence rights.
     pub(crate) fn apply_batch(

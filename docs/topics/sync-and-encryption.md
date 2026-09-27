@@ -442,6 +442,11 @@ active signing key, exact signature, next per-device sequence, globally new
 batch ID, authoring-head ancestry, and active epoch. General route commit
 transactions still need to use the same verified history.
 Damaged or incomplete reconstruction refuses further commits and reads.
+On reopen, each extant rejected-result row now requires a valid relay
+signature, exact envelope hash/ID/sequence/Family/relay binding, and a signed
+cursor/head present in the authenticated historical log. This detects row
+substitution; deleting a rejected-only row or a reservation-only object row
+still requires an authenticated private checkpoint to detect.
 An offline request or staged object never becomes a
 confirmed authority change. Unknown versions/kinds fail closed.
 

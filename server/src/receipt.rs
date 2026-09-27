@@ -61,6 +61,122 @@ pub(crate) struct StoredAcceptedBatch {
     pub control_head: [u8; 32],
 }
 
+pub(crate) struct StoredRejectedBatch {
+    pub batch_id: [u8; 16],
+    pub cursor: u64,
+    pub control_head: [u8; 32],
+}
+
+/// Reject-result rows are not in the public log. Authenticate the exact
+/// saved bytes and relay signature before using their private ID reservation.
+pub(crate) fn verify_stored_rejected_batch(
+    envelope_bytes: &[u8],
+    receipt_bytes: &[u8],
+    family_id: [u8; 16],
+    relay_id: [u8; 32],
+    relay_public: &[u8; 32],
+) -> Result<StoredRejectedBatch, Error> {
+    let envelope = cbor::decode_with_limits(
+        envelope_bytes,
+        cbor::Limits {
+            max_bytes: 256 * 1024 + 2048,
+            max_depth: 16,
+        },
+    )?;
+    let Value::Map(outer) = envelope else {
+        return Err(Error::Invalid("rejected envelope not map"));
+    };
+    if outer.len() != 3
+        || outer
+            .iter()
+            .enumerate()
+            .any(|(index, (key, _))| *key != index as u64 + 1)
+    {
+        return Err(Error::Invalid("rejected envelope keys"));
+    }
+    let Value::Map(header) = &outer[0].1 else {
+        return Err(Error::Invalid("rejected header not map"));
+    };
+    if header.len() != 10
+        || header
+            .iter()
+            .enumerate()
+            .any(|(index, (key, _))| *key != index as u64 + 1)
+    {
+        return Err(Error::Invalid("rejected header keys"));
+    }
+    let batch_id = fixed::<16>(&header[5].1)?;
+    if fixed::<16>(&header[1].1)? != family_id || fixed::<32>(&header[2].1)? != relay_id {
+        return Err(Error::Invalid("rejected envelope identity"));
+    }
+    let Value::Integer(sequence) = header[7].1 else {
+        return Err(Error::Invalid("rejected envelope sequence"));
+    };
+    let sequence: u64 = sequence
+        .try_into()
+        .map_err(|_| Error::Invalid("rejected envelope sequence range"))?;
+    let receipt = cbor::decode_with_limits(
+        receipt_bytes,
+        cbor::Limits {
+            max_bytes: 1024,
+            max_depth: 4,
+        },
+    )?;
+    let Value::Map(fields) = receipt else {
+        return Err(Error::Invalid("rejected receipt not map"));
+    };
+    if fields.len() != 2 || fields[0].0 != 1 || fields[1].0 != 2 {
+        return Err(Error::Invalid("rejected receipt keys"));
+    }
+    let Value::Map(body) = &fields[0].1 else {
+        return Err(Error::Invalid("rejected receipt body not map"));
+    };
+    if body.len() != 11
+        || body
+            .iter()
+            .enumerate()
+            .any(|(index, (key, _))| *key != index as u64 + 1)
+    {
+        return Err(Error::Invalid("rejected receipt body keys"));
+    }
+    let Value::Integer(cursor) = body[6].1 else {
+        return Err(Error::Invalid("rejected cursor"));
+    };
+    let cursor: u64 = cursor
+        .try_into()
+        .map_err(|_| Error::Invalid("rejected cursor range"))?;
+    let Value::Integer(reason) = body[9].1 else {
+        return Err(Error::Invalid("rejected reason"));
+    };
+    let Value::Integer(next_sequence) = body[10].1 else {
+        return Err(Error::Invalid("rejected next sequence"));
+    };
+    if body[0].1 != Value::Integer(1)
+        || fixed::<16>(&body[1].1)? != family_id
+        || fixed::<32>(&body[2].1)? != relay_id
+        || fixed::<16>(&body[3].1)? != batch_id
+        || fixed::<32>(&body[4].1)? != crypto::hash("object", envelope_bytes)?
+        || body[5].1 != Value::Bool(false)
+        || cursor == 0
+        || body[8].1 != Value::Integer(sequence.into())
+        || !(1..=5).contains(&reason)
+        || next_sequence < 1
+    {
+        return Err(Error::Invalid("rejected receipt context"));
+    }
+    crypto::verify_cbor(
+        "batch-receipt",
+        &cbor::encode(&fields[0].1)?,
+        relay_public,
+        &fixed::<64>(&fields[1].1)?,
+    )?;
+    Ok(StoredRejectedBatch {
+        batch_id,
+        cursor,
+        control_head: fixed::<32>(&body[7].1)?,
+    })
+}
+
 /// Recreate the exact relay-signed acceptance from the saved envelope. This
 /// binds the result row to its log bytes before replay on relay restart.
 pub(crate) fn verify_stored_accepted_batch(

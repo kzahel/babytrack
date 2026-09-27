@@ -253,6 +253,11 @@ Rust regressions open both a fresh store and a version-one store from eight
 threads at once. Local Android relay instrumentation passes with the repair;
 remote run `36343776749` at `14eff1e` passed every required job, including
 the disposable-relay emulator and UI smoke.
+Remote run `36353404176` later exposed a narrower fresh-open race: SQLite
+can return `BUSY` immediately while another connection changes journal mode,
+even with a busy timeout. The open path now retries that one setup statement
+for the bounded timeout; the eight-thread first-open test passed 200 local
+repetitions after the repair. A new remote run must confirm the gate.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

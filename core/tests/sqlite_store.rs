@@ -55,7 +55,8 @@ fn concurrent_first_open_initializes_one_complete_schema() {
         })
         .collect();
     for opening in openings {
-        assert!(opening.join().unwrap().is_ok());
+        let result = opening.join().unwrap();
+        assert!(result.is_ok(), "concurrent first open failed: {result:?}");
     }
     let connection = rusqlite::Connection::open(path).unwrap();
     let version: u32 = connection

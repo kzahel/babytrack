@@ -54,6 +54,10 @@ An Android emulator recovery check now saves readable and protected files
 through the system picker and restores each after reinstall. It verifies the
 saved point and wrong-password denial; physical-phone and provider-failure
 checks remain.
+The Android tracker now retains the selected Family and child across process
+restart, with a two-Family emulator UI check. Remote recovery run
+`36353404176` exposed an independent SQLite fresh-open collision; the bounded
+retry has local stress evidence and awaits a new remote run.
 
 | Field | Current answer |
 |---|---|
@@ -62,7 +66,7 @@ checks remain.
 | Next dependent slice | The first-cohort recheck and [focused general-authority advisory](003-m0-foundation.md#general-authority-advisory-pass-at-98fa0ea) passed. Relay restart replays public controls and accepted batch authority; a signed private checkpoint covers rejected-result and staging-reservation sets. Signed GETs, batch POSTs, manager controls, and later control HTTP writes use that ledger under a SQLite writer lock. Later enrollment after removal and epoch rotation passes on separate emulators. A second admitted manager now invites, grants, and removes a third device with rotation through relay HTTP and Android instrumentation. Later rotations, role changes, cancellation, browser shared outbox, and M0 exit review remain. |
 | Next independent review | Run one broader end-of-M0 recovery and mixed-client gate after its executable coverage closes. Focused advisory findings remain open without serial rechecks during feature development. Prioritize usable tracking and browser shared sync before another review cycle. |
 | Open advisory | The [automatic-status recheck](003-m0-foundation.md#advisory-automatic-status-recheck-at-ad42d78) found an own-claim lost-response ambiguity and a concurrent status-write race. FS37/FS77 regressions and repair remain due before real Family data. Durable streaming of large control history also remains open. |
-| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Runs `36343776749` at `14eff1e` and `36347868348` at `88babbf` passed every required job. Run `36349395626` at `b27fed8` passed relay instrumentation but its UI smoke searched only downward for a corrected bottle. The runner now searches back upward; run `36350797102` at `77915ae` passed all required jobs. The new document-picker recovery check has local emulator evidence and awaits its first remote run. |
+| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Run `36350797102` at `77915ae` passed all required jobs. Run `36353404176` at `01da900` exposed a concurrent SQLite first-open `BUSY`; the document-picker recovery check passed locally and its remote emulator result is pending. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.

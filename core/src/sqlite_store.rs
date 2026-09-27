@@ -434,7 +434,24 @@ impl SqliteStore {
             return Err(Error::CorruptState);
         }
         if observed_version == 0 {
-            connection.execute_batch("PRAGMA journal_mode = WAL;")?;
+            // SQLite may return BUSY immediately while another fresh opener
+            // switches the journal mode, even with busy_timeout installed.
+            // Journal mode cannot be changed inside the schema transaction.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            loop {
+                match connection.execute_batch("PRAGMA journal_mode = WAL;") {
+                    Ok(()) => break,
+                    Err(rusqlite::Error::SqliteFailure(code, _))
+                        if matches!(
+                            code.code,
+                            rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+                        ) && std::time::Instant::now() < deadline =>
+                    {
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    Err(error) => return Err(error.into()),
+                }
+            }
         }
         // Recheck under the writer lock: another opener may have completed a
         // migration after our first version read.

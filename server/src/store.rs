@@ -70,6 +70,7 @@ pub struct RelayStore {
 
 type SavedReservation = (Vec<u8>, Vec<u8>, i64, Option<Vec<u8>>);
 type StoredCommittedObject = (i64, Vec<u8>, Vec<u8>, Vec<u8>);
+type StoredBatchResult = (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, i64);
 
 enum ControlReader {
     Manager,
@@ -267,6 +268,7 @@ impl RelayStore {
             let mut cursor = 0u64;
             let mut head = [0u8; 32];
             let mut control_count = 0u64;
+            let mut batch_count = 0u64;
             let mut object_ids = BTreeSet::new();
             while let Some(row) = log.next()? {
                 let position: i64 = row.get(0)?;
@@ -315,16 +317,35 @@ impl RelayStore {
                         control_count += 1;
                     }
                     2 => {
-                        let saved: Option<Vec<u8>> = snapshot
+                        let saved: Option<StoredBatchResult> = snapshot
                             .query_row(
-                                "SELECT envelope_bytes FROM batch_results WHERE family_id=?1 AND cursor=?2",
+                                "SELECT envelope_bytes,receipt_bytes,batch_id,author_id,sequence FROM batch_results WHERE family_id=?1 AND cursor=?2",
                                 params![&family[..], position],
-                                |row| row.get(0),
+                                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
                             )
                             .optional()?;
-                        if saved.as_deref() != Some(bytes.as_slice()) {
+                        let Some((envelope, signed_result, batch_id, author_id, sequence)) = saved
+                        else {
+                            return Err(Error::Invalid("stored batch result missing"));
+                        };
+                        if envelope != bytes {
                             return Err(Error::Invalid("stored batch differs from log"));
                         }
+                        let verified = receipt::verify_stored_accepted_batch(
+                            &bytes,
+                            &signed_result,
+                            family,
+                            genesis.relay_id,
+                            cursor,
+                            &self.relay_seed,
+                        )?;
+                        if batch_id != verified.batch_id
+                            || author_id != verified.author_id
+                            || u64::try_from(sequence).ok() != Some(verified.sequence)
+                        {
+                            return Err(Error::Invalid("stored batch result metadata differs"));
+                        }
+                        batch_count += 1;
                     }
                     _ => return Err(Error::Invalid("stored log kind")),
                 }
@@ -342,6 +363,14 @@ impl RelayStore {
             )?;
             if usize::try_from(committed_count).ok() != Some(object_ids.len()) {
                 return Err(Error::Invalid("committed objects outside signed manifests"));
+            }
+            let saved_batches: i64 = snapshot.query_row(
+                "SELECT COUNT(*) FROM batch_results WHERE family_id=?1",
+                params![&family[..]],
+                |row| row.get(0),
+            )?;
+            if u64::try_from(saved_batches).ok() != Some(batch_count) {
+                return Err(Error::Invalid("batch results outside committed log"));
             }
         }
         drop(families);
@@ -3000,6 +3029,26 @@ mod tests {
         drop(db);
         assert!(RelayStore::open(&path, seed).is_ok());
         let db = Connection::open(&path).unwrap();
+        let saved_receipt: Vec<u8> = db
+            .query_row(
+                "SELECT receipt_bytes FROM batch_results WHERE family_id=?1",
+                params![&family[..]],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let mut changed_receipt = saved_receipt.clone();
+        *changed_receipt.last_mut().unwrap() ^= 1;
+        db.execute(
+            "UPDATE batch_results SET receipt_bytes=?2 WHERE family_id=?1",
+            params![&family[..], &changed_receipt],
+        )
+        .unwrap();
+        assert!(RelayStore::open(&path, seed).is_err());
+        db.execute(
+            "UPDATE batch_results SET receipt_bytes=?2 WHERE family_id=?1",
+            params![&family[..], &saved_receipt],
+        )
+        .unwrap();
         db.execute(
             "UPDATE families SET head_hash=?2 WHERE family_id=?1",
             params![&family[..], &[0u8; 32][..]],

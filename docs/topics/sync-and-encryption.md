@@ -443,8 +443,9 @@ The current first-cohort relay authenticates its saved genesis candidate and
 receipt against the cursor-one log entry before authority reads or commits.
 On restart it also checks contiguous cursor positions, control receipt
 signatures and parent links, committed object bytes against signed manifests,
-the saved head and cursor, and batch log bytes against their result rows.
-Full control semantics, batch receipt signatures, and derived-row reconstruction are still required
+the saved head and cursor, and accepted batch receipts and metadata against
+their log bytes. Full control and batch semantics, rejected-result rows, and
+other derived-row reconstruction are still required
 for the general ledger.
 
 The extracted `wire` verifier prepares invitation-issue, two-signature

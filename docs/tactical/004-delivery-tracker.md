@@ -39,7 +39,7 @@ one through the text share target, prefilled for an explicit join action.
 | Next dependent slice | The early first-cohort authority recheck passed. The general-authority seam advisory failed its initial sketch. First-cohort claim expiry, batch retry-first lookup and cursor CAS, candidate-scoped staging, and control/batch serialization have focused regressions. Client and relay now share invitation-issue, claim, holder-challenge, key-proof, admission, and active-removal preparation. Move remaining state rules and history into a rebuildable public ledger before later-device authority. Browser outbox, signed ID-collision coverage, and crash campaigns remain before M0 exit. |
 | Next independent review | The [early M0 authority recheck at `82c0f4c`](003-m0-foundation.md#early-m0-authority-recheck-at-82c0f4c) returned PASS for the implemented first cohort. The broader end-of-M0 recovery and mixed-client gate remains. |
 | Open advisory | The [Android sync recheck](003-m0-foundation.md#advisory-android-sync-recheck-at-00e827b) passed its two prior high findings at fixed revision `00e827b`. Activity recreation and forced recipient job retry pass on the real-relay emulator. Injected hostile-batch display proof and full M0 authority review remain. |
-| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Run `36307785165` passed Rust, native, browser, and Android build; the emulator exposed a SQLite writer collision between scheduled sync and a foreground sharing action. A bounded local-store busy timeout and competing-connection regression pass locally; a green remote rerun remains open. |
+| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Run `36308749163` at `c640b15` passed all required jobs, including the scheduled-sync emulator case after the bounded SQLite wait. A newer relay restart-integrity run remains in progress. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.
@@ -122,7 +122,12 @@ non-emulator jobs but exposed a `DatabaseBusy` collision in the scheduled-job
 sharing test. The shared Rust local store now waits up to ten seconds for a
 competing writer. The competing-connection Rust regression, seven real-relay
 emulator instrumentation cases, one-emulator UI smoke, and ten-step
-two-emulator sharing flow pass locally. A green remote run remains open.
+two-emulator sharing flow pass locally.
+
+Remote run `36308749163` at `c640b15` then passed all required jobs,
+including Android real-relay instrumentation, scheduled sync, and UI smoke.
+The later restart-integrity commits have local server and two-emulator proof;
+their remote run is tracked separately.
 
 For each gate, the owning tactical records the fixed commit, local commands,
 observed CI run, scenario IDs, security session/disposition if applicable,

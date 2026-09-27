@@ -50,6 +50,84 @@ pub(crate) struct CommittedObjectRef {
     pub len: u32,
 }
 
+pub(crate) struct StoredAcceptedBatch {
+    pub batch_id: [u8; 16],
+    pub author_id: [u8; 16],
+    pub sequence: u64,
+}
+
+/// Recreate the exact relay-signed acceptance from the saved envelope. This
+/// binds the result row to its log bytes before replay on relay restart.
+pub(crate) fn verify_stored_accepted_batch(
+    envelope_bytes: &[u8],
+    receipt_bytes: &[u8],
+    family_id: [u8; 16],
+    relay_id: [u8; 32],
+    cursor: u64,
+    relay_seed: &[u8; 32],
+) -> Result<StoredAcceptedBatch, Error> {
+    let value = cbor::decode_with_limits(
+        envelope_bytes,
+        cbor::Limits {
+            max_bytes: 256 * 1024 + 2048,
+            max_depth: 16,
+        },
+    )?;
+    let Value::Map(outer) = value else {
+        return Err(Error::Invalid("stored batch not map"));
+    };
+    if outer.len() != 3
+        || outer
+            .iter()
+            .enumerate()
+            .any(|(i, (key, _))| *key != i as u64 + 1)
+    {
+        return Err(Error::Invalid("stored batch keys"));
+    }
+    let Value::Map(header) = &outer[0].1 else {
+        return Err(Error::Invalid("stored batch header not map"));
+    };
+    if header.len() != 10
+        || header
+            .iter()
+            .enumerate()
+            .any(|(i, (key, _))| *key != i as u64 + 1)
+    {
+        return Err(Error::Invalid("stored batch header keys"));
+    }
+    if fixed::<16>(&header[1].1)? != family_id || fixed::<32>(&header[2].1)? != relay_id {
+        return Err(Error::Invalid("stored batch Family or relay"));
+    }
+    let Value::Integer(epoch) = header[4].1 else {
+        return Err(Error::Invalid("stored batch epoch"));
+    };
+    let Value::Integer(sequence) = header[7].1 else {
+        return Err(Error::Invalid("stored batch sequence"));
+    };
+    let batch = VerifiedBatch {
+        family_id,
+        relay_id,
+        control_head: fixed::<32>(&header[3].1)?,
+        epoch: epoch
+            .try_into()
+            .map_err(|_| Error::Invalid("stored batch epoch range"))?,
+        batch_id: fixed::<16>(&header[5].1)?,
+        author_id: fixed::<16>(&header[6].1)?,
+        sequence: sequence
+            .try_into()
+            .map_err(|_| Error::Invalid("stored batch sequence range"))?,
+        object_hash: crypto::hash("object", envelope_bytes)?,
+    };
+    if accepted_batch(&batch, cursor, relay_seed)? != receipt_bytes {
+        return Err(Error::Invalid("stored batch acceptance differs"));
+    }
+    Ok(StoredAcceptedBatch {
+        batch_id: batch.batch_id,
+        author_id: batch.author_id,
+        sequence: batch.sequence,
+    })
+}
+
 /// Authenticate stored committed control bytes before they influence relay
 /// authority reconstruction. The candidate and receipt context must agree.
 pub(crate) fn verify_control_receipt(

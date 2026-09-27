@@ -314,8 +314,7 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
             writers.push(std::thread::spawn(move || {
                 barrier.wait();
                 for _ in 0..50 {
-                    if let Ok(result) = connection.commit_initial_cohort_batch(family_id, &envelope)
-                    {
+                    if let Ok(result) = connection.commit_batch(family_id, &envelope) {
                         return result;
                     }
                     std::thread::sleep(std::time::Duration::from_millis(5));

@@ -270,7 +270,7 @@ async fn commit_batch(
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let response = store
-        .commit_initial_cohort_batch(family_id, &body)
+        .commit_batch(family_id, &body)
         .map_err(|_| StatusCode::CONFLICT)?;
     Ok(cbor_response(response))
 }

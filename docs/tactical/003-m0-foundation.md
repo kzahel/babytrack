@@ -1276,6 +1276,15 @@ classes; the dynamic CLI and two-emulator flows exercise the HTTP paths.
 General later-device negative and post-rotation read cases are still needed
 before exposing the manager-change route.
 
+The relay batch POST now derives the author's signing key and active status,
+the current epoch, historical head binding, and next sequence from the
+authenticated public ledger in the same SQLite writer transaction. A durable
+manager batch with an earlier same-epoch head commits after a cancellation;
+exact retry returns the saved receipt before and after restart. Workspace
+tests and the two-emulator join, bidirectional sync, removal, and private-copy
+flow pass. Later-device and rotation-race signed cases remain before the
+general authority gate closes.
+
 ## Advisory public-ledger restart review at bdbed9e
 
 Daybreak Blue at high thinking reviewed fixed clean commit

@@ -290,6 +290,26 @@ impl PublicLedger {
         self.relay_id
     }
 
+    pub(crate) fn current_epoch(&self) -> Result<u32, Error> {
+        let Value::Map(state) = &self.state else {
+            return Err(Error::Invalid("public state not map"));
+        };
+        let Value::Integer(epoch) = state[3].1 else {
+            return Err(Error::Invalid("public epoch not integer"));
+        };
+        epoch
+            .try_into()
+            .map_err(|_| Error::Invalid("public epoch range"))
+    }
+
+    pub(crate) fn epoch_for_head(&self, head: &[u8; 32]) -> Option<u32> {
+        self.epochs.epoch_for_head(head)
+    }
+
+    pub(crate) fn next_sequence(&self, author: [u8; 16]) -> u64 {
+        self.next_sequences.get(&author).copied().unwrap_or(1)
+    }
+
     pub(crate) fn reader(&self, signer_id: [u8; 16]) -> Result<Option<PublicReader>, Error> {
         let Value::Map(state) = &self.state else {
             return Err(Error::Invalid("public state not map"));

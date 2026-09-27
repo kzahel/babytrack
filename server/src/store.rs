@@ -1571,10 +1571,10 @@ impl RelayStore {
         Ok(receipt::control_commit_response(&committed)?)
     }
 
-    /// Accept an epoch-one batch from the initial manager or first admitted
-    /// recipient. The manager remains authorized throughout the join, so its
-    /// durable outbox may refer to any committed first-cohort control ancestor.
-    pub fn commit_initial_cohort_batch(
+    /// Commit a data batch against the authenticated public Family ledger.
+    /// An active author's durable outbox may refer to any control ancestor
+    /// bound to the current epoch, even when newer controls have committed.
+    pub fn commit_batch(
         &mut self,
         path_family: [u8; 16],
         envelope_bytes: &[u8],
@@ -1606,49 +1606,22 @@ impl RelayStore {
             }
             return Ok(receipt::batch_commit_response(&old_receipt)?);
         }
-        let controls = control_count(&tx, path_family)?;
-        if !(1..=7).contains(&controls) {
-            return Err(Error::Invalid("initial-cohort batch authority superseded"));
-        }
-        let (genesis_bytes, genesis_committed): (Vec<u8>, Vec<u8>) = tx.query_row(
-            "SELECT candidate_bytes,committed_bytes FROM families WHERE family_id=?1 AND active=1",
-            params![&path_family[..]],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
-        let genesis = verify_stored_genesis(&tx, path_family, &genesis_bytes, self.relay_public)?;
-        let (signer, active_author) = if author == genesis.manager_id {
-            (genesis.manager_signing_key, true)
-        } else if controls >= 3 {
-            let prefix = load_join_prefix(&tx, self.relay_public, path_family)?;
-            if author != prefix.claim.device_id {
-                return Err(Error::Invalid("batch author not enrolled"));
-            }
-            (prefix.claim.signing_public, controls == 6)
-        } else {
-            return Err(Error::Invalid("batch author not enrolled"));
+        let mut ledger =
+            Self::verify_saved_family(&tx, path_family, self.relay_public, &self.relay_seed)?;
+        let (signer, active_author) = match ledger.reader(author)? {
+            Some(public_ledger::PublicReader::Manager(key))
+            | Some(public_ledger::PublicReader::Active(key)) => (key, true),
+            Some(public_ledger::PublicReader::Pending { signing_key, .. })
+            | Some(public_ledger::PublicReader::Removed(signing_key)) => (signing_key, false),
+            _ => return Err(Error::Invalid("batch author not enrolled")),
         };
-        let batch = batch_authority::verify(envelope_bytes, path_family, genesis.relay_id, signer)?;
-        if batch.family_id != path_family
-            || batch.relay_id != genesis.relay_id
-            || batch.author_id != author
-        {
-            return Err(Error::Invalid("batch identity mismatch"));
-        }
+        let batch =
+            batch_authority::verify(envelope_bytes, path_family, ledger.relay_id(), signer)?;
         if batch.batch_id != claimed_id || batch.author_id != author {
             return Err(Error::Invalid("batch claimed identity mismatch"));
         }
         ensure_new_protocol_ids(&tx, path_family, &[batch.batch_id])?;
-        let genesis_head = crypto::hash("control-head", &genesis_committed)?;
-        let known_ancestor = if author == genesis.manager_id {
-            let mut found = false;
-            for ordinal in 0..controls {
-                let committed = control_at(&tx, path_family, ordinal)?;
-                found |= crypto::hash("control-head", &committed)? == batch.control_head;
-            }
-            found
-        } else {
-            crypto::hash("control-head", &control_at(&tx, path_family, 5)?)? == batch.control_head
-        };
+        let known_ancestor = ledger.epoch_for_head(&batch.control_head) == Some(batch.epoch);
         let (cursor, current_head): (i64, Vec<u8>) = tx.query_row(
             "SELECT cursor,head_hash FROM families WHERE family_id=?1 AND active=1",
             params![&path_family[..]],
@@ -1657,24 +1630,16 @@ impl RelayStore {
         let current_head: [u8; 32] = current_head
             .try_into()
             .map_err(|_| Error::Invalid("Family head length"))?;
-        let last: Option<i64> = tx.query_row(
-            "SELECT MAX(sequence) FROM batch_results WHERE family_id=?1 AND author_id=?2",
-            params![&path_family[..], &author[..]],
-            |r| r.get(0),
-        )?;
-        let next_sequence = u64::try_from(last.unwrap_or(0))
-            .map_err(|_| Error::Invalid("stored sequence negative"))?
-            .checked_add(1)
-            .ok_or(Error::Invalid("sequence overflow"))?;
-        let current_epoch = if controls == 7 { 2 } else { 1 };
+        if current_head != ledger.head() {
+            return Err(Error::Invalid("batch ledger head differs"));
+        }
+        let next_sequence = ledger.next_sequence(author);
+        let current_epoch = ledger.current_epoch()?;
         let reason = if !active_author {
             Some(2)
         } else if batch.epoch != current_epoch {
             Some(1)
-        } else if !known_ancestor
-            || (controls == 1 && batch.control_head != genesis_head)
-            || (controls == 7 && batch.control_head != current_head)
-        {
+        } else if !known_ancestor {
             Some(3)
         } else if batch.sequence != next_sequence {
             Some(4)
@@ -1704,6 +1669,15 @@ impl RelayStore {
             .checked_add(1)
             .ok_or(Error::Invalid("cursor overflow"))?;
         let receipt = receipt::accepted_batch(&batch, next_cursor, &self.relay_seed)?;
+        let saved = receipt::verify_stored_accepted_batch(
+            envelope_bytes,
+            &receipt,
+            path_family,
+            ledger.relay_id(),
+            next_cursor,
+            &self.relay_seed,
+        )?;
+        ledger.apply_batch(envelope_bytes, &saved)?;
         tx.execute(
             "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,?2,2,?3)",
             params![
@@ -3194,7 +3168,7 @@ mod tests {
         let genesis_verified =
             authority::verify_genesis_candidate(&genesis_candidate, &store.relay_public).unwrap();
         let batch = signed_manager_batch(&issue_committed, &genesis_verified, manager_seed);
-        store.commit_initial_cohort_batch(family, &batch).unwrap();
+        store.commit_batch(family, &batch).unwrap();
         let ledger =
             RelayStore::verify_saved_family(&store.db, family, store.relay_public, &seed).unwrap();
         let candidate = cancel_candidate(
@@ -3294,6 +3268,19 @@ mod tests {
                 ))
                 .unwrap(),
             accepted
+        );
+        // A later control changed the head, but this durable manager batch
+        // still names an ancestor in the same epoch and uses the next sequence.
+        let (mut second_id, _) = batch_authority::claimed_identity(&batch).unwrap();
+        second_id[15] ^= 0x7f;
+        let second = resign_batch_author(&batch, manager, 2, Some(second_id), manager_seed);
+        let second_result = store.commit_batch(family, &second).unwrap();
+        assert_eq!(store.commit_batch(family, &second).unwrap(), second_result);
+        drop(store);
+        let mut reopened = RelayStore::open(&path, seed).unwrap();
+        assert_eq!(
+            reopened.commit_batch(family, &second).unwrap(),
+            second_result
         );
     }
     fn signed_get(
@@ -3641,7 +3628,7 @@ mod tests {
                     let result = if control {
                         store.commit_first_issue(family, &issue_candidate, time)
                     } else {
-                        store.commit_initial_cohort_batch(family, &batch)
+                        store.commit_batch(family, &batch)
                     };
                     if let Ok(result) = result {
                         return result;
@@ -3764,9 +3751,7 @@ mod tests {
             manager_seed,
         );
         let mut writer = RelayStore::open(&path, seed).unwrap();
-        let rejected_response = writer
-            .commit_initial_cohort_batch(family, &rejected_envelope)
-            .unwrap();
+        let rejected_response = writer.commit_batch(family, &rejected_envelope).unwrap();
         drop(writer);
         let Value::Map(rejected_fields) = cbor::decode(&rejected_response).unwrap() else {
             panic!()

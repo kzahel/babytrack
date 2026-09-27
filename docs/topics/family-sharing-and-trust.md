@@ -101,6 +101,9 @@ it cannot authorize a device, restore a role, or decrypt Family data.
 The phone shows an explicit active Family and child for new activity actions.
 If either is required but missing, it asks for a target before saving. Starting
 a timer captures both IDs; switching views later does not move that timer.
+The Android tracker remembers its last active Family and child on this phone
+across process restarts, and validates both against currently available
+records before presenting an active target.
 A configured widget captures its Family and child, and a watch action carries
 the selected Family and child to the phone. Imports choose a destination
 Family and child mapping before writing. Export, backup, and invitation

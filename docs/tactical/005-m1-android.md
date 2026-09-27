@@ -164,6 +164,9 @@ local Family; the headed local UI smoke remains the presentation check.
 Family choices now include the first child's name when known, so caregivers
 can distinguish multiple local and joined Families without relying only on
 their creation order. Empty Families retain the numbered label.
+The tracker now remembers the active Family and child across a process
+restart. Its emulator UI smoke creates a second Family with two children,
+records on the second child, restarts, and checks that child's timeline.
 The early independent authority recheck passed for that implemented cohort
 at `82c0f4c`; [003](003-m0-foundation.md#early-m0-authority-recheck-at-82c0f4c)
 records its limits. No physical two-phone or full M0 exit gate has passed.

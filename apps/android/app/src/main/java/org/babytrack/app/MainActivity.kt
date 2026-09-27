@@ -399,8 +399,15 @@ private fun TrackerScreen(
     var loadedFamilyKey by remember { mutableStateOf<String?>(null) }
     var activeFamilyIsLocal by remember { mutableStateOf(false) }
     var saveStatusVersion by remember { mutableStateOf(0) }
-    var selectedFamily by remember { mutableStateOf<String?>(null) }
-    var selectedChild by remember { mutableStateOf<String?>(null) }
+    val selectionPrefs = remember { context.getSharedPreferences("tracker_selection", Context.MODE_PRIVATE) }
+    var selectedFamily by remember { mutableStateOf(selectionPrefs.getString("family", null)) }
+    var selectedChild by remember { mutableStateOf(selectionPrefs.getString("child", null)) }
+    LaunchedEffect(loadedFamilyKey, selectedFamily, selectedChild, children) {
+        if (selectedFamily != null && loadedFamilyKey == selectedFamily) {
+            val child = selectedChild.takeIf { chosen -> children.any { it.id.key() == chosen } }
+            selectionPrefs.edit().putString("family", selectedFamily).putString("child", child).apply()
+        }
+    }
     var childName by remember { mutableStateOf("") }
     var childRename by remember { mutableStateOf<String?>(null) }
     var pendingChildMetadataEdit by remember { mutableStateOf<PendingChildMetadataEdit?>(null) }

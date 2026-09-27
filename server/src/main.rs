@@ -16,6 +16,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let seed: [u8; 32] = fs::read(seed_file)?
         .try_into()
         .map_err(|_| "seed file must contain exactly 32 bytes")?;
+    let relay_public = babytrack_wire::crypto::signing_public_key(&seed);
+    let public_hex: String = relay_public
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
     let listener = tokio::net::TcpListener::bind(bind).await?;
+    eprintln!("Relay public key: {public_hex}");
+    eprintln!("Listening on {bind}");
     babytrack_server::serve(db, seed, listener).await
 }

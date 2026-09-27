@@ -96,7 +96,7 @@ jobs:
           cargo install --locked cargo-ndk --version 4.1.2
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
       - name: Build source-linked debug APK
-        run: apps/android/gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon
+        run: apps/android/gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
       - name: Keep dogfood artifact
         uses: actions/upload-artifact@v4
         with:

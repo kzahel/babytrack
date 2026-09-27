@@ -43,4 +43,18 @@
     <string name="inspect_protected">Check protected backup</string>
     <string name="confirm_restore">Restore as new Family</string>
     <string name="error">Could not complete the action. Try again.</string>
+    <string name="dev_share_title">Sharing setup preview</string>
+    <string name="dev_share_description">Connect to a development relay. This screen can prepare sharing and an invitation; receiving and automatic sync are still in progress. Use a local relay only for test data.</string>
+    <string name="relay_origin">Relay origin (HTTPS or localhost)</string>
+    <string name="relay_public_key">Relay public key (64 hex digits)</string>
+    <string name="share_preparing">Preparing encrypted history and contacting the relay…</string>
+    <string name="share_confirmed">Sharing confirmed at relay cursor %1$d. Automatic sync is not connected yet.</string>
+    <string name="share_retry">Could not confirm with this relay. Check its settings or retry; a saved request will use the same bytes.</string>
+    <string name="share_retry_button">Set up or retry sharing</string>
+    <string name="invite_member">Member</string>
+    <string name="invite_manager">Manager</string>
+    <string name="invite_preparing">Preparing one-device invitation…</string>
+    <string name="invite_confirmed">Invitation committed. Keep this fragment private.</string>
+    <string name="create_invite">Create or retry invitation</string>
+    <string name="invite_fragment_label">Invitation fragment for development testing</string>
 </resources>

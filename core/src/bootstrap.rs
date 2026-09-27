@@ -77,7 +77,7 @@ impl InvitationBootstrap {
         invitation_sign_seed: [u8; 32],
         prior_batches: &[(&[u8], &[u8])],
     ) -> Result<Self, Error> {
-        validate_origin(relay_origin)?;
+        validate_relay_origin(relay_origin)?;
         let genesis = control::verify_genesis(genesis_bytes, &relay_public_key)?;
         let issue = cbor::decode_with_limits(
             issue_bytes,
@@ -147,7 +147,7 @@ impl InvitationBootstrap {
         let Value::Text(origin) = &parts[1] else {
             return Err(Error::Invalid("relay origin not text"));
         };
-        validate_origin(origin)?;
+        validate_relay_origin(origin)?;
         let fixed_role: u8 = number(&parts[6])?
             .try_into()
             .map_err(|_| Error::Invalid("invitation role outside u8"))?;
@@ -172,7 +172,7 @@ impl InvitationBootstrap {
     }
 
     pub fn to_fragment(&self) -> Result<String, Error> {
-        validate_origin(&self.relay_origin)?;
+        validate_relay_origin(&self.relay_origin)?;
         let value = Value::Array(vec![
             Value::Integer(1),
             Value::Text(self.relay_origin.clone()),
@@ -313,7 +313,7 @@ impl InvitationBootstrap {
     }
 }
 
-fn validate_origin(origin: &str) -> Result<(), Error> {
+pub fn validate_relay_origin(origin: &str) -> Result<(), Error> {
     let authority = if let Some(authority) = origin.strip_prefix("https://") {
         authority
     } else if let Some(authority) = origin.strip_prefix("http://localhost:") {

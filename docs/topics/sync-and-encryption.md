@@ -113,8 +113,8 @@ others. Roles limit use of the app's shared family; they cannot stop a
 member who can decrypt all data from copying or exporting that data.
 
 Durable recipient enrollment secrets and epoch keys use a local 32-byte
-wrapping key supplied through a platform adapter. The Android adapter will
-protect that key with Android Keystore; the core encrypts Family-scoped
+wrapping key supplied through a platform adapter. The Android development
+adapter now protects that key with Android Keystore; the core encrypts Family-scoped
 secret rows before SQLite commit and never sends the wrapping key to the
 relay. This local key is not a recovery path: losing the installation and
 its key still requires an existing manager to invite a new device or a

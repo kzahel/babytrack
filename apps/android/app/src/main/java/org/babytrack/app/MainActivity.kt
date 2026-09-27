@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -35,6 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -71,6 +73,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 TrackerScreen(
                     store = remember { NativeLocalStore.open(database.absolutePath) },
+                    sharing = remember { ShareCoordinator(this, database.absolutePath) },
                     readFile = { uri -> contentResolver.openInputStream(uri)?.use {
                         readBounded(it, backupReadLimit(availableMemory()))
                     } },
@@ -114,13 +117,15 @@ private data class ScreenData(
 @Composable
 private fun TrackerScreen(
     store: NativeLocalStore,
+    sharing: ShareCoordinator,
     readFile: (android.net.Uri) -> ByteArray?,
     writeFile: (android.net.Uri, ByteArray) -> Unit,
     availableMemory: () -> Long,
     lastSave: (FamilyRef) -> CompletedSave?,
     recordSave: (BackupFileRow) -> Boolean,
 ) {
-    DisposableEffect(store) { onDispose { store.close() } }
+    val context = LocalContext.current
+    DisposableEffect(store, sharing) { onDispose { store.close(); sharing.close() } }
     val scope = rememberCoroutineScope()
     var version by remember { mutableStateOf(0) }
     var families by remember { mutableStateOf<List<FamilyRef>>(emptyList()) }
@@ -134,6 +139,11 @@ private fun TrackerScreen(
     var childName by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
+    var relayOrigin by remember { mutableStateOf("") }
+    var relayPublicKey by remember { mutableStateOf("") }
+    var shareStage by remember { mutableStateOf<String?>(null) }
+    var invitationFragment by remember { mutableStateOf<String?>(null) }
+    var inviteAsManager by remember { mutableStateOf(false) }
     val errorText = stringResource(R.string.error)
     val savedText = stringResource(R.string.saved)
     val restoredText = stringResource(R.string.restored)
@@ -242,6 +252,85 @@ private fun TrackerScreen(
             }) { Text(stringResource(R.string.new_family)) }
 
             if (family != null) {
+                if (BuildConfig.DEBUG) {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(stringResource(R.string.dev_share_title), style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.dev_share_description))
+                            OutlinedTextField(
+                                value = relayOrigin,
+                                onValueChange = { relayOrigin = it },
+                                label = { Text(stringResource(R.string.relay_origin)) },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                            )
+                            OutlinedTextField(
+                                value = relayPublicKey,
+                                onValueChange = { relayPublicKey = it },
+                                label = { Text(stringResource(R.string.relay_public_key)) },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                            )
+                            Button(onClick = {
+                                shareStage = context.getString(R.string.share_preparing)
+                                scope.launch {
+                                    runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            sharing.promote(family, relayOrigin.trim(), relayPublicKey)
+                                        }
+                                    }.onSuccess { cursor ->
+                                        shareStage = context.getString(R.string.share_confirmed, cursor.toLong())
+                                        message = null
+                                    }.onFailure {
+                                        shareStage = context.getString(R.string.share_retry)
+                                        message = errorText
+                                    }
+                                }
+                            }) { Text(stringResource(R.string.share_retry_button)) }
+                            shareStage?.let { Text(it) }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = !inviteAsManager,
+                                    onClick = { inviteAsManager = false },
+                                    label = { Text(stringResource(R.string.invite_member)) },
+                                )
+                                FilterChip(
+                                    selected = inviteAsManager,
+                                    onClick = { inviteAsManager = true },
+                                    label = { Text(stringResource(R.string.invite_manager)) },
+                                )
+                            }
+                            OutlinedButton(onClick = {
+                                shareStage = context.getString(R.string.invite_preparing)
+                                scope.launch {
+                                    runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            sharing.invite(
+                                                family,
+                                                relayOrigin.trim(),
+                                                if (inviteAsManager) 2u.toUByte() else 1u.toUByte(),
+                                            )
+                                        }
+                                    }.onSuccess { fragment ->
+                                        invitationFragment = fragment
+                                        shareStage = context.getString(R.string.invite_confirmed)
+                                        message = null
+                                    }.onFailure {
+                                        shareStage = context.getString(R.string.share_retry)
+                                        message = errorText
+                                    }
+                                }
+                            }) { Text(stringResource(R.string.create_invite)) }
+                            invitationFragment?.let { fragment ->
+                                Text(stringResource(R.string.invite_fragment_label))
+                                SelectionContainer { Text(fragment) }
+                            }
+                        }
+                    }
+                }
                 restoredOrigin?.let { origin ->
                     Text(stringResource(R.string.restored_from, savedTime(origin.snapshotUtcMs)))
                     if (origin.knownGap) Text(stringResource(R.string.file_known_gap))

@@ -5,6 +5,7 @@
 use std::sync::{Arc, Mutex};
 
 use babytrack_core::{
+    cbor::{self, Value},
     creation::ManagerCreation,
     issue::FirstInviteIssue,
     local_api::{ActivityTime, LocalRepository},
@@ -186,13 +187,13 @@ impl NativeSharedStore {
         &self,
         family: FamilyRef,
         wrapping_key: Vec<u8>,
-        committed_genesis: Vec<u8>,
+        commit_response: Vec<u8>,
     ) -> Result<u64, BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
         let prepared = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
             .map_err(rejected)?;
         Ok(prepared
-            .confirm(&mut store, &committed_genesis)
+            .confirm(&mut store, &committed_control(&commit_response)?)
             .map_err(rejected)?
             .observed_cursor())
     }
@@ -223,7 +224,7 @@ impl NativeSharedStore {
         &self,
         family: FamilyRef,
         wrapping_key: Vec<u8>,
-        committed_issue: Vec<u8>,
+        commit_response: Vec<u8>,
         relay_origin: String,
     ) -> Result<String, BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
@@ -232,7 +233,12 @@ impl NativeSharedStore {
         let issue = FirstInviteIssue::resume(&store, &creation, &fixed(&wrapping_key)?)
             .map_err(rejected)?;
         issue
-            .confirm(&mut store, &creation, &committed_issue, &relay_origin)
+            .confirm(
+                &mut store,
+                &creation,
+                &committed_control(&commit_response)?,
+                &relay_origin,
+            )
             .map_err(rejected)?
             .to_fragment()
             .map_err(rejected)
@@ -614,6 +620,32 @@ fn fixed<const N: usize>(bytes: &[u8]) -> Result<[u8; N], BindingError> {
     bytes.try_into().map_err(|_| BindingError::InvalidBytes)
 }
 
+fn committed_control(response: &[u8]) -> Result<Vec<u8>, BindingError> {
+    let Value::Map(fields) = cbor::decode_with_limits(
+        response,
+        cbor::Limits {
+            max_bytes: 1024 * 1024 + 128,
+            max_depth: 16,
+        },
+    )
+    .map_err(rejected)?
+    else {
+        return Err(BindingError::InvalidBytes);
+    };
+    if fields.len() != 2 || fields[0] != (1, Value::Integer(1)) || fields[1].0 != 2 {
+        return Err(BindingError::InvalidBytes);
+    }
+    let Value::Bytes(committed) = &fields[1].1 else {
+        return Err(BindingError::InvalidBytes);
+    };
+    Ok(committed.clone())
+}
+
 fn rejected(error: impl std::fmt::Debug) -> BindingError {
     BindingError::Rejected(format!("{error:?}"))
+}
+
+#[uniffi::export]
+pub fn validate_relay_origin(origin: String) -> Result<(), BindingError> {
+    babytrack_core::bootstrap::validate_relay_origin(&origin).map_err(rejected)
 }

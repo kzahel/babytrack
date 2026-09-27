@@ -73,8 +73,16 @@ It returns exact staged object and candidate bytes to a platform transport,
 and confirms sharing or emits the one-use link only after the core verifies
 the committed relay entry. Kotlin and Swift smokes check that preparation
 survives an exact retry and a wrong local wrapping key cannot reopen it.
-Android Keystore, network transport, pending-join UI, and background delivery
-still need to consume this binding.
+Pending-join UI and background delivery still need to consume this binding.
+The Android debug sharing preview now uses that binding with a Keystore-wrapped
+installation key and a byte-only HTTP adapter. A manager enters an exact
+relay origin and its public key, then stages encrypted promotion objects and
+confirms the signed genesis before seeing a share result; first invite issue
+likewise yields its fragment only after signed commit. An emulator test
+against a local relay with `adb reverse` promoted a child Family, issued an
+invite, reopened the app store, and retried both writes. Android CI compiles
+the instrumentation test but does not run an emulator. This preview does not
+yet receive invites or sync subsequent edits, and says so in the UI.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

@@ -135,6 +135,24 @@ class SharingRelayTest {
             assertEquals(1, sharing.snapshot(first.family).activities.size)
             assertEquals(2uL, sharing.snapshot(first.family).unsentCount)
             assertEquals(0uL, sharing.snapshot(first.family).inertCount)
+            val file = sharing.backupFile(first.family, now, null, 512_000_000uL)
+            assertArrayEquals(first.family.familyId, file.info.sourceFamilyId)
+            assertEquals(4uL, file.info.recordCount)
+            val protected = sharing.backupFile(first.family, now, "backup secret", 512_000_000uL)
+            NativeLocalStore.open(context.filesDir.resolve("restored-${System.nanoTime()}.db").absolutePath).use { local ->
+                assertEquals(4uL, local.inspectProtected(protected.bytes, "backup secret", 512_000_000uL).recordCount)
+                assertTrue(runCatching {
+                    local.inspectProtected(protected.bytes, "wrong secret", 512_000_000uL)
+                }.isFailure)
+                val restored = local.restore(file.bytes, now)
+                assertEquals(2, local.children(restored).size)
+            }
+            val copy = sharing.privateCopy(first.family, now)
+            assertArrayEquals(copy.familyId, sharing.privateCopy(first.family, now + 1).familyId)
+            assertTrue(!sharing.isShared(copy))
+            NativeLocalStore.open(recipient.absolutePath).use { local ->
+                assertEquals(2, local.children(copy).size)
+            }
         }
         ShareCoordinator(context, recipient.absolutePath).use { sharing ->
             assertTrue(sharing.syncRecipient(first.family).ready)

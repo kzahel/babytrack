@@ -23,6 +23,9 @@
     <string name="diaper">Diaper · %1$s</string>
     <string name="backup_title">Save a copy</string>
     <string name="backup_description">Save this Family’s records to a readable file. Anyone with the file can read it. Restoring creates a separate Family and does not restore shared access.</string>
+    <string name="shared_backup_description">Save verified shared history and changes still saved on this device. The file is a snapshot; restoring creates a separate Family without shared access. Anyone with an unprotected file can read it.</string>
+    <string name="make_private_copy">Make a private Family copy</string>
+    <string name="private_copy_created">Private copy ready. It will not sync with the original Family.</string>
     <string name="protected_backup_description">A password protects this copy. Keep the password: it cannot be recovered. Restoring creates a separate Family and does not restore shared access.</string>
     <string name="save_backup">Save backup</string>
     <string name="restore_backup">Restore backup</string>

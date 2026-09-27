@@ -883,6 +883,55 @@ impl NativeSharedStore {
         })
     }
 
+    /// A shared file contains the verified prefix and durable local edits.
+    /// Restoring it always creates an independent local-only Family.
+    pub fn shared_backup_file(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        now_ms: i64,
+        password: Option<String>,
+        available_memory_bytes: u64,
+    ) -> Result<BackupFileRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let ready = ready_session_for(&mut store, family.handle()?, &fixed(&wrapping_key)?)?;
+        let readable =
+            babytrack_core::portable_file::export_readable_shared(&store, &ready, now_ms)
+                .map_err(rejected)?;
+        let info = LocalRepository::inspect_readable(&readable).map_err(rejected)?;
+        let bytes = if let Some(password) = password {
+            babytrack_core::portable_file::protect_readable(
+                &readable,
+                &password,
+                available_memory_bytes,
+            )
+            .map_err(rejected)?
+        } else {
+            readable
+        };
+        Ok(BackupFileRow {
+            bytes,
+            revision: 0,
+            info: info.into(),
+        })
+    }
+
+    /// Repeated requests return the same independent destination Family.
+    pub fn private_copy_shared(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        now_ms: i64,
+    ) -> Result<FamilyRef, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let ready = ready_session_for(&mut store, family.handle()?, &fixed(&wrapping_key)?)?;
+        Ok(
+            babytrack_core::portable_file::private_copy_shared(&mut store, &ready, now_ms)
+                .map_err(rejected)?
+                .into(),
+        )
+    }
+
     pub fn is_shared(&self, family: FamilyRef) -> Result<bool, BindingError> {
         self.store
             .lock()

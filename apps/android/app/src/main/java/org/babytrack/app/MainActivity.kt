@@ -327,6 +327,17 @@ private fun TrackerScreen(
             Text(stringResource(if (activeShared) R.string.shared_family else R.string.local_only), style = MaterialTheme.typography.labelMedium)
             if (automaticSyncDelayed) Text(stringResource(R.string.automatic_sync_delayed))
             if (activeShared) activeSharedSnapshot?.let { SharedHealth(it) }
+            if (activeShared && family != null) OutlinedButton(onClick = {
+                scope.launch {
+                    runCatching { withContext(Dispatchers.IO) { sharing.privateCopy(family, System.currentTimeMillis()) } }
+                        .onSuccess { copy ->
+                            selectedFamily = copy.familyId.key()
+                            selectedChild = null
+                            version++
+                            message = context.getString(R.string.private_copy_created)
+                        }.onFailure { message = errorText }
+                }
+            }) { Text(stringResource(R.string.make_private_copy)) }
             Text(stringResource(R.string.families), style = MaterialTheme.typography.titleLarge)
             families.forEachIndexed { index, item ->
                 FilterChip(
@@ -436,6 +447,51 @@ private fun TrackerScreen(
                             Text(stringResource(R.string.shared_children), style = MaterialTheme.typography.titleMedium)
                             Text(stringResource(R.string.shared_manual_sync))
                             SharedHealth(snapshot)
+                            OutlinedButton(onClick = {
+                                scope.launch {
+                                    runCatching { withContext(Dispatchers.IO) {
+                                        sharing.privateCopy(snapshot.family, System.currentTimeMillis())
+                                    } }.onSuccess { copy ->
+                                        selectedFamily = copy.familyId.key()
+                                        selectedChild = null
+                                        version++
+                                        message = context.getString(R.string.private_copy_created)
+                                    }.onFailure { message = errorText }
+                                }
+                            }) { Text(stringResource(R.string.make_private_copy)) }
+                            Text(stringResource(R.string.shared_backup_description))
+                            FilterChip(
+                                selected = protectBackup,
+                                onClick = { protectBackup = !protectBackup },
+                                label = { Text(stringResource(R.string.protect_backup)) },
+                            )
+                            if (protectBackup) OutlinedTextField(
+                                value = backupPassword,
+                                onValueChange = { backupPassword = it },
+                                label = { Text(stringResource(R.string.backup_password)) },
+                                visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true,
+                            )
+                            OutlinedButton(
+                                enabled = !protectBackup || backupPassword.isNotEmpty(),
+                                onClick = {
+                                    scope.launch {
+                                        val protected = protectBackup
+                                        val password = backupPassword
+                                        runCatching { withContext(Dispatchers.IO) {
+                                            sharing.backupFile(
+                                                snapshot.family, System.currentTimeMillis(),
+                                                if (protected) password else null,
+                                                availableMemory().toULong(),
+                                            )
+                                        } }.onSuccess {
+                                            pendingBackup = it
+                                            backupPassword = ""
+                                            saveLauncher.launch(if (protected) protectedFilename else filename)
+                                        }.onFailure { message = errorText }
+                                    }
+                                },
+                            ) { Text(stringResource(R.string.save_backup)) }
                             OutlinedButton(onClick = {
                                 scope.launch {
                                     runCatching {
@@ -727,14 +783,13 @@ private fun TrackerScreen(
                     }
                 }
 
-                if (!activeShared) {
                 Spacer(Modifier.height(8.dp))
                 Text(stringResource(R.string.backup_title), style = MaterialTheme.typography.titleLarge)
-                completed?.let { saved ->
+                if (!activeShared) completed?.let { saved ->
                     Text(stringResource(R.string.last_saved_at, savedTime(saved.atMs)))
                     if (revision > saved.revision) Text(stringResource(R.string.changes_after_save))
                 }
-                Text(stringResource(if (protectBackup) R.string.protected_backup_description else R.string.backup_description))
+                Text(stringResource(if (activeShared) R.string.shared_backup_description else if (protectBackup) R.string.protected_backup_description else R.string.backup_description))
                 FilterChip(
                     selected = protectBackup,
                     onClick = { protectBackup = !protectBackup },
@@ -752,9 +807,12 @@ private fun TrackerScreen(
                         val password = backupPassword
                         val protected = protectBackup
                         runCatching { withContext(Dispatchers.IO) {
-                            store.backupFile(
-                                family,
-                                System.currentTimeMillis(),
+                            if (activeShared) sharing.backupFile(
+                                family, System.currentTimeMillis(),
+                                if (protected) password else null,
+                                availableMemory().toULong(),
+                            ) else store.backupFile(
+                                family, System.currentTimeMillis(),
                                 if (protected) password else null,
                                 availableMemory().toULong(),
                             )
@@ -767,7 +825,6 @@ private fun TrackerScreen(
                             .onFailure { message = errorText }
                     }
                 }, enabled = !protectBackup || backupPassword.isNotEmpty()) { Text(stringResource(R.string.save_backup)) }
-                }
             }
             OutlinedButton(onClick = { restoreLauncher.launch(arrayOf("application/octet-stream", "*/*")) }) {
                 Text(stringResource(R.string.restore_backup))

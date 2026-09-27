@@ -3,6 +3,7 @@ package org.babytrack.app
 import android.content.Context
 import uniffi.babytrack_core_ffi.FamilyRef
 import uniffi.babytrack_core_ffi.ActivityWhen
+import uniffi.babytrack_core_ffi.BackupFileRow
 import uniffi.babytrack_core_ffi.NativeSharedStore
 import uniffi.babytrack_core_ffi.PreparedJoinRow
 import uniffi.babytrack_core_ffi.RecipientSyncRow
@@ -158,6 +159,12 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
             wrapping.fill(0)
         }
     }
+
+    fun backupFile(family: FamilyRef, nowMs: Long, password: String?, availableMemory: ULong): BackupFileRow =
+        withWrapping { wrapping -> core.sharedBackupFile(family, wrapping, nowMs, password, availableMemory) }
+
+    fun privateCopy(family: FamilyRef, nowMs: Long): FamilyRef =
+        withWrapping { wrapping -> core.privateCopyShared(family, wrapping, nowMs) }
 
     fun isShared(family: FamilyRef): Boolean = core.isShared(family)
 

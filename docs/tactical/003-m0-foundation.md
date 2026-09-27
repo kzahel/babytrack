@@ -177,6 +177,13 @@ The real-relay emulator test checks that two offline edits remain visible as
 pending after restart and drain after a signed acceptance. The Rust replay
 test already covers continuation past an authorized unopenable batch; an
 Android injected hostile-batch display test remains open.
+The native shared binding now exports a readable or password-protected file
+from verified history plus durable unsent work, and creates or reuses one
+private local-only Family copy. The Android manager tracker and recipient
+view offer these recovery actions. The emulator test checks the file's
+source Family and records, correct and wrong backup passwords, independent
+restore, copy idempotence, and local-only child visibility. Verified removal
+still needs to trigger the copy automatically when pending work exists.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

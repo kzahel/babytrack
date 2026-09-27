@@ -96,3 +96,7 @@ if rg --text -q 'Test medicine marker 68' "$scratch/relay.db" "$scratch/relay.lo
   echo "Plaintext medication reached relay storage or logs" >&2
   exit 1
 fi
+if rg --text -q 'Pear marker 69' "$scratch/relay.db" "$scratch/relay.log"; then
+  echo 'solids plaintext reached relay' >&2
+  exit 1
+fi

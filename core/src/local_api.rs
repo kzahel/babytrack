@@ -52,6 +52,8 @@ pub struct Activity {
     pub note: Option<String>,
     pub diaper_kind: Option<u8>,
     pub bottle_ml: Option<i64>,
+    pub solids_foods: Option<Vec<String>>,
+    pub solids_amount: Option<String>,
     pub growth_weight_g: Option<i64>,
     pub growth_length_mm: Option<i64>,
     pub temperature_c: Option<String>,
@@ -171,6 +173,19 @@ impl LocalRepository {
     ) -> Result<[u8; 16], Error> {
         let (activity_id, operation) =
             bottle_operation(family, child_id, amount_ml, content, time)?;
+        self.append_activity(family, child_id, operation, time.saved_at_ms)?;
+        Ok(activity_id)
+    }
+
+    pub fn log_solids(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        foods: &[String],
+        amount: &str,
+        time: ActivityTime,
+    ) -> Result<[u8; 16], Error> {
+        let (activity_id, operation) = solids_operation(family, child_id, foods, amount, time)?;
         self.append_activity(family, child_id, operation, time.saved_at_ms)?;
         Ok(activity_id)
     }
@@ -495,6 +510,44 @@ pub fn bottle_operation(
     )
 }
 
+pub fn solids_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    foods: &[String],
+    amount: &str,
+    time: ActivityTime,
+) -> Result<([u8; 16], NewOperation), Error> {
+    let normalized: Vec<_> = foods.iter().map(|food| food.trim()).collect();
+    let amount = amount.trim();
+    if normalized.is_empty()
+        || normalized.len() > 32
+        || normalized
+            .iter()
+            .any(|food| food.is_empty() || food.len() > 256)
+        || amount.len() > 256
+    {
+        return Err(Error::Invalid("solids foods or amount invalid"));
+    }
+    activity_operation(
+        family,
+        child_id,
+        "feed.solids",
+        vec![
+            (
+                100,
+                Value::Array(
+                    normalized
+                        .into_iter()
+                        .map(|food| Value::Text(food.into()))
+                        .collect(),
+                ),
+            ),
+            (101, Value::Text(amount.into())),
+        ],
+        time,
+    )
+}
+
 pub fn sleep_operation(
     family: FamilyHandle,
     child_id: [u8; 16],
@@ -801,6 +854,24 @@ fn activity_summary(record: &Record) -> Option<Activity> {
     } else {
         None
     };
+    let (solids_foods, solids_amount) = if record.record_type == "feed.solids" {
+        let Value::Array(foods) = &record.field(100)?.value else {
+            return None;
+        };
+        let Value::Text(amount) = &record.field(101)?.value else {
+            return None;
+        };
+        let foods = foods
+            .iter()
+            .map(|food| match food {
+                Value::Text(text) => Some(text.clone()),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()?;
+        (Some(foods), Some(amount.clone()))
+    } else {
+        (None, None)
+    };
     let growth_measure = |field| -> Option<i64> {
         let Value::Map(measure) = &record.field(field)?.value else {
             return None;
@@ -861,6 +932,8 @@ fn activity_summary(record: &Record) -> Option<Activity> {
         },
         diaper_kind,
         bottle_ml,
+        solids_foods,
+        solids_amount,
         growth_weight_g: if record.record_type == "growth" {
             growth_measure(100)
         } else {

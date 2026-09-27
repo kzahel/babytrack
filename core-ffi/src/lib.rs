@@ -100,6 +100,8 @@ pub struct ActivityRow {
     pub note: Option<String>,
     pub diaper_kind: Option<u8>,
     pub bottle_ml: Option<i64>,
+    pub solids_foods: Option<Vec<String>>,
+    pub solids_amount: Option<String>,
     pub growth_weight_g: Option<i64>,
     pub growth_length_mm: Option<i64>,
     pub temperature_c: Option<String>,
@@ -1084,6 +1086,8 @@ impl NativeSharedStore {
                 note: row.note,
                 diaper_kind: row.diaper_kind,
                 bottle_ml: row.bottle_ml,
+                solids_foods: row.solids_foods,
+                solids_amount: row.solids_amount,
                 growth_weight_g: row.growth_weight_g,
                 growth_length_mm: row.growth_length_mm,
                 temperature_c: row.temperature_c,
@@ -1278,6 +1282,28 @@ impl NativeSharedStore {
         let saved_at_ms = time.saved_at_ms;
         let (id, operation) =
             local_api::bottle_operation(handle, fixed(&child_id)?, amount_ml, content, time.into())
+                .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map_err(rejected)?;
+        Ok(id.to_vec())
+    }
+
+    pub fn log_shared_solids(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        foods: Vec<String>,
+        amount: String,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let saved_at_ms = time.saved_at_ms;
+        let (id, operation) =
+            local_api::solids_operation(handle, fixed(&child_id)?, &foods, &amount, time.into())
                 .map_err(rejected)?;
         ready
             .append_local(&mut store, operation, saved_at_ms)
@@ -1847,6 +1873,29 @@ impl NativeLocalStore {
             .to_vec())
     }
 
+    pub fn log_solids(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        foods: Vec<String>,
+        amount: String,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .log_solids(
+                family.handle()?,
+                fixed(&child_id)?,
+                &foods,
+                &amount,
+                time.into(),
+            )
+            .map_err(rejected)?
+            .to_vec())
+    }
+
     pub fn log_sleep(
         &self,
         family: FamilyRef,
@@ -2008,6 +2057,8 @@ impl NativeLocalStore {
                 note: row.note,
                 diaper_kind: row.diaper_kind,
                 bottle_ml: row.bottle_ml,
+                solids_foods: row.solids_foods,
+                solids_amount: row.solids_amount,
                 growth_weight_g: row.growth_weight_g,
                 growth_length_mm: row.growth_length_mm,
                 temperature_c: row.temperature_c,

@@ -69,7 +69,9 @@ restart/file restore and cross-device encrypted sync preserve these
 measurements. Medication entry records a name and entered dose amount/unit
 as text without a dosing recommendation; local file restore and encrypted
 cross-device sync preserve the fields. Other published event types and
-entered units remain M1 work.
+entered units remain M1 work. Solids entry stores one trimmed food per line
+as the published atomic list and preserves optional entered amount text;
+local file restore and encrypted cross-device sync preserve both.
 
 Growth percentiles are computed from WHO tables when shown, never stored.
 Wake-window hints are computed from sleep events on the device.

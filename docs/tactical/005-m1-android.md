@@ -19,7 +19,7 @@ or production Family data precedes the M0 exit gate.
 
 The debug app has local Family and child creation, Family switching,
 timeline, bottle, diaper, sleep timer/completed sleep, note, whole-unit
-growth, Celsius, and medication logging. Readable and password-protected
+growth, Celsius, medication, and solids logging. Readable and password-protected
 full files restore into a fresh local Family. A command-driven headed
 emulator check creates a Family and child, logs a diaper, and verifies both
 after restart.
@@ -27,7 +27,7 @@ after restart.
 Two separate emulator installations and a disposable relay pass first-cohort
 join without simultaneous foreground use, reciprocal encrypted edits,
 recipient timer stopped by the manager, growth and temperature delivery,
-medication name/dose delivery, offline pending work, manager removal,
+medication and solids delivery, offline pending work, manager removal,
 recipient proof, and automatic private copy. Foreground polling runs every
 30 seconds; a scheduled job requests sync when Android allows it. Push
 remains a later latency option.
@@ -47,7 +47,7 @@ flow.
   an emulator. The UI smoke runs after restart in CI.
 - [x] Log sleep timers/completed sleep, notes, growth in whole grams and
   millimetres, and entered Celsius decimals through the local/shared core.
-- [ ] Complete the MVP logging set: breast and solids feeds, pumping,
+- [ ] Complete the MVP logging set: breast feeds, pumping,
   growth percentile display, and practical edits/deletes.
   Preserve unknown fields and exact Family/child targets. Keep clinical
   recommendations out of the UI.

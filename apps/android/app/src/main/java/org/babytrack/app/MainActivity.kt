@@ -173,6 +173,8 @@ private fun TrackerScreen(
     var selectedChild by remember { mutableStateOf<String?>(null) }
     var childName by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
+    var solidsFoods by remember { mutableStateOf("") }
+    var solidsAmount by remember { mutableStateOf("") }
     var sleepMinutes by remember { mutableStateOf("") }
     var noteText by remember { mutableStateOf("") }
     var growthWeight by remember { mutableStateOf("") }
@@ -809,6 +811,34 @@ private fun TrackerScreen(
                             amount = ""
                         }) { Text(stringResource(R.string.log_bottle)) }
                     }
+                    Text(stringResource(R.string.log_solids), style = MaterialTheme.typography.titleLarge)
+                    OutlinedTextField(
+                        value = solidsFoods,
+                        onValueChange = { solidsFoods = it.take(2048) },
+                        label = { Text(stringResource(R.string.solids_foods)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = solidsAmount,
+                        onValueChange = { solidsAmount = it.take(256) },
+                        label = { Text(stringResource(R.string.solids_amount)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(enabled = solidsFoods.isNotBlank(), onClick = {
+                        val foods = solidsFoods.lines().map { it.trim() }.filter { it.isNotEmpty() }
+                        val eaten = solidsAmount.trim()
+                        scope.launch {
+                            runCatching { withContext(Dispatchers.IO) {
+                                if (activeShared) sharing.logSolids(family, child.id, foods, eaten, nowTime())
+                                else store.logSolids(family, child.id, foods, eaten, nowTime())
+                            } }.onSuccess {
+                                solidsFoods = ""
+                                solidsAmount = ""
+                                version++
+                                message = null
+                            }.onFailure { message = errorText }
+                        }
+                    }) { Text(stringResource(R.string.save_solids)) }
                     Text(stringResource(R.string.log_sleep), style = MaterialTheme.typography.titleLarge)
                     Button(onClick = { change {
                         if (activeShared) sharing.startSleep(family, child.id, nowTime())
@@ -972,6 +1002,11 @@ private fun TrackerScreen(
                     entries.forEach { entry ->
                         val label = when {
                             entry.bottleMl != null -> stringResource(R.string.bottle, entry.bottleMl!!)
+                            entry.kind == "feed.solids" && entry.solidsFoods != null -> {
+                                val foods = entry.solidsFoods!!.joinToString(", ")
+                                if (entry.solidsAmount.isNullOrBlank()) stringResource(R.string.solids_entry, foods)
+                                else stringResource(R.string.solids_entry_amount, foods, entry.solidsAmount!!)
+                            }
                             entry.kind == "sleep" && entry.endUtcMs != null ->
                                 stringResource(R.string.sleep_duration, (entry.endUtcMs!! - entry.startUtcMs) / 60_000)
                             entry.kind == "sleep" -> stringResource(R.string.sleep_running)

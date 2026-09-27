@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: scaffold-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rust:
     name: Rust workspace

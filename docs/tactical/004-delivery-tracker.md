@@ -50,7 +50,7 @@ Nara sample mapping remain open for their planned features.
 | Next dependent slice | The first-cohort recheck and [focused general-authority advisory](003-m0-foundation.md#general-authority-advisory-pass-at-98fa0ea) passed. Relay restart replays public controls and accepted batch authority; a signed private checkpoint covers rejected-result and staging-reservation sets. Signed GETs, batch POSTs, manager controls, and later control HTTP writes use that ledger under a SQLite writer lock. Later enrollment after removal and epoch rotation passes on separate emulators. A second admitted manager now invites, grants, and removes a third device with rotation through relay HTTP and Android instrumentation. Later rotations, role changes, cancellation, browser shared outbox, and M0 exit review remain. |
 | Next independent review | Run the broader end-of-M0 recovery and mixed-client gate after its executable coverage closes. Focused advisory findings remain open without serial rechecks during feature development. Prioritize usable tracking, later-device enrollment, and browser shared sync before another review cycle. |
 | Open advisory | The [automatic-status recheck](003-m0-foundation.md#advisory-automatic-status-recheck-at-ad42d78) found an own-claim lost-response ambiguity and a concurrent status-write race. FS37/FS77 regressions and repair remain due before real Family data. Durable streaming of large control history also remains open. |
-| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Runs through `bba928a` passed compile and core gates but exposed simultaneous SQLite schema migration in the remote Android emulator. A writer-locked version recheck and concurrent-open regressions now pass locally; the repair still needs remote confirmation. The two-emulator sharing flow and local UI smoke also pass locally. |
+| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Runs through `bba928a` exposed simultaneous SQLite schema migration in the remote Android emulator. Run `36343776749` at `14eff1e` passed every required job after the writer-locked version recheck. Later medication, child-detail, and timeline slices pass local two-emulator or UI smoke checks and await their current remote run. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.
@@ -114,6 +114,8 @@ The [current workflow](../../.github/workflows/scaffold.yml) checks Rust,
 native bindings, wasm/browser storage, Android build and real-relay emulator
 flow, dependency direction, and licenses. Its always-running required job
 matches the current sharing surface, subject to remote-run verification. As
+new main-branch commits arrive, workflow concurrency cancels superseded runs
+so the newest revision receives the emulator gate without a backlog. When
 the corresponding behavior exists, add local crash/replay and property tests,
 broader bounded real-relay scenarios, nightly randomized/fault/fuzz runs with
 saved seeds, and richer Android UI checks. Keep CI assertions tied to

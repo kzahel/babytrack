@@ -251,7 +251,8 @@ one and attempt the same invitation-table migration. Initialization and
 migration now recheck the version under one immediate writer transaction.
 Rust regressions open both a fresh store and a version-one store from eight
 threads at once. Local Android relay instrumentation passes with the repair;
-remote CI at the repair commit remains to be observed.
+remote run `36343776749` at `14eff1e` passed every required job, including
+the disposable-relay emulator and UI smoke.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

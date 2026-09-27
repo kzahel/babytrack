@@ -203,6 +203,15 @@ forces the scheduled job, and fails if instrumentation does not report tests
 passing. The runner script passed locally against an existing relay, and
 `actionlint` accepts the workflow. A remote Actions run has not yet been
 observed; it must be checked before treating this new required job as proven.
+The advisory follow-up found two narrower restart failures. Stale-epoch
+rejection now reconstructs and verifies the control prefix named by its
+signed receipt even when later accepted entries have advanced the current
+pin; one test accepts a later epoch-two batch before resolving the old
+batch, then checks a fresh ID/nonce/sequence across restart (FS48/BATCH04).
+A recipient with only a durable prepared claim now retries those exact bytes
+by Family ID before its first pending-device read; the Android emulator
+tests both a pre-commit failure and a committed claim with lost response
+after coordinator restart (FS38/FS51). No wire version change was needed.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.
@@ -789,6 +798,29 @@ does not close the early M0 gate.
 The reviewer did not recommend a v2 wire change. The agreed v1 contract
 remains the target. See [the review runbook](../security-review-runbook.md)
 for the launch and evidence procedure.
+
+## Advisory Android sync follow-up at 5e45858
+
+Daybreak Blue at high thinking reviewed fixed commit
+`5e458584d8df68f14e7bf1e35611428b0f6e2e04` in read-only detached
+checkout through Yep Anywhere session
+`01a0e0c8-bb0a-7ce2-806e-94279fb25257`. It verified idle and a clean
+checkout. The reviewer ran 55 core tests, 2 CLI tests, 10 relay tests, and
+an offline Android build; it inspected but did not run emulator tests.
+Result: **focused advisory FAIL**, not a formal M0 gate result.
+
+| Finding | Disposition and regression |
+|---|---|
+| High: a signed stale-epoch rejection naming rotation cursor R became unresolvable after unrelated accepted history advanced to R+1. | Rust now replays the verified historical prefix through R, checks the signed head/epoch/sequence there, and archives at the current pin. The FS48/BATCH04 test adds a later accepted epoch-two batch and restart; it reseals retained work with fresh bytes and current sequence. |
+| High: a saved pre-commit recipient claim could not be retried after restart without reentering the bearer fragment. | A Family-scoped binding reopens the encrypted attempt and exact candidate. Foreground and scheduled recipient passes retry it before pending-device reads. The Android real-relay test drops a claim before POST and separately drops a committed response, then resumes by Family ID with empty fragment state (FS38/FS51). |
+
+The reviewer found the prior sequence-conflict recovery, committed-claim
+restart, inert-batch warning, and relay-confirmation wording substantially
+resolved. It requested a real-relay injected hostile-batch warning proof and
+broader FS62 client/relay restart cases as hardening. The focused follow-up
+needs a new fixed-revision check before it can pass; the early M0 gate still
+waits for general authority and rotation. Accepted malicious-relay limits
+remain as described in the trust topic.
 
 ## Advisory Android sync review at 6b10805
 

@@ -3,8 +3,9 @@
 use std::{fs, path::PathBuf, time::SystemTime};
 
 use babytrack_core::{
+    batch::{self, Header},
     cbor::{self, Value},
-    crypto,
+    crypto, local_api,
     operation::{Hlc, Kind, NewOperation, Operation, Scope},
     shared_history::PublicHistorySession,
     shared_ready::{NextUpload, ReadyFamilySession},
@@ -281,6 +282,58 @@ fn interleaved_authority_and_data_keep_one_durable_pinned_cursor() {
         (2, Value::Bytes(rejection_signature.to_vec())),
     ]))
     .unwrap();
+    // The result names the rotation at cursor 9, but another authorized
+    // device entry arrives before this installation queries it.
+    let (_, later_child) = local_api::child_operation(family, "Later child", 200).unwrap();
+    let later_operation = Operation::encode_new(&later_child).unwrap();
+    let later_plain =
+        cbor::encode(&Value::Array(vec![Value::Bytes(later_operation.clone())])).unwrap();
+    let later_header = Header {
+        minor: 0,
+        family_id: family.family_id,
+        relay_id: session.chain().relay_id(),
+        control_head: session.head_hash(),
+        epoch: 2,
+        batch_id: bytes("a5e2c003a16b42d38a43df44a812b979"),
+        author_device_id: family.device_id,
+        device_sequence: old_pending.sequence,
+        nonce: [7; 24],
+        plaintext_len: later_plain.len() as u32,
+    };
+    let later_key = bytes::<32>(
+        fixture["test_only_inputs"]["epoch_2_key_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let later = batch::seal(&later_header, &[later_operation], &later_key, &manager_seed).unwrap();
+    let later_receipt_body = Value::Map(vec![
+        (1, Value::Integer(1)),
+        (2, Value::Bytes(family.family_id.to_vec())),
+        (3, Value::Bytes(session.chain().relay_id().to_vec())),
+        (4, Value::Bytes(later_header.batch_id.to_vec())),
+        (5, Value::Bytes(later.object_hash.to_vec())),
+        (6, Value::Bool(true)),
+        (7, Value::Integer(10)),
+        (8, Value::Bytes(session.head_hash().to_vec())),
+        (9, Value::Integer(old_pending.sequence.into())),
+        (10, Value::Null),
+        (11, Value::Integer((old_pending.sequence + 1).into())),
+    ]);
+    let later_signature = crypto::sign_cbor(
+        "batch-receipt",
+        &cbor::encode(&later_receipt_body).unwrap(),
+        &relay_seed,
+    )
+    .unwrap();
+    let later_receipt = cbor::encode(&Value::Map(vec![
+        (1, later_receipt_body),
+        (2, Value::Bytes(later_signature.to_vec())),
+    ]))
+    .unwrap();
+    session
+        .accept_batch(&mut store, &later.envelope_bytes, &later_receipt)
+        .unwrap();
+    assert_eq!(session.cursor(), 10);
     let mut bad_rejection = rejection.clone();
     *bad_rejection.last_mut().unwrap() ^= 1;
     assert!(
@@ -291,11 +344,16 @@ fn interleaved_authority_and_data_keep_one_durable_pinned_cursor() {
     session
         .reject_stale_pending(&mut store, &rejection)
         .unwrap();
-    let replacement = match ready.stage_next_local(&mut store, &manager_seed).unwrap() {
+    let ready_after_later =
+        ReadyFamilySession::from_store(&store, family, initial_key, manager_agreement).unwrap();
+    let replacement = match ready_after_later
+        .stage_next_local(&mut store, &manager_seed)
+        .unwrap()
+    {
         NextUpload::Fresh(pending) => pending,
         NextUpload::RetryExact(_) => panic!("signed rejection must permit a fresh batch"),
     };
-    assert_eq!(replacement.sequence, old_pending.sequence);
+    assert_eq!(replacement.sequence, old_pending.sequence + 1);
     assert_ne!(replacement.batch_id, old_pending.batch_id);
     assert_ne!(replacement.envelope_bytes, old_pending.envelope_bytes);
     drop(session);
@@ -303,7 +361,7 @@ fn interleaved_authority_and_data_keep_one_durable_pinned_cursor() {
     let store = SqliteStore::open(&path).unwrap();
     let ready_after_restart =
         ReadyFamilySession::from_store(&store, family, initial_key, manager_agreement).unwrap();
-    assert_eq!(ready_after_restart.observed_cursor(), 9);
+    assert_eq!(ready_after_restart.observed_cursor(), 10);
     assert!(
         ready_after_restart
             .projection()

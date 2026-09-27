@@ -332,9 +332,9 @@ impl PublicHistorySession {
         Ok(())
     }
 
-    /// A signed stale-epoch rejection at the already verified new head ends
-    /// uncertainty for this exact envelope. The local operation stays in the
-    /// journal so the ready session can stage fresh nonce/ID bytes.
+    /// A signed stale-epoch rejection ends uncertainty only after its named
+    /// authority prefix has been verified, even if later entries arrived.
+    /// The local operation stays available for a fresh epoch batch.
     pub fn reject_stale_pending(
         &self,
         store: &mut SqliteStore,
@@ -355,7 +355,6 @@ impl PublicHistorySession {
             || signed.header().device_sequence != pending.sequence
             || signed.header().author_device_id != self.family.device_id
             || signed.header().epoch >= self.chain.epoch()?
-            || self.chain.next_sequence_for(self.family.device_id)? != pending.sequence
         {
             return Err(Error::Invalid("pending batch is not a stale local epoch"));
         }
@@ -368,12 +367,38 @@ impl PublicHistorySession {
             || receipt.relay_id != self.chain.relay_id()
             || receipt.batch_id != pending.batch_id
             || receipt.object_hash != pending.object_hash
-            || receipt.cursor != self.cursor()
-            || receipt.control_head != self.head_hash()
+            || receipt.cursor > self.cursor()
             || receipt.device_sequence != pending.sequence
-            || receipt.next_expected_sequence != pending.sequence
         {
             return Err(Error::Invalid("rejection differs from pinned stale batch"));
+        }
+        let mut at_rejection =
+            ControlChain::from_genesis(&history.genesis_bytes, history.relay_public_key)?;
+        for entry in history
+            .entries
+            .iter()
+            .filter(|entry| entry.cursor <= receipt.cursor)
+        {
+            match entry.kind {
+                1 => at_rejection.apply_control(&entry.committed_bytes)?,
+                2 => {
+                    at_rejection
+                        .apply_public_batch(&entry.committed_bytes, &entry.receipt_bytes)?;
+                }
+                _ => return Err(Error::Invalid("shared prefix entry kind invalid")),
+            }
+        }
+        let current_next = self.chain.next_sequence_for(self.family.device_id)?;
+        if at_rejection.last_global_cursor() != receipt.cursor
+            || at_rejection.head_hash() != receipt.control_head
+            || signed.header().epoch >= at_rejection.epoch()?
+            || at_rejection.next_sequence_for(self.family.device_id)?
+                != receipt.next_expected_sequence
+            || current_next < receipt.next_expected_sequence
+        {
+            return Err(Error::Invalid(
+                "stale rejection lacks verified rotated prefix",
+            ));
         }
         store.record_verified_rejection(
             self.family,
@@ -381,7 +406,7 @@ impl PublicHistorySession {
             receipt_bytes,
             self.cursor(),
             self.head_hash(),
-            pending.sequence,
+            current_next,
         )?;
         Ok(())
     }

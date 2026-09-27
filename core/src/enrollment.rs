@@ -487,6 +487,7 @@ impl EnrollmentAttempt {
         shared_history::sparse_enrollment_chain(store, self.family, self.relay_public_key()?)?;
         let controls = store.enrollment_controls(self.family)?.len();
         Ok(match controls {
+            1 => 2, // saved issue and exact claim; POST may not have committed
             3 => 1, // issue, claim, challenge
             _ => 0,
         })

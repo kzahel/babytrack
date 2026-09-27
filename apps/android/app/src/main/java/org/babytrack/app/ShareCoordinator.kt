@@ -71,6 +71,16 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         }
     }
 
+    fun retryClaim(family: FamilyRef): PreparedJoinRow {
+        val relay = RelayTransport(recipientOrigin(family))
+        return withWrapping { wrapping ->
+            val prepared = core.resumeJoinFamily(family, wrapping)
+            val response = relay.post("/v1/families/${family.familyId.hex()}/control", prepared.candidateBytes)
+            core.confirmJoinClaim(family, wrapping, response)
+            prepared
+        }
+    }
+
     fun respondToClaim(family: FamilyRef, origin: String) {
         validateRelayOrigin(origin)
         val relay = RelayTransport(origin)
@@ -239,6 +249,9 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     }
 
     fun advanceRecipient(family: FamilyRef): RecipientSyncRow {
+        if (withWrapping { wrapping -> core.recipientFirstJoinAction(family, wrapping) }.toInt() == 2) {
+            retryClaim(family)
+        }
         var progress = syncRecipient(family)
         if (withWrapping { wrapping -> core.recipientFirstJoinAction(family, wrapping) }.toInt() == 1) {
             proveChallenge(family)

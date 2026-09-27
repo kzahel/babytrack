@@ -265,7 +265,9 @@
       "actions": [
         "old-epoch upload times out",
         "verify rotation to epoch 2",
+        "verify a later unrelated accepted entry after the rotation",
         "query old batch result: rejected",
+        "bind signed rejection head to the verified rotation prefix, not necessarily the latest head",
         "rebatch same op1 ID with fresh nonce and batch ID"
       ],
       "expect": {

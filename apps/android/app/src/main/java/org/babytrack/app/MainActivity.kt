@@ -389,11 +389,15 @@ private fun TrackerScreen(
                             label = { Text(stringResource(R.string.received_fragment)) },
                             modifier = Modifier.fillMaxWidth(),
                         )
-                        Button(enabled = receivedFragment.isNotBlank(), onClick = {
+                        Button(enabled = selectedRecipient != null || receivedFragment.isNotBlank(), onClick = {
                             joinStage = context.getString(R.string.join_preparing)
                             scope.launch {
                                 runCatching {
-                                    withContext(Dispatchers.IO) { sharing.claim(receivedFragment.trim()) }
+                                    withContext(Dispatchers.IO) {
+                                        val recipient = recipientFamilies.find { it.familyId.key() == selectedRecipient }
+                                        if (receivedFragment.isNotBlank()) sharing.claim(receivedFragment.trim())
+                                        else sharing.retryClaim(recipient ?: error("No saved recipient claim"))
+                                    }
                                 }.onSuccess { prepared ->
                                     selectedRecipient = prepared.family.familyId.key()
                                     version++

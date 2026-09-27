@@ -361,6 +361,29 @@ impl NativeSharedStore {
         )
     }
 
+    /// Recover the exact encrypted-in-store claim after process restart,
+    /// without requiring the bearer invitation fragment in UI memory.
+    pub fn resume_join_family(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+    ) -> Result<PreparedJoinRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let attempt = EnrollmentAttempt::resume(
+            &mut store,
+            family.handle()?.family_id,
+            &fixed(&wrapping_key)?,
+        )
+        .map_err(rejected)?;
+        if attempt.family() != family.handle()? {
+            return Err(BindingError::InvalidBytes);
+        }
+        Ok(PreparedJoinRow {
+            family,
+            candidate_bytes: attempt.claim_candidate().to_vec(),
+        })
+    }
+
     /// Verify the invitation-linked public controls before generating or
     /// storing this installation's recipient credentials.
     pub fn prepare_join(

@@ -12,9 +12,50 @@ import org.junit.runner.RunWith
 import uniffi.babytrack_core_ffi.NativeLocalStore
 import uniffi.babytrack_core_ffi.NativeSharedStore
 import uniffi.babytrack_core_ffi.ActivityWhen
+import uniffi.babytrack_core_ffi.previewInvitation
 
 @RunWith(AndroidJUnit4::class)
 class SharingRelayTest {
+    @Test
+    fun savedClaimRetriesByFamilyAfterPrecommitFailureOrLostResponse() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
+            ?: error("relayPublicKey instrumentation argument required")
+        val origin = "http://localhost:8787"
+        for (committedBeforeRestart in listOf(false, true)) {
+            val managerDb = context.filesDir.resolve("claim-manager-${System.nanoTime()}.db")
+            val recipientDb = context.filesDir.resolve("claim-recipient-${System.nanoTime()}.db")
+            val family = NativeLocalStore.open(managerDb.absolutePath).use { local ->
+                local.createFamily(System.currentTimeMillis())
+            }
+            val fragment = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+                sharing.promote(family, origin, publicKey)
+                sharing.invite(family, origin, 1u.toUByte())
+            }
+            val preview = previewInvitation(fragment)
+            val relay = RelayTransport(origin)
+            val wrapping = DeviceWrappingKey(context).loadOrCreate()
+            val prepared = try {
+                NativeSharedStore.open(recipientDb.absolutePath).use { core ->
+                    val page = relay.get(preview.controlPath, preview.readAuth)
+                    core.prepareJoin(fragment, page, wrapping)
+                }
+            } finally {
+                wrapping.fill(0)
+            }
+            if (committedBeforeRestart) {
+                relay.post("/v1/families/${family.familyId.joinToString("") { "%02x".format(it) }}/control", prepared.candidateBytes)
+                // Drop the signed response before the local claim is confirmed.
+            }
+            ShareCoordinator(context, recipientDb.absolutePath).use { sharing ->
+                assertArrayEquals(prepared.family.familyId, sharing.recipientFamilies().single().familyId)
+                assertEquals(origin, sharing.recipientOrigin(prepared.family))
+                assertTrue(sharing.advanceRecipient(prepared.family).awaitingGrant)
+                assertArrayEquals(prepared.candidateBytes, sharing.retryClaim(prepared.family).candidateBytes)
+            }
+        }
+    }
+
     @Test
     fun scheduledJobUploadsSavedManagerEdit() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()

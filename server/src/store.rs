@@ -7,6 +7,7 @@ use std::{
 };
 
 use babytrack_wire::{
+    authority as public_authority,
     cbor::{self, Value},
     crypto,
 };
@@ -676,6 +677,10 @@ impl RelayStore {
             .optional()?)
     }
 
+    pub fn current_control_count(&self, family: [u8; 16]) -> Result<i64, Error> {
+        control_count(&self.db, family)
+    }
+
     pub fn stage_first_issue_object(
         &mut self,
         path_family: [u8; 16],
@@ -1014,6 +1019,7 @@ impl RelayStore {
         {
             return Err(Error::Invalid("not a staged general control"));
         }
+        let prior_state = ledger.state().clone();
         ledger.apply(&verified, &provisional)?;
         ensure_control_ids(&tx, family, &candidate)?;
         let listed = verified
@@ -1026,6 +1032,7 @@ impl RelayStore {
         {
             return Err(Error::Invalid("staged object differs from manifest"));
         }
+        validate_general_grant_object(&candidate, &prior_state, kind, object_id, &object_bytes)?;
         let entry = authority::ManifestEntry {
             kind: listed.kind,
             object_id: listed.id,
@@ -1093,6 +1100,7 @@ impl RelayStore {
         {
             return Err(Error::Invalid("not a general control"));
         }
+        let prior_state = ledger.state().clone();
         ledger.apply(&verified, &committed)?;
         if !verified.manifest.is_empty() {
             let staged: Option<Vec<u8>> = tx.query_row(
@@ -1103,6 +1111,7 @@ impl RelayStore {
             if staged.as_deref() != Some(candidate) {
                 return Err(Error::Invalid("control candidate not staged"));
             }
+            let mut grant_recipients = BTreeSet::new();
             for object in &verified.manifest {
                 let saved: Option<(i64, Vec<u8>, Vec<u8>)> = tx.query_row(
                     "SELECT kind,object_hash,object_bytes FROM staged_control_objects WHERE family_id=?1 AND transition_id=?2 AND object_id=?3",
@@ -1119,10 +1128,52 @@ impl RelayStore {
                 {
                     return Err(Error::Invalid("control manifest object differs"));
                 }
+                if let Some(recipient) = validate_general_grant_object(
+                    candidate,
+                    &prior_state,
+                    object.kind,
+                    object.id,
+                    &bytes,
+                )? && !grant_recipients.insert(recipient)
+                {
+                    return Err(Error::Invalid("grant recipient repeated"));
+                }
                 tx.execute(
                     "INSERT INTO committed_objects(family_id,object_id,kind,object_hash,object_bytes,transition_id) VALUES(?1,?2,?3,?4,?5,?6)",
                     params![&family[..], &object.id[..], kind, &hash, &bytes, &transition[..]],
                 )?;
+            }
+            if verified.kind == 8 {
+                let Value::Map(fields) = &prior_state else {
+                    return Err(Error::Invalid("rotation prior state not map"));
+                };
+                let Value::Array(active) = &fields[4].1 else {
+                    return Err(Error::Invalid("rotation active state not array"));
+                };
+                let Value::Map(root) = cbor::decode(candidate)? else {
+                    return Err(Error::Invalid("rotation candidate not map"));
+                };
+                let Value::Map(unsigned) = &root[0].1 else {
+                    return Err(Error::Invalid("rotation unsigned not map"));
+                };
+                let Value::Map(delta) = &unsigned[6].1 else {
+                    return Err(Error::Invalid("rotation delta not map"));
+                };
+                let removed = fixed::<16>(&delta[0].1)?;
+                let remaining: BTreeSet<_> = active
+                    .iter()
+                    .map(|row| match row {
+                        Value::Array(parts) => fixed::<16>(&parts[0]),
+                        _ => Err(Error::Invalid("rotation active row not array")),
+                    })
+                    .collect::<Result<_, _>>()?;
+                let remaining: BTreeSet<_> = remaining
+                    .into_iter()
+                    .filter(|device| *device != removed)
+                    .collect();
+                if grant_recipients != remaining {
+                    return Err(Error::Invalid("rotation grants omit active device"));
+                }
             }
         }
         let next_head = ledger.head();
@@ -2406,6 +2457,102 @@ fn stage_parts(body: &[u8]) -> Result<StagedObjectParts, Error> {
     Ok((candidate, kind, object_id, bytes.clone()))
 }
 
+fn validate_general_grant_object(
+    candidate: &[u8],
+    state: &Value,
+    object_kind: u16,
+    object_id: [u8; 16],
+    bytes: &[u8],
+) -> Result<Option<[u8; 16]>, Error> {
+    if object_kind != 4 {
+        return Ok(None);
+    }
+    let Value::Map(root) = cbor::decode(candidate)? else {
+        return Err(Error::Invalid("grant candidate not map"));
+    };
+    let Some((1, Value::Map(unsigned))) = root.first() else {
+        return Err(Error::Invalid("grant unsigned transition absent"));
+    };
+    let Value::Map(delta) = &unsigned[6].1 else {
+        return Err(Error::Invalid("grant delta not map"));
+    };
+    let kind = number(&unsigned[5].1)?;
+    let core_hash = fixed::<32>(&unsigned[10].1)?;
+    let Value::Map(state) = state else {
+        return Err(Error::Invalid("grant state not map"));
+    };
+    let Value::Array(active) = &state[4].1 else {
+        return Err(Error::Invalid("grant active state not array"));
+    };
+    let Value::Array(pending) = &state[5].1 else {
+        return Err(Error::Invalid("grant pending state not array"));
+    };
+    let (purpose, recipient, key_version) = match kind {
+        6 => {
+            let recipient = fixed::<16>(&delta[1].1)?;
+            let row = pending
+                .iter()
+                .find_map(|row| match row {
+                    Value::Array(parts) if fixed::<16>(&parts[1]).ok() == Some(recipient) => {
+                        Some(parts)
+                    }
+                    _ => None,
+                })
+                .ok_or(Error::Invalid("admission grant recipient not pending"))?;
+            (1, recipient, number(&row[4])?)
+        }
+        8 => {
+            let removed = fixed::<16>(&delta[0].1)?;
+            let Value::Map(object) = cbor::decode(bytes)? else {
+                return Err(Error::Invalid("rotation grant not map"));
+            };
+            let Some((4, recipient_value)) = object.get(3) else {
+                return Err(Error::Invalid("rotation grant recipient absent"));
+            };
+            let recipient = fixed::<16>(recipient_value)?;
+            if recipient == removed {
+                return Err(Error::Invalid("rotation grant addressed to removed device"));
+            }
+            let row = active
+                .iter()
+                .find_map(|row| match row {
+                    Value::Array(parts) if fixed::<16>(&parts[0]).ok() == Some(recipient) => {
+                        Some(parts)
+                    }
+                    _ => None,
+                })
+                .ok_or(Error::Invalid("rotation grant recipient not active"))?;
+            (2, recipient, number(&row[3])?)
+        }
+        10 => {
+            let recipient = fixed::<16>(&delta[0].1)?;
+            let row = active
+                .iter()
+                .find_map(|row| match row {
+                    Value::Array(parts) if fixed::<16>(&parts[0]).ok() == Some(recipient) => {
+                        Some(parts)
+                    }
+                    _ => None,
+                })
+                .ok_or(Error::Invalid("repair grant recipient not active"))?;
+            (3, recipient, number(&row[3])?)
+        }
+        _ => return Err(Error::Invalid("grant object in wrong control")),
+    };
+    public_authority::validate_public_grant(
+        bytes,
+        object_id,
+        purpose,
+        recipient,
+        key_version
+            .try_into()
+            .map_err(|_| Error::Invalid("grant key version range"))?,
+        core_hash,
+    )
+    .map_err(|_| Error::Invalid("grant public context differs"))?;
+    Ok(Some(recipient))
+}
+
 fn stage_control_object(
     tx: &Transaction<'_>,
     family: [u8; 16],
@@ -3556,6 +3703,42 @@ mod tests {
                 let id_hex = item[1].as_str().unwrap();
                 let id: [u8; 16] = hex(id_hex).try_into().unwrap();
                 let bytes = hex(objects[id_hex].as_str().unwrap());
+                if kind == 4 {
+                    let ledger = RelayStore::verify_saved_family(
+                        &store.db,
+                        family,
+                        store.relay_public,
+                        &seed,
+                    )
+                    .unwrap();
+                    assert!(
+                        validate_general_grant_object(&candidate, ledger.state(), 4, id, &bytes,)
+                            .unwrap()
+                            .is_some()
+                    );
+                    for field in [2, 3, 4, 6] {
+                        let Value::Map(mut grant) = cbor::decode(&bytes).unwrap() else {
+                            panic!()
+                        };
+                        grant[field].1 = match field {
+                            2 | 4 => Value::Integer(999),
+                            3 => Value::Bytes([0x99; 16].to_vec()),
+                            6 => Value::Bytes([0x99; 32].to_vec()),
+                            _ => unreachable!(),
+                        };
+                        let altered = cbor::encode(&Value::Map(grant)).unwrap();
+                        assert!(
+                            validate_general_grant_object(
+                                &candidate,
+                                ledger.state(),
+                                4,
+                                id,
+                                &altered,
+                            )
+                            .is_err()
+                        );
+                    }
+                }
                 let body = cbor::encode(&Value::Map(vec![
                     (1, Value::Integer(1)),
                     (2, unsigned.clone()),

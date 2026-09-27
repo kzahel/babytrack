@@ -1291,8 +1291,14 @@ commits later issue, claim, challenge, proof, admission, repair, and rotation
 through the same ledger inside one SQLite write transaction. The published
 control chain and interleaved batch reproduce exact bytes, retry exactly,
 and survive reopen. A missing or altered staged object fails before commit.
-This is not yet an exposed later-device route: public grant-envelope checks,
-negative role and epoch cases, and a focused independent review remain.
+The HTTP boundary now routes later control kinds to that transactional writer
+while retaining the stricter first-cohort paths at their original positions.
+Public admission, repair, and rotation grant envelopes must name the right
+recipient, key version, purpose, and transition core; rotation covers each
+remaining active device exactly once. A later repair and rotating removal
+reproduce published bytes through HTTP and reopen cleanly. General negative
+role and epoch cases, Android later-device preparation, and a focused
+independent review remain.
 
 ## Advisory public-ledger restart review at bdbed9e
 

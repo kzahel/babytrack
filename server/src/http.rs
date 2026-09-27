@@ -1,5 +1,4 @@
-//! Development relay routes for the first join and public-ledger-backed
-//! manager changes and batches. Later membership and repair remain closed.
+//! Development relay routes for ledger-backed membership and encrypted data.
 
 use std::{
     path::Path,
@@ -204,12 +203,21 @@ async fn stage_control_object(
         .store
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let response = match transition_kind(&body, true)? {
-        1 => store.stage_genesis_object(family_id, object_id, &body),
-        2 => store.stage_first_issue_object(family_id, object_id, &body),
-        11 => store.stage_first_challenge_object(family_id, object_id, &body),
-        6 => store.stage_first_admission_object(family_id, object_id, &body),
-        8 => store.stage_first_removal_object(family_id, object_id, &body),
+    let kind = transition_kind(&body, true)?;
+    let controls = if kind == 1 {
+        0
+    } else {
+        store
+            .current_control_count(family_id)
+            .map_err(|_| StatusCode::CONFLICT)?
+    };
+    let response = match (kind, controls) {
+        (1, _) => store.stage_genesis_object(family_id, object_id, &body),
+        (2, 1) => store.stage_first_issue_object(family_id, object_id, &body),
+        (11, 3) => store.stage_first_challenge_object(family_id, object_id, &body),
+        (6, 5) => store.stage_first_admission_object(family_id, object_id, &body),
+        (8, 6) => store.stage_first_removal_object(family_id, object_id, &body),
+        (2 | 6 | 8 | 10 | 11, _) => store.stage_general_control_object(family_id, object_id, &body),
         _ => return Err(StatusCode::NOT_IMPLEMENTED),
     }
     .map_err(|_| StatusCode::CONFLICT)?;
@@ -232,13 +240,30 @@ async fn commit_control(
         .store
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let controls = if kind == 1 {
+        0
+    } else {
+        store
+            .current_control_count(family_id)
+            .map_err(|_| StatusCode::CONFLICT)?
+    };
     let response = match kind {
-        4 => store.commit_first_claim_with_clock(family_id, &body, || {
+        4 if controls == 2 => store.commit_first_claim_with_clock(family_id, &body, || {
             clock.now_ms().map_err(|_| StoreError::Clock)
         }),
         3 | 7 | 9 => store.commit_manager_change_with_clock(family_id, &body, || {
             clock.now_ms().map_err(|_| StoreError::Clock)
         }),
+        2 | 4 | 5 | 6 | 8 | 10 | 11
+            if !matches!(
+                (kind, controls),
+                (2, 1) | (11, 3) | (5, 4) | (6, 5) | (8, 6)
+            ) =>
+        {
+            store.commit_general_control_with_clock(family_id, &body, || {
+                clock.now_ms().map_err(|_| StoreError::Clock)
+            })
+        }
         kind => {
             let committed_ms = clock.now_ms()?;
             match kind {
@@ -516,6 +541,166 @@ mod tests {
             .step_by(2)
             .map(|i| u8::from_str_radix(&value[i..i + 2], 16).unwrap())
             .collect()
+    }
+
+    fn chain_candidate(transition: &Json) -> (Value, Value, Vec<u8>) {
+        let unsigned =
+            cbor::decode(&hex(transition["unsigned_cbor_hex"].as_str().unwrap())).unwrap();
+        let signatures =
+            cbor::decode(&hex(transition["signatures_cbor_hex"].as_str().unwrap())).unwrap();
+        let candidate = cbor::encode(&Value::Map(vec![
+            (1, unsigned.clone()),
+            (2, signatures.clone()),
+        ]))
+        .unwrap();
+        (unsigned, signatures, candidate)
+    }
+
+    fn chain_time(transition: &Json) -> i64 {
+        let Value::Map(fields) =
+            cbor::decode(&hex(transition["committed_cbor_hex"].as_str().unwrap())).unwrap()
+        else {
+            panic!()
+        };
+        let Value::Array(receipt) = &fields[2].1 else {
+            panic!()
+        };
+        let Value::Integer(time) = receipt[4] else {
+            panic!()
+        };
+        time.try_into().unwrap()
+    }
+
+    fn chain_stage(transition: &Json, item: &Json, object: &[u8]) -> Vec<u8> {
+        let (unsigned, signatures, _) = chain_candidate(transition);
+        cbor::encode(&Value::Map(vec![
+            (1, Value::Integer(1)),
+            (2, unsigned),
+            (3, signatures),
+            (4, Value::Integer(item[0].as_u64().unwrap().into())),
+            (5, Value::Bytes(hex(item[1].as_str().unwrap()))),
+            (6, Value::Bytes(object.to_vec())),
+        ]))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn later_repair_and_rotation_use_general_http_writer() {
+        let fixture: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/contiguous-chain-v1.json").unwrap(),
+        )
+        .unwrap();
+        let genesis: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/api-genesis-v1.json").unwrap(),
+        )
+        .unwrap();
+        let seed: [u8; 32] = hex(fixture["test_only_inputs"]["relay_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let family: [u8; 16] = hex(genesis["inputs"]["family_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let family_hex = genesis["inputs"]["family_id_hex"].as_str().unwrap();
+        let promotion: [u8; 16] = hex(genesis["inputs"]["promotion_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let transitions = fixture["transitions"].as_array().unwrap();
+        let objects = fixture["objects_by_id_hex"].as_object().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("relay.db");
+        let mut store = RelayStore::open(&db, seed).unwrap();
+        store
+            .stage_genesis_object(
+                family,
+                promotion,
+                &hex(genesis["inputs"]["stage_body_cbor_hex"].as_str().unwrap()),
+            )
+            .unwrap();
+        store
+            .commit_genesis(
+                family,
+                &hex(genesis["inputs"]["commit_candidate_cbor_hex"]
+                    .as_str()
+                    .unwrap()),
+                chain_time(&transitions[0]),
+            )
+            .unwrap();
+        for transition in &transitions[1..=5] {
+            for item in transition["manifest"].as_array().unwrap() {
+                let id_hex = item[1].as_str().unwrap();
+                store
+                    .stage_general_control_object(
+                        family,
+                        hex(id_hex).try_into().unwrap(),
+                        &chain_stage(transition, item, &hex(objects[id_hex].as_str().unwrap())),
+                    )
+                    .unwrap();
+            }
+            store
+                .commit_general_control_with_clock(family, &chain_candidate(transition).2, || {
+                    Ok(chain_time(transition))
+                })
+                .unwrap();
+        }
+        drop(store);
+        for transition in &transitions[6..] {
+            if transition["name"] == "remove_active" {
+                let batch = hex(fixture["batch"]["envelope_cbor_hex"].as_str().unwrap());
+                let app = router(&db, seed).unwrap();
+                let response = app
+                    .oneshot(
+                        Request::post(format!("/v1/families/{family_hex}/batches"))
+                            .header(CONTENT_TYPE, "application/cbor")
+                            .body(Body::from(batch))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::OK);
+            }
+            let app =
+                router_with_clock(&db, seed, Arc::new(FixedClock(chain_time(transition)))).unwrap();
+            for item in transition["manifest"].as_array().unwrap() {
+                let id_hex = item[1].as_str().unwrap();
+                let response = app
+                    .clone()
+                    .oneshot(
+                        Request::post(format!("/v1/families/{family_hex}/objects/{id_hex}"))
+                            .header(CONTENT_TYPE, "application/cbor")
+                            .body(Body::from(chain_stage(
+                                transition,
+                                item,
+                                &hex(objects[id_hex].as_str().unwrap()),
+                            )))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::OK);
+            }
+            let response = app
+                .oneshot(
+                    Request::post(format!("/v1/families/{family_hex}/control"))
+                        .header(CONTENT_TYPE, "application/cbor")
+                        .body(Body::from(chain_candidate(transition).2))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let Value::Map(fields) =
+                cbor::decode(&to_bytes(response.into_body(), 1024 * 1024).await.unwrap()).unwrap()
+            else {
+                panic!()
+            };
+            assert_eq!(
+                fields[1].1,
+                Value::Bytes(hex(transition["committed_cbor_hex"].as_str().unwrap()))
+            );
+        }
+        assert!(RelayStore::open(&db, seed).is_ok());
     }
     #[tokio::test]
     async fn genesis_http_roundtrip_matches_stage_and_authenticated_read() {

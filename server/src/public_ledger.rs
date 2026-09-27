@@ -450,7 +450,6 @@ impl PublicLedger {
         &self.epochs
     }
 
-    #[cfg(test)]
     pub(crate) fn state(&self) -> &Value {
         &self.state
     }

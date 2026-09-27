@@ -8,17 +8,16 @@ native phone/watch apps and a web client.
 **Status: M0 implementation in progress.** The Rust core has canonical
 CBOR, tested crypto and cross-language batch vectors, durable local/shared
 SQLite replay, browser IndexedDB local storage, and signed encrypted sync.
-The development relay can admit an initial two-device cohort and accept
-their epoch-one batches. A real-relay CLI test now also commits a first
-recipient removal with epoch rotation, signed proof, revoked data access,
-and an epoch-two manager upload. General membership and removal recovery
-remain open.
+The development relay admits an initial cohort, accepts encrypted batches,
+and verifies a recipient removal with epoch rotation and revoked data access.
+Real-relay tests admit a later device at the current epoch, hydrate its
+history, and continue encrypted sync. Admitted-manager authority, browser
+shared sync, and broader recovery coverage remain open.
 
 The Android debug app logs children, diapers, bottles, sleep timers,
 completed sleep, notes, growth, Celsius, medication, solids, breast-feed
-segments, and pumping entries locally or in a
-shared Family. It can promote
-a Family, invite one other device, complete keyless
+segments, and pumping entries locally or in a shared Family. It can promote
+a Family, invite another device, complete keyless
 claim/challenge/proof/admission, and converge both devices through
 the relay. It resumes enrollment after restart, polls while open, schedules
 background sync work, and offers readable or protected backup plus an
@@ -26,8 +25,12 @@ explicit private copy. The real-relay emulator suite covers those flows.
 The manager can remove the first recipient from the Android sharing view.
 The removed device verifies a signed removal notice, stops shared writes,
 and automatically copies pending edits into a private Family. A disposable
-relay and two separate emulator installations exercise the full first-cohort
+relay and two separate emulator installations exercise the first-cohort
 join, reciprocal edits, offline pending work, removal, and private copy.
+After relay restart and epoch rotation, the manager issues a later link and
+a fresh recipient installation joins through automatic wake steps, then
+uploads an encrypted event the manager reads. This remains a debug build;
+physical-phone and end-of-M0 security gates have not passed.
 Scenario files still include symbolic expectations.
 
 ## Product and architecture
@@ -82,8 +85,8 @@ Then follow the task-specific links; do not load all documentation by default.
 decoding, crypto, projection, local SQLite journal, and clock behavior in
 `core/`. `core-wasm/` includes the browser local journal adapter;
 `core-ffi/` exposes Kotlin and Swift bindings; `apps/android/` contains the
-first local tracking UI. `server/` accepts the initial two-device encrypted
-cohort, and `cli/` drives relay integration flows. `wire/` holds CBOR and public cryptographic primitives
+first local tracking UI. `server/` accepts the encrypted Family authority log
+and batches, and `cli/` drives relay integration flows. `wire/` holds CBOR and public cryptographic primitives
 shared between core and relay.
 Only the client-facing targets depend on `core/`. The
 [layout topic](docs/topics/repository-layout.md) maps future components;

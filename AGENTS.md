@@ -17,14 +17,13 @@ expectations in scenario/vector files. Summaries link to the owner. If two
 documents contradict, reconcile them or ask; do not silently pick one.
 
 Status: M0 implementation in progress. The Rust core has canonical bytes,
-cryptography, durable local/shared journals, signed sync, and a first
-rotating removal. The development relay admits an initial two-device cohort,
-syncs encrypted batches, and atomically removes that first recipient with
-epoch rotation. A real-relay CLI test covers the cutover. The Android debug
-app logs and syncs the first cohort, includes manager removal, verified
-recipient cutover, an automatic private copy for pending work, and scheduled
-background attempts. The first-cohort authority security recheck passed at
-`82c0f4c`; later-device admission, mixed-client browser sync, the end-of-M0
+cryptography, durable local/shared journals, signed sync, rotating removal,
+and later-device admission at the current epoch. The development relay
+authorizes opaque encrypted batches and signed membership controls. The
+Android debug app logs, syncs, handles removal/private copy, and completes a
+later recipient join after epoch rotation through separate automatic wakes
+on two emulators. The first-cohort authority security recheck passed at
+`82c0f4c`; admitted-manager actions, browser shared sync, the end-of-M0
 security gate, and physical-phone validation remain open.
 `babytrack` is a code name.
 

@@ -110,7 +110,9 @@ delivered, and removed access cannot obtain new Family data.
 - [ ] Add the planned analysis export and Nara import through shared Rust
   import/export, with real sanitized samples and target preview. The
   current-state analysis CSV now exports local and shared Families through
-  the core, including pending local shared edits; Nara import remains.
+  the core, including pending local shared edits; Nara import remains. No
+  sanitized Nara export is available yet (confirmed 2026-09-27), so its exact
+  column mapping and sample-backed validation remain open.
 - [ ] Add an ongoing notification for timers and basic widgets without
   reimplementing event semantics in Android. Confirm stale actions after
   removal target a private copy or fail visibly.

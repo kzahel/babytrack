@@ -128,7 +128,7 @@ def main() -> None:
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     find(target, "Note · BeforeAfter", scroll=True)
-    scroll_up(target)
+    scroll_up(target, 12)
     tap(target, "Amount (mL)", scroll=True)
     adb(target, "shell", "input", "text", "90")
     adb(target, "shell", "input", "keyevent", "4")

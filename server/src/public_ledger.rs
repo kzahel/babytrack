@@ -67,6 +67,9 @@ impl PublicLedger {
         }
         let head = crypto::hash("control-head", committed_bytes)?;
         let mut seen_ids = BTreeSet::from([genesis.manager_id, genesis.transition_id]);
+        if seen_ids.len() != 2 {
+            return Err(Error::Invalid("genesis public ID reused"));
+        }
         for object in &genesis.manifest {
             if !seen_ids.insert(object.object_id) {
                 return Err(Error::Invalid("genesis public ID reused"));

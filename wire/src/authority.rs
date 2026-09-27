@@ -495,7 +495,7 @@ fn prepare_manager_change(
         number(&old[3].1)?,
         &next_state,
         &[(signer_id, signer_key)],
-        &[1],
+        &[],
     )?;
     Ok(PreparedManagerChange {
         transition_id: prepared.transition_id,

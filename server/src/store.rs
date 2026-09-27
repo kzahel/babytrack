@@ -250,160 +250,167 @@ impl RelayStore {
     /// authority rows must never outrank the signed control and receipt chain.
     fn verify_saved_families(&self) -> Result<(), Error> {
         let snapshot = self.db.unchecked_transaction()?;
-        let mut families = snapshot.prepare(
-            "SELECT family_id,candidate_bytes,head_hash,cursor FROM families WHERE active=1",
-        )?;
-        let rows = families.query_map([], |row| {
-            Ok((
-                row.get::<_, Vec<u8>>(0)?,
-                row.get::<_, Vec<u8>>(1)?,
-                row.get::<_, Vec<u8>>(2)?,
-                row.get::<_, i64>(3)?,
-            ))
-        })?;
+        let mut families = snapshot.prepare("SELECT family_id FROM families WHERE active=1")?;
+        let rows = families.query_map([], |row| row.get::<_, Vec<u8>>(0))?;
         for row in rows {
-            let (family, candidate, saved_head, saved_cursor) = row?;
-            let family: [u8; 16] = family
+            let family: [u8; 16] = row?
                 .try_into()
                 .map_err(|_| Error::Invalid("stored Family ID length"))?;
-            let genesis = verify_stored_genesis(&snapshot, family, &candidate, self.relay_public)?;
-            let mut entries = snapshot.prepare(
-                "SELECT cursor,kind,committed_bytes FROM entries WHERE family_id=?1 ORDER BY cursor",
-            )?;
-            let mut log = entries.query(params![&family[..]])?;
-            let mut cursor = 0u64;
-            let mut head = [0u8; 32];
-            let mut control_count = 0u64;
-            let mut batch_count = 0u64;
-            let mut object_ids = BTreeSet::new();
-            let mut ledger: Option<public_ledger::PublicLedger> = None;
-            while let Some(row) = log.next()? {
-                let position: i64 = row.get(0)?;
-                let kind: i64 = row.get(1)?;
-                let bytes: Vec<u8> = row.get(2)?;
-                cursor = cursor
-                    .checked_add(1)
-                    .ok_or(Error::Invalid("stored cursor overflow"))?;
-                if u64::try_from(position).ok() != Some(cursor) {
-                    return Err(Error::Invalid("stored log cursor gap"));
-                }
-                match kind {
-                    1 => {
-                        let receipt = receipt::verify_control_receipt(&bytes, &self.relay_public)?;
-                        if receipt.family_id != family
-                            || receipt.relay_id != genesis.relay_id
-                            || receipt.cursor != cursor
-                            || receipt.parent_head != head
-                        {
-                            return Err(Error::Invalid("stored control chain differs"));
+            Self::verify_saved_family(&snapshot, family, self.relay_public, &self.relay_seed)?;
+        }
+        drop(families);
+        snapshot.commit()?;
+        Ok(())
+    }
+
+    /// Reconstruct one Family inside the caller's read or write transaction.
+    /// The returned ledger is derived only from authenticated committed bytes.
+    fn verify_saved_family(
+        snapshot: &Connection,
+        family: [u8; 16],
+        relay_public: [u8; 32],
+        relay_seed: &[u8; 32],
+    ) -> Result<public_ledger::PublicLedger, Error> {
+        let (candidate, saved_head, saved_cursor): (Vec<u8>, Vec<u8>, i64) = snapshot.query_row(
+            "SELECT candidate_bytes,head_hash,cursor FROM families WHERE family_id=?1 AND active=1",
+            params![&family[..]],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
+        let genesis = verify_stored_genesis(snapshot, family, &candidate, relay_public)?;
+        let mut entries = snapshot.prepare(
+            "SELECT cursor,kind,committed_bytes FROM entries WHERE family_id=?1 ORDER BY cursor",
+        )?;
+        let mut log = entries.query(params![&family[..]])?;
+        let mut cursor = 0u64;
+        let mut head = [0u8; 32];
+        let mut control_count = 0u64;
+        let mut batch_count = 0u64;
+        let mut object_ids = BTreeSet::new();
+        let mut ledger: Option<public_ledger::PublicLedger> = None;
+        while let Some(row) = log.next()? {
+            let position: i64 = row.get(0)?;
+            let kind: i64 = row.get(1)?;
+            let bytes: Vec<u8> = row.get(2)?;
+            cursor = cursor
+                .checked_add(1)
+                .ok_or(Error::Invalid("stored cursor overflow"))?;
+            if u64::try_from(position).ok() != Some(cursor) {
+                return Err(Error::Invalid("stored log cursor gap"));
+            }
+            match kind {
+                1 => {
+                    let receipt = receipt::verify_control_receipt(&bytes, &relay_public)?;
+                    if receipt.family_id != family
+                        || receipt.relay_id != genesis.relay_id
+                        || receipt.cursor != cursor
+                        || receipt.parent_head != head
+                    {
+                        return Err(Error::Invalid("stored control chain differs"));
+                    }
+                    for object in &receipt.manifest {
+                        if !object_ids.insert(object.id) {
+                            return Err(Error::Invalid("stored object ID repeated"));
                         }
-                        for object in &receipt.manifest {
-                            if !object_ids.insert(object.id) {
-                                return Err(Error::Invalid("stored object ID repeated"));
-                            }
-                            let saved: Option<StoredCommittedObject> = snapshot
+                        let saved: Option<StoredCommittedObject> = snapshot
                                 .query_row(
                                     "SELECT kind,object_hash,object_bytes,transition_id FROM committed_objects WHERE family_id=?1 AND object_id=?2",
                                     params![&family[..], &object.id[..]],
                                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
                                 )
                                 .optional()?;
-                            let Some((kind, hash, bytes, transition)) = saved else {
-                                return Err(Error::Invalid("committed manifest object missing"));
-                            };
-                            if kind != i64::from(object.kind)
-                                || hash != object.hash
-                                || bytes.len() != object.len as usize
-                                || crypto::hash("object", &bytes)? != object.hash
-                                || transition != receipt.transition_id
-                            {
-                                return Err(Error::Invalid("committed manifest object differs"));
-                            }
+                        let Some((kind, hash, bytes, transition)) = saved else {
+                            return Err(Error::Invalid("committed manifest object missing"));
+                        };
+                        if kind != i64::from(object.kind)
+                            || hash != object.hash
+                            || bytes.len() != object.len as usize
+                            || crypto::hash("object", &bytes)? != object.hash
+                            || transition != receipt.transition_id
+                        {
+                            return Err(Error::Invalid("committed manifest object differs"));
                         }
-                        let next_head = crypto::hash("control-head", &bytes)?;
-                        if control_count == 0 {
-                            ledger = Some(public_ledger::PublicLedger::from_genesis(
-                                &genesis, &receipt, &bytes,
-                            )?);
-                        } else {
-                            ledger
-                                .as_mut()
-                                .ok_or(Error::Invalid("public ledger absent"))?
-                                .apply(&receipt, &bytes)?;
-                        }
-                        head = next_head;
-                        control_count += 1;
                     }
-                    2 => {
-                        let saved: Option<StoredBatchResult> = snapshot
+                    let next_head = crypto::hash("control-head", &bytes)?;
+                    if control_count == 0 {
+                        ledger = Some(public_ledger::PublicLedger::from_genesis(
+                            &genesis, &receipt, &bytes,
+                        )?);
+                    } else {
+                        ledger
+                            .as_mut()
+                            .ok_or(Error::Invalid("public ledger absent"))?
+                            .apply(&receipt, &bytes)?;
+                    }
+                    head = next_head;
+                    control_count += 1;
+                }
+                2 => {
+                    let saved: Option<StoredBatchResult> = snapshot
                             .query_row(
                                 "SELECT envelope_bytes,receipt_bytes,batch_id,author_id,sequence FROM batch_results WHERE family_id=?1 AND cursor=?2",
                                 params![&family[..], position],
                                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
                             )
                             .optional()?;
-                        let Some((envelope, signed_result, batch_id, author_id, sequence)) = saved
-                        else {
-                            return Err(Error::Invalid("stored batch result missing"));
-                        };
-                        if envelope != bytes {
-                            return Err(Error::Invalid("stored batch differs from log"));
-                        }
-                        let verified = receipt::verify_stored_accepted_batch(
-                            &bytes,
-                            &signed_result,
-                            family,
-                            genesis.relay_id,
-                            cursor,
-                            &self.relay_seed,
-                        )?;
-                        if batch_id != verified.batch_id
-                            || author_id != verified.author_id
-                            || u64::try_from(sequence).ok() != Some(verified.sequence)
-                        {
-                            return Err(Error::Invalid("stored batch result metadata differs"));
-                        }
-                        let bindings = ledger
-                            .as_ref()
-                            .ok_or(Error::Invalid("batch before genesis"))?
-                            .epochs();
-                        if bindings.epoch_for_head(&verified.control_head) != Some(verified.epoch)
-                            || bindings.latest_epoch() != verified.epoch
-                        {
-                            return Err(Error::Invalid("stored batch head or epoch differs"));
-                        }
-                        batch_count += 1;
+                    let Some((envelope, signed_result, batch_id, author_id, sequence)) = saved
+                    else {
+                        return Err(Error::Invalid("stored batch result missing"));
+                    };
+                    if envelope != bytes {
+                        return Err(Error::Invalid("stored batch differs from log"));
                     }
-                    _ => return Err(Error::Invalid("stored log kind")),
+                    let verified = receipt::verify_stored_accepted_batch(
+                        &bytes,
+                        &signed_result,
+                        family,
+                        genesis.relay_id,
+                        cursor,
+                        relay_seed,
+                    )?;
+                    if batch_id != verified.batch_id
+                        || author_id != verified.author_id
+                        || u64::try_from(sequence).ok() != Some(verified.sequence)
+                    {
+                        return Err(Error::Invalid("stored batch result metadata differs"));
+                    }
+                    let bindings = ledger
+                        .as_ref()
+                        .ok_or(Error::Invalid("batch before genesis"))?
+                        .epochs();
+                    if bindings.epoch_for_head(&verified.control_head) != Some(verified.epoch)
+                        || bindings.latest_epoch() != verified.epoch
+                    {
+                        return Err(Error::Invalid("stored batch head or epoch differs"));
+                    }
+                    batch_count += 1;
                 }
-            }
-            if control_count == 0
-                || i64::try_from(cursor).ok() != Some(saved_cursor)
-                || saved_head != head
-                || ledger.as_ref().map(public_ledger::PublicLedger::head) != Some(head)
-            {
-                return Err(Error::Invalid("stored Family head or cursor differs"));
-            }
-            let committed_count: i64 = snapshot.query_row(
-                "SELECT COUNT(*) FROM committed_objects WHERE family_id=?1",
-                params![&family[..]],
-                |row| row.get(0),
-            )?;
-            if usize::try_from(committed_count).ok() != Some(object_ids.len()) {
-                return Err(Error::Invalid("committed objects outside signed manifests"));
-            }
-            let saved_batches: i64 = snapshot.query_row(
-                "SELECT COUNT(*) FROM batch_results WHERE family_id=?1",
-                params![&family[..]],
-                |row| row.get(0),
-            )?;
-            if u64::try_from(saved_batches).ok() != Some(batch_count) {
-                return Err(Error::Invalid("batch results outside committed log"));
+                _ => return Err(Error::Invalid("stored log kind")),
             }
         }
-        drop(families);
-        snapshot.commit()?;
-        Ok(())
+        if control_count == 0
+            || i64::try_from(cursor).ok() != Some(saved_cursor)
+            || saved_head != head
+            || ledger.as_ref().map(public_ledger::PublicLedger::head) != Some(head)
+        {
+            return Err(Error::Invalid("stored Family head or cursor differs"));
+        }
+        let committed_count: i64 = snapshot.query_row(
+            "SELECT COUNT(*) FROM committed_objects WHERE family_id=?1",
+            params![&family[..]],
+            |row| row.get(0),
+        )?;
+        if usize::try_from(committed_count).ok() != Some(object_ids.len()) {
+            return Err(Error::Invalid("committed objects outside signed manifests"));
+        }
+        let saved_batches: i64 = snapshot.query_row(
+            "SELECT COUNT(*) FROM batch_results WHERE family_id=?1",
+            params![&family[..]],
+            |row| row.get(0),
+        )?;
+        if u64::try_from(saved_batches).ok() != Some(batch_count) {
+            return Err(Error::Invalid("batch results outside committed log"));
+        }
+        ledger.ok_or(Error::Invalid("public ledger absent"))
     }
 
     pub fn relay_public_key(&self) -> [u8; 32] {
@@ -883,6 +890,91 @@ impl RelayStore {
             params![&path_family[..],next_cursor,&next_head[..],cursor,&issue_head[..]])?;
         if updated != 1 {
             return Err(Error::Invalid("claim compare-and-swap failed"));
+        }
+        tx.commit()?;
+        Ok(receipt::control_commit_response(&committed)?)
+    }
+
+    /// Commit a no-object manager transition against the authenticated
+    /// current public ledger. Exact retries are resolved before current
+    /// authority is checked, since a later control may have changed it.
+    pub fn commit_manager_change_with_clock(
+        &mut self,
+        family: [u8; 16],
+        candidate: &[u8],
+        clock: impl FnOnce() -> Result<i64, Error>,
+    ) -> Result<Vec<u8>, Error> {
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let ids = control_birth_ids(candidate)?;
+        if ids.len() != 1 {
+            return Err(Error::Invalid("manager change has new object IDs"));
+        }
+        let Value::Map(root) = cbor::decode(candidate)? else {
+            return Err(Error::Invalid("manager change not map"));
+        };
+        let Some((1, Value::Map(unsigned))) = root.first() else {
+            return Err(Error::Invalid("manager change unsigned absent"));
+        };
+        if !matches!(number(&unsigned[5].1)?, 3 | 7 | 9) {
+            return Err(Error::Invalid("not a no-object manager change"));
+        }
+        let transition_id = ids[0];
+        let mut controls = tx.prepare(
+            "SELECT committed_bytes FROM entries WHERE family_id=?1 AND kind=1 ORDER BY cursor",
+        )?;
+        let rows = controls.query_map(params![&family[..]], |row| row.get::<_, Vec<u8>>(0))?;
+        for row in rows {
+            let committed = row?;
+            if control_birth_ids(&committed)?.first() == Some(&transition_id) {
+                if control_candidate(&committed)? == candidate {
+                    return Ok(receipt::control_commit_response(&committed)?);
+                }
+                return Err(Error::Invalid("transition ID reused with different bytes"));
+            }
+        }
+        drop(controls);
+
+        let mut ledger =
+            Self::verify_saved_family(&tx, family, self.relay_public, &self.relay_seed)?;
+        let (cursor, saved_head): (i64, Vec<u8>) = tx.query_row(
+            "SELECT cursor,head_hash FROM families WHERE family_id=?1 AND active=1",
+            params![&family[..]],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if saved_head != ledger.head() {
+            return Err(Error::Invalid("manager change head differs"));
+        }
+        ensure_control_ids(&tx, family, candidate)?;
+        let next_cursor = cursor
+            .checked_add(1)
+            .ok_or(Error::Invalid("cursor overflow"))?;
+        let committed = receipt::commit_control(
+            candidate,
+            &self.relay_seed,
+            u64::try_from(next_cursor).map_err(|_| Error::Invalid("cursor range"))?,
+            clock()?,
+        )?;
+        let verified = receipt::verify_control_receipt(&committed, &self.relay_public)?;
+        if !matches!(verified.kind, 3 | 7 | 9)
+            || verified.family_id != family
+            || !verified.manifest.is_empty()
+        {
+            return Err(Error::Invalid("not a no-object manager change"));
+        }
+        ledger.apply(&verified, &committed)?;
+        let next_head = ledger.head();
+        tx.execute(
+            "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,?2,1,?3)",
+            params![&family[..], next_cursor, &committed],
+        )?;
+        let updated = tx.execute(
+            "UPDATE families SET cursor=?2,head_hash=?3 WHERE family_id=?1 AND cursor=?4 AND head_hash=?5",
+            params![&family[..], next_cursor, &next_head[..], cursor, &saved_head],
+        )?;
+        if updated != 1 {
+            return Err(Error::Invalid("manager change compare-and-swap failed"));
         }
         tx.commit()?;
         Ok(receipt::control_commit_response(&committed)?)
@@ -2725,6 +2817,232 @@ mod tests {
             .step_by(2)
             .map(|i| u8::from_str_radix(&value[i..i + 2], 16).unwrap())
             .collect()
+    }
+
+    fn cancel_candidate(
+        issue_candidate: &[u8],
+        state: &Value,
+        head: [u8; 32],
+        manager: [u8; 16],
+        manager_seed: [u8; 32],
+        transition: [u8; 16],
+    ) -> Vec<u8> {
+        let Value::Map(root) = cbor::decode(issue_candidate).unwrap() else {
+            panic!()
+        };
+        let Value::Map(mut unsigned) = root[0].1.clone() else {
+            panic!()
+        };
+        let Value::Map(issue_delta) = &unsigned[6].1 else {
+            panic!()
+        };
+        let invitation = issue_delta[0].1.clone();
+        let mut next = state.clone();
+        let Value::Map(next_fields) = &mut next else {
+            panic!()
+        };
+        let Value::Array(invitations) = &mut next_fields[6].1 else {
+            panic!()
+        };
+        let Value::Array(row) = &mut invitations[0] else {
+            panic!()
+        };
+        row[5] = Value::Integer(3);
+        unsigned[3].1 = Value::Bytes(head.to_vec());
+        unsigned[4].1 = Value::Bytes(transition.to_vec());
+        unsigned[5].1 = Value::Integer(3);
+        unsigned[6].1 = Value::Map(vec![(1, invitation)]);
+        unsigned[7].1 = Value::Bytes(
+            crypto::hash("auth-state", &cbor::encode(&next).unwrap())
+                .unwrap()
+                .to_vec(),
+        );
+        unsigned[9].1 = Value::Array(vec![]);
+        let core = Value::Array(
+            unsigned[..9]
+                .iter()
+                .map(|(_, value)| value.clone())
+                .collect(),
+        );
+        unsigned[10].1 = Value::Bytes(
+            crypto::hash("transition-core", &cbor::encode(&core).unwrap())
+                .unwrap()
+                .to_vec(),
+        );
+        let unsigned_bytes = cbor::encode(&Value::Map(unsigned.clone())).unwrap();
+        let signature =
+            crypto::sign_cbor("control-transition", &unsigned_bytes, &manager_seed).unwrap();
+        cbor::encode(&Value::Map(vec![
+            (1, Value::Map(unsigned)),
+            (
+                2,
+                Value::Array(vec![Value::Array(vec![
+                    Value::Bytes(manager.to_vec()),
+                    Value::Bytes(signature.to_vec()),
+                ])]),
+            ),
+        ]))
+        .unwrap()
+    }
+
+    #[test]
+    fn manager_cancel_commits_from_verified_ledger_and_retries_exactly() {
+        let genesis: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/api-genesis-v1.json").unwrap(),
+        )
+        .unwrap();
+        let issue: Json =
+            serde_json::from_str(&std::fs::read_to_string("../tests/vectors/api-v1.json").unwrap())
+                .unwrap();
+        let chain: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/contiguous-chain-v1.json").unwrap(),
+        )
+        .unwrap();
+        let seed: [u8; 32] = hex(chain["test_only_inputs"]["relay_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let manager_seed: [u8; 32] = hex(chain["test_only_inputs"]["manager_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let manager: [u8; 16] = hex(chain["test_only_inputs"]["manager_device_id_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let family: [u8; 16] = hex(genesis["inputs"]["family_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let promotion: [u8; 16] = hex(genesis["inputs"]["promotion_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let issue_object: [u8; 16] = hex("083e4567e89b42d3a456426614174000").try_into().unwrap();
+        let genesis_stage = hex(genesis["inputs"]["stage_body_cbor_hex"].as_str().unwrap());
+        let genesis_candidate = hex(genesis["inputs"]["commit_candidate_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let issue_stage = hex(issue["inputs"]["stage_body_cbor_hex"].as_str().unwrap());
+        let issue_candidate = hex(issue["inputs"]["commit_body_cbor_hex"].as_str().unwrap());
+        let genesis_response = hex(genesis["expect"]["commit_response_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let Value::Map(response) = cbor::decode(&genesis_response).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(genesis_committed) = &response[1].1 else {
+            panic!()
+        };
+        let genesis_ms = control_commit_time(genesis_committed).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("relay.sqlite");
+        let mut store = RelayStore::open(&path, seed).unwrap();
+        store
+            .stage_genesis_object(family, promotion, &genesis_stage)
+            .unwrap();
+        store
+            .commit_genesis(family, &genesis_candidate, genesis_ms)
+            .unwrap();
+        store
+            .stage_first_issue_object(family, issue_object, &issue_stage)
+            .unwrap();
+        store
+            .commit_first_issue(family, &issue_candidate, genesis_ms + 1_000)
+            .unwrap();
+        let issue_committed = control_at(&store.db, family, 1).unwrap();
+        let genesis_verified =
+            authority::verify_genesis_candidate(&genesis_candidate, &store.relay_public).unwrap();
+        let batch = signed_manager_batch(&issue_committed, &genesis_verified, manager_seed);
+        store.commit_initial_cohort_batch(family, &batch).unwrap();
+        let ledger =
+            RelayStore::verify_saved_family(&store.db, family, store.relay_public, &seed).unwrap();
+        let candidate = cancel_candidate(
+            &issue_candidate,
+            ledger.state(),
+            ledger.head(),
+            manager,
+            manager_seed,
+            [0xc3; 16],
+        );
+        let stale = cancel_candidate(
+            &issue_candidate,
+            ledger.state(),
+            [0; 32],
+            manager,
+            manager_seed,
+            [0xc4; 16],
+        );
+        assert!(
+            store
+                .commit_manager_change_with_clock(family, &stale, || Ok(genesis_ms + 2_000))
+                .is_err()
+        );
+        let wrong_signer = cancel_candidate(
+            &issue_candidate,
+            ledger.state(),
+            ledger.head(),
+            manager,
+            [0; 32],
+            [0xc5; 16],
+        );
+        assert!(
+            store
+                .commit_manager_change_with_clock(family, &wrong_signer, || Ok(genesis_ms + 2_000))
+                .is_err()
+        );
+        assert!(
+            store
+                .commit_manager_change_with_clock(family, &candidate, || Ok(genesis_ms))
+                .is_err()
+        );
+        let accepted = store
+            .commit_manager_change_with_clock(family, &candidate, || Ok(genesis_ms + 2_000))
+            .unwrap();
+        let cursor: i64 = store
+            .db
+            .query_row(
+                "SELECT cursor FROM families WHERE family_id=?1",
+                [&family[..]],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cursor, 4);
+        assert_eq!(
+            store
+                .commit_manager_change_with_clock(family, &candidate, || panic!(
+                    "retry called clock"
+                ))
+                .unwrap(),
+            accepted
+        );
+        let different = cancel_candidate(
+            &issue_candidate,
+            ledger.state(),
+            [0; 32],
+            manager,
+            manager_seed,
+            [0xc3; 16],
+        );
+        assert_ne!(candidate, different);
+        assert!(
+            store
+                .commit_manager_change_with_clock(family, &different, || panic!(
+                    "duplicate called clock"
+                ))
+                .is_err()
+        );
+        drop(store);
+        let mut store = RelayStore::open(&path, seed).unwrap();
+        assert_eq!(
+            store
+                .commit_manager_change_with_clock(family, &candidate, || panic!(
+                    "restart retry called clock"
+                ))
+                .unwrap(),
+            accepted
+        );
     }
     fn signed_get(
         family: [u8; 16],

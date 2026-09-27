@@ -1258,6 +1258,42 @@ time, and no global fork detection. The [owning topic](../topics/sync-and-encryp
 now states the additional ledger invariants. The general relay and formal
 M0 exit review remain open.
 
+A later internal relay commit primitive now uses that reconstructed ledger
+under one SQLite writer transaction for object-free manager controls 3, 7,
+and 9. A signed unused-invitation cancellation passes exact retry, restart,
+stale-head, backward-clock, interleaved data batch, and same-ID/different-bytes
+checks. That
+regression found the shared reducer and client replay wrongly demanded one
+manifest object for these three kinds; the published contract requires none,
+and both now agree. HTTP exposure, later-device tests, and historical reader/batch
+authorization still need implementation.
+
+## Advisory public-ledger restart review at bdbed9e
+
+Daybreak Blue at high thinking reviewed fixed clean commit
+`bdbed9e23a1a7226940f5e580d6603a822d0b5c9` in read-only Yep Anywhere
+session `01a0e246-2f44-7850-a10f-e2b7a3f2f282`. The process reached
+verified idle with an empty queue; the reviewer made no edits and ran no
+tests. Result: **focused first-cohort PASS**, not the M0 exit gate or approval
+of later-device authority. The reviewer found no signed first-cohort control
+that makes honest client and relay public state diverge. The relay rebuilds
+one contiguous, internally consistent signed branch, not a globally unique
+history against coherent rollback or a malicious relay fork.
+
+| Finding | Disposition and required regression |
+|---|---|
+| Medium: rejected-only result rows are outside restart authentication. A storage attacker can delete or substitute one, changing exact retry behavior and freeing its private ID reservation. | Authenticate every saved rejected receipt and envelope, then bind their complete set to a signed private relay checkpoint or journal so deletion fails closed (FS62, FS64, FS74). Test field corruption, deletion, restart, exact retry after removal, and cross-category ID reuse. Coherent rollback of both database and checkpoint remains the accepted v1 limit without an external witness. |
+| Medium: a staged object reservation can be the only remaining trace of an object ID/hash after staged bytes are cleaned. Deleting that row allows the same ID with a different hash after restart. | Bind the complete permanent reservation set to an authenticated private checkpoint or journal; test reservation-only deletion, candidate cleanup, restart, and cross-kind reuse (FS73). A simple inner join with extant stage rows cannot detect an absent reservation. |
+
+Before exposing general authority, derive historical reader credentials, batch
+author/sequence status, all public IDs, and admission associations from the
+authenticated ledger inside commit transactions. Recompute batch author
+semantics on restart; exercise FS66–FS74 with later-device and crash cases.
+The reviewer accepted the documented malicious-relay fork, signed-clock, and
+stale-epoch writer limits. Local Rust, bindings, browser, and two-emulator
+validation for subsequent commits is separate evidence and does not change
+the reviewed SHA or this review verdict.
+
 ## Completion condition
 
 All slice gates pass in CI and on the designated local testbeds, the

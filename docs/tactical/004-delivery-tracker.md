@@ -36,10 +36,10 @@ one through the text share target, prefilled for an explicit join action.
 |---|---|
 | Active implementation owner | [003 M0 foundation](003-m0-foundation.md) for protocol and [005 M1 Android](005-m1-android.md) for the caregiver app. |
 | Next demonstrable proof | The Android local UI creates Families and children, records bottle, solids, completed alternating breast feed, diaper, sleep timer, completed sleep, note, growth, Celsius, and medication entries, shows a timeline with confirmed activity deletion, and saves/restores readable or password-protected files through Rust. A disposable relay and two separate emulators pass first-cohort join, a recipient timer stopped by the manager, recipient growth, temperature, medication, solids, and alternating breast feed read by the manager, reciprocal edits and one deletion, offline work, removal, and automatic private copy; note, medication, and solids markers are absent from relay storage and logs. Foreground polling and a scheduled job advance sharing; normal job timing is OS controlled. |
-| Next dependent slice | The early first-cohort authority recheck passed. The general-authority seam advisory failed its initial sketch. First-cohort claim expiry, batch retry-first lookup and cursor CAS, candidate-scoped staging, and control/batch serialization have focused regressions. Client and relay now share invitation-issue, claim, holder-challenge, key-proof, admission, and active-removal preparation. Move remaining state rules and history into a rebuildable public ledger before later-device authority. Browser outbox, signed ID-collision coverage, and crash campaigns remain before M0 exit. |
-| Next independent review | The [early M0 authority recheck at `82c0f4c`](003-m0-foundation.md#early-m0-authority-recheck-at-82c0f4c) returned PASS for the implemented first cohort. The broader end-of-M0 recovery and mixed-client gate remains. |
-| Open advisory | The [Android sync recheck](003-m0-foundation.md#advisory-android-sync-recheck-at-00e827b) passed its two prior high findings at fixed revision `00e827b`. Activity recreation and forced recipient job retry pass on the real-relay emulator. Injected hostile-batch display proof and full M0 authority review remain. |
-| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Run `36308749163` at `c640b15` passed all required jobs, including the scheduled-sync emulator case after the bounded SQLite wait. A newer relay restart-integrity run remains in progress. |
+| Next dependent slice | The first-cohort recheck passed. The relay now rebuilds public authority from signed controls on restart, and an internal no-object manager commit path uses it under a SQLite writer lock. Finish general historical read and batch authorization before exposing later-device controls, then add later-device, collision, and crash regressions. Browser outbox and the M0 exit review remain open. |
+| Next independent review | The [public-ledger restart advisory at `bdbed9e`](003-m0-foundation.md#advisory-public-ledger-restart-review-at-bdbed9e) returned a focused first-cohort PASS with two medium durability findings. The broader end-of-M0 recovery and mixed-client gate remains. |
+| Open advisory | The [Android sync recheck](003-m0-foundation.md#advisory-android-sync-recheck-at-00e827b) passed its two prior high findings. The later [public-ledger advisory](003-m0-foundation.md#advisory-public-ledger-restart-review-at-bdbed9e) passed for the first cohort and identified rejected-result and reservation integrity hardening. General authority and the full M0 review remain open. |
+| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Runs `36308749163` at `c640b15`, `36309186029` at `88380d8`, `36309474621` at `148d53b`, `36309921404` at `26227ca`, `36310142071` at `654f553`, and `36310529356` at `bdbed9e` passed all jobs. The no-object manager transition slice is under local validation. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.
@@ -126,8 +126,13 @@ two-emulator sharing flow pass locally.
 
 Remote run `36308749163` at `c640b15` then passed all required jobs,
 including Android real-relay instrumentation, scheduled sync, and UI smoke.
-The later restart-integrity commits have local server and two-emulator proof;
-their remote run is tracked separately.
+The later restart-integrity commits have local server and two-emulator proof.
+
+Remote runs `36309186029` at `88380d8`, `36309474621` at `148d53b`,
+`36309921404` at `26227ca`, `36310142071` at `654f553`, and
+`36310529356` at `bdbed9e` passed every required job, including the
+real-relay emulator. The public authority replay and shared client binding
+commits also have local Rust and two-emulator proof.
 
 For each gate, the owning tactical records the fixed commit, local commands,
 observed CI run, scenario IDs, security session/disposition if applicable,

@@ -463,6 +463,15 @@ callers. Shared reducers now also derive cancellation, role change, pending
 removal, and grant repair effects and signer policies, while a common signed
 envelope check enforces their bytes and signatures. The relay has no general
 routes for those four kinds yet.
+The no-object manager transitions (unused-invite cancellation, role change,
+and pending-device removal) now have a transactional relay commit primitive
+that reconstructs the signed public ledger inside the SQLite writer lock,
+checks protocol IDs and actual commit time, and returns the original signed
+result on an exact retry before checking current authority. It is not exposed
+over HTTP until general historical read and batch authority use that ledger.
+A regression found and corrected an erroneous manifest requirement in the
+shared reducer and client replay: these three transitions have no objects in
+v1.
 Repair preparation requires a verified admission association and current
 epoch commitment from the caller's historical ledger.
 The common envelope verifier alone cannot authorize these controls. The

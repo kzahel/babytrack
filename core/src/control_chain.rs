@@ -467,7 +467,7 @@ impl ControlChain {
             FinalizePlan {
                 next_state: prepared.next_state,
                 expected_signers: &[(prepared.signer_id, prepared.signer_key)],
-                manifest_kinds: &[1],
+                manifest_kinds: &[],
                 before_ms: None,
             },
         )
@@ -500,7 +500,7 @@ impl ControlChain {
             FinalizePlan {
                 next_state: prepared.next_state,
                 expected_signers: &[(prepared.signer_id, prepared.signer_key)],
-                manifest_kinds: &[1],
+                manifest_kinds: &[],
                 before_ms: None,
             },
         )
@@ -534,7 +534,7 @@ impl ControlChain {
             FinalizePlan {
                 next_state: prepared.next_state,
                 expected_signers: &[(prepared.signer_id, prepared.signer_key)],
-                manifest_kinds: &[1],
+                manifest_kinds: &[],
                 before_ms: None,
             },
         )?;

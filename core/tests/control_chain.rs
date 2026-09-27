@@ -646,12 +646,16 @@ fn test_control(
     let manifest_bytes = b"opaque membership";
     let mut object_id = transition_id;
     object_id[15] = object_id[15].wrapping_add(100);
-    let manifest = Value::Array(vec![Value::Array(vec![
-        Value::Integer(1),
-        Value::Bytes(object_id.to_vec()),
-        Value::Bytes(crypto::hash("object", manifest_bytes).unwrap().to_vec()),
-        Value::Integer(manifest_bytes.len() as i128),
-    ])]);
+    let manifest = if matches!(kind, 3 | 7 | 9) {
+        Value::Array(vec![])
+    } else {
+        Value::Array(vec![Value::Array(vec![
+            Value::Integer(1),
+            Value::Bytes(object_id.to_vec()),
+            Value::Bytes(crypto::hash("object", manifest_bytes).unwrap().to_vec()),
+            Value::Integer(manifest_bytes.len() as i128),
+        ])])
+    };
     let mut parts = vec![
         Value::Integer(1),
         Value::Bytes(chain.family_id().to_vec()),

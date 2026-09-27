@@ -617,8 +617,26 @@ shared root, encrypted attempt, and sparse issue in one SQLite transaction.
 A failure injected on the final insert proves rollback of all five rows;
 the FS49 separate-store flow still resumes the exact claim after restart.
 FS51 now names this boundary explicitly. No wire change was needed. The
-focused advisory must be rerun on the repair commit before its outcome can
-be treated as reviewed.
+follow-up below reviewed the repair.
+
+### Sparse-join repair follow-up at `7e4a8a6`
+
+Daybreak Blue at high thinking reviewed fixed commit
+`7e4a8a63765189d4832f791cb01c03c7dff5f475` through Yep Anywhere
+session `01a0e073-1e36-7ad3-b8a2-30d4d844f59a` (process
+`50a71b07-3f2d-4303-8f41-44b0c0881ef1`) in a separate read-only checkout.
+Its focused atomicity, recipient restart, and real-relay CLI tests passed.
+The intended FS49 sparse route and ordinary zero-gap route passed review,
+including exact key and claim retry, pending ACL, post-admission readiness,
+and the pinned relay identity. Result: **focused advisory FAIL**, not the
+formal early M0 gate, for one low availability flaw in the unused public
+`prepare_with_batches` helper: a crash after writing its attempt but before
+writing its nonempty prior-batch prefix made `resume` reject the gap. That
+helper is removed. A pre-invitation data gap uses the existing durable sparse
+route, which the real-relay FS49 test exercises; ordinary enrollment accepts
+only the genesis-to-issue zero-gap route. No wire change was needed. The
+reviewer did not run a full workspace suite, power-cut campaign, or migration
+from already-wedged databases; those remain outside this focused review.
 
 ## Advisory authority and key-handoff preflight
 

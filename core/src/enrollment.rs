@@ -86,36 +86,18 @@ impl EnrollmentAttempt {
         issue_bytes: &[u8],
         local_wrapping_key: &[u8; 32],
     ) -> Result<Self, Error> {
-        Self::prepare_with_batches(
-            store,
-            bootstrap,
-            genesis_bytes,
-            issue_bytes,
-            &[],
-            local_wrapping_key,
-        )
-    }
-
-    pub fn prepare_with_batches(
-        store: &mut SqliteStore,
-        bootstrap: &InvitationBootstrap,
-        genesis_bytes: &[u8],
-        issue_bytes: &[u8],
-        prior_batches: &[(&[u8], &[u8])],
-        local_wrapping_key: &[u8; 32],
-    ) -> Result<Self, Error> {
         Self::prepare_mode(
             store,
             bootstrap,
             genesis_bytes,
             issue_bytes,
-            prior_batches,
             local_wrapping_key,
             false,
         )
     }
 
     /// Prepare from an invitation-visible control page with data gaps.
+    /// This is the only supported route when batches precede the invitation.
     /// The first full-log replay happens only after admission.
     pub fn prepare_sparse(
         store: &mut SqliteStore,
@@ -129,7 +111,6 @@ impl EnrollmentAttempt {
             bootstrap,
             genesis_bytes,
             issue_bytes,
-            &[],
             local_wrapping_key,
             true,
         )
@@ -140,7 +121,6 @@ impl EnrollmentAttempt {
         bootstrap: &InvitationBootstrap,
         genesis_bytes: &[u8],
         issue_bytes: &[u8],
-        prior_batches: &[(&[u8], &[u8])],
         local_wrapping_key: &[u8; 32],
         sparse: bool,
     ) -> Result<Self, Error> {
@@ -156,7 +136,7 @@ impl EnrollmentAttempt {
         let chain = if sparse {
             bootstrap.verify_issue_sparse(genesis_bytes, issue_bytes)?
         } else {
-            bootstrap.verify_issue_with_batches(genesis_bytes, issue_bytes, prior_batches)?
+            bootstrap.verify_issue(genesis_bytes, issue_bytes)?
         };
         let family = FamilyHandle {
             family_id: bootstrap.family_id(),
@@ -207,9 +187,6 @@ impl EnrollmentAttempt {
             bootstrap.relay_public_key_internal(),
         )?;
         if !sparse {
-            for (envelope, receipt) in prior_batches {
-                public.accept_batch(store, envelope, receipt)?;
-            }
             public.accept_control(store, issue_bytes)?;
         }
         Self::resume(store, family.family_id, local_wrapping_key)

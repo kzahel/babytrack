@@ -1,7 +1,9 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use babytrack_core::{
-    local_api::{ActivityTime, LocalRepository, PumpAmounts, temperature_c_operation},
+    local_api::{
+        ActivityTime, BreastSegment, LocalRepository, PumpAmounts, temperature_c_operation,
+    },
     portable_file::parse_readable,
 };
 
@@ -472,6 +474,69 @@ fn completed_breast_feed_keeps_side_and_interval_after_restore() {
     let mut app = LocalRepository::open(&path).unwrap();
     assert_eq!(app.timeline(family, child).unwrap(), before);
     let restored = app.restore(&backup, end + 2).unwrap();
+    assert_eq!(app.timeline(restored, child).unwrap(), before);
+}
+
+#[test]
+fn alternating_breast_segments_survive_restart_and_file_restore() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("breast-segments.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    let child = app.add_child(family, "Baby", 1_790_000_000_001).unwrap();
+    let start = 1_790_000_000_002;
+    let mut segments = vec![
+        BreastSegment {
+            side: 1,
+            start_utc_ms: start,
+            end_utc_ms: start + 5 * 60_000,
+            start_offset_minutes: 120,
+            end_offset_minutes: 120,
+        },
+        BreastSegment {
+            side: 2,
+            start_utc_ms: start + 5 * 60_000,
+            end_utc_ms: start + 13 * 60_000,
+            start_offset_minutes: 120,
+            end_offset_minutes: 120,
+        },
+        BreastSegment {
+            side: 1,
+            start_utc_ms: start + 13 * 60_000,
+            end_utc_ms: start + 16 * 60_000,
+            start_offset_minutes: 120,
+            end_offset_minutes: 120,
+        },
+    ];
+    segments[0].end_offset_minutes = 60;
+    segments[1].start_offset_minutes = 60;
+    segments[1].end_offset_minutes = 60;
+    segments[2].start_offset_minutes = 60;
+    segments[2].end_offset_minutes = 60;
+    let time = ActivityTime {
+        start_utc_ms: start,
+        offset_minutes: 120,
+        saved_at_ms: start + 16 * 60_000,
+    };
+    let mut broken = segments.clone();
+    broken[1].start_utc_ms += 1;
+    assert!(
+        app.log_breast_feed_segments(family, child, broken, time)
+            .is_err()
+    );
+    let id = app
+        .log_breast_feed_segments(family, child, segments.clone(), time)
+        .unwrap();
+    let before = app.timeline(family, child).unwrap();
+    let row = before.iter().find(|row| row.id == id).unwrap();
+    assert_eq!(row.breast_segments.as_deref(), Some(segments.as_slice()));
+    assert_eq!(row.breast_side, None);
+    assert_eq!(row.end_utc_ms, Some(time.saved_at_ms));
+    let backup = app.backup(family, time.saved_at_ms + 1).unwrap();
+    drop(app);
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.timeline(family, child).unwrap(), before);
+    let restored = app.restore(&backup, time.saved_at_ms + 2).unwrap();
     assert_eq!(app.timeline(restored, child).unwrap(), before);
 }
 

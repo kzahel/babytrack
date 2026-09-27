@@ -15,7 +15,8 @@ and an epoch-two manager upload. General membership and removal recovery
 remain open.
 
 The Android debug app logs children, diapers, bottles, sleep timers,
-completed sleep, notes, growth, Celsius, and medication entries locally or in a
+completed sleep, notes, growth, Celsius, medication, solids, breast-feed
+segments, and pumping entries locally or in a
 shared Family. It can promote
 a Family, invite one other device, complete keyless
 claim/challenge/proof/admission, and converge both devices through

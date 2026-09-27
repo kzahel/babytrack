@@ -19,17 +19,17 @@ or production Family data precedes the M0 exit gate.
 
 The debug app has local Family and child creation, Family switching,
 timeline, bottle, diaper, sleep timer/completed sleep, note, whole-unit
-growth, Celsius, medication, solids, completed single-side breast-feed,
+growth, Celsius, medication, solids, completed multi-segment breast feeds,
 and pumping logs. A confirmed timeline action tombstones one activity after
 the shared core checks its Family and child. Readable and password-protected full files restore into a
 fresh local Family. A command-driven headed
-emulator check creates a Family and child, logs and deletes a diaper, and
-verifies both states after restart.
+emulator check creates a Family and child, logs and deletes a diaper, records
+an alternating breast feed, and verifies both states after restart.
 
 Two separate emulator installations and a disposable relay pass first-cohort
 join without simultaneous foreground use, reciprocal encrypted edits,
 recipient timer stopped by the manager, growth and temperature delivery,
-medication, solids, a completed breast feed, and pumping delivered to the
+medication, solids, a completed alternating breast feed, and pumping delivered to the
 manager, a manager deletion converging to the recipient, offline pending work, manager removal,
 recipient proof, and automatic private copy. Foreground polling runs every
 30 seconds; a scheduled job requests sync when Android allows it. Push
@@ -52,10 +52,9 @@ handoff. This is still a development flow, not a released product flow.
   an emulator. The UI smoke runs after restart in CI.
 - [x] Log sleep timers/completed sleep, notes, growth in whole grams and
   millimetres, and entered Celsius decimals through the local/shared core.
-- [ ] Complete the MVP logging set: multi-segment breast feeds,
-  growth percentile display, and practical edits/deletes.
-  Single-activity deletion now passes local restart, two-emulator encrypted
-  sync, and a UI tap flow. Editing and multi-segment entries remain open.
+- [ ] Complete the MVP logging set: growth percentile display and practical
+  edits. Multi-segment breast feeds and single-activity deletion now pass
+  local restart/file restore, two-emulator encrypted sync, and UI tap flows.
   Preserve unknown fields and exact Family/child targets. Keep clinical
   recommendations out of the UI.
 - [ ] Run local logging, Family switching, and restart on a physical Android

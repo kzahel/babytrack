@@ -58,6 +58,7 @@ import uniffi.babytrack_core_ffi.ActivityRow
 import uniffi.babytrack_core_ffi.ActivityWhen
 import uniffi.babytrack_core_ffi.BackupFileRow
 import uniffi.babytrack_core_ffi.BackupInfoRow
+import uniffi.babytrack_core_ffi.BreastSegmentRow
 import uniffi.babytrack_core_ffi.ChildRow
 import uniffi.babytrack_core_ffi.FamilyRef
 import uniffi.babytrack_core_ffi.NativeLocalStore
@@ -200,6 +201,7 @@ private fun TrackerScreen(
     var amount by remember { mutableStateOf("") }
     var breastMinutes by remember { mutableStateOf("") }
     var breastSide by remember { mutableStateOf(1u.toUByte()) }
+    var breastDraftSegments by remember { mutableStateOf<List<Pair<UByte, Long>>>(emptyList()) }
     var pumpMinutes by remember { mutableStateOf("") }
     var pumpLeft by remember { mutableStateOf("") }
     var pumpRight by remember { mutableStateOf("") }
@@ -246,6 +248,10 @@ private fun TrackerScreen(
     LaunchedEffect(selectedFamily) {
         val family = families.find { it.familyId.key() == selectedFamily }
         relayOrigin = family?.let(lastRelayOrigin).orEmpty()
+    }
+    LaunchedEffect(selectedFamily, selectedChild) {
+        breastDraftSegments = emptyList()
+        breastMinutes = ""
     }
     var pendingBackup by remember { mutableStateOf<BackupFileRow?>(null) }
     var protectBackup by remember { mutableStateOf(false) }
@@ -874,18 +880,52 @@ private fun TrackerScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                     )
-                    Button(enabled = (breastMinutes.toLongOrNull() ?: 0L) in 1L..240L, onClick = {
+                    if (breastDraftSegments.isNotEmpty()) {
+                        Text(stringResource(R.string.breast_segments_draft,
+                            breastDraftSegments.joinToString(" → ") { (side, minutes) ->
+                                context.getString(R.string.breast_segment_summary,
+                                    context.getString(if (side == 1u.toUByte()) R.string.breast_left else R.string.breast_right),
+                                    minutes)
+                            }))
+                        OutlinedButton(onClick = { breastDraftSegments = breastDraftSegments.dropLast(1) }) {
+                            Text(stringResource(R.string.remove_last_segment))
+                        }
+                    }
+                    val breastNextMinutes = breastMinutes.toLongOrNull()
+                    val breastTotalMinutes = breastDraftSegments.sumOf { it.second } + (breastNextMinutes ?: 0L)
+                    OutlinedButton(
+                        enabled = breastNextMinutes != null && breastNextMinutes in 1L..240L &&
+                            breastDraftSegments.size < 7 && breastTotalMinutes <= 240L,
+                        onClick = {
+                            val minutes = breastMinutes.toLongOrNull() ?: return@OutlinedButton
+                            breastDraftSegments = breastDraftSegments + (breastSide to minutes)
+                            breastMinutes = ""
+                        },
+                    ) { Text(stringResource(R.string.add_breast_segment)) }
+                    Button(enabled = breastNextMinutes != null && breastNextMinutes in 1L..240L &&
+                        breastDraftSegments.size < 8 && breastTotalMinutes <= 240L, onClick = {
                         val minutes = breastMinutes.toLongOrNull() ?: return@Button
-                        val side = breastSide
+                        val draft = breastDraftSegments
+                        val plan = draft + (breastSide to minutes)
                         val end = nowTime()
-                        val interval = ActivityWhen(end.startUtcMs - minutes * 60_000L,
-                            end.offsetMinutes, end.savedAtMs)
+                        var cursor = end.startUtcMs - plan.sumOf { it.second * 60_000L }
+                        val zone = TimeZone.getDefault()
+                        val interval = ActivityWhen(cursor, (zone.getOffset(cursor) / 60_000).toShort(), end.savedAtMs)
+                        val segments = plan.map { (side, duration) ->
+                            val next = cursor + duration * 60_000L
+                            BreastSegmentRow(side, cursor, next,
+                                (zone.getOffset(cursor) / 60_000).toShort(),
+                                (zone.getOffset(next) / 60_000).toShort()).also { cursor = next }
+                        }
                         scope.launch {
                             runCatching { withContext(Dispatchers.IO) {
-                                if (activeShared) sharing.logBreastFeed(family, child.id, side, interval, end.startUtcMs)
-                                else store.logBreastFeed(family, child.id, side, interval, end.startUtcMs)
+                                if (activeShared) sharing.logBreastFeedSegments(family, child.id, segments, interval)
+                                else store.logBreastFeedSegments(family, child.id, segments, interval)
                             } }.onSuccess {
-                                if (breastMinutes.toLongOrNull() == minutes) breastMinutes = ""
+                                if (breastMinutes.toLongOrNull() == minutes && breastDraftSegments == draft) {
+                                    breastMinutes = ""
+                                    breastDraftSegments = emptyList()
+                                }
                                 version++
                                 message = null
                             }.onFailure { message = errorText }
@@ -1148,6 +1188,13 @@ private fun TrackerScreen(
                                 stringResource(R.string.breast_entry,
                                     stringResource(if (entry.breastSide == 1u.toUByte()) R.string.breast_left else R.string.breast_right),
                                     (entry.endUtcMs!! - entry.startUtcMs) / 60_000L)
+                            entry.kind == "feed.breast" && entry.breastSegments != null ->
+                                stringResource(R.string.breast_multi_entry,
+                                    entry.breastSegments!!.joinToString(" → ") { segment ->
+                                        context.getString(R.string.breast_segment_summary,
+                                            context.getString(if (segment.side == 1u.toUByte()) R.string.breast_left else R.string.breast_right),
+                                            (segment.endUtcMs - segment.startUtcMs) / 60_000L)
+                                    })
                             entry.kind == "pump" && entry.pumpTotalMl != null && entry.endUtcMs != null ->
                                 stringResource(R.string.pump_total_entry, entry.pumpTotalMl!!,
                                     (entry.endUtcMs!! - entry.startUtcMs) / 60_000L)

@@ -231,6 +231,10 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     fun logBreastFeed(family: FamilyRef, childId: ByteArray, side: UByte, time: ActivityWhen, endUtcMs: Long): ByteArray =
         withWrapping { wrapping -> core.logSharedBreastFeed(family, wrapping, childId, side, time, endUtcMs) }
 
+    fun logBreastFeedSegments(family: FamilyRef, childId: ByteArray,
+                              segments: List<uniffi.babytrack_core_ffi.BreastSegmentRow>, time: ActivityWhen): ByteArray =
+        withWrapping { wrapping -> core.logSharedBreastFeedSegments(family, wrapping, childId, segments, time) }
+
     fun logPump(family: FamilyRef, childId: ByteArray, input: uniffi.babytrack_core_ffi.PumpInput, time: ActivityWhen, endUtcMs: Long): ByteArray =
         withWrapping { wrapping -> core.logSharedPump(family, wrapping, childId, input, time, endUtcMs) }
 

@@ -103,7 +103,22 @@ def main() -> None:
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     find(target, "UITestChild", scroll=True)
     find(target, "No entries yet.", scroll=True)
-    print("Android UI Family, child, diaper, delete, and restart: OK")
+    adb(target, "shell", "am", "force-stop", PACKAGE)
+    adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    tap(target, "Minutes on selected side", scroll=True)
+    adb(target, "shell", "input", "text", "5")
+    adb(target, "shell", "input", "keyevent", "4")
+    tap(target, "Add segment", scroll=True)
+    tap(target, "Right", scroll=True)
+    tap(target, "Minutes on selected side", scroll=True)
+    adb(target, "shell", "input", "text", "8")
+    adb(target, "shell", "input", "keyevent", "4")
+    tap(target, "Save breast feed", scroll=True)
+    find(target, "Breast · Left 5 min → Right 8 min", scroll=True)
+    adb(target, "shell", "am", "force-stop", PACKAGE)
+    adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    find(target, "Breast · Left 5 min → Right 8 min", scroll=True)
+    print("Android UI Family, diaper deletion, breast segments, and restart: OK")
 
 
 if __name__ == "__main__":

@@ -72,10 +72,12 @@ cross-device sync preserve the fields. Other entered units and advanced
 editing remain M1 work. Solids entry stores one trimmed food per line
 as the published atomic list and preserves optional entered amount text;
 local file restore and encrypted cross-device sync preserve both.
-The first breast-feed path records one completed left or right segment with
-its start and end instants; the published segment array remains atomic so a
-later multi-segment editor can replace it as one field. The local file and
-encrypted shared paths preserve the side and interval.
+The breast-feed path records one to eight completed timed left/right
+segments as one atomic field. Android can add alternating side durations;
+the core checks contiguous intervals, side values, offsets, and a total
+duration of at most four hours. Each segment keeps its start and end UTC
+offsets, including across a daylight-saving transition. Local files and
+encrypted shared sync preserve the segment sequence.
 The Android timeline can delete one activity. The shared core checks its
 Family and child target and records a tombstone operation; the entry leaves
 the current timeline locally and on devices that later sync. Deletion does

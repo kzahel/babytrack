@@ -12,6 +12,7 @@ import uniffi.babytrack_core_ffi.NativeLocalStore
 import uniffi.babytrack_core_ffi.NativeSharedStore
 import uniffi.babytrack_core_ffi.MedicationInput
 import uniffi.babytrack_core_ffi.PumpInput
+import uniffi.babytrack_core_ffi.BreastSegmentRow
 
 /** Each method runs in a separate instrumentation invocation on one of two
  * emulators. The host transfers only the invitation fragment between them. */
@@ -94,6 +95,13 @@ class TwoDeviceRelayTest {
                 listOf("Pear marker 69", "Oatmeal"), "two spoons", ActivityWhen(end, 0, end))
             sharing.logBreastFeed(family, sharing.snapshot(family).children.first().id,
                 1u.toUByte(), ActivityWhen(end - 15 * 60_000L, 0, end), end)
+            val breastStart = end - 16 * 60_000L
+            sharing.logBreastFeedSegments(family, sharing.snapshot(family).children.first().id,
+                listOf(
+                    BreastSegmentRow(1u.toUByte(), breastStart, breastStart + 5 * 60_000L, 0, 0),
+                    BreastSegmentRow(2u.toUByte(), breastStart + 5 * 60_000L, breastStart + 13 * 60_000L, 0, 0),
+                    BreastSegmentRow(1u.toUByte(), breastStart + 13 * 60_000L, end, 0, 0),
+                ), ActivityWhen(breastStart, 0, end))
             sharing.logPump(family, sharing.snapshot(family).children.first().id,
                 PumpInput(20, 15, null), ActivityWhen(end - 10 * 60_000L, 0, end), end)
             sharing.startSleep(family, sharing.snapshot(family).children.first().id,
@@ -127,6 +135,11 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "feed.breast" && it.breastSide == 1u.toUByte() &&
                     it.endUtcMs != null && it.endUtcMs!! - it.startUtcMs == 15 * 60_000L
+            })
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.kind == "feed.breast" && it.breastSegments?.map { segment -> segment.side } ==
+                    listOf(1u.toUByte(), 2u.toUByte(), 1u.toUByte()) &&
+                    it.endUtcMs != null && it.endUtcMs!! - it.startUtcMs == 16 * 60_000L
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "pump" && it.pumpLeftMl == 20L && it.pumpRightMl == 15L &&

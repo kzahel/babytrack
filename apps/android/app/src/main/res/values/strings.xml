@@ -26,6 +26,11 @@
     <string name="breast_minutes">Minutes on selected side</string>
     <string name="save_breast">Save breast feed</string>
     <string name="breast_entry">Breast · %1$s · %2$d min</string>
+    <string name="breast_multi_entry">Breast · %1$s</string>
+    <string name="breast_segment_summary">%1$s %2$d min</string>
+    <string name="breast_segments_draft">Segments: %1$s</string>
+    <string name="add_breast_segment">Add segment</string>
+    <string name="remove_last_segment">Remove last segment</string>
     <string name="log_pump">Log pumping</string>
     <string name="pump_minutes">Minutes pumping</string>
     <string name="pump_left_ml">Left (mL)</string>

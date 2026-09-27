@@ -27,7 +27,7 @@ authority recheck and two separate emulators exercise join, encrypted sync,
 removal, and private-copy recovery. General membership, browser shared
 outbox, complete vector coverage, and the M0 exit review remain open.
 Android local and first-cohort UI work, including solids, completed
-single-side breast-feed, and pumping logs, runs
+multi-segment breast-feed, and pumping logs, runs
 alongside M0 on emulators; its physical phone gates remain open.
 Android can now share an invitation through the system chooser and receive
 one through the text share target, prefilled for an explicit join action.
@@ -35,7 +35,7 @@ one through the text share target, prefilled for an explicit join action.
 | Field | Current answer |
 |---|---|
 | Active implementation owner | [003 M0 foundation](003-m0-foundation.md) for protocol and [005 M1 Android](005-m1-android.md) for the caregiver app. |
-| Next demonstrable proof | The Android local UI creates Families and children, records bottle, solids, completed single-side breast feed, diaper, sleep timer, completed sleep, note, growth, Celsius, and medication entries, shows a timeline with confirmed activity deletion, and saves/restores readable or password-protected files through Rust. A disposable relay and two separate emulators pass first-cohort join, a recipient timer stopped by the manager, recipient growth, temperature, medication, solids, and completed breast feed read by the manager, reciprocal edits and one deletion, offline work, removal, and automatic private copy; note, medication, and solids markers are absent from relay storage and logs. Foreground polling and a scheduled job advance sharing; normal job timing is OS controlled. |
+| Next demonstrable proof | The Android local UI creates Families and children, records bottle, solids, completed alternating breast feed, diaper, sleep timer, completed sleep, note, growth, Celsius, and medication entries, shows a timeline with confirmed activity deletion, and saves/restores readable or password-protected files through Rust. A disposable relay and two separate emulators pass first-cohort join, a recipient timer stopped by the manager, recipient growth, temperature, medication, solids, and alternating breast feed read by the manager, reciprocal edits and one deletion, offline work, removal, and automatic private copy; note, medication, and solids markers are absent from relay storage and logs. Foreground polling and a scheduled job advance sharing; normal job timing is OS controlled. |
 | Next dependent slice | The early first-cohort authority recheck passed. The general-authority seam advisory failed its initial sketch. First-cohort commit-time claim expiry, batch retry-first lookup and cursor CAS, and candidate-scoped control staging now have focused regressions. Implement the corrected public ledger and general transaction boundary before later-device authority. Browser outbox, signed ID-collision coverage, and crash campaigns remain before M0 exit. |
 | Next independent review | The [early M0 authority recheck at `82c0f4c`](003-m0-foundation.md#early-m0-authority-recheck-at-82c0f4c) returned PASS for the implemented first cohort. The broader end-of-M0 recovery and mixed-client gate remains. |
 | Open advisory | The [Android sync recheck](003-m0-foundation.md#advisory-android-sync-recheck-at-00e827b) passed its two prior high findings at fixed revision `00e827b`. Activity recreation and forced recipient job retry pass on the real-relay emulator. Injected hostile-batch display proof and full M0 authority review remain. |

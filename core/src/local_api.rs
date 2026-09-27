@@ -53,6 +53,7 @@ pub struct Activity {
     pub diaper_kind: Option<u8>,
     pub bottle_ml: Option<i64>,
     pub breast_side: Option<u8>,
+    pub breast_segments: Option<Vec<BreastSegment>>,
     pub solids_foods: Option<Vec<String>>,
     pub solids_amount: Option<String>,
     pub pump_left_ml: Option<i64>,
@@ -78,6 +79,15 @@ pub struct PumpAmounts {
     pub left_ml: Option<i64>,
     pub right_ml: Option<i64>,
     pub total_ml: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BreastSegment {
+    pub side: u8,
+    pub start_utc_ms: i64,
+    pub end_utc_ms: i64,
+    pub start_offset_minutes: i16,
+    pub end_offset_minutes: i16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -198,6 +208,19 @@ impl LocalRepository {
     ) -> Result<[u8; 16], Error> {
         let (activity_id, operation) =
             breast_feed_operation(family, child_id, side, time, end_utc_ms)?;
+        self.append_activity(family, child_id, operation, time.saved_at_ms)?;
+        Ok(activity_id)
+    }
+
+    pub fn log_breast_feed_segments(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        segments: Vec<BreastSegment>,
+        time: ActivityTime,
+    ) -> Result<[u8; 16], Error> {
+        let (activity_id, operation) =
+            breast_feed_segments_operation(family, child_id, &segments, time)?;
         self.append_activity(family, child_id, operation, time.saved_at_ms)?;
         Ok(activity_id)
     }
@@ -578,32 +601,75 @@ pub fn breast_feed_operation(
     time: ActivityTime,
     end_utc_ms: i64,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    if !(1..=2).contains(&side) || end_utc_ms < time.start_utc_ms || end_utc_ms > time.saved_at_ms {
-        return Err(Error::Invalid("breast side or completed interval invalid"));
+    breast_feed_segments_operation(
+        family,
+        child_id,
+        &[BreastSegment {
+            side,
+            start_utc_ms: time.start_utc_ms,
+            end_utc_ms,
+            start_offset_minutes: time.offset_minutes,
+            end_offset_minutes: time.offset_minutes,
+        }],
+        time,
+    )
+}
+
+pub fn breast_feed_segments_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    segments: &[BreastSegment],
+    time: ActivityTime,
+) -> Result<([u8; 16], NewOperation), Error> {
+    if segments.is_empty()
+        || segments.len() > 8
+        || segments[0].start_utc_ms != time.start_utc_ms
+        || segments[0].start_offset_minutes != time.offset_minutes
+    {
+        return Err(Error::Invalid("breast segment count or start invalid"));
     }
-    let start = Value::Array(vec![
-        Value::Integer(time.start_utc_ms.into()),
-        Value::Integer(time.offset_minutes.into()),
-    ]);
+    let mut previous_end = time.start_utc_ms;
+    let mut encoded = Vec::with_capacity(segments.len());
+    for segment in segments {
+        if !(1..=2).contains(&segment.side)
+            || !(-840..=840).contains(&segment.start_offset_minutes)
+            || !(-840..=840).contains(&segment.end_offset_minutes)
+            || segment.start_utc_ms != previous_end
+            || segment.end_utc_ms <= segment.start_utc_ms
+            || segment.end_utc_ms > time.saved_at_ms
+        {
+            return Err(Error::Invalid("breast segment side or interval invalid"));
+        }
+        let start = Value::Array(vec![
+            Value::Integer(segment.start_utc_ms.into()),
+            Value::Integer(segment.start_offset_minutes.into()),
+        ]);
+        let end = Value::Array(vec![
+            Value::Integer(segment.end_utc_ms.into()),
+            Value::Integer(segment.end_offset_minutes.into()),
+        ]);
+        encoded.push(Value::Array(vec![
+            Value::Integer(segment.side.into()),
+            start,
+            end,
+        ]));
+        previous_end = segment.end_utc_ms;
+    }
+    if previous_end
+        .checked_sub(time.start_utc_ms)
+        .is_none_or(|duration| duration > 240 * 60_000)
+    {
+        return Err(Error::Invalid("breast feed interval exceeds four hours"));
+    }
     let end = Value::Array(vec![
-        Value::Integer(end_utc_ms.into()),
-        Value::Integer(time.offset_minutes.into()),
+        Value::Integer(previous_end.into()),
+        Value::Integer(segments.last().unwrap().end_offset_minutes.into()),
     ]);
     activity_operation(
         family,
         child_id,
         "feed.breast",
-        vec![
-            (2, end.clone()),
-            (
-                100,
-                Value::Array(vec![Value::Array(vec![
-                    Value::Integer(side.into()),
-                    start,
-                    end,
-                ])]),
-            ),
-        ],
+        vec![(2, end), (100, Value::Array(encoded))],
         time,
     )
 }
@@ -1016,20 +1082,44 @@ fn activity_summary(record: &Record) -> Option<Activity> {
     } else {
         None
     };
-    let breast_side = if record.record_type == "feed.breast" {
+    let breast_segments = if record.record_type == "feed.breast" {
         let Value::Array(segments) = &record.field(100)?.value else {
             return None;
         };
-        let [Value::Array(parts)] = segments.as_slice() else {
-            return None;
-        };
-        let [Value::Integer(side), _, _] = parts.as_slice() else {
-            return None;
-        };
-        u8::try_from(*side).ok()
+        segments
+            .iter()
+            .map(|segment| {
+                let Value::Array(parts) = segment else {
+                    return None;
+                };
+                let [Value::Integer(side), Value::Array(start), Value::Array(end)] =
+                    parts.as_slice()
+                else {
+                    return None;
+                };
+                let [Value::Integer(start_ms), Value::Integer(start_offset)] = start.as_slice()
+                else {
+                    return None;
+                };
+                let [Value::Integer(end_ms), Value::Integer(end_offset)] = end.as_slice() else {
+                    return None;
+                };
+                Some(BreastSegment {
+                    side: u8::try_from(*side).ok()?,
+                    start_utc_ms: i64::try_from(*start_ms).ok()?,
+                    end_utc_ms: i64::try_from(*end_ms).ok()?,
+                    start_offset_minutes: i16::try_from(*start_offset).ok()?,
+                    end_offset_minutes: i16::try_from(*end_offset).ok()?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()
     } else {
         None
     };
+    let breast_side = breast_segments
+        .as_ref()
+        .filter(|segments| segments.len() == 1)
+        .map(|segments| segments[0].side);
     let (solids_foods, solids_amount) = if record.record_type == "feed.solids" {
         let Value::Array(foods) = &record.field(100)?.value else {
             return None;
@@ -1118,6 +1208,7 @@ fn activity_summary(record: &Record) -> Option<Activity> {
         diaper_kind,
         bottle_ml,
         breast_side,
+        breast_segments,
         solids_foods,
         solids_amount,
         pump_left_ml: if record.record_type == "pump" {

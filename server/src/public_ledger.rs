@@ -357,6 +357,7 @@ impl PublicLedger {
                                 return false;
                             };
                             fixed::<16>(&device[0]).ok() == Some(issuer)
+                                && device[4] == Value::Integer(2)
                         }) {
                             1 // currently unused
                         } else {
@@ -609,7 +610,7 @@ mod tests {
                         .unwrap();
                 ledger = Some(PublicLedger::from_genesis(&genesis, &verified, &committed).unwrap());
             }
-            let current = ledger.as_ref().unwrap();
+            let current = ledger.as_mut().unwrap();
             assert_eq!(
                 cbor::encode(current.state()).unwrap(),
                 hex(transition["state_cbor_hex"].as_str().unwrap()),
@@ -655,6 +656,34 @@ mod tests {
                             .1,
                         4
                     );
+                    let Value::Map(state) = &mut current.state else {
+                        panic!()
+                    };
+                    let Value::Array(active) = &mut state[4].1 else {
+                        panic!()
+                    };
+                    let Value::Array(issuer) = &mut active[0] else {
+                        panic!()
+                    };
+                    issuer[4] = Value::Integer(1);
+                    assert_eq!(
+                        current
+                            .invitation_status(invitation_id, verified.committed_ms)
+                            .unwrap()
+                            .unwrap()
+                            .1,
+                        5
+                    );
+                    let Value::Map(state) = &mut current.state else {
+                        panic!()
+                    };
+                    let Value::Array(active) = &mut state[4].1 else {
+                        panic!()
+                    };
+                    let Value::Array(issuer) = &mut active[0] else {
+                        panic!()
+                    };
+                    issuer[4] = Value::Integer(2);
                 }
                 "invite_claim" => {
                     assert!(current.reader(invitation_id).unwrap().is_none());

@@ -538,7 +538,7 @@ no Family ciphertext or control pages. Its canonical body is
 current_global_cursor_u64, current_control_head32, observed_relay_ms_i64,
 issue_signed_hash32])`. The relay signs the body bytes with
 `H("invitation-status", body_bytes)`. Reasons are `1=unused`, `2=claimed`,
-`3=canceled`, `4=expired`, `5=issuer no longer active`. The expiry reason
+`3=canceled`, `4=expired`, `5=issuer lost manager authority`. The expiry reason
 uses relay-observed time, at least the last signed commit time. The client
 checks the relay key and every link-bound field before showing a terminal
 reason; unsigned HTTP errors, timeouts, or malformed status remain unknown.

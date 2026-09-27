@@ -121,7 +121,7 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
                         2u.toUByte() -> "Invitation already claimed"
                         3u.toUByte() -> "Invitation canceled"
                         4u.toUByte() -> "Invitation expired"
-                        5u.toUByte() -> "Invitation issuer no longer has access"
+                        5u.toUByte() -> "Invitation issuer is no longer a manager"
                         else -> null
                     }
                     if (terminal != null) throw IllegalStateException(terminal)

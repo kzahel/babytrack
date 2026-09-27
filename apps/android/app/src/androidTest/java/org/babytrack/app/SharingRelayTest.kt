@@ -1,5 +1,7 @@
 package org.babytrack.app
 
+import android.view.accessibility.AccessibilityNodeInfo
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import android.app.job.JobScheduler
@@ -16,6 +18,59 @@ import uniffi.babytrack_core_ffi.previewInvitation
 
 @RunWith(AndroidJUnit4::class)
 class SharingRelayTest {
+    @Test
+    fun activityRecreationResumesSavedRecipientClaim() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
+            ?: error("relayPublicKey instrumentation argument required")
+        val origin = "http://localhost:8787"
+        val managerDb = context.filesDir.resolve("activity-manager-${System.nanoTime()}.db")
+        val family = NativeLocalStore.open(managerDb.absolutePath).use { it.createFamily(System.currentTimeMillis()) }
+        val fragment = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            sharing.promote(family, origin, publicKey)
+            sharing.invite(family, origin, 1u.toUByte())
+        }
+        val preview = previewInvitation(fragment)
+        val wrapping = DeviceWrappingKey(context).loadOrCreate()
+        val recipient = try {
+            NativeSharedStore.open(context.filesDir.resolve("families.db").absolutePath).use { core ->
+                core.prepareJoin(fragment, RelayTransport(origin).get(preview.controlPath, preview.readAuth), wrapping).family
+            }
+        } finally {
+            wrapping.fill(0)
+        }
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.recreate()
+            val deadline = System.currentTimeMillis() + 12_000
+            var resumed = false
+            var visible = false
+            while (System.currentTimeMillis() < deadline) {
+                val root = instrumentation.uiAutomation.rootInActiveWindow
+                visible = root?.containsText("Join preview") == true
+                val wrappingAfter = DeviceWrappingKey(context).loadOrCreate()
+                resumed = try {
+                    NativeSharedStore.open(context.filesDir.resolve("families.db").absolutePath).use { core ->
+                        core.recipientFirstJoinAction(recipient, wrappingAfter) == 0u.toUByte()
+                    }
+                } finally {
+                    wrappingAfter.fill(0)
+                }
+                if (visible && resumed) break
+                Thread.sleep(100)
+            }
+            assertTrue("Recreated UI should resume and confirm the saved claim", visible && resumed)
+        }
+        ShareCoordinator(context, context.filesDir.resolve("families.db").absolutePath).use { sharing ->
+            assertTrue(sharing.recipientFamilies().any { it.familyId.contentEquals(recipient.familyId) })
+        }
+    }
+
+    private fun AccessibilityNodeInfo.containsText(text: String): Boolean {
+        if (this.text?.toString()?.contains(text) == true) return true
+        return (0 until childCount).any { index -> getChild(index)?.containsText(text) == true }
+    }
+
     @Test
     fun savedClaimRetriesByFamilyAfterPrecommitFailureOrLostResponse() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

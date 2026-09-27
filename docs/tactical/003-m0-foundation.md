@@ -212,6 +212,15 @@ A recipient with only a durable prepared claim now retries those exact bytes
 by Family ID before its first pending-device read; the Android emulator
 tests both a pre-commit failure and a committed claim with lost response
 after coordinator restart (FS38/FS51). No wire version change was needed.
+An Activity recreation test then exposed that composition disposal closed
+native stores before an in-flight sync coroutine finished. The main
+installation now owns one Rust local store and sharing coordinator for the
+app process; Activity recreation reuses them. The test recreates the screen
+with a prepared claim, waits for that exact claim to commit through the
+foreground pass, and confirms the join screen remains available. The
+five-test real-relay emulator suite passes. A selected-recipient stage
+assertion is still open because the current scroll view exposes only visible
+text to Android accessibility in this test.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

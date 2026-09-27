@@ -71,7 +71,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         runCatching { SharedSyncJobService.schedule(this) }
             .onFailure { Log.w("BabytrackSync", "Could not schedule periodic shared sync", it) }
-        val database = filesDir.resolve("families.db")
+        val app = application as BabytrackApplication
         val savedFiles = getSharedPreferences("completed_file_saves", MODE_PRIVATE)
         val relayOrigins = getSharedPreferences("shared_relay_origins", MODE_PRIVATE)
         val availableMemory = {
@@ -82,8 +82,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 TrackerScreen(
-                    store = remember { NativeLocalStore.open(database.absolutePath) },
-                    sharing = remember { ShareCoordinator(this, database.absolutePath) },
+                    store = app.localStore,
+                    sharing = app.sharing,
                     readFile = { uri -> contentResolver.openInputStream(uri)?.use {
                         readBounded(it, backupReadLimit(availableMemory()))
                     } },
@@ -146,7 +146,6 @@ private fun TrackerScreen(
     recordRelayOrigin: (FamilyRef, String) -> Boolean,
 ) {
     val context = LocalContext.current
-    DisposableEffect(store, sharing) { onDispose { store.close(); sharing.close() } }
     val activity = context as ComponentActivity
     var foreground by remember { mutableStateOf(activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) }
     DisposableEffect(activity) {

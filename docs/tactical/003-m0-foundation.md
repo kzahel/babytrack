@@ -1307,7 +1307,9 @@ A fresh signed manager invitation with a correctly encrypted membership
 object now stages and commits after rotation and data upload. Its unused
 invitation credential appears in the replayed reader state, proving the
 writer is no longer tied to the original join positions. A second recipient's
-claim, grant, and Android flow are still open.
+signed claim now commits, changes that invitation to consumed, and appears
+only as a pending reader. Its signed pre-admission data upload gets a revoked
+receipt. Challenge, grant, and Android later-device flow are still open.
 
 ## Advisory public-ledger restart review at bdbed9e
 

@@ -3879,8 +3879,172 @@ mod tests {
             after.reader(invitation).unwrap(),
             Some(public_ledger::PublicReader::Invitation { .. })
         ));
+        let (claim, recipient, recipient_seed) = later_claim_candidate(
+            &after,
+            &transitions[2],
+            family,
+            invitation,
+            hex(fixture["test_only_inputs"]["recipient_device_id_hex"]
+                .as_str()
+                .unwrap())
+            .try_into()
+            .unwrap(),
+        );
+        store
+            .commit_general_control_with_clock(
+                family,
+                &claim,
+                || Ok(after.last_commit_ms() + 1_000),
+            )
+            .unwrap();
+        let pending =
+            RelayStore::verify_saved_family(&store.db, family, store.relay_public, &seed).unwrap();
+        assert!(pending.reader(invitation).unwrap().is_none());
+        assert!(matches!(
+            pending.reader(recipient).unwrap(),
+            Some(public_ledger::PublicReader::Pending { .. })
+        ));
+        let mut pending_id = original_id;
+        pending_id[15] ^= 0xe4;
+        let pending_batch =
+            resign_batch_author(&original, recipient, 1, Some(pending_id), recipient_seed);
+        assert_eq!(
+            batch_rejection_reason(&store.commit_batch(family, &pending_batch).unwrap()),
+            Some(2)
+        );
         drop(store);
         assert!(RelayStore::open(&path, seed).is_ok());
+    }
+    fn later_claim_candidate(
+        ledger: &public_ledger::PublicLedger,
+        first_claim: &Json,
+        family: [u8; 16],
+        invitation: [u8; 16],
+        first_recipient: [u8; 16],
+    ) -> (Vec<u8>, [u8; 16], [u8; 32]) {
+        let mut recipient = first_recipient;
+        recipient[15] ^= 0x84;
+        let recipient_seed = [0x88; 32];
+        let signing_public = crypto::signing_public_key(&recipient_seed);
+        let Value::Map(old_unsigned) =
+            cbor::decode(&hex(first_claim["unsigned_cbor_hex"].as_str().unwrap())).unwrap()
+        else {
+            panic!()
+        };
+        let Value::Map(old_delta) = &old_unsigned[6].1 else {
+            panic!()
+        };
+        let agreement_public = fixed::<32>(&old_delta[3].1).unwrap();
+        let mut transition = fixed::<16>(&old_unsigned[4].1).unwrap();
+        transition[15] ^= 0x85;
+        let enrollment_nonce = [0x86; 32];
+        let claim_input = Value::Array(vec![
+            Value::Bytes(family.to_vec()),
+            Value::Bytes(ledger.relay_id().to_vec()),
+            Value::Bytes(invitation.to_vec()),
+            Value::Integer(1),
+            Value::Bytes(recipient.to_vec()),
+            Value::Bytes(signing_public.to_vec()),
+            Value::Bytes(agreement_public.to_vec()),
+            Value::Integer(1),
+            Value::Bytes(enrollment_nonce.to_vec()),
+            Value::Bytes(ledger.head().to_vec()),
+        ]);
+        let claim_hash = crypto::hash("claim", &cbor::encode(&claim_input).unwrap()).unwrap();
+        let mut state = ledger.state().clone();
+        let Value::Map(fields) = &mut state else {
+            panic!()
+        };
+        let Value::Array(invitations) = &mut fields[6].1 else {
+            panic!()
+        };
+        let row = invitations
+            .iter_mut()
+            .find(|row| matches!(row, Value::Array(parts) if parts[0] == Value::Bytes(invitation.to_vec())))
+            .unwrap();
+        let Value::Array(parts) = row else { panic!() };
+        parts[5] = Value::Integer(2);
+        let Value::Array(pending) = &mut fields[5].1 else {
+            panic!()
+        };
+        pending.push(Value::Array(vec![
+            Value::Bytes(invitation.to_vec()),
+            Value::Bytes(recipient.to_vec()),
+            Value::Bytes(signing_public.to_vec()),
+            Value::Bytes(agreement_public.to_vec()),
+            Value::Integer(1),
+            Value::Integer(1),
+            Value::Bytes(claim_hash.to_vec()),
+            Value::Null,
+            Value::Null,
+        ]));
+        pending.sort_by_key(|row| match row {
+            Value::Array(parts) => match &parts[0] {
+                Value::Bytes(id) => id.clone(),
+                _ => panic!(),
+            },
+            _ => panic!(),
+        });
+        let delta = Value::Map(vec![
+            (1, Value::Bytes(invitation.to_vec())),
+            (2, Value::Bytes(recipient.to_vec())),
+            (3, Value::Bytes(signing_public.to_vec())),
+            (4, Value::Bytes(agreement_public.to_vec())),
+            (5, Value::Integer(1)),
+            (6, Value::Bytes(enrollment_nonce.to_vec())),
+            (7, Value::Bytes(claim_hash.to_vec())),
+        ]);
+        let mut core = vec![
+            Value::Integer(1),
+            Value::Bytes(family.to_vec()),
+            Value::Bytes(ledger.relay_id().to_vec()),
+            Value::Bytes(ledger.head().to_vec()),
+            Value::Bytes(transition.to_vec()),
+            Value::Integer(4),
+            delta,
+            Value::Bytes(
+                crypto::hash("auth-state", &cbor::encode(&state).unwrap())
+                    .unwrap()
+                    .to_vec(),
+            ),
+            Value::Integer(ledger.current_epoch().unwrap().into()),
+        ];
+        let core_hash = crypto::hash(
+            "transition-core",
+            &cbor::encode(&Value::Array(core.clone())).unwrap(),
+        )
+        .unwrap();
+        core.push(Value::Array(vec![]));
+        core.push(Value::Bytes(core_hash.to_vec()));
+        let unsigned = Value::Map(
+            core.into_iter()
+                .enumerate()
+                .map(|(index, value)| (index as u64 + 1, value))
+                .collect(),
+        );
+        let unsigned_bytes = cbor::encode(&unsigned).unwrap();
+        let mut signers = vec![(invitation, [0x77; 32]), (recipient, recipient_seed)];
+        signers.sort_by_key(|entry| entry.0);
+        let signatures = Value::Array(
+            signers
+                .into_iter()
+                .map(|(id, seed)| {
+                    Value::Array(vec![
+                        Value::Bytes(id.to_vec()),
+                        Value::Bytes(
+                            crypto::sign_cbor("control-transition", &unsigned_bytes, &seed)
+                                .unwrap()
+                                .to_vec(),
+                        ),
+                    ])
+                })
+                .collect(),
+        );
+        (
+            cbor::encode(&Value::Map(vec![(1, unsigned), (2, signatures)])).unwrap(),
+            recipient,
+            recipient_seed,
+        )
     }
     fn later_issue_candidate(
         ledger: &public_ledger::PublicLedger,

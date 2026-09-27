@@ -1212,7 +1212,8 @@
         "Bob retrieves the grant after the holder goes offline",
         "background wake delivered to each app",
         "background wake delayed or unavailable",
-        "app restart between protocol messages"
+        "app restart between protocol messages",
+        "failure during the recipient's first durable enrollment write leaves neither a partial claim nor a missing shared-history root"
       ],
       "decisions": [
         "D2"

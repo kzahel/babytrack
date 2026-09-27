@@ -584,6 +584,26 @@ the ready session replays and opens every required byte. A
 withholding relay has no hidden suffix. Network scheduling and background
 polling remain open.
 
+## Advisory sparse-join crash follow-up
+
+Daybreak Blue reviewed fixed commit
+`50c93ac65659d7dd32acce44ff34af0097ad5c2d` at high thinking through
+Yep Anywhere session `01a0e061-71fc-7de2-abb6-a811b5509eda`
+(process `15d66723-ea1e-4b33-aae7-cba76a950b83`) in a separate read-only
+checkout. It ran the focused FS49, full CLI, core, and relay suites; all
+passed. Result: **focused advisory FAIL**, not the formal early M0 gate.
+The sparse control ancestry, pending read ACL, and post-admission data
+readiness checks passed. The reviewer found one medium crash window: recipient
+identity and claim were committed before the genesis shared-history root in
+a second transaction. A crash between those commits left `resume` unable to
+open the durable attempt. The repair writes the Family, local sync row,
+shared root, encrypted attempt, and sparse issue in one SQLite transaction.
+A failure injected on the final insert proves rollback of all five rows;
+the FS49 separate-store flow still resumes the exact claim after restart.
+FS51 now names this boundary explicitly. No wire change was needed. The
+focused advisory must be rerun on the repair commit before its outcome can
+be treated as reviewed.
+
 ## Advisory authority and key-handoff preflight
 
 Daybreak Blue at high thinking reviewed fixed commit

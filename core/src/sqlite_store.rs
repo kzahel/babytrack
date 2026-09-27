@@ -62,6 +62,88 @@ impl From<projection::Error> for Error {
     }
 }
 
+#[cfg(test)]
+mod enrollment_atomicity_tests {
+    use super::*;
+
+    fn v4(tag: u8) -> [u8; 16] {
+        let mut id = [tag; 16];
+        id[6] = 0x40;
+        id[8] = 0x80;
+        id
+    }
+
+    #[test]
+    fn sparse_attempt_and_shared_root_commit_or_roll_back_together() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("enrollment.db");
+        let family = FamilyHandle {
+            family_id: v4(0x31),
+            device_id: v4(0x32),
+        };
+        let row = EnrollmentRow {
+            family,
+            invitation_id: v4(0x33),
+            genesis_bytes: vec![0x80],
+            issue_bytes: vec![0x81, 0x01],
+            candidate_bytes: vec![0x82, 0x01, 0x02],
+            secret_nonce: [0x34; 24],
+            secret_ciphertext: vec![0x35],
+        };
+        let mut store = SqliteStore::open(&path).unwrap();
+        // Fail the final write inside the transaction. No earlier Family,
+        // key, root, or sparse control row may survive the failed attempt.
+        store
+            .connection
+            .execute_batch(
+                "CREATE TRIGGER fail_sparse_insert BEFORE INSERT ON enrollment_controls
+                 BEGIN SELECT RAISE(ABORT, 'injected failure'); END;",
+            )
+            .unwrap();
+        assert!(
+            store
+                .create_enrollment_attempt(&row, Some(3), [0x36; 32], [0x37; 32])
+                .is_err()
+        );
+        drop(store);
+        let mut store = SqliteStore::open(&path).unwrap();
+        for table in [
+            "families",
+            "local_sync_state",
+            "shared_roots",
+            "enrollment_attempts",
+            "enrollment_controls",
+        ] {
+            let count: i64 = store
+                .connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 0, "partial {table} row survived");
+        }
+        store
+            .connection
+            .execute_batch("DROP TRIGGER fail_sparse_insert")
+            .unwrap();
+        store
+            .create_enrollment_attempt(&row, Some(3), [0x36; 32], [0x37; 32])
+            .unwrap();
+        drop(store);
+        let store = SqliteStore::open(&path).unwrap();
+        assert!(
+            store
+                .enrollment_attempt(family.family_id)
+                .unwrap()
+                .is_some()
+        );
+        let history = store.shared_history(family).unwrap().unwrap();
+        assert_eq!(history.genesis_bytes, row.genesis_bytes);
+        assert_eq!(history.pinned_cursor, 1);
+        assert_eq!(store.enrollment_controls(family).unwrap().len(), 1);
+    }
+}
+
 impl From<batch::Error> for Error {
     fn from(error: batch::Error) -> Self {
         Self::Batch(error)
@@ -1397,6 +1479,8 @@ impl SqliteStore {
         &mut self,
         row: &EnrollmentRow,
         sparse_issue_cursor: Option<u64>,
+        relay_public_key: [u8; 32],
+        genesis_head: [u8; 32],
     ) -> Result<(), Error> {
         if !ids::is_v4(&row.family.family_id)
             || !ids::is_v4(&row.family.device_id)
@@ -1415,6 +1499,17 @@ impl SqliteStore {
         transaction.execute(
             "INSERT INTO local_sync_state(family_id) VALUES (?1)",
             [row.family.family_id.as_slice()],
+        )?;
+        transaction.execute(
+            "INSERT INTO shared_roots
+             (family_id, relay_public_key, genesis_bytes, pinned_cursor, pinned_head)
+             VALUES (?1, ?2, ?3, 1, ?4)",
+            params![
+                row.family.family_id.as_slice(),
+                relay_public_key.as_slice(),
+                &row.genesis_bytes,
+                genesis_head.as_slice(),
+            ],
         )?;
         transaction.execute(
             "INSERT INTO enrollment_attempts

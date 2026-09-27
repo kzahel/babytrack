@@ -197,6 +197,8 @@ impl EnrollmentAttempt {
                 secret_ciphertext,
             },
             sparse.then_some(chain.last_global_cursor()),
+            bootstrap.relay_public_key_internal(),
+            crypto::hash("control-head", genesis_bytes)?,
         )?;
         let mut public = PublicHistorySession::begin(
             store,

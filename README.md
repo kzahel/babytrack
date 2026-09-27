@@ -11,9 +11,10 @@ SQLite replay, browser IndexedDB local storage, and signed encrypted sync.
 The development relay admits an initial cohort, accepts encrypted batches,
 and verifies a recipient removal with epoch rotation and revoked data access.
 Real-relay tests admit a later device at the current epoch, hydrate its
-history, and continue encrypted sync. An admitted manager can also invite
-and grant a third device. Role changes, cancellation, browser shared sync,
-and broader recovery coverage remain open.
+history, and continue encrypted sync. An admitted manager can also invite,
+grant, and remove a third device with key rotation. Later rotations, role
+changes, cancellation, browser shared sync, and broader recovery coverage
+remain open.
 
 The Android debug app logs children, diapers, bottles, sleep timers,
 completed sleep, notes, growth, Celsius, medication, solids, breast-feed

@@ -6,8 +6,10 @@ use crate::{
     control_build,
     creation::ManagerCreation,
     crypto,
+    enrollment::EnrollmentAttempt,
     rotation_build::{self, RotationProposal},
     shared_history::{self, PublicHistorySession},
+    shared_ready::ReadyFamilySession,
     sqlite_store::{self, FamilyHandle, PreparedControlRow, SqliteStore},
 };
 
@@ -91,27 +93,65 @@ impl FirstRemoval {
         wrapping_key: &[u8; 32],
         target_id: [u8; 16],
     ) -> Result<Self, Error> {
-        if store.prepared_control(manager.family(), 8)?.is_some() {
-            let saved = Self::resume(store, manager, wrapping_key)?;
+        let ready = manager.ready_session(store)?;
+        Self::prepare_with(
+            store,
+            &ready,
+            manager.signing_seed(),
+            wrapping_key,
+            target_id,
+        )
+    }
+
+    pub fn prepare_for_admitted_manager(
+        store: &mut SqliteStore,
+        holder: &EnrollmentAttempt,
+        wrapping_key: &[u8; 32],
+        target_id: [u8; 16],
+    ) -> Result<Self, Error> {
+        let ready = ReadyFamilySession::from_enrollment(store, holder)
+            .map_err(|_| Error::Invalid("holder not data-ready"))?;
+        Self::prepare_with(
+            store,
+            &ready,
+            holder.signing_seed(),
+            wrapping_key,
+            target_id,
+        )
+    }
+
+    fn prepare_with(
+        store: &mut SqliteStore,
+        ready: &ReadyFamilySession,
+        signing_seed: [u8; 32],
+        wrapping_key: &[u8; 32],
+        target_id: [u8; 16],
+    ) -> Result<Self, Error> {
+        let family = ready.family();
+        if store.prepared_control(family, 8)?.is_some() {
+            let saved = Self::resume_with(store, family, wrapping_key)?;
             if saved.target_id != target_id {
                 return Err(Error::Invalid("another removal is already prepared"));
             }
             return Ok(saved);
         }
-        manager.ready_session(store)?;
-        let public = PublicHistorySession::resume(store, manager.family())?;
+        let public = PublicHistorySession::resume(store, family)?;
+        if ready.observed_cursor() != public.cursor() || ready.observed_head() != public.head_hash()
+        {
+            return Err(Error::Invalid("holder view behind public authority"));
+        }
         let proposal = rotation_build::prepare_first_removal(
             public.chain(),
-            manager.family(),
-            manager.signing_seed(),
-            manager.epoch_key(),
+            family,
+            signing_seed,
+            ready.current_key().bytes,
             target_id,
         )?;
         let secret_nonce = random::<24>()?;
         let secret_ciphertext = crypto::seal_with_nonce(
             wrapping_key,
             &secret_nonce,
-            &secret_aad(manager.family(), proposal.transition_id)?,
+            &secret_aad(family, proposal.transition_id)?,
             &cbor::encode(&Value::Array(vec![
                 Value::Integer(1),
                 Value::Bytes(target_id.to_vec()),
@@ -120,7 +160,7 @@ impl FirstRemoval {
         )?;
         let objects_bytes = encode_objects(&proposal)?;
         store.save_prepared_control(&PreparedControlRow {
-            family: manager.family(),
+            family,
             kind: 8,
             transition_id: proposal.transition_id,
             candidate_bytes: proposal.candidate_bytes,
@@ -128,7 +168,7 @@ impl FirstRemoval {
             secret_nonce,
             secret_ciphertext,
         })?;
-        Self::resume(store, manager, wrapping_key)
+        Self::resume_with(store, family, wrapping_key)
     }
 
     pub fn resume(
@@ -136,7 +176,22 @@ impl FirstRemoval {
         manager: &ManagerCreation,
         wrapping_key: &[u8; 32],
     ) -> Result<Self, Error> {
-        let family = manager.family();
+        Self::resume_with(store, manager.family(), wrapping_key)
+    }
+
+    pub fn resume_for_admitted_manager(
+        store: &SqliteStore,
+        holder: &EnrollmentAttempt,
+        wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
+        Self::resume_with(store, holder.family(), wrapping_key)
+    }
+
+    fn resume_with(
+        store: &SqliteStore,
+        family: FamilyHandle,
+        wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
         let row = store
             .prepared_control(family, 8)?
             .ok_or(Error::Invalid("no prepared removal"))?;
@@ -252,6 +307,24 @@ impl FirstRemoval {
         manager: &ManagerCreation,
         committed: &[u8],
     ) -> Result<(), Error> {
+        self.confirm_with(store, committed)?;
+        manager.ready_session(store)?;
+        Ok(())
+    }
+
+    pub fn confirm_for_admitted_manager(
+        &self,
+        store: &mut SqliteStore,
+        holder: &EnrollmentAttempt,
+        committed: &[u8],
+    ) -> Result<(), Error> {
+        self.confirm_with(store, committed)?;
+        ReadyFamilySession::from_enrollment(store, holder)
+            .map_err(|_| Error::Invalid("holder cannot open rotated Family"))?;
+        Ok(())
+    }
+
+    fn confirm_with(&self, store: &mut SqliteStore, committed: &[u8]) -> Result<(), Error> {
         let Value::Map(root) = cbor::decode(committed)? else {
             return Err(Error::Invalid("committed removal not a map"));
         };
@@ -272,7 +345,6 @@ impl FirstRemoval {
         for (_, id, bytes) in &self.objects {
             public.accept_object(store, *id, bytes)?;
         }
-        manager.ready_session(store)?;
         Ok(())
     }
 }

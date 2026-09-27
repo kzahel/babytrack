@@ -1223,15 +1223,27 @@ impl NativeSharedStore {
         target_device_id: Vec<u8>,
     ) -> Result<PreparedRemovalRow, BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
-        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
-            .map_err(rejected)?;
-        let removal = FirstRemoval::prepare(
-            &mut store,
-            &manager,
-            &fixed(&wrapping_key)?,
-            fixed(&target_device_id)?,
-        )
-        .map_err(rejected)?;
+        let removal = if let Some(holder) =
+            admitted_manager(&mut store, family.handle()?, &fixed(&wrapping_key)?)?
+        {
+            FirstRemoval::prepare_for_admitted_manager(
+                &mut store,
+                &holder,
+                &fixed(&wrapping_key)?,
+                fixed(&target_device_id)?,
+            )
+            .map_err(rejected)?
+        } else {
+            let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+                .map_err(rejected)?;
+            FirstRemoval::prepare(
+                &mut store,
+                &manager,
+                &fixed(&wrapping_key)?,
+                fixed(&target_device_id)?,
+            )
+            .map_err(rejected)?
+        };
         Ok(PreparedRemovalRow {
             candidate_bytes: removal.candidate_bytes().to_vec(),
             objects: removal
@@ -1253,12 +1265,22 @@ impl NativeSharedStore {
         commit_response: Vec<u8>,
     ) -> Result<(), BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
-        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
-            .map_err(rejected)?;
-        FirstRemoval::resume(&store, &manager, &fixed(&wrapping_key)?)
-            .map_err(rejected)?
-            .confirm(&mut store, &manager, &committed_control(&commit_response)?)
-            .map_err(rejected)
+        let committed = committed_control(&commit_response)?;
+        if let Some(holder) =
+            admitted_manager(&mut store, family.handle()?, &fixed(&wrapping_key)?)?
+        {
+            FirstRemoval::resume_for_admitted_manager(&store, &holder, &fixed(&wrapping_key)?)
+                .map_err(rejected)?
+                .confirm_for_admitted_manager(&mut store, &holder, &committed)
+                .map_err(rejected)
+        } else {
+            let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+                .map_err(rejected)?;
+            FirstRemoval::resume(&store, &manager, &fixed(&wrapping_key)?)
+                .map_err(rejected)?
+                .confirm(&mut store, &manager, &committed)
+                .map_err(rejected)
+        }
     }
 
     /// Ask for public controls before data reads, so a revoked credential
@@ -1469,7 +1491,11 @@ impl NativeSharedStore {
         wrapping_key: Vec<u8>,
     ) -> Result<SharedSnapshotRow, BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
-        let ready = ready_session_for(&mut store, family.handle()?, &fixed(&wrapping_key)?)?;
+        let handle = family.handle()?;
+        if store.saved_removal(handle).map_err(rejected)?.is_some() {
+            return Err(BindingError::Rejected("device removal verified".to_owned()));
+        }
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
         let projection = ready.projection_with_pending(&store).map_err(rejected)?;
         let devices = PublicHistorySession::resume(&store, family.handle()?)
             .map_err(rejected)?

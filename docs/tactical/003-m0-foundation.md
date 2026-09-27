@@ -1369,8 +1369,12 @@ verified epoch key. The CLI proves that path through relay HTTP; Android's
 real-relay instrumentation covers the same three-device handoff and a later
 encrypted edit. Prepared-control replay now checks the saved sparse join
 prefix and then the fully verified log, since a manager can act after its
-own enrollment. Role changes, cancellation, and broader recovery cases
-remain open.
+own enrollment. The admitted manager can also remove that third device at
+epoch one, granting the rotated key to remaining holders. The CLI checks
+the removed device's new-data read denial; Android checks the removed state,
+hides its stale shared snapshot, and confirms the original manager still
+syncs. Later rotations, role changes, cancellation, and broader recovery
+cases remain open.
 Ready replay can now start from a later recipient's admission grant at a
 rotated epoch: it verifies that epoch's committed keyring and membership,
 recovers earlier keys, then applies subsequent addressed rotations. A fixed

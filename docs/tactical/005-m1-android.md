@@ -84,6 +84,11 @@ stores: the first manager admits a second manager, that manager invites and
 grants a third device, then uploads an encrypted child the third device
 reads. This is an emulator flow with one app installation and separate
 Family credentials; distinct physical phones remain untested.
+The admitted manager can also remove that third device. The Android test
+checks the rotated membership, a verified removed status on the third
+device, and continued sync by the original manager. A saved removal no
+longer appears as an active shared snapshot in the tracker; the private
+copy path still has access to its retained records.
 Ready joined Families now appear in the normal Family switcher and use the
 same full tracker, timeline, edits, backup, and analysis export as the
 initial manager Family through the shared Rust API. A keyless pending join
@@ -130,8 +135,9 @@ intended Family and child, and remains usable after process death.
 - [ ] Complete admitted-manager membership actions, manager/role changes,
   invite cancellation, and key rotation in [003](003-m0-foundation.md) before
   exposing those actions as ordinary Android sharing controls. An admitted
-  manager can now issue an invitation and complete challenge and grant in
-  the debug flow; other actions remain open.
+  manager can now issue an invitation, complete challenge and grant, and
+  remove another device at epoch one in the debug flow. Later rotations,
+  role changes, and cancellation remain open.
 - [ ] Make invitation handoff usable through a share/link flow with trusted
   relay pinning and clear pending, accepted, blocked, and removed states.
   The share-sheet receive path now prefills without auto-claiming. Remove

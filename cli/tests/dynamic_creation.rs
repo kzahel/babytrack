@@ -162,7 +162,7 @@ async fn removed_recipient_recovers_accepted_result_after_lost_response() {
 }
 
 #[tokio::test]
-async fn admitted_manager_issues_and_grants_to_a_third_device() {
+async fn admitted_manager_issues_grants_and_removes_a_third_device() {
     dynamic_flow(false, false, 2).await;
 }
 
@@ -2773,5 +2773,48 @@ async fn admitted_manager_join_flow(
             .projection()
             .records()
             .any(|record| record.scope == Scope::Child)
+    );
+
+    let removal = FirstRemoval::prepare_for_admitted_manager(
+        holder_store,
+        holder,
+        holder_wrap,
+        third.family().device_id,
+    )
+    .unwrap();
+    let removal_candidate = removal.candidate_bytes().to_vec();
+    let staged = removal.stage_bodies().unwrap();
+    let removal =
+        FirstRemoval::resume_for_admitted_manager(holder_store, holder, holder_wrap).unwrap();
+    assert_eq!(removal.candidate_bytes(), removal_candidate);
+    stage_objects(app, family.family_id, &staged).await;
+    let response = commit_control(app, family.family_id, &removal_candidate).await;
+    let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(committed_removal) = &fields[1].1 else {
+        panic!()
+    };
+    removal
+        .confirm_for_admitted_manager(holder_store, holder, committed_removal)
+        .unwrap();
+    assert_eq!(
+        ReadyFamilySession::from_enrollment(holder_store, holder)
+            .unwrap()
+            .active_epoch(),
+        2
+    );
+    PublicHistorySession::resume(&third_store, third.family())
+        .unwrap()
+        .accept_control(&mut third_store, committed_removal)
+        .unwrap();
+    assert!(ReadyFamilySession::from_enrollment(&third_store, &third).is_err());
+    let log_path = format!("/v1/families/{}/log?after=0", lower_hex(&family.family_id));
+    let read = third.sign_get(&log_path).unwrap();
+    assert_eq!(
+        http_response(app, Method::GET, &log_path, read.bytes)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
     );
 }

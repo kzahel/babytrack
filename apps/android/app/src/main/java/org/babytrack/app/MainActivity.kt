@@ -546,7 +546,7 @@ private fun TrackerScreen(
             )
             if (activeShared) activeSharedSnapshot?.let { snapshot ->
                 SharedHealth(snapshot)
-                if (family != null && activeFamilyIsLocal && snapshot.devices.any {
+                if (family != null && snapshot.devices.any {
                     it.deviceId.contentEquals(family.deviceId) && it.role == 2.toUByte()
                 }) {
                     snapshot.devices.filterNot { it.deviceId.contentEquals(family.deviceId) }.forEach { device ->

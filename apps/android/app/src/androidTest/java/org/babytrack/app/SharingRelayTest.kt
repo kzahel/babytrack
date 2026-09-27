@@ -399,9 +399,9 @@ class SharingRelayTest {
                 assertEquals(1, loadTrackerData(local, sharing, null, null, null).families.size)
             }
         }
-        ShareCoordinator(context, holderDb.absolutePath).use { assertTrue(it.advanceManager(holder, origin).ready) }
+        ShareCoordinator(context, holderDb.absolutePath).use { assertTrue(it.advanceRecipient(holder).ready) }
         ShareCoordinator(context, thirdDb.absolutePath).use { assertTrue(it.advanceRecipient(third).awaitingGrant) }
-        ShareCoordinator(context, holderDb.absolutePath).use { assertTrue(it.advanceManager(holder, origin).ready) }
+        ShareCoordinator(context, holderDb.absolutePath).use { assertTrue(it.advanceRecipient(holder).ready) }
         ShareCoordinator(context, thirdDb.absolutePath).use { sharing ->
             assertTrue(sharing.advanceRecipient(third).ready)
             assertEquals("Handoff child", sharing.snapshot(third).children.single().name)
@@ -422,6 +422,19 @@ class SharingRelayTest {
         ShareCoordinator(context, thirdDb.absolutePath).use { sharing ->
             assertTrue(sharing.syncRecipientAndUpload(third).ready)
             assertTrue(sharing.snapshot(third).children.any { it.name == "Holder child" })
+        }
+        ShareCoordinator(context, holderDb.absolutePath).use { sharing ->
+            val rotated = sharing.removeDevice(holder, origin, third.deviceId)
+            assertEquals(2, rotated.devices.size)
+            assertTrue(rotated.devices.none { it.deviceId.contentEquals(third.deviceId) })
+        }
+        ShareCoordinator(context, thirdDb.absolutePath).use { sharing ->
+            assertTrue(sharing.syncRecipient(third).removed)
+            assertTrue(runCatching { sharing.snapshot(third) }.isFailure)
+        }
+        ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            assertTrue(sharing.syncAndUpload(manager, origin).ready)
+            assertTrue(sharing.snapshot(manager).devices.none { it.deviceId.contentEquals(third.deviceId) })
         }
     }
 

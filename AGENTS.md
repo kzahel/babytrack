@@ -22,8 +22,9 @@ and later-device admission at the current epoch. The development relay
 authorizes opaque encrypted batches and signed membership controls. The
 Android debug app logs, syncs, handles removal/private copy, and completes a
 later recipient join after epoch rotation through separate automatic wakes
-on two emulators. An admitted manager can now invite and grant another
-device through the real relay; role changes and cancellation remain open.
+on two emulators. An admitted manager can now invite, grant, and remove
+another device through the real relay; later rotations, role changes, and
+cancellation remain open.
 The first-cohort authority security recheck passed at `82c0f4c`; browser
 shared sync, the end-of-M0 security gate, and physical-phone validation
 remain open.

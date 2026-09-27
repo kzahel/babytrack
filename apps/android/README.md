@@ -72,8 +72,10 @@ To exercise the current relay slice on an emulator:
     joined-Family debug view. Its foreground and scheduled sync passes answer
     the next device's claim and proof. The real-relay instrumentation suite
     checks this with three separate stores and an encrypted edit from the
-    admitted manager. This remains a debug flow; role changes and invitation
-    cancellation are still pending.
+    admitted manager. The same flow removes that third device, rotates the
+    Family key for remaining holders, and stops presenting the removed
+    device's old snapshot as active shared data. This remains a debug flow;
+    later rotations, role changes, and invitation cancellation are pending.
 
 The on-device integration test calls the same Keystore and transport adapter
 through a real relay. With an emulator running, build both APKs with

@@ -29,6 +29,9 @@ To exercise the current relay slice on an emulator:
    verifies the claim, commits a challenge addressed to the recipient, and
    reports that it is waiting for the recipient's proof. Retrying after
    restart reuses the exact saved challenge.
+6. On the recipient's debug screen, use **Prove device key**. Rust verifies
+   and opens only the challenge addressed to this device, then commits a
+   durable proof. Retrying after restart uses the exact saved proof.
 
 The on-device integration test calls the same Keystore and transport adapter
 through a real relay. With the emulator and `adb reverse` running, build it
@@ -43,6 +46,7 @@ adb shell am instrument -w -e relayPublicKey PUBLIC_KEY_HEX \
 The test creates its own Family, promotes a child record, commits an invite,
 reopens its store, and retries both requests. A separate recipient store then
 claims the invitation and retries after restart with the same device identity
-and candidate bytes. The holder then commits and retries the challenge. The
+and candidate bytes. The holder then commits and retries the challenge; the
+recipient fetches its addressed object and commits and retries its proof. The
 default Android CI compiles this test, while
 execution currently uses the local emulator and relay.

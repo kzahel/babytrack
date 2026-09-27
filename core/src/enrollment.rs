@@ -369,6 +369,12 @@ impl EnrollmentAttempt {
     pub fn claim_candidate(&self) -> &[u8] {
         &self.candidate_bytes
     }
+    pub fn pending_control_cursor(&self, store: &SqliteStore) -> Result<u64, Error> {
+        Ok(
+            shared_history::sparse_enrollment_chain(store, self.family, self.relay_public_key()?)?
+                .last_global_cursor(),
+        )
+    }
     /// Confirm only the exact claim saved before the first POST. A relay
     /// response for a competing redemption must not advance local progress.
     pub fn confirm_sparse_claim(
@@ -458,7 +464,7 @@ impl EnrollmentAttempt {
     pub(crate) fn signing_seed(&self) -> [u8; 32] {
         self.device_sign_seed
     }
-    pub(crate) fn relay_public_key(&self) -> Result<[u8; 32], Error> {
+    pub fn relay_public_key(&self) -> Result<[u8; 32], Error> {
         Ok(InvitationBootstrap::from_fragment(&self.bootstrap_fragment)?.relay_public_key())
     }
 }

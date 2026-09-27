@@ -67,4 +67,7 @@
     <string name="respond_to_claim">Respond to pending device</string>
     <string name="challenge_preparing">Checking the claim and preparing the key challenge…</string>
     <string name="challenge_confirmed">Challenge committed. Waiting for the joining device to prove its key.</string>
+    <string name="prove_challenge">Prove device key</string>
+    <string name="proof_preparing">Checking the holder challenge and preparing proof…</string>
+    <string name="proof_confirmed">Proof committed. Waiting for the holder to grant access.</string>
 </resources>

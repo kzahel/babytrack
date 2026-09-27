@@ -69,6 +69,17 @@ pub struct FirstProof {
     proof_signature: [u8; 64],
 }
 impl FirstProof {
+    pub fn resume_optional(
+        store: &SqliteStore,
+        enrollment: &EnrollmentAttempt,
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Option<Self>, Error> {
+        if store.prepared_control(enrollment.family(), 5)?.is_none() {
+            return Ok(None);
+        }
+        Ok(Some(Self::resume(store, enrollment, local_wrapping_key)?))
+    }
+
     pub fn prepare(
         store: &mut SqliteStore,
         enrollment: &EnrollmentAttempt,
@@ -252,7 +263,7 @@ fn chain_through_challenge(
     family: FamilyHandle,
     relay_public: [u8; 32],
 ) -> Result<ControlChain, Error> {
-    Ok(shared_history::first_join_chain(
+    Ok(shared_history::first_join_prefix_chain(
         store,
         family,
         relay_public,

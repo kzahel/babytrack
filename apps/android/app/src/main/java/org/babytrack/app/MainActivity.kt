@@ -281,6 +281,20 @@ private fun TrackerScreen(
                                 }
                             }
                         }) { Text(stringResource(R.string.join_or_retry)) }
+                        OutlinedButton(enabled = receivedFragment.isNotBlank(), onClick = {
+                            joinStage = context.getString(R.string.proof_preparing)
+                            scope.launch {
+                                runCatching {
+                                    withContext(Dispatchers.IO) { sharing.proveChallenge(receivedFragment.trim()) }
+                                }.onSuccess {
+                                    joinStage = context.getString(R.string.proof_confirmed)
+                                    message = null
+                                }.onFailure {
+                                    joinStage = context.getString(R.string.join_retry)
+                                    message = errorText
+                                }
+                            }
+                        }) { Text(stringResource(R.string.prove_challenge)) }
                         joinStage?.let { Text(it) }
                     }
                 }

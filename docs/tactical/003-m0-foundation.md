@@ -98,6 +98,13 @@ after reopening the holder store. The prepared challenge rebuild uses the
 verified three-control historical prefix even when the current log already
 contains the challenge, so exact retry survives commit and restart. Recipient
 proof and admission remain open on Android.
+The recipient can now poll signed pending controls, fetch only its addressed
+challenge HPKE object, let Rust verify and open it, and commit a durable key
+proof. The separate-store emulator test repeats the proof after process
+restart without using the invitation credential. Rebuilding a saved proof
+uses its verified challenge prefix even after the proof commits; a sparse
+recipient still does not claim data readiness. Holder verification, admission,
+and full history hydration remain open.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

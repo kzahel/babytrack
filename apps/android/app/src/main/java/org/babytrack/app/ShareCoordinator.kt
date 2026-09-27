@@ -82,6 +82,27 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         }
     }
 
+    fun proveChallenge(fragment: String) {
+        val preview = previewInvitation(fragment)
+        val relay = RelayTransport(preview.relayOrigin)
+        val wrapping = keys.loadOrCreate()
+        try {
+            val family = core.resumeJoin(fragment, wrapping)?.family
+                ?: error("No durable recipient claim")
+            val candidate = core.savedFirstProof(family, wrapping) ?: run {
+                val read = core.recipientControlRead(family, wrapping)
+                val page = relay.get(read.path, read.auth)
+                val challenge = core.recipientChallengeRead(family, wrapping, read, page)
+                val objectResponse = relay.get(challenge.path, challenge.auth)
+                core.prepareFirstProof(family, wrapping, challenge, objectResponse)
+            }
+            val response = relay.post("/v1/families/${family.familyId.hex()}/control", candidate)
+            core.confirmFirstProof(family, wrapping, response)
+        } finally {
+            wrapping.fill(0)
+        }
+    }
+
     override fun close() = core.close()
 }
 

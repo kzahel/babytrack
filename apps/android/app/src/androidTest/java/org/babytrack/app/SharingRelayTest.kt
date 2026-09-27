@@ -61,6 +61,12 @@ class SharingRelayTest {
         ShareCoordinator(context, database.absolutePath).use { sharing ->
             sharing.respondToClaim(family, origin)
         }
+        ShareCoordinator(context, recipient.absolutePath).use { sharing ->
+            sharing.proveChallenge(fragment)
+        }
+        ShareCoordinator(context, recipient.absolutePath).use { sharing ->
+            sharing.proveChallenge(fragment)
+        }
         ShareCoordinator(context, database.absolutePath).use { sharing ->
             sharing.respondToClaim(family, origin)
         }

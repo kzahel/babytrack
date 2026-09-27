@@ -443,6 +443,21 @@ pub fn first_join_prefix_chain(
     relay_public: [u8; 32],
     expected_controls: usize,
 ) -> Result<ControlChain, Error> {
+    let sparse = store.enrollment_controls(family)?;
+    if !sparse.is_empty() {
+        sparse_enrollment_chain(store, family, relay_public)?;
+        let row = store
+            .enrollment_attempt(family.family_id)?
+            .ok_or(Error::Invalid("enrollment attempt missing"))?;
+        if expected_controls == 0 || sparse.len() + 1 < expected_controls {
+            return Err(Error::Invalid("sparse first join prefix absent"));
+        }
+        let mut chain = ControlChain::from_genesis(&row.genesis_bytes, relay_public)?;
+        for (_, bytes) in sparse.iter().take(expected_controls - 1) {
+            chain.apply_sparse_control(bytes)?;
+        }
+        return Ok(chain);
+    }
     PublicHistorySession::resume(store, family)?;
     let history = store
         .shared_history(family)?

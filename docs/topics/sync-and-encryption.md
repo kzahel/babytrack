@@ -122,6 +122,9 @@ Its later shared data view must come from the verified shared-session API.
 Prepared holder challenges are reconstructed from the verified historical
 claim prefix on retry, including after later controls commit. The holder
 chooses the recipient from verified pending authority state in Rust.
+The recipient's proof also rebuilds from its verified challenge prefix after
+a later control commits. A pending sparse-control cursor remains distinct
+from verified full-history readiness throughout this exchange.
 
 Per-holder keypairs are needed because a removed device that knows the old
 shared key could otherwise read the new key while it is handed to the

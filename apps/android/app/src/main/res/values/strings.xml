@@ -2,8 +2,8 @@
     <string name="app_name">Babytrack</string>
     <string name="screen_title">Today</string>
     <string name="local_only">On this device</string>
-    <string name="shared_family">Shared Family · syncs while the app is open</string>
-    <string name="automatic_sync_delayed">Shared sync is waiting for a connection. Local entries stay saved.</string>
+    <string name="shared_family">Shared Family · syncs while open and during scheduled background work</string>
+    <string name="automatic_sync_delayed">Shared sync is delayed. Local entries stay saved; retry when connected.</string>
     <string name="families">Families</string>
     <string name="new_family">New Family</string>
     <string name="family_number">Family %1$d</string>
@@ -49,11 +49,11 @@
     <string name="confirm_restore">Restore as new Family</string>
     <string name="error">Could not complete the action. Try again.</string>
     <string name="dev_share_title">Sharing setup preview</string>
-    <string name="dev_share_description">Connect to a development relay. This screen prepares sharing, invitation, and key handoff. The app polls while open; use Sync shared Family to retry now. Use a local relay only for test data.</string>
+    <string name="dev_share_description">Connect to a development relay. This screen prepares sharing, invitation, and key handoff. The app polls while open and schedules background sync; use Sync shared Family to retry now. Use a local relay only for test data.</string>
     <string name="relay_origin">Relay origin (HTTPS or localhost)</string>
     <string name="relay_public_key">Relay public key (64 hex digits)</string>
     <string name="share_preparing">Preparing encrypted history and contacting the relay…</string>
-    <string name="share_confirmed">Sharing confirmed at relay cursor %1$d. Automatic sync is not connected yet.</string>
+    <string name="share_confirmed">Sharing confirmed at relay cursor %1$d. Shared sync will continue when the app or scheduled job runs.</string>
     <string name="share_retry">Could not confirm with this relay. Check its settings or retry; a saved request will use the same bytes.</string>
     <string name="share_retry_button">Set up or retry sharing</string>
     <string name="invite_member">Member</string>
@@ -86,7 +86,7 @@
     <string name="history_ready">Shared history verified. %1$d children loaded.</string>
     <string name="history_ready_auto">Shared history verified and ready.</string>
     <string name="shared_children">Verified shared children</string>
-    <string name="shared_manual_sync">New entries save on this device. The app syncs while open; use the button to retry now.</string>
+    <string name="shared_manual_sync">New entries save on this device. The app syncs while open and during scheduled background work; use the button to retry now.</string>
     <string name="sync_shared">Sync shared Family</string>
     <string name="shared_synced">Verified relay history through cursor %1$d.</string>
     <string name="shared_pending_changes">%1$d shared changes saved on this device and awaiting relay confirmation.</string>

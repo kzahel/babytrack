@@ -2,6 +2,8 @@ package org.babytrack.app
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import android.app.job.JobScheduler
+import android.os.ParcelFileDescriptor
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -13,6 +15,42 @@ import uniffi.babytrack_core_ffi.ActivityWhen
 
 @RunWith(AndroidJUnit4::class)
 class SharingRelayTest {
+    @Test
+    fun scheduledJobUploadsSavedManagerEdit() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
+            ?: error("relayPublicKey instrumentation argument required")
+        val origin = "http://localhost:8787"
+        val database = context.filesDir.resolve("families.db")
+        val family = NativeLocalStore.open(database.absolutePath).use { local ->
+            local.createFamily(System.currentTimeMillis())
+        }
+        ShareCoordinator(context, database.absolutePath).use { sharing ->
+            sharing.promote(family, origin, publicKey)
+            sharing.addChild(family, "Background child", System.currentTimeMillis())
+            assertEquals(1uL, sharing.snapshot(family).unsentCount)
+        }
+        context.getSharedPreferences("shared_relay_origins", android.content.Context.MODE_PRIVATE)
+            .edit().putString(family.familyId.joinToString("") { "%02x".format(it) }, origin).commit()
+        SharedSyncJobService.schedule(context)
+        assertTrue(context.getSystemService(JobScheduler::class.java).getPendingJob(3400) != null)
+        val before = context.getSharedPreferences("shared_background_sync", android.content.Context.MODE_PRIVATE)
+            .getLong("last_attempt_ms", 0)
+        val command = instrumentation.uiAutomation.executeShellCommand("cmd jobscheduler run -f org.babytrack.app 3400")
+        ParcelFileDescriptor.AutoCloseInputStream(command).bufferedReader().use { it.readText() }
+        val deadline = System.currentTimeMillis() + 15_000
+        while (System.currentTimeMillis() < deadline) {
+            val done = context.getSharedPreferences("shared_background_sync", android.content.Context.MODE_PRIVATE)
+                .getLong("last_attempt_ms", 0) > before
+            if (done) break
+            Thread.sleep(100)
+        }
+        ShareCoordinator(context, database.absolutePath).use { sharing ->
+            assertEquals(0uL, sharing.snapshot(family).unsentCount)
+        }
+    }
+
     @Test
     fun asynchronousJoinAdvancesWithoutManualHolderApproval() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

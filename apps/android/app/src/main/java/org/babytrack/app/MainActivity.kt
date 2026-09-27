@@ -3,6 +3,7 @@ package org.babytrack.app
 import android.os.Bundle
 import android.app.ActivityManager
 import android.content.Context
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -68,6 +69,8 @@ import java.util.TimeZone
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        runCatching { SharedSyncJobService.schedule(this) }
+            .onFailure { Log.w("BabytrackSync", "Could not schedule periodic shared sync", it) }
         val database = filesDir.resolve("families.db")
         val savedFiles = getSharedPreferences("completed_file_saves", MODE_PRIVATE)
         val relayOrigins = getSharedPreferences("shared_relay_origins", MODE_PRIVATE)

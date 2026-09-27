@@ -184,6 +184,14 @@ view offer these recovery actions. The emulator test checks the file's
 source Family and records, correct and wrong backup passwords, independent
 restore, copy idempotence, and local-only child visibility. Verified removal
 still needs to trigger the copy automatically when pending work exists.
+Android now schedules a persisted network-constrained periodic JobScheduler
+job when the app opens. It reuses the Rust-backed coordinator for manager and
+recipient Families, including pending handoff and outbox work; the UI still
+polls every 30 seconds while open. The real-relay emulator test forces the
+scheduled job and verifies that a saved manager edit drains without a
+foreground UI sync. Android may defer the periodic job (15-minute minimum),
+and a force-stop prevents it until the user next opens the app. Push remains
+a later wake optimization; cursor verification remains the sync source.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

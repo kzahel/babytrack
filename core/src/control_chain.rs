@@ -4,6 +4,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use babytrack_wire::epoch_bindings::EpochBindings;
+
 use crate::{
     batch,
     cbor::{self, Value},
@@ -94,12 +96,11 @@ pub struct ControlChain {
     admissions: BTreeMap<[u8; 16], [u8; 16]>,
     admission_grants: BTreeMap<[u8; 16], VerifiedAdmissionGrant>,
     repair_grants: BTreeMap<[u8; 16], VerifiedRepairGrant>,
-    known_heads: BTreeMap<[u8; 32], u32>,
+    epochs: EpochBindings,
     next_sequences: BTreeMap<[u8; 16], u64>,
     seen_all_ids: BTreeSet<[u8; 16]>,
     current_commitment: [u8; 32],
     memberships: BTreeMap<[u8; 16], VerifiedMembership>,
-    epoch_commitments: BTreeMap<u32, [u8; 32]>,
     rotations: BTreeMap<[u8; 16], VerifiedRotation>,
 }
 
@@ -167,12 +168,11 @@ impl ControlChain {
             admissions: BTreeMap::new(),
             admission_grants: BTreeMap::new(),
             repair_grants: BTreeMap::new(),
-            known_heads: BTreeMap::from([(genesis_head, 1)]),
+            epochs: EpochBindings::from_genesis(genesis_head, genesis_commitment),
             next_sequences: BTreeMap::new(),
             seen_all_ids,
             current_commitment: genesis_commitment,
             memberships: BTreeMap::new(),
-            epoch_commitments: BTreeMap::from([(1, genesis_commitment)]),
             rotations: BTreeMap::new(),
         })
     }
@@ -427,11 +427,13 @@ impl ControlChain {
         let next_head = crypto::hash("control-head", bytes)?;
         let epoch = u32::try_from(number(&exact_map(&next_state, 7)?[3].1)?)
             .map_err(|_| Error::Invalid("epoch outside u32"))?;
+        self.epochs
+            .record(next_head, epoch, self.current_commitment)
+            .map_err(|_| Error::Invalid("control head or epoch binding differs"))?;
         self.state = next_state;
         self.head_hash = next_head;
         self.last_global_cursor = expected_cursor;
         self.last_commit_ms = committed_ms;
-        self.known_heads.insert(self.head_hash, epoch);
         self.memberships.insert(transition_id, membership_check);
         self.issue_times.insert(invitation_id, committed_ms);
         self.remember_control_ids(new_transition_id, new_object_ids, all_ids);
@@ -603,11 +605,13 @@ impl ControlChain {
         let next_head = crypto::hash("control-head", bytes)?;
         let epoch = u32::try_from(number(&exact_map(&next_state, 7)?[3].1)?)
             .map_err(|_| Error::Invalid("epoch outside u32"))?;
+        self.epochs
+            .record(next_head, epoch, self.current_commitment)
+            .map_err(|_| Error::Invalid("control head or epoch binding differs"))?;
         self.state = next_state;
         self.head_hash = next_head;
         self.last_global_cursor = expected_cursor;
         self.last_commit_ms = committed_ms;
-        self.known_heads.insert(self.head_hash, epoch);
         self.seen_device_ids.insert(device_id);
         self.remember_control_ids(new_transition_id, new_object_ids, all_ids);
         Ok(())
@@ -847,7 +851,7 @@ impl ControlChain {
             .try_into()
             .map_err(|_| Error::Invalid("epoch outside u32"))?;
         if header.epoch != current_epoch
-            || self.known_heads.get(&header.control_head) != Some(&current_epoch)
+            || self.epochs.epoch_for_head(&header.control_head) != Some(current_epoch)
         {
             return Err(Error::Invalid(
                 "batch epoch or authoring head not current ancestry",
@@ -969,7 +973,7 @@ impl ControlChain {
                 hash: keyring_entry.object_hash,
             },
             recipients,
-            prior_commitments: self.epoch_commitments.clone(),
+            prior_commitments: self.epochs.commitments_snapshot(),
         };
         self.finalize(
             bytes,
@@ -983,8 +987,6 @@ impl ControlChain {
             },
         )?;
         self.current_commitment = new_commitment;
-        self.epoch_commitments
-            .insert(rotation.epoch, new_commitment);
         self.rotations.insert(rotation.transition_id, rotation);
         self.challenges.clear();
         self.admission_grants.remove(&target_id);
@@ -1127,11 +1129,18 @@ impl ControlChain {
         let epoch: u32 = number(&exact_map(&next_state, 7)?[3].1)?
             .try_into()
             .map_err(|_| Error::Invalid("epoch outside u32"))?;
+        let commitment = if number(&unsigned[5].1)? == 8 {
+            fixed::<32>(&exact_map(&unsigned[6].1, 3)?[2].1)?
+        } else {
+            self.current_commitment
+        };
+        self.epochs
+            .record(next_head, epoch, commitment)
+            .map_err(|_| Error::Invalid("control head or epoch binding differs"))?;
         self.state = next_state;
         self.head_hash = next_head;
         self.last_global_cursor = expected_cursor;
         self.last_commit_ms = committed_ms;
-        self.known_heads.insert(self.head_hash, epoch);
         if let Some(check) = membership_check {
             self.memberships.insert(check.transition_id, check);
         }

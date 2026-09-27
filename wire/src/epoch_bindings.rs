@@ -66,6 +66,10 @@ impl EpochBindings {
     pub fn latest_epoch(&self) -> u32 {
         self.latest_epoch
     }
+
+    pub fn commitments_snapshot(&self) -> BTreeMap<u32, [u8; 32]> {
+        self.commitments.clone()
+    }
 }
 
 #[cfg(test)]

@@ -23,6 +23,8 @@ claim/challenge/proof/admission, and converge both devices through
 the relay. It resumes enrollment after restart, polls while open, schedules
 background sync work, and offers readable or protected backup plus an
 explicit private copy. The real-relay emulator suite covers those flows.
+After a grant and verified history load, a joined Family appears in the
+normal tracker; pending joins remain in the join view.
 The manager can remove the first recipient from the Android sharing view.
 The removed device verifies a signed removal notice, stops shared writes,
 and automatically copies pending edits into a private Family. A disposable

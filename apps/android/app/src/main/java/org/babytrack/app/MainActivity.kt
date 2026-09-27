@@ -205,9 +205,10 @@ private data class PendingTemperatureEdit(
     val shared: Boolean,
     val enteredC: String,
 )
-private data class ScreenData(
+internal data class ScreenData(
     val families: List<FamilyRef>,
     val activeFamilyKey: String?,
+    val activeFamilyIsLocal: Boolean,
     val children: List<ChildRow>,
     val entries: List<ActivityRow>,
     val revision: ULong,
@@ -244,6 +245,43 @@ internal fun runningSleepCount(
         runCatching { sharing.snapshot(family).activities }.getOrNull()?.let { add(family, it) }
     }
     return running.size
+}
+
+internal fun loadTrackerData(
+    store: NativeLocalStore,
+    sharing: ShareCoordinator,
+    selectedFamily: String?,
+    selectedChild: String?,
+    selectedRecipient: String?,
+): ScreenData {
+    val local = store.families()
+    val recipients = sharing.recipientFamilies()
+    val recipient = recipients.find { it.familyId.key() == selectedRecipient } ?: recipients.firstOrNull()
+    val readyJoined = recipients.mapNotNull { candidate ->
+        runCatching { candidate to sharing.snapshot(candidate) }.getOrNull()
+    }
+    val joinedSnapshot = readyJoined.find {
+        it.first.familyId.key() == recipient?.familyId?.key()
+    }?.second
+    val shown = local + readyJoined.map { it.first }
+    val family = shown.find { it.familyId.key() == selectedFamily } ?: shown.firstOrNull()
+    val localFamily = family != null && local.any { it.familyId.key() == family.familyId.key() }
+    val recipientSnapshot = readyJoined.find { it.first.familyId.key() == family?.familyId?.key() }?.second
+    val shared = recipientSnapshot != null || (family?.let(sharing::isShared) ?: false)
+    val snapshot = recipientSnapshot ?: if (shared) sharing.snapshot(family ?: error("Shared Family absent")) else null
+    val kids = snapshot?.children ?: family?.let(store::children).orEmpty()
+    val child = kids.find { it.id.key() == selectedChild } ?: kids.firstOrNull()
+    val history = if (family != null && child != null) {
+        snapshot?.activities?.filter { it.childId.contentEquals(child.id) }
+            ?: store.timeline(family, child.id)
+    } else emptyList()
+    return ScreenData(
+        shown, family?.familyId?.key(), localFamily, kids, history,
+        if (!shared) family?.let(store::revision) ?: 0uL else 0uL,
+        if (!shared) family?.let(store::restoredOrigin) else null,
+        shared, snapshot, recipients, joinedSnapshot,
+        runningSleepCount(store, sharing, local, recipients),
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -284,6 +322,7 @@ private fun TrackerScreen(
     var isShared by remember { mutableStateOf(false) }
     var activeSharedSnapshot by remember { mutableStateOf<SharedSnapshotRow?>(null) }
     var loadedFamilyKey by remember { mutableStateOf<String?>(null) }
+    var activeFamilyIsLocal by remember { mutableStateOf(false) }
     var saveStatusVersion by remember { mutableStateOf(0) }
     var selectedFamily by remember { mutableStateOf<String?>(null) }
     var selectedChild by remember { mutableStateOf<String?>(null) }
@@ -347,7 +386,11 @@ private fun TrackerScreen(
     val restoredText = stringResource(R.string.restored)
     LaunchedEffect(selectedFamily) {
         val family = families.find { it.familyId.key() == selectedFamily }
-        relayOrigin = family?.let(lastRelayOrigin).orEmpty()
+        relayOrigin = family?.let {
+            if (recipientFamilies.any { recipient -> recipient.familyId.key() == it.familyId.key() }) {
+                runCatching { sharing.recipientOrigin(it) }.getOrNull()
+            } else lastRelayOrigin(it)
+        }.orEmpty()
     }
     LaunchedEffect(selectedFamily, selectedChild) {
         breastDraftSegments = emptyList()
@@ -459,35 +502,14 @@ private fun TrackerScreen(
     LaunchedEffect(version, selectedFamily, selectedChild, selectedRecipient) {
         runCatching {
             withContext(Dispatchers.IO) {
-                val all = store.families()
-                val recipients = sharing.recipientFamilies()
-                val recipient = recipients.find { it.familyId.key() == selectedRecipient } ?: recipients.firstOrNull()
-                val joinedSnapshot = recipient?.let { runCatching { sharing.snapshot(it) }.getOrNull() }
-                val family = all.find { it.familyId.key() == selectedFamily } ?: all.firstOrNull()
-                val shared = family?.let(sharing::isShared) ?: false
-                val snapshot = if (shared) sharing.snapshot(family) else null
-                val kids = snapshot?.children ?: family?.let(store::children).orEmpty()
-                val child = kids.find { it.id.key() == selectedChild } ?: kids.firstOrNull()
-                val history = if (family != null && child != null) {
-                    snapshot?.activities?.filter { it.childId.contentEquals(child.id) }
-                        ?: store.timeline(family, child.id)
-                } else emptyList()
-                ScreenData(
-                    all, family?.familyId?.key(), kids, history,
-                    if (!shared) family?.let(store::revision) ?: 0uL else 0uL,
-                    if (!shared) family?.let(store::restoredOrigin) else null,
-                    shared,
-                    snapshot,
-                    recipients,
-                    joinedSnapshot,
-                    runningSleepCount(store, sharing, all, recipients),
-                )
+                loadTrackerData(store, sharing, selectedFamily, selectedChild, selectedRecipient)
             }
         }.onSuccess { data ->
             val all = data.families
             val kids = data.children
             families = all
             selectedFamily = all.find { it.familyId.key() == selectedFamily }?.familyId?.key() ?: all.firstOrNull()?.familyId?.key()
+            activeFamilyIsLocal = data.activeFamilyIsLocal
             children = kids
             selectedChild = kids.find { it.id.key() == selectedChild }?.id?.key() ?: kids.firstOrNull()?.id?.key()
             entries = data.entries
@@ -524,7 +546,7 @@ private fun TrackerScreen(
             )
             if (activeShared) activeSharedSnapshot?.let { snapshot ->
                 SharedHealth(snapshot)
-                if (family != null && snapshot.devices.any {
+                if (family != null && activeFamilyIsLocal && snapshot.devices.any {
                     it.deviceId.contentEquals(family.deviceId) && it.role == 2.toUByte()
                 }) {
                     snapshot.devices.filterNot { it.deviceId.contentEquals(family.deviceId) }.forEach { device ->
@@ -833,7 +855,7 @@ private fun TrackerScreen(
                 }
             }
 
-            if (family != null) {
+            if (family != null && activeFamilyIsLocal) {
                 if (BuildConfig.DEBUG) {
                     if (!showShareForm) OutlinedButton(
                         onClick = { showShareForm = true },

@@ -35,6 +35,8 @@ corrections, plus child name, growth, and completed sleep corrections, runs
 alongside M0 on emulators; its physical phone gates remain open.
 Android can now share an invitation through the system chooser and receive
 one through the text share target, prefilled for an explicit join action.
+Ready joined Families now enter the normal Android Family switcher and full
+tracker; pending joins remain outside it.
 
 | Field | Current answer |
 |---|---|

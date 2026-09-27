@@ -45,8 +45,9 @@ To exercise the current relay slice on an emulator:
 8. On the recipient's debug screen, use **Load shared history**. A bounded
    sync pass verifies signed control and batch history, fetches required
    encrypted objects, and opens the grant. It reports the verified cursor or
-   readiness; repeat after a pending result. The join preview then shows
-   verified shared children and entries. Adding a child or wet diaper saves
+   readiness; repeat after a pending result. The joined Family then appears
+   in the normal Family switcher with the full tracker; pending joins stay
+   in the join view. Adding a child or wet diaper saves
    offline in the Rust shared outbox; **Sync shared Family** uploads the next
    signed batches and verifies the relay log. The manager can use the same
    button for its Family. A newly shared manager Family uses the shared Rust

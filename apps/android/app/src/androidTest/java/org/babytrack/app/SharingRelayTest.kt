@@ -392,13 +392,28 @@ class SharingRelayTest {
             assertTrue(sharing.isAdmittedManager(holder))
             sharing.invite(holder, origin, 1u.toUByte())
         }
+        NativeLocalStore.open(thirdDb.absolutePath).use { it.createFamily(System.currentTimeMillis()) }
         val third = ShareCoordinator(context, thirdDb.absolutePath).use { it.claim(thirdLink).family }
+        NativeLocalStore.open(thirdDb.absolutePath).use { local ->
+            ShareCoordinator(context, thirdDb.absolutePath).use { sharing ->
+                assertEquals(1, loadTrackerData(local, sharing, null, null, null).families.size)
+            }
+        }
         ShareCoordinator(context, holderDb.absolutePath).use { assertTrue(it.advanceManager(holder, origin).ready) }
         ShareCoordinator(context, thirdDb.absolutePath).use { assertTrue(it.advanceRecipient(third).awaitingGrant) }
         ShareCoordinator(context, holderDb.absolutePath).use { assertTrue(it.advanceManager(holder, origin).ready) }
         ShareCoordinator(context, thirdDb.absolutePath).use { sharing ->
             assertTrue(sharing.advanceRecipient(third).ready)
             assertEquals("Handoff child", sharing.snapshot(third).children.single().name)
+            NativeLocalStore.open(thirdDb.absolutePath).use { local ->
+                val selected = third.familyId.joinToString("") { "%02x".format(it) }
+                val tracker = loadTrackerData(local, sharing, selected, null, null)
+                assertEquals(2, tracker.families.size)
+                assertEquals(selected, tracker.activeFamilyKey)
+                assertTrue(tracker.shared)
+                assertTrue(!tracker.activeFamilyIsLocal)
+                assertEquals("Handoff child", tracker.children.single().name)
+            }
         }
         ShareCoordinator(context, holderDb.absolutePath).use { sharing ->
             sharing.addChild(holder, "Holder child", System.currentTimeMillis())

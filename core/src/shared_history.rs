@@ -765,6 +765,25 @@ pub(crate) fn chain_at_head(
     family: FamilyHandle,
     head: [u8; 32],
 ) -> Result<ControlChain, Error> {
+    let sparse = store.enrollment_controls(family)?;
+    if !sparse.is_empty() {
+        let history = store
+            .shared_history(family)?
+            .ok_or(Error::Invalid("shared history absent"))?;
+        sparse_enrollment_chain(store, family, history.relay_public_key)?;
+        let mut chain =
+            ControlChain::from_genesis(&history.genesis_bytes, history.relay_public_key)?;
+        if chain.head_hash() == head {
+            return Ok(chain);
+        }
+        for (_, bytes) in sparse {
+            chain.apply_sparse_control(&bytes)?;
+            if chain.head_hash() == head {
+                return Ok(chain);
+            }
+        }
+        return Err(Error::Invalid("prepared control prior sparse head absent"));
+    }
     PublicHistorySession::resume(store, family)?;
     let history = store
         .shared_history(family)?

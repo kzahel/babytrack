@@ -1352,8 +1352,11 @@ resumes exact bytes after restart, and can release an earlier committed
 preparation slot when a new challenge is needed. Real-relay tests stage and
 commit both challenge objects after unrelated issues, and again after the
 first recipient's removal and epoch rotation to admit a new candidate.
-Recipient proof, grant, hydration, admitted-manager challenge, and Android
-exposure remain open; this is not yet a completed third-device join.
+The later recipient now verifies that challenge and its HPKE object, prepares
+an exact signed proof, resumes it after restart, and commits it through relay
+HTTP. A second test proves this after removal and epoch rotation. Grant,
+hydration, admitted-manager challenge, and Android exposure remain open; this
+is not yet a completed third-device join.
 Ready replay can now start from a later recipient's admission grant at a
 rotated epoch: it verifies that epoch's committed keyring and membership,
 recovers earlier keys, then applies subsequent addressed rotations. A fixed

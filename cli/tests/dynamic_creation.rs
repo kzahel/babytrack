@@ -526,6 +526,58 @@ async fn later_issue_keeps_exact_candidate_and_commits_after_first_issue() {
             .cursor(),
         7
     );
+    let mut recipient = SqliteStore::open(&recipient_path).unwrap();
+    let enrollment =
+        EnrollmentAttempt::resume(&mut recipient, family.family_id, &recipient_wrap).unwrap();
+    enrollment
+        .accept_sparse_control(&mut recipient, committed_challenge)
+        .unwrap();
+    let pending_chain = shared_history::first_join_chain(
+        &recipient,
+        enrollment.family(),
+        enrollment.relay_public_key().unwrap(),
+        7,
+    )
+    .unwrap();
+    let verified = pending_chain
+        .latest_challenge(&later.invitation_id())
+        .unwrap();
+    let hpke_id = verified.hpke_object_id();
+    let object_path = format!(
+        "/v1/families/{}/objects/{}",
+        lower_hex(&family.family_id),
+        lower_hex(&hpke_id)
+    );
+    let read = enrollment.sign_get(&object_path).unwrap();
+    let hpke_object = OpaqueObject::decode(
+        &http_bytes(&app, Method::GET, &object_path, read.bytes).await,
+        hpke_id,
+    )
+    .unwrap();
+    enrollment
+        .accept_sparse_object(&mut recipient, hpke_id, &hpke_object.object_bytes)
+        .unwrap();
+    let proof = FirstProof::prepare(&mut recipient, &enrollment, &recipient_wrap).unwrap();
+    let proof_candidate = proof.candidate_bytes().to_vec();
+    drop(recipient);
+    let mut recipient = SqliteStore::open(&recipient_path).unwrap();
+    let enrollment =
+        EnrollmentAttempt::resume(&mut recipient, family.family_id, &recipient_wrap).unwrap();
+    let proof = FirstProof::resume(&recipient, &enrollment, &recipient_wrap).unwrap();
+    assert_eq!(proof.candidate_bytes(), proof_candidate);
+    let proof_response = commit_control(&app, family.family_id, &proof_candidate).await;
+    let Value::Map(proof_result) = cbor::decode(&proof_response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(committed_proof) = &proof_result[1].1 else {
+        panic!()
+    };
+    proof.confirm(&mut recipient, committed_proof).unwrap();
+    PublicHistorySession::resume(&local, family)
+        .unwrap()
+        .accept_control(&mut local, committed_proof)
+        .unwrap();
+    assert_eq!(enrollment.pending_control_cursor(&recipient).unwrap(), 8);
 }
 
 async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
@@ -2339,6 +2391,9 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
         let Value::Bytes(committed_claim) = &fields[1].1 else {
             panic!()
         };
+        later_attempt
+            .confirm_sparse_claim(&mut later_store, committed_claim)
+            .unwrap();
         PublicHistorySession::resume(&local, family)
             .unwrap()
             .accept_control(&mut local, committed_claim)
@@ -2367,6 +2422,45 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
         };
         later_challenge
             .confirm(&mut local, committed_challenge)
+            .unwrap();
+        later_attempt
+            .accept_sparse_control(&mut later_store, committed_challenge)
+            .unwrap();
+        let chain = shared_history::first_join_chain(
+            &later_store,
+            later_attempt.family(),
+            relay_public,
+            controls.len() + 2,
+        )
+        .unwrap();
+        let verified = chain.latest_challenge(&later.invitation_id()).unwrap();
+        let hpke_id = verified.hpke_object_id();
+        let object_path = format!(
+            "/v1/families/{}/objects/{}",
+            lower_hex(&family.family_id),
+            lower_hex(&hpke_id)
+        );
+        let read = later_attempt.sign_get(&object_path).unwrap();
+        let object = OpaqueObject::decode(
+            &http_bytes(&app, Method::GET, &object_path, read.bytes).await,
+            hpke_id,
+        )
+        .unwrap();
+        later_attempt
+            .accept_sparse_object(&mut later_store, hpke_id, &object.object_bytes)
+            .unwrap();
+        let proof = FirstProof::prepare(&mut later_store, &later_attempt, &later_wrap).unwrap();
+        let response = commit_control(&app, family.family_id, proof.candidate_bytes()).await;
+        let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(committed_proof) = &fields[1].1 else {
+            panic!()
+        };
+        proof.confirm(&mut later_store, committed_proof).unwrap();
+        PublicHistorySession::resume(&local, family)
+            .unwrap()
+            .accept_control(&mut local, committed_proof)
             .unwrap();
         assert_eq!(
             PublicHistorySession::resume(&local, family)

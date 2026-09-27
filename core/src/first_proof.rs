@@ -1,4 +1,4 @@
-//! First recipient key proof, signed and persisted before upload.
+//! Recipient key proof, signed and persisted before upload.
 
 use crate::{
     cbor::{self, Value},
@@ -89,8 +89,11 @@ impl FirstProof {
         if store.prepared_control(family, 5)?.is_some() {
             return Self::resume(store, enrollment, local_wrapping_key);
         }
-        let public =
-            shared_history::first_join_chain(store, family, enrollment.relay_public_key()?, 4)?;
+        let public = if store.enrollment_controls(family)?.is_empty() {
+            PublicHistorySession::resume(store, family)?.chain().clone()
+        } else {
+            shared_history::sparse_enrollment_chain(store, family, enrollment.relay_public_key()?)?
+        };
         let transition_id = random_v4()?;
         let (candidate_bytes, signature) = build(store, &public, enrollment, transition_id)?;
         let secret_nonce = random::<24>()?;
@@ -122,7 +125,7 @@ impl FirstProof {
         let family = enrollment.family();
         let row = store
             .prepared_control(family, 5)?
-            .ok_or(Error::Invalid("no durable first proof"))?;
+            .ok_or(Error::Invalid("no durable proof"))?;
         if row.objects_bytes != cbor::encode(&Value::Array(vec![]))? {
             return Err(Error::Invalid("proof has unexpected objects"));
         }
@@ -139,7 +142,14 @@ impl FirstProof {
             return Err(Error::Invalid("proof secret version"));
         }
         let stored_signature = fixed::<64>(&secret[1])?;
-        let chain = chain_through_challenge(store, family, enrollment.relay_public_key()?)?;
+        let Value::Map(candidate) = cbor::decode(&row.candidate_bytes)? else {
+            return Err(Error::Invalid("proof candidate not map"));
+        };
+        let Value::Map(unsigned) = &candidate[0].1 else {
+            return Err(Error::Invalid("proof unsigned body not map"));
+        };
+        let prior_head = fixed::<32>(&unsigned[3].1)?;
+        let chain = shared_history::chain_at_head(store, family, prior_head)?;
         let (candidate_bytes, signature) = build(store, &chain, enrollment, row.transition_id)?;
         if row.candidate_bytes != candidate_bytes || signature != stored_signature {
             return Err(Error::Invalid("proof differs from durable keys"));
@@ -168,6 +178,9 @@ impl FirstProof {
         let Value::Map(root) = cbor::decode(committed)? else {
             return Err(Error::Invalid("committed proof not map"));
         };
+        if root.len() != 4 {
+            return Err(Error::Invalid("committed proof shape"));
+        }
         let candidate = cbor::encode(&Value::Map(vec![
             (1, root[0].1.clone()),
             (2, root[1].1.clone()),
@@ -190,13 +203,10 @@ impl FirstProof {
         let committed_prior = history
             .entries
             .iter()
-            .filter(|entry| entry.kind == 1)
-            .nth(3);
+            .find(|entry| entry.kind == 1 && entry.committed_bytes == committed);
         let mut public = PublicHistorySession::resume(store, self.family)?;
         if committed_prior.is_none() {
             public.accept_control(store, committed)?;
-        } else if committed_prior.is_some_and(|entry| entry.committed_bytes != committed) {
-            return Err(Error::Invalid("proof differs from pinned history"));
         }
         Ok(())
     }
@@ -224,10 +234,18 @@ fn build(
     let Value::Array(pending) = &mut state[5].1 else {
         return Err(Error::Invalid("pending not array"));
     };
-    if pending.len() != 1 {
-        return Err(Error::Invalid("first proof expects one pending device"));
-    }
-    let Value::Array(row) = &mut pending[0] else {
+    let row = pending
+        .iter_mut()
+        .find(|item| {
+            let Value::Array(fields) = item else {
+                return false;
+            };
+            fields.len() == 9
+                && fixed::<16>(&fields[0]).ok() == Some(enrollment.invitation_id())
+                && fixed::<16>(&fields[1]).ok() == Some(family.device_id)
+        })
+        .ok_or(Error::Invalid("proof pending target absent"))?;
+    let Value::Array(row) = row else {
         return Err(Error::Invalid("pending row not array"));
     };
     if row.len() != 9
@@ -257,18 +275,6 @@ fn build(
         &enrollment.signing_seed(),
     )?;
     Ok((candidate, proof.signature))
-}
-fn chain_through_challenge(
-    store: &SqliteStore,
-    family: FamilyHandle,
-    relay_public: [u8; 32],
-) -> Result<ControlChain, Error> {
-    Ok(shared_history::first_join_prefix_chain(
-        store,
-        family,
-        relay_public,
-        4,
-    )?)
 }
 fn secret_aad(
     family: FamilyHandle,

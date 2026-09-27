@@ -1299,6 +1299,10 @@ remaining active device exactly once. A later repair and rotating removal
 reproduce published bytes through HTTP and reopen cleanly. General negative
 role and epoch cases, Android later-device preparation, and a focused
 independent review remain.
+FS67 now has a signed relay regression after rotation: an old-epoch upload
+and a new-epoch upload naming an old head receive distinct signed rejections;
+the manager's next sequence with the new epoch and removal head commits and
+survives restart. Competing writers and a later-device role loss remain.
 
 ## Advisory public-ledger restart review at bdbed9e
 

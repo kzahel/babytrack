@@ -3777,8 +3777,95 @@ mod tests {
                     .is_ok()
             );
         }
+        let manager: [u8; 16] = hex(fixture["test_only_inputs"]["manager_device_id_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let manager_seed: [u8; 32] = hex(fixture["test_only_inputs"]["manager_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let original = hex(fixture["batch"]["envelope_cbor_hex"].as_str().unwrap());
+        let (original_id, _) = batch_authority::claimed_identity(&original).unwrap();
+        let Value::Map(mut outer) = cbor::decode(&original).unwrap() else {
+            panic!()
+        };
+        let next_sequence =
+            RelayStore::verify_saved_family(&store.db, family, store.relay_public, &seed)
+                .unwrap()
+                .next_sequence(manager);
+        let mut stale_id = original_id;
+        stale_id[15] ^= 0xe1;
+        let stale = resign_batch_author(
+            &original,
+            manager,
+            next_sequence,
+            Some(stale_id),
+            manager_seed,
+        );
+        assert_eq!(
+            batch_rejection_reason(&store.commit_batch(family, &stale).unwrap()),
+            Some(1)
+        );
+        let Value::Map(header) = &mut outer[0].1 else {
+            panic!()
+        };
+        header[4].1 = Value::Integer(2);
+        let mut wrong_id = original_id;
+        wrong_id[15] ^= 0xe2;
+        let wrong_head = resign_batch_author(
+            &cbor::encode(&Value::Map(outer.clone())).unwrap(),
+            manager,
+            next_sequence,
+            Some(wrong_id),
+            manager_seed,
+        );
+        assert_eq!(
+            batch_rejection_reason(&store.commit_batch(family, &wrong_head).unwrap()),
+            Some(3)
+        );
+        let Value::Map(header) = &mut outer[0].1 else {
+            panic!()
+        };
+        header[3].1 = Value::Bytes(hex(transitions.last().unwrap()["head_hash_hex"]
+            .as_str()
+            .unwrap()));
+        let mut current_id = original_id;
+        current_id[15] ^= 0xe3;
+        let current = resign_batch_author(
+            &cbor::encode(&Value::Map(outer)).unwrap(),
+            manager,
+            next_sequence,
+            Some(current_id),
+            manager_seed,
+        );
+        assert_eq!(
+            batch_rejection_reason(&store.commit_batch(family, &current).unwrap()),
+            None
+        );
         drop(store);
         assert!(RelayStore::open(&path, seed).is_ok());
+    }
+    fn batch_rejection_reason(response: &[u8]) -> Option<u64> {
+        let Value::Map(fields) = cbor::decode(response).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(receipt_bytes) = &fields[1].1 else {
+            panic!()
+        };
+        let Value::Map(receipt) = cbor::decode(receipt_bytes).unwrap() else {
+            panic!()
+        };
+        let Value::Map(body) = &receipt[0].1 else {
+            panic!()
+        };
+        match body[9].1 {
+            Value::Integer(reason) => Some(reason.try_into().unwrap()),
+            Value::Null => None,
+            _ => panic!(),
+        }
     }
     fn signed_get(
         family: [u8; 16],

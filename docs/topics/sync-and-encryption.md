@@ -210,6 +210,11 @@ Family-scoped keys and composite local storage identity; files omit keys.
   new authorization state, and appends a signed removal transition. The
   relay rejects subsequent requests from the removed holder, while the
   removed device can read the opaque signed chain to verify its removal.
+  A device admitted after rotation opens its admission grant for the then
+  current epoch, verifies that rotation's signed keyring and membership
+  object with the granted key, and recovers every earlier epoch key before
+  replaying history. It did not receive a grant at the earlier rotation.
+  Later rotations address it normally after admission.
 - **Replacement after loss.** An old grant, file, or account cannot authorize
   a fresh installation that lacks the enrolled device's private signing key.
   A copied private key may impersonate that same device; revoking its device

@@ -1482,8 +1482,8 @@
       "requirements": ["U1", "U4"],
       "given": "Epoch two was committed with a verified commitment after recipient removal and the relay restarts before a later-device admission.",
       "actions": ["Rebuild the head-to-epoch and epoch-to-commitment maps from committed bytes, admit a later device, and repair its grant; separately corrupt, delete, or substitute the derived commitment row."],
-      "expect": ["The valid epoch-two candidate succeeds after restart; a stale or substituted commitment is rejected identically by client and relay.", "Damaged derived state is rebuilt from authenticated history or the relay fails closed before signing another result."],
-      "variants": ["restart", "missing derived row", "stale C1", "substituted C2", "grant repair"],
+      "expect": ["The valid epoch-two candidate succeeds after restart; a stale or substituted commitment is rejected identically by client and relay.", "The later device opens its epoch-two admission grant and the rotation keyring to recover epoch-one history without an epoch-two rotation grant addressed to it.", "Damaged derived state is rebuilt from authenticated history or the relay fails closed before signing another result."],
+      "variants": ["restart", "missing derived row", "stale C1", "substituted C2", "grant repair", "later admission keyring", "tampered keyring"],
       "decisions": ["D4"]
     },
     {

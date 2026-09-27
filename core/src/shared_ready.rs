@@ -141,18 +141,68 @@ impl ReadyFamilySession {
             .get(&grant.grant_id())
             .ok_or(Error::Invalid("recipient admission grant not downloaded"))?;
         let key = grant.open(grant_object, &agreement_private)?;
-        if key.epoch != 1 {
-            return Err(Error::Invalid(
-                "admission after rotation needs historical keyring delivery",
-            ));
+        let mut keys = BTreeMap::from([(key.epoch, key.clone())]);
+        if key.epoch > 1 {
+            let (transition_id, rotation) = public
+                .chain()
+                .rotation_for_epoch(key.epoch)
+                .ok_or(Error::Invalid("admission epoch rotation missing"))?;
+            let keyring = objects
+                .get(&rotation.keyring_id())
+                .ok_or(Error::Invalid("admission history keyring missing"))?;
+            let membership = public
+                .chain()
+                .membership_check(&transition_id)
+                .ok_or(Error::Invalid("admission epoch membership missing"))?;
+            let membership_object = objects
+                .get(&membership.object_id())
+                .ok_or(Error::Invalid("admission epoch membership object missing"))?;
+            let recovered = public.chain().open_rotation_from_known_epoch_key(
+                &transition_id,
+                &key,
+                keyring,
+                membership_object,
+            )?;
+            for epoch in 1..key.epoch {
+                keys.insert(
+                    epoch,
+                    recovered
+                        .earlier(epoch)
+                        .ok_or(Error::Invalid("admission history epoch missing"))?
+                        .clone(),
+                );
+            }
         }
-        Self::from_store_with_initial_key(store, family, key.bytes, agreement_private, false)
+        Self::from_store_with_keys(store, family, keys, agreement_private, false)
     }
 
     fn from_store_with_initial_key(
         store: &SqliteStore,
         family: FamilyHandle,
         initial_epoch_key: [u8; 32],
+        manager_agreement_private: [u8; 32],
+        require_initial_manager: bool,
+    ) -> Result<Self, Error> {
+        Self::from_store_with_keys(
+            store,
+            family,
+            BTreeMap::from([(
+                1,
+                VerifiedEpochKey {
+                    family_id: family.family_id,
+                    epoch: 1,
+                    bytes: initial_epoch_key,
+                },
+            )]),
+            manager_agreement_private,
+            require_initial_manager,
+        )
+    }
+
+    fn from_store_with_keys(
+        store: &SqliteStore,
+        family: FamilyHandle,
+        mut keys: BTreeMap<u32, VerifiedEpochKey>,
         manager_agreement_private: [u8; 32],
         require_initial_manager: bool,
     ) -> Result<Self, Error> {
@@ -170,8 +220,14 @@ impl ReadyFamilySession {
         verify_manifest(&history.genesis_bytes, &objects)?;
         let mut chain =
             ControlChain::from_genesis(&history.genesis_bytes, history.relay_public_key)?;
+        let initial_epoch_key = keys
+            .get(&1)
+            .ok_or(Error::Invalid("initial history key missing"))?
+            .bytes;
         let first_key = chain.verify_initial_epoch_key(&initial_epoch_key)?;
-        let mut keys = BTreeMap::from([(1, first_key)]);
+        if keys.get(&1) != Some(&first_key) {
+            return Err(Error::Invalid("initial history key differs from genesis"));
+        }
         let mut projection = Projection::new(family.family_id);
         replay_promotion(
             &history.genesis_bytes,
@@ -192,17 +248,6 @@ impl ReadyFamilySession {
                         let rotation = chain
                             .rotation(&transition_id)
                             .ok_or(Error::Invalid("rotation missing from verified chain"))?;
-                        let grants = rotation
-                            .grant_ids()
-                            .into_iter()
-                            .map(|id| {
-                                objects
-                                    .get(&id)
-                                    .cloned()
-                                    .map(|bytes| (id, bytes))
-                                    .ok_or(Error::Invalid("rotation grant object missing"))
-                            })
-                            .collect::<Result<Vec<_>, _>>()?;
                         let keyring = objects
                             .get(&rotation.keyring_id())
                             .ok_or(Error::Invalid("rotation keyring object missing"))?;
@@ -212,15 +257,37 @@ impl ReadyFamilySession {
                         let membership_object = objects
                             .get(&membership.object_id())
                             .ok_or(Error::Invalid("rotation membership object missing"))?;
-                        let rotated = chain.open_rotation_for(
-                            &transition_id,
-                            family.device_id,
-                            &manager_agreement_private,
-                            &grants,
-                            keyring,
-                            membership_object,
-                        )?;
-                        for (epoch, prior) in &keys {
+                        let rotated = if let Some(known) = keys.get(&rotation.epoch) {
+                            chain.open_rotation_from_known_epoch_key(
+                                &transition_id,
+                                known,
+                                keyring,
+                                membership_object,
+                            )?
+                        } else {
+                            let grants = rotation
+                                .grant_ids()
+                                .into_iter()
+                                .map(|id| {
+                                    objects
+                                        .get(&id)
+                                        .cloned()
+                                        .map(|bytes| (id, bytes))
+                                        .ok_or(Error::Invalid("rotation grant object missing"))
+                                })
+                                .collect::<Result<Vec<_>, _>>()?;
+                            chain.open_rotation_for(
+                                &transition_id,
+                                family.device_id,
+                                &manager_agreement_private,
+                                &grants,
+                                keyring,
+                                membership_object,
+                            )?
+                        };
+                        for (epoch, prior) in
+                            keys.iter().filter(|(epoch, _)| **epoch < rotation.epoch)
+                        {
                             if rotated.earlier(*epoch) != Some(prior) {
                                 return Err(Error::Invalid(
                                     "rotation history key differs from locally verified key",
@@ -613,4 +680,111 @@ fn positive_or_zero(value: &Value) -> Result<u64, Error> {
     (*number)
         .try_into()
         .map_err(|_| Error::Invalid("negative or large integer"))
+}
+
+#[cfg(test)]
+mod later_admission_tests {
+    use super::*;
+
+    fn hex(value: &str) -> Vec<u8> {
+        value
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect()
+    }
+
+    fn fixed<const N: usize>(value: &str) -> [u8; N] {
+        hex(value).try_into().unwrap()
+    }
+
+    #[test]
+    fn known_rotated_key_replays_prior_history_without_an_old_rotation_grant() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/vectors/contiguous-chain-v1.json"))
+                .unwrap();
+        let input = &fixture["test_only_inputs"];
+        let family = FamilyHandle {
+            family_id: fixed(input["family_id_hex"].as_str().unwrap()),
+            device_id: fixed(input["manager_device_id_hex"].as_str().unwrap()),
+        };
+        let relay_public = crypto::signing_public_key(&fixed::<32>(
+            input["relay_sign_seed_hex"].as_str().unwrap(),
+        ));
+        let transitions = fixture["transitions"].as_array().unwrap();
+        let wire = |index: usize| hex(transitions[index]["committed_cbor_hex"].as_str().unwrap());
+        let directory = tempfile::tempdir().unwrap();
+        let mut store = SqliteStore::open(directory.path().join("family.sqlite")).unwrap();
+        store
+            .create_family(family.family_id, family.device_id)
+            .unwrap();
+        let mut public =
+            PublicHistorySession::begin(&mut store, family, &wire(0), relay_public).unwrap();
+        let objects = &fixture["objects_by_id_hex"];
+        let accept_objects =
+            |public: &mut PublicHistorySession, store: &mut SqliteStore, index: usize| {
+                for row in transitions[index]["manifest"].as_array().unwrap() {
+                    let id = row[1].as_str().unwrap();
+                    public
+                        .accept_object(store, fixed(id), &hex(objects[id].as_str().unwrap()))
+                        .unwrap();
+                }
+            };
+        accept_objects(&mut public, &mut store, 0);
+        for index in 1..=7 {
+            if index == 7 {
+                let batch = &fixture["batch"];
+                public
+                    .accept_batch(
+                        &mut store,
+                        &hex(batch["envelope_cbor_hex"].as_str().unwrap()),
+                        &hex(batch["receipt_cbor_hex"].as_str().unwrap()),
+                    )
+                    .unwrap();
+            }
+            public.accept_control(&mut store, &wire(index)).unwrap();
+            accept_objects(&mut public, &mut store, index);
+        }
+        let epoch_one = fixed::<32>(input["epoch_1_key_hex"].as_str().unwrap());
+        let epoch_two = fixed::<32>(input["epoch_2_key_hex"].as_str().unwrap());
+        let keys = BTreeMap::from([
+            (
+                1,
+                VerifiedEpochKey {
+                    family_id: family.family_id,
+                    epoch: 1,
+                    bytes: epoch_one,
+                },
+            ),
+            (
+                2,
+                VerifiedEpochKey {
+                    family_id: family.family_id,
+                    epoch: 2,
+                    bytes: epoch_two,
+                },
+            ),
+        ]);
+        let ready =
+            ReadyFamilySession::from_store_with_keys(&store, family, keys.clone(), [0; 32], false)
+                .unwrap();
+        assert_eq!(ready.observed_cursor(), 9);
+        assert_eq!(ready.active_epoch(), 2);
+        assert!(
+            ReadyFamilySession::from_store_with_keys(
+                &store,
+                family,
+                BTreeMap::from([(1, keys[&1].clone())]),
+                [0; 32],
+                false,
+            )
+            .is_err()
+        );
+        let mut wrong = keys;
+        wrong.get_mut(&2).unwrap().bytes[0] ^= 1;
+        assert!(
+            ReadyFamilySession::from_store_with_keys(&store, family, wrong, [0; 32], false)
+                .is_err()
+        );
+    }
 }

@@ -136,6 +136,27 @@ fn first_removal_grants_only_remaining_manager_and_opens_history_keyring() {
         .verify(&member_object.2, opened.current())
         .unwrap();
     assert_eq!(opened.earlier(1), Some(&verified_epoch_one));
+    let later_admission_keys = chain
+        .open_rotation_from_known_epoch_key(
+            &proposal.transition_id,
+            opened.current(),
+            &keyring.2,
+            &member_object.2,
+        )
+        .unwrap();
+    assert_eq!(later_admission_keys, opened);
+    let mut damaged_keyring = keyring.2.clone();
+    *damaged_keyring.last_mut().unwrap() ^= 1;
+    assert!(
+        chain
+            .open_rotation_from_known_epoch_key(
+                &proposal.transition_id,
+                opened.current(),
+                &damaged_keyring,
+                &member_object.2,
+            )
+            .is_err()
+    );
     assert!(
         chain
             .open_rotation_for(

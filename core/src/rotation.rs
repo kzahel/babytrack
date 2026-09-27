@@ -76,6 +76,24 @@ impl VerifiedRotation {
         self.keyring.id
     }
 
+    /// A device admitted after this rotation can receive its epoch key in
+    /// the admission grant and recover earlier keys from the same keyring.
+    pub(crate) fn open_from_known_epoch_key(
+        &self,
+        current: &VerifiedEpochKey,
+        keyring_object: &[u8],
+    ) -> Result<VerifiedRotationKeys, Error> {
+        if current.family_id != self.family_id || current.epoch != self.epoch {
+            return Err(Error::Invalid("known key belongs to another rotation"));
+        }
+        check_commitment(self.family_id, self.epoch, &current.bytes, self.commitment)?;
+        let earlier = self.open_keyring(keyring_object, current)?;
+        Ok(VerifiedRotationKeys {
+            current: current.clone(),
+            earlier,
+        })
+    }
+
     /// Require exactly one valid grant for every remaining active device.
     /// The new key is usable only after the complete keyring also verifies.
     pub(crate) fn open_for(

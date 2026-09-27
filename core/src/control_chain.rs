@@ -299,6 +299,13 @@ impl ControlChain {
         self.rotations.get(transition_id)
     }
 
+    pub fn rotation_for_epoch(&self, epoch: u32) -> Option<([u8; 16], &VerifiedRotation)> {
+        self.rotations
+            .iter()
+            .find(|(_, rotation)| rotation.epoch == epoch)
+            .map(|(id, rotation)| (*id, rotation))
+    }
+
     /// Only the genesis manager may verify the initial key by commitment.
     /// Later epochs require the complete committed grant, keyring, and
     /// encrypted membership objects before a usable key token is issued.
@@ -347,6 +354,28 @@ impl ControlChain {
         }
         let keys =
             rotation.open_for(device_id, agreement_private, grant_objects, keyring_object)?;
+        self.memberships
+            .get(transition_id)
+            .ok_or(Error::Invalid("rotation membership is missing"))?
+            .verify(membership_object, keys.current())?;
+        Ok(keys)
+    }
+
+    /// Recover a historical keyring using a later admission grant for that
+    /// epoch. The key still has to match the signed rotation commitment and
+    /// decrypt the signed membership object.
+    pub fn open_rotation_from_known_epoch_key(
+        &self,
+        transition_id: &[u8; 16],
+        current: &VerifiedEpochKey,
+        keyring_object: &[u8],
+        membership_object: &[u8],
+    ) -> Result<rotation::VerifiedRotationKeys, Error> {
+        let rotation = self
+            .rotations
+            .get(transition_id)
+            .ok_or(Error::Invalid("no committed rotation"))?;
+        let keys = rotation.open_from_known_epoch_key(current, keyring_object)?;
         self.memberships
             .get(transition_id)
             .ok_or(Error::Invalid("rotation membership is missing"))?

@@ -1310,6 +1310,12 @@ writer is no longer tied to the original join positions. A second recipient's
 signed claim now commits, changes that invitation to consumed, and appears
 only as a pending reader. Its signed pre-admission data upload gets a revoked
 receipt. Challenge, grant, and Android later-device flow are still open.
+Ready replay can now start from a later recipient's admission grant at a
+rotated epoch: it verifies that epoch's committed keyring and membership,
+recovers earlier keys, then applies subsequent addressed rotations. A fixed
+rotation fixture proves known-key history replay without an impossible old
+rotation grant and rejects a tampered keyring or key. Complete third-device
+admission and hydration through the relay remains open (FS72).
 
 The relay page selector now stops before the four-MiB encoded response cap
 instead of blindly taking 256 entries and failing the entire read. FS75

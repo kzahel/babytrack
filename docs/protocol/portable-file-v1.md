@@ -42,6 +42,13 @@ it. The header marks a known sync gap; a file can never claim to contain
 unreceived remote history. The UI displays the snapshot time and gap before
 and after export.
 
+For a native shared Family, the source cursor is the last verified relay
+entry and pending local operations are previewed over that verified state
+before writing rows. Repeated private-copy requests by one source device
+reuse one destination through a local source-to-copy mapping committed with
+the restored Family. An ordinary file restore remains an explicit new copy
+each time.
+
 No row contains a signing/agreement private key, epoch key, relay credential,
 membership role, invitation, grant, source outbox, or original authority.
 Source child and record IDs are retained under a fresh local Family ID so

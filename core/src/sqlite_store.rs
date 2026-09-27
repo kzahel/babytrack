@@ -11,7 +11,7 @@ use crate::{
     hlc::{self, Clock},
     ids,
     operation::{self, Hlc, NewOperation, Operation},
-    projection::{LocalError, LocalProjection},
+    projection::{self, LocalError, LocalProjection, Projection},
 };
 
 #[derive(Debug)]
@@ -20,6 +20,7 @@ pub enum Error {
     Operation(operation::Error),
     Clock(hlc::Error),
     Projection(LocalError),
+    SharedProjection(projection::Error),
     InvalidId,
     WrongFamily,
     WrongDevice,
@@ -53,6 +54,11 @@ impl From<hlc::Error> for Error {
 impl From<LocalError> for Error {
     fn from(error: LocalError) -> Self {
         Self::Projection(error)
+    }
+}
+impl From<projection::Error> for Error {
+    fn from(error: projection::Error) -> Self {
+        Self::SharedProjection(error)
     }
 }
 
@@ -205,6 +211,14 @@ impl SqliteStore {
                source_cursor BLOB CHECK(source_cursor IS NULL OR length(source_cursor) = 8),
                known_gap INTEGER NOT NULL CHECK(known_gap IN (0,1)),
                FOREIGN KEY (family_id) REFERENCES families(family_id)
+             );
+             CREATE TABLE IF NOT EXISTS private_copies (
+               source_family_id BLOB NOT NULL CHECK(length(source_family_id)=16),
+               source_device_id BLOB NOT NULL CHECK(length(source_device_id)=16),
+               copy_family_id BLOB NOT NULL UNIQUE CHECK(length(copy_family_id)=16),
+               PRIMARY KEY (source_family_id,source_device_id),
+               FOREIGN KEY (source_family_id) REFERENCES families(family_id),
+               FOREIGN KEY (copy_family_id) REFERENCES families(family_id)
              );
              CREATE TABLE IF NOT EXISTS local_operations (
                family_id BLOB NOT NULL,
@@ -385,6 +399,18 @@ impl SqliteStore {
         now_ms: i64,
         origin: RestoredOrigin,
     ) -> Result<FamilyHandle, Error> {
+        self.restore_family_with_copy_source(family_id, device_id, operations, now_ms, origin, None)
+    }
+
+    pub(crate) fn restore_family_with_copy_source(
+        &mut self,
+        family_id: [u8; 16],
+        device_id: [u8; 16],
+        operations: Vec<NewOperation>,
+        now_ms: i64,
+        origin: RestoredOrigin,
+        copy_source: Option<FamilyHandle>,
+    ) -> Result<FamilyHandle, Error> {
         if !ids::is_v4(&family_id) || !ids::is_v4(&device_id) {
             return Err(Error::InvalidId);
         }
@@ -408,6 +434,16 @@ impl SqliteStore {
                 origin.source_cursor.map(|value| value.to_be_bytes().to_vec()),
                 i64::from(origin.known_gap)],
         )?;
+        if let Some(source) = copy_source {
+            if source.family_id != origin.source_family_id {
+                return Err(Error::WrongFamily);
+            }
+            checked_family(&transaction, source)?;
+            transaction.execute(
+                "INSERT INTO private_copies(source_family_id,source_device_id,copy_family_id) VALUES(?1,?2,?3)",
+                params![source.family_id.as_slice(),source.device_id.as_slice(),family_id.as_slice()],
+            )?;
+        }
         let mut projection = LocalProjection::new(family_id);
         let mut clock = Clock::restore(family_id, device_id, None, None)?;
         let mut last_stamp = None;
@@ -440,6 +476,28 @@ impl SqliteStore {
         }
         transaction.commit()?;
         Ok(family)
+    }
+
+    pub fn private_copy_of(&self, source: FamilyHandle) -> Result<Option<FamilyHandle>, Error> {
+        checked_family(&self.connection, source)?;
+        let saved: Option<(Vec<u8>, Vec<u8>)> = self
+            .connection
+            .query_row(
+                "SELECT f.family_id,f.device_id FROM private_copies p
+             JOIN families f ON f.family_id=p.copy_family_id
+             WHERE p.source_family_id=?1 AND p.source_device_id=?2",
+                params![source.family_id.as_slice(), source.device_id.as_slice()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        saved
+            .map(|(family_id, device_id)| {
+                Ok(FamilyHandle {
+                    family_id: family_id.try_into().map_err(|_| Error::CorruptState)?,
+                    device_id: device_id.try_into().map_err(|_| Error::CorruptState)?,
+                })
+            })
+            .transpose()
     }
 
     pub fn restored_origin(&self, family: FamilyHandle) -> Result<Option<RestoredOrigin>, Error> {
@@ -511,6 +569,47 @@ impl SqliteStore {
             operations.push(bytes);
         }
         if i64::try_from(operations.len()).map_err(|_| Error::CorruptState)? != last_index {
+            return Err(Error::CorruptState);
+        }
+        Ok(operations)
+    }
+
+    pub(crate) fn unsent_operations(&self, family: FamilyHandle) -> Result<Vec<Operation>, Error> {
+        let (last_index, _) = checked_family(&self.connection, family)?;
+        let accepted_index: i64 = self.connection.query_row(
+            "SELECT accepted_index FROM local_sync_state WHERE family_id=?1",
+            [family.family_id.as_slice()],
+            |row| row.get(0),
+        )?;
+        if accepted_index < 0 || accepted_index > last_index {
+            return Err(Error::CorruptState);
+        }
+        let mut statement = self.connection.prepare(
+            "SELECT append_index,operation_bytes FROM local_operations
+             WHERE family_id=?1 AND append_index>?2 ORDER BY append_index",
+        )?;
+        let rows = statement.query_map(
+            params![family.family_id.as_slice(), accepted_index],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        )?;
+        let mut operations = Vec::new();
+        for row in rows {
+            let (index, bytes) = row?;
+            if index
+                != accepted_index
+                    + i64::try_from(operations.len() + 1).map_err(|_| Error::CorruptState)?
+            {
+                return Err(Error::CorruptState);
+            }
+            operations.push(Operation::decode_bound(
+                &bytes,
+                &family.family_id,
+                &family.device_id,
+            )?);
+        }
+        if accepted_index + i64::try_from(operations.len()).map_err(|_| Error::CorruptState)?
+            != last_index
+        {
             return Err(Error::CorruptState);
         }
         Ok(operations)
@@ -617,6 +716,109 @@ impl SqliteStore {
         transaction.commit()?;
         Ok(AppendedOperation {
             index: index.try_into().map_err(|_| Error::CorruptState)?,
+            bytes,
+            clock_anomaly: next.anomaly,
+        })
+    }
+
+    /// Append against an already verified shared projection while retaining
+    /// every local operation above the accepted index. The pinned root check
+    /// prevents a stale UI view from validating against the wrong history.
+    pub(crate) fn append_shared_local(
+        &mut self,
+        family: FamilyHandle,
+        mut new: NewOperation,
+        now_ms: i64,
+        verified: &Projection,
+        pinned_cursor: u64,
+        pinned_head: [u8; 32],
+    ) -> Result<AppendedOperation, Error> {
+        if new.family_id != family.family_id
+            || new.author_device_id != family.device_id
+            || verified.family_id() != family.family_id
+            || verified.last_cursor() != pinned_cursor
+        {
+            return Err(Error::WrongFamily);
+        }
+        let transaction = self.connection.transaction()?;
+        let (last_index, previous) = checked_family(&transaction, family)?;
+        let (stored_cursor, stored_head): (i64, Vec<u8>) = transaction.query_row(
+            "SELECT pinned_cursor,pinned_head FROM shared_roots WHERE family_id=?1",
+            [family.family_id.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if stored_cursor != i64::try_from(pinned_cursor).map_err(|_| Error::CorruptState)?
+            || stored_head != pinned_head
+        {
+            return Err(Error::CorruptState);
+        }
+        let accepted_index: i64 = transaction.query_row(
+            "SELECT accepted_index FROM local_sync_state WHERE family_id=?1",
+            [family.family_id.as_slice()],
+            |row| row.get(0),
+        )?;
+        if accepted_index < 0 || accepted_index > last_index {
+            return Err(Error::CorruptState);
+        }
+        let mut statement = transaction.prepare(
+            "SELECT append_index,operation_bytes FROM local_operations
+             WHERE family_id=?1 AND append_index>?2 ORDER BY append_index",
+        )?;
+        let rows = statement.query_map(
+            params![family.family_id.as_slice(), accepted_index],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        )?;
+        let mut pending = Vec::new();
+        for row in rows {
+            let (index, bytes) = row?;
+            if index
+                != accepted_index
+                    + i64::try_from(pending.len() + 1).map_err(|_| Error::CorruptState)?
+            {
+                return Err(Error::CorruptState);
+            }
+            pending.push(Operation::decode_bound(
+                &bytes,
+                &family.family_id,
+                &family.device_id,
+            )?);
+        }
+        drop(statement);
+        if accepted_index + i64::try_from(pending.len()).map_err(|_| Error::CorruptState)?
+            != last_index
+        {
+            return Err(Error::CorruptState);
+        }
+        let next_index = last_index
+            .checked_add(1)
+            .ok_or(Error::AppendIndexOverflow)?;
+        let mut clock = Clock::restore(family.family_id, family.device_id, previous, None)?;
+        let next = clock.next(now_ms);
+        new.hlc = next.stamp;
+        let bytes = Operation::encode_new(&new)?;
+        pending.push(Operation::decode_bound(
+            &bytes,
+            &family.family_id,
+            &family.device_id,
+        )?);
+        verified.with_local_overlay(&pending)?;
+        transaction.execute(
+            "INSERT INTO local_operations(family_id,append_index,operation_id,operation_bytes)
+             VALUES(?1,?2,?3,?4)",
+            params![
+                family.family_id.as_slice(),
+                next_index,
+                new.operation_id.as_slice(),
+                &bytes
+            ],
+        )?;
+        transaction.execute(
+            "UPDATE families SET last_index=?2,last_hlc_wall=?3,last_hlc_counter=?4 WHERE family_id=?1",
+            params![family.family_id.as_slice(),next_index,new.hlc.wall_ms,new.hlc.counter],
+        )?;
+        transaction.commit()?;
+        Ok(AppendedOperation {
+            index: u64::try_from(next_index).map_err(|_| Error::CorruptState)?,
             bytes,
             clock_anomaly: next.anomaly,
         })

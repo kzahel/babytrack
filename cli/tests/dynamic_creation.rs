@@ -17,6 +17,9 @@ use babytrack_core::{
     first_proof::FirstProof,
     issue::FirstInviteIssue,
     operation::{Hlc, Kind, NewOperation, Scope},
+    portable_file::{
+        export_readable_local, export_readable_shared, parse_readable, private_copy_shared,
+    },
     shared_history::PublicHistorySession,
     shared_ready::{NextUpload, ReadyFamilySession},
     sqlite_store::{FamilyHandle, SqliteStore},
@@ -907,4 +910,137 @@ async fn dynamic_flow(early_batch: bool) {
             recipient_ready.projection().record(&late_child_id)
         );
     }
+    let recipient_ready =
+        ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).unwrap();
+    recipient_ready
+        .append_local(
+            &mut recipient_store,
+            NewOperation {
+                family_id: family.family_id,
+                operation_id: v7(0x35),
+                record_id: pre_child_id,
+                scope: Scope::Child,
+                kind: Kind::Set,
+                author_device_id: enrollment.family().device_id,
+                hlc: Hlc {
+                    wall_ms: 1_700_000_003_000,
+                    counter: 0,
+                    device_id: enrollment.family().device_id,
+                },
+                record_type: None,
+                child_id: None,
+                fields: Some(vec![(1, Value::Text("Recipient edit".to_owned()))]),
+            },
+            1_700_000_003_000,
+        )
+        .unwrap();
+    assert_eq!(
+        recipient_ready
+            .projection_with_pending(&recipient_store)
+            .unwrap()
+            .record(&pre_child_id)
+            .unwrap()
+            .field(1)
+            .unwrap()
+            .value,
+        Value::Text("Recipient edit".to_owned())
+    );
+    let edited = match recipient_ready
+        .stage_enrolled_local(&mut recipient_store, &resumed_enrollment)
+        .unwrap()
+    {
+        NextUpload::Fresh(batch) => batch,
+        NextUpload::RetryExact(_) => panic!("remote child edit was already staged"),
+    };
+    let response = http_bytes(
+        &app,
+        Method::POST,
+        &batch_path,
+        edited.envelope_bytes.clone(),
+    )
+    .await;
+    let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(receipt) = &fields[1].1 else {
+        panic!()
+    };
+    recipient_public
+        .accept_batch(&mut recipient_store, &edited.envelope_bytes, receipt)
+        .unwrap();
+    let mut manager_public = PublicHistorySession::resume(&local, family).unwrap();
+    manager_public
+        .accept_batch(&mut local, &edited.envelope_bytes, receipt)
+        .unwrap();
+    let manager_ready = resumed.confirm(&mut local, committed).unwrap();
+    let recipient_ready =
+        ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).unwrap();
+    assert_eq!(
+        manager_ready.projection().record(&pre_child_id),
+        recipient_ready.projection().record(&pre_child_id)
+    );
+    recipient_ready
+        .append_local(
+            &mut recipient_store,
+            NewOperation {
+                family_id: family.family_id,
+                operation_id: v7(0x36),
+                record_id: pre_child_id,
+                scope: Scope::Child,
+                kind: Kind::Set,
+                author_device_id: enrollment.family().device_id,
+                hlc: Hlc {
+                    wall_ms: 1_700_000_004_000,
+                    counter: 0,
+                    device_id: enrollment.family().device_id,
+                },
+                record_type: None,
+                child_id: None,
+                fields: Some(vec![(1, Value::Text("Private pending".to_owned()))]),
+            },
+            1_700_000_004_000,
+        )
+        .unwrap();
+    assert!(
+        export_readable_local(&recipient_store, enrollment.family(), 1_700_000_004_001).is_err()
+    );
+    let backup =
+        export_readable_shared(&recipient_store, &recipient_ready, 1_700_000_004_001).unwrap();
+    let parsed = parse_readable(&backup).unwrap();
+    assert_eq!(
+        parsed.source_cursor,
+        Some(recipient_ready.observed_cursor())
+    );
+    let copy =
+        private_copy_shared(&mut recipient_store, &recipient_ready, 1_700_000_004_001).unwrap();
+    assert_eq!(
+        private_copy_shared(&mut recipient_store, &recipient_ready, 1_700_000_004_002).unwrap(),
+        copy
+    );
+    assert_ne!(copy.family_id, family.family_id);
+    assert_eq!(
+        recipient_store
+            .load_local(copy)
+            .unwrap()
+            .record(&pre_child_id)
+            .unwrap()
+            .field(1)
+            .unwrap()
+            .value,
+        Value::Text("Private pending".to_owned())
+    );
+    assert_eq!(
+        recipient_store
+            .restored_origin(copy)
+            .unwrap()
+            .unwrap()
+            .source_cursor,
+        Some(recipient_ready.observed_cursor())
+    );
+    drop(recipient_store);
+    let mut recipient_store = SqliteStore::open(&recipient_path).unwrap();
+    assert_eq!(
+        private_copy_shared(&mut recipient_store, &recipient_ready, 1_700_000_004_003).unwrap(),
+        copy
+    );
 }

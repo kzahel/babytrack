@@ -26,6 +26,7 @@ use crate::{
 #[cfg(not(target_arch = "wasm32"))]
 use crate::{
     operation::{Hlc, NewOperation},
+    shared_ready::{self, ReadyFamilySession},
     sqlite_store::{self, FamilyHandle, RestoredOrigin, SqliteStore},
 };
 
@@ -35,6 +36,8 @@ pub enum Error {
     Json(serde_json::Error),
     #[cfg(not(target_arch = "wasm32"))]
     Store(sqlite_store::Error),
+    #[cfg(not(target_arch = "wasm32"))]
+    Ready(shared_ready::Error),
     #[cfg(not(target_arch = "wasm32"))]
     Random(getrandom::Error),
     ProtectedFailure,
@@ -140,6 +143,12 @@ impl From<sqlite_store::Error> for Error {
         Self::Store(value)
     }
 }
+#[cfg(not(target_arch = "wasm32"))]
+impl From<shared_ready::Error> for Error {
+    fn from(value: shared_ready::Error) -> Self {
+        Self::Ready(value)
+    }
+}
 
 /// Export a local-only Family at a caller-supplied UTC instant. The saved
 /// point is the SQLite snapshot used by `load_local`; no relay credentials,
@@ -150,12 +159,35 @@ pub fn export_readable_local(
     family: FamilyHandle,
     snapshot_utc_ms: i64,
 ) -> Result<Vec<u8>, Error> {
+    if store.shared_history(family)?.is_some() {
+        return Err(Error::Invalid(
+            "shared Family requires verified shared export",
+        ));
+    }
     let projection = store.load_local(family)?;
     encode_readable(
         family.family_id,
         snapshot_utc_ms,
         None,
         false,
+        projection.records(),
+    )
+}
+
+/// Export the verified shared prefix together with every durable local edit
+/// still waiting in the outbox. The cursor records only verified relay data.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn export_readable_shared(
+    store: &SqliteStore,
+    ready: &ReadyFamilySession,
+    snapshot_utc_ms: i64,
+) -> Result<Vec<u8>, Error> {
+    let projection = ready.projection_with_pending(store)?;
+    encode_readable(
+        ready.family().family_id,
+        snapshot_utc_ms,
+        Some(ready.observed_cursor()),
+        !projection.inert_batches().is_empty(),
         projection.records(),
     )
 }
@@ -435,7 +467,20 @@ pub fn restore_readable(
     bytes: &[u8],
     now_ms: i64,
 ) -> Result<FamilyHandle, Error> {
+    restore_readable_inner(store, bytes, now_ms, None)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn restore_readable_inner(
+    store: &mut SqliteStore,
+    bytes: &[u8],
+    now_ms: i64,
+    copy_source: Option<FamilyHandle>,
+) -> Result<FamilyHandle, Error> {
     let parsed = parse_readable(bytes)?;
+    if copy_source.is_some_and(|source| source.family_id != parsed.source_family_id) {
+        return Err(Error::Invalid("copy source differs from backup"));
+    }
     let mut family_id = new_v4()?;
     while family_id == parsed.source_family_id {
         family_id = new_v4()?;
@@ -527,7 +572,40 @@ pub fn restore_readable(
         source_cursor: parsed.source_cursor,
         known_gap: parsed.known_gap,
     };
-    Ok(store.restore_family(family_id, device_id, operations, now_ms, origin)?)
+    Ok(if let Some(source) = copy_source {
+        store.restore_family_with_copy_source(
+            family_id,
+            device_id,
+            operations,
+            now_ms,
+            origin,
+            Some(source),
+        )?
+    } else {
+        store.restore_family(family_id, device_id, operations, now_ms, origin)?
+    })
+}
+
+/// Create or return this installation's single private copy of the verified
+/// Family state. A repeated notice reuses the same destination.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn private_copy_shared(
+    store: &mut SqliteStore,
+    ready: &ReadyFamilySession,
+    now_ms: i64,
+) -> Result<FamilyHandle, Error> {
+    let source = ready.family();
+    if let Some(existing) = store.private_copy_of(source)? {
+        return Ok(existing);
+    }
+    let readable = export_readable_shared(store, ready, now_ms)?;
+    match restore_readable_inner(store, &readable, now_ms, Some(source)) {
+        Ok(copy) => Ok(copy),
+        Err(Error::Store(sqlite_store::Error::Sqlite(_))) => store
+            .private_copy_of(source)?
+            .ok_or(Error::Invalid("private copy failed")),
+        Err(error) => Err(error),
+    }
 }
 
 /// Encrypt a valid readable file under the fixed v1 Argon2id profile. The

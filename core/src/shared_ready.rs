@@ -9,10 +9,11 @@ use crate::{
     crypto,
     enrollment::EnrollmentAttempt,
     grant, membership,
+    operation::NewOperation,
     operation::Operation,
     projection::{self, Projection, VerifiedEpochKey},
     shared_history::{self, PublicHistorySession},
-    sqlite_store::{self, FamilyHandle, PreparedBatch, SqliteStore},
+    sqlite_store::{self, AppendedOperation, FamilyHandle, PreparedBatch, SqliteStore},
 };
 
 #[derive(Debug)]
@@ -334,6 +335,32 @@ impl ReadyFamilySession {
 
     pub fn projection(&self) -> &Projection {
         &self.projection
+    }
+
+    pub fn projection_with_pending(&self, store: &SqliteStore) -> Result<Projection, Error> {
+        let public = PublicHistorySession::resume(store, self.family)?;
+        if public.cursor() != self.observed_cursor || public.head_hash() != self.observed_head {
+            return Err(Error::Invalid("ready view is behind verified history"));
+        }
+        Ok(self
+            .projection
+            .with_local_overlay(&store.unsent_operations(self.family)?)?)
+    }
+
+    pub fn append_local(
+        &self,
+        store: &mut SqliteStore,
+        operation: NewOperation,
+        now_ms: i64,
+    ) -> Result<AppendedOperation, Error> {
+        Ok(store.append_shared_local(
+            self.family,
+            operation,
+            now_ms,
+            &self.projection,
+            self.observed_cursor,
+            self.observed_head,
+        )?)
     }
 
     pub fn family(&self) -> FamilyHandle {

@@ -45,6 +45,16 @@ four runtimes; no platform adapter reimplements CBOR, crypto, or merge.
   Restore to a fresh Family and verify saved point, opaque fields, bad
   password/corruption, and crash before commit (FS26-FS30, FS40-FS45).
 
+Native shared editing now validates against the verified relay projection
+plus every unsent local operation, so a recipient can edit a manager-created
+child. Shared readable export includes that pending work and records its
+verified source cursor; local-only export rejects a shared Family. An
+explicit private copy restores the snapshot into a fresh local Family and
+records the source-to-copy mapping in the restore transaction, so repeated
+requests after restart reuse one destination. The dynamic two-device relay
+test exercises these paths. Automatic copy on verified removal, timer
+targeting, browser parity, and adversarial crash coverage remain open.
+
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.
 

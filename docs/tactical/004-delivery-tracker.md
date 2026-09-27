@@ -33,7 +33,7 @@ slice.
 |---|---|
 | Active implementation owner | [003 M0 foundation](003-m0-foundation.md), slices 2 and 3; slice 1 cross-language gate is still open. |
 | Next demonstrable proof | Fresh random-key manager and recipient stores complete invite, claim, challenge, proof, grant, encrypted promotion of existing records, and subsequent encrypted child batches through HTTP writes and authenticated relay reads. Next: broaden membership/removal and exercise transport loss and polling. |
-| Next dependent slice | Extend local-only portable backup to shared current state and pending work, implement private copy, and complete browser outbox before the M0 exit gate. |
+| Next dependent slice | Shared current-state export and explicit idempotent private copy now work for native verified Families; the existing protection wrapper accepts that readable file. Automatic copy on removal, browser outbox, and crash campaigns remain before the M0 exit gate. |
 | Next independent review | The required early M0 authority review follows implemented invite, grant, and rotation. |
 | Open advisory | Both findings from the [first-cohort review](003-m0-foundation.md#advisory-first-cohort-sync-review) now have real-relay regressions: ancestor batches survive join interleaving, and sequence conflicts have durable signed rejection and verified resealing. Earlier byte/crypto findings remain tracked in 003. Full membership authority, later epochs, and browser outbox remain before shared sync. |
 | CI signal today | Read-only Rust, native-binding, and browser jobs are required on every push/PR. Local checks passed; a remote Actions result has not been verified here. |

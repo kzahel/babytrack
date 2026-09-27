@@ -235,6 +235,7 @@ def main() -> None:
     adb(target, "shell", "input", "text", "37.8")
     adb(target, "shell", "input", "keyevent", "4")
     tap(target, "Save changes")
+    scroll_up(target, 10)
     find(target, "Temperature · 37.8 °C", scroll=True)
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")

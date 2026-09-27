@@ -39,13 +39,13 @@ def adb(target: str, *args: str) -> str:
     return command("adb", "-s", target, *args)
 
 
-def nodes(target: str) -> list[ET.Element]:
+def nodes(target: str) -> ET.Element:
     adb(target, "shell", "uiautomator", "dump", "/sdcard/babytrack-ui.xml")
-    return list(ET.fromstring(adb(target, "exec-out", "cat", "/sdcard/babytrack-ui.xml")).iter("node"))
+    return ET.fromstring(adb(target, "exec-out", "cat", "/sdcard/babytrack-ui.xml"))
 
 
 def find(target: str, label: str, *, scroll: bool = False, occurrence: int = 0,
-         contains: bool = False) -> ET.Element:
+         contains: bool = False, actionable: bool = False) -> ET.Element:
     deadline = time.monotonic() + (100 if scroll else 20)
     scroll_count = 0
     size = re.search(r"(\d+)x(\d+)", adb(target, "shell", "wm", "size"))
@@ -53,10 +53,20 @@ def find(target: str, label: str, *, scroll: bool = False, occurrence: int = 0,
         raise RuntimeError("Android display size unavailable")
     width, height = map(int, size.groups())
     while time.monotonic() < deadline:
+        root = nodes(target)
         matches = [
-            node for node in nodes(target)
+            node for node in root.iter("node")
             if (label in node.attrib.get("text", "") if contains else node.attrib.get("text") == label)
         ]
+        if actionable:
+            parents = {child: parent for parent in root.iter() for child in parent}
+            actions = []
+            for node in matches:
+                while node.attrib.get("clickable") != "true" and node in parents:
+                    node = parents[node]
+                if node.attrib.get("clickable") == "true":
+                    actions.append(node)
+            matches = actions
         if len(matches) > occurrence:
             return matches[occurrence]
         if scroll and scroll_count < 40:
@@ -70,8 +80,10 @@ def find(target: str, label: str, *, scroll: bool = False, occurrence: int = 0,
     raise AssertionError(f"Android UI did not show {label!r}")
 
 
-def tap(target: str, label: str, *, scroll: bool = False, occurrence: int = 0) -> None:
-    bounds = find(target, label, scroll=scroll, occurrence=occurrence).attrib["bounds"]
+def tap(target: str, label: str, *, scroll: bool = False, occurrence: int = 0,
+        actionable: bool = False) -> None:
+    bounds = find(target, label, scroll=scroll, occurrence=occurrence,
+                  actionable=actionable).attrib["bounds"]
     x1, y1, x2, y2 = map(int, re.findall(r"\d+", bounds))
     adb(target, "shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
 
@@ -140,7 +152,7 @@ def main() -> None:
     tap(target, "Amount (mL)", scroll=True)
     adb(target, "shell", "input", "text", "90")
     adb(target, "shell", "input", "keyevent", "4")
-    tap(target, "Log bottle", scroll=True, occurrence=1)
+    tap(target, "Log bottle", scroll=True, actionable=True)
     find(target, "Bottle · 90 mL", scroll=True)
     tap(target, "Edit bottle amount", scroll=True)
     tap(target, "Amount (mL)")

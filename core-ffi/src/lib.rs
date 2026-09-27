@@ -897,6 +897,35 @@ impl NativeSharedStore {
         attempt.relay_origin().map_err(rejected)
     }
 
+    pub fn manager_first_join_action(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+    ) -> Result<u8, BindingError> {
+        let store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+            .map_err(rejected)?;
+        manager.first_join_action(&store).map_err(rejected)
+    }
+
+    pub fn recipient_first_join_action(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+    ) -> Result<u8, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let attempt = EnrollmentAttempt::resume(
+            &mut store,
+            family.handle()?.family_id,
+            &fixed(&wrapping_key)?,
+        )
+        .map_err(rejected)?;
+        if attempt.family() != family.handle()? {
+            return Err(BindingError::InvalidBytes);
+        }
+        attempt.first_join_action(&store).map_err(rejected)
+    }
+
     pub fn add_shared_child(
         &self,
         family: FamilyRef,

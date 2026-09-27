@@ -14,6 +14,41 @@ import uniffi.babytrack_core_ffi.ActivityWhen
 @RunWith(AndroidJUnit4::class)
 class SharingRelayTest {
     @Test
+    fun asynchronousJoinAdvancesWithoutManualHolderApproval() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
+            ?: error("relayPublicKey instrumentation argument required")
+        val origin = "http://localhost:8787"
+        val managerDb = context.filesDir.resolve("auto-manager-${System.nanoTime()}.db")
+        val recipientDb = context.filesDir.resolve("auto-recipient-${System.nanoTime()}.db")
+        val family = NativeLocalStore.open(managerDb.absolutePath).use { local ->
+            val created = local.createFamily(System.currentTimeMillis())
+            local.addChild(created, "Async child", System.currentTimeMillis())
+            created
+        }
+        val fragment = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            sharing.promote(family, origin, publicKey)
+            sharing.invite(family, origin, 1u.toUByte())
+        }
+        val recipient = ShareCoordinator(context, recipientDb.absolutePath).use { sharing ->
+            sharing.claim(fragment).family
+        }
+        ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            assertTrue(sharing.advanceManager(family, origin).ready)
+        }
+        ShareCoordinator(context, recipientDb.absolutePath).use { sharing ->
+            assertTrue(sharing.advanceRecipient(recipient).awaitingGrant)
+        }
+        ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            assertTrue(sharing.advanceManager(family, origin).ready)
+        }
+        ShareCoordinator(context, recipientDb.absolutePath).use { sharing ->
+            assertTrue(sharing.advanceRecipient(recipient).ready)
+            assertEquals("Async child", sharing.snapshot(recipient).children.single().name)
+        }
+    }
+
+    @Test
     fun keystoreWrappedPromotionAndInvitationSurviveRestart() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

@@ -163,6 +163,13 @@ regression checks denial before the competing accepted prefix, a forged
 result, and resealing after verification. The emulator drops one accepted
 upload response and recovers by pulling its signed log entry. Removal/private
 copy UI for unsupported rejections remains open.
+The first-cohort Android coordinator now asks Rust which handoff action is
+next after replaying verified controls. Foreground polling every 30 seconds
+advances challenge, proof, admission, and bounded history sync when the
+required device and relay are available; no concurrent app session or second
+manual approval is needed. An emulator test alternates manager and recipient
+processes through the full join. This is an app-open wake path only. Scheduled
+suspended-app work, push, and general later-device enrollment remain open.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

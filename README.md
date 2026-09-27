@@ -26,7 +26,8 @@ diaper, and bottle actions save offline in the Rust outbox, then a manual
 sync uploads signed encrypted batches and verifies their acceptance. The
 real-relay emulator test converges edits in both directions. Recipient
 enrollment resumes by stored Family identity and relay origin after restart;
-the Android manager screen retains its relay address. Automatic sync,
+the Android manager screen retains its relay address. The app polls while
+its screen is active to advance the first join and sync. Suspended-app wake,
 removal, and shared backup UI remain open. Scenario
 files still include symbolic expectations.
 

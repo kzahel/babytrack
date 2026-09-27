@@ -219,6 +219,26 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         return syncAndUpload(family, recipientOrigin(family))
     }
 
+    fun advanceManager(family: FamilyRef, origin: String): SharedSyncRow {
+        val progress = syncAndUpload(family, origin)
+        if (!progress.ready) return progress
+        when (withWrapping { wrapping -> core.managerFirstJoinAction(family, wrapping) }.toInt()) {
+            1 -> respondToClaim(family, origin)
+            2 -> admitProvedDevice(family, origin)
+        }
+        return progress
+    }
+
+    fun advanceRecipient(family: FamilyRef): RecipientSyncRow {
+        var progress = syncRecipient(family)
+        if (withWrapping { wrapping -> core.recipientFirstJoinAction(family, wrapping) }.toInt() == 1) {
+            proveChallenge(family)
+            progress = syncRecipient(family)
+        }
+        if (progress.ready) syncRecipientAndUpload(family)
+        return progress
+    }
+
     private inline fun <T> withWrapping(action: (ByteArray) -> T): T {
         val wrapping = keys.loadOrCreate()
         try {

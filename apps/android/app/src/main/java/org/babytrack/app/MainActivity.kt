@@ -7,6 +7,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -47,6 +49,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import uniffi.babytrack_core_ffi.ActivityRow
 import uniffi.babytrack_core_ffi.ActivityWhen
 import uniffi.babytrack_core_ffi.BackupFileRow
@@ -138,6 +142,16 @@ private fun TrackerScreen(
 ) {
     val context = LocalContext.current
     DisposableEffect(store, sharing) { onDispose { store.close(); sharing.close() } }
+    val activity = context as ComponentActivity
+    var foreground by remember { mutableStateOf(activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) }
+    DisposableEffect(activity) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) foreground = true
+            if (event == Lifecycle.Event.ON_STOP) foreground = false
+        }
+        activity.lifecycle.addObserver(observer)
+        onDispose { activity.lifecycle.removeObserver(observer) }
+    }
     val scope = rememberCoroutineScope()
     var version by remember { mutableStateOf(0) }
     var families by remember { mutableStateOf<List<FamilyRef>>(emptyList()) }
@@ -153,6 +167,7 @@ private fun TrackerScreen(
     var childName by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
+    var automaticSyncDelayed by remember { mutableStateOf(false) }
     var relayOrigin by remember { mutableStateOf("") }
     var relayPublicKey by remember { mutableStateOf("") }
     var shareStage by remember { mutableStateOf<String?>(null) }
@@ -181,6 +196,37 @@ private fun TrackerScreen(
     var restoreInfo by remember { mutableStateOf<BackupInfoRow?>(null) }
     val passwordNeeded = stringResource(R.string.password_needed)
     val passwordOrFileError = stringResource(R.string.password_or_file_error)
+    LaunchedEffect(foreground, selectedRecipient) {
+        if (foreground) while (isActive) {
+            val (delayed, recipientStages) = withContext(Dispatchers.IO) {
+                var failed = false
+                val stages = mutableMapOf<String, uniffi.babytrack_core_ffi.RecipientSyncRow>()
+                for (family in store.families()) {
+                    val origin = lastRelayOrigin(family)
+                    if (origin != null && sharing.isShared(family)) {
+                        runCatching { sharing.advanceManager(family, origin) }
+                            .onFailure { failed = true }
+                    }
+                }
+                for (family in sharing.recipientFamilies()) {
+                    runCatching { sharing.advanceRecipient(family) }
+                        .onSuccess { stages[family.familyId.key()] = it }
+                        .onFailure { failed = true }
+                }
+                failed to stages
+            }
+            automaticSyncDelayed = delayed
+            recipientStages[selectedRecipient]?.let { progress ->
+                joinStage = when {
+                    progress.ready -> context.getString(R.string.history_ready_auto)
+                    progress.awaitingGrant -> context.getString(R.string.history_awaiting_grant, progress.pendingControlCursor.toLong())
+                    else -> context.getString(R.string.history_pending, progress.verifiedCursor.toLong())
+                }
+            }
+            version++
+            delay(30_000)
+        }
+    }
     val tooLargeError = stringResource(R.string.backup_too_large)
     val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri != null) scope.launch {
@@ -274,6 +320,7 @@ private fun TrackerScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(stringResource(if (activeShared) R.string.shared_family else R.string.local_only), style = MaterialTheme.typography.labelMedium)
+            if (automaticSyncDelayed) Text(stringResource(R.string.automatic_sync_delayed))
             Text(stringResource(R.string.families), style = MaterialTheme.typography.titleLarge)
             families.forEachIndexed { index, item ->
                 FilterChip(

@@ -481,6 +481,16 @@ impl EnrollmentAttempt {
                 .to_owned(),
         )
     }
+    /// A recipient may retry its exact proof after a committed challenge;
+    /// later admission is handled by full-history hydration.
+    pub fn first_join_action(&self, store: &SqliteStore) -> Result<u8, Error> {
+        shared_history::sparse_enrollment_chain(store, self.family, self.relay_public_key()?)?;
+        let controls = store.enrollment_controls(self.family)?.len();
+        Ok(match controls {
+            3 => 1, // issue, claim, challenge
+            _ => 0,
+        })
+    }
 }
 
 fn build_claim(

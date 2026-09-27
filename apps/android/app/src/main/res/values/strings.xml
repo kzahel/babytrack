@@ -2,7 +2,8 @@
     <string name="app_name">Babytrack</string>
     <string name="screen_title">Today</string>
     <string name="local_only">On this device</string>
-    <string name="shared_family">Shared Family · sync to check changes</string>
+    <string name="shared_family">Shared Family · syncs while the app is open</string>
+    <string name="automatic_sync_delayed">Shared sync is waiting for a connection. Local entries stay saved.</string>
     <string name="families">Families</string>
     <string name="new_family">New Family</string>
     <string name="family_number">Family %1$d</string>
@@ -45,7 +46,7 @@
     <string name="confirm_restore">Restore as new Family</string>
     <string name="error">Could not complete the action. Try again.</string>
     <string name="dev_share_title">Sharing setup preview</string>
-    <string name="dev_share_description">Connect to a development relay. This screen prepares sharing, invitation, and key handoff. Use Sync shared Family for updates; automatic sync is still in progress. Use a local relay only for test data.</string>
+    <string name="dev_share_description">Connect to a development relay. This screen prepares sharing, invitation, and key handoff. The app polls while open; use Sync shared Family to retry now. Use a local relay only for test data.</string>
     <string name="relay_origin">Relay origin (HTTPS or localhost)</string>
     <string name="relay_public_key">Relay public key (64 hex digits)</string>
     <string name="share_preparing">Preparing encrypted history and contacting the relay…</string>
@@ -80,8 +81,9 @@
     <string name="history_awaiting_grant">Waiting for the holder to grant access. Public control stage %1$d; Family data is not ready.</string>
     <string name="history_pending">Verified through cursor %1$d. Waiting for more history or objects; retry on the next sync opportunity.</string>
     <string name="history_ready">Shared history verified. %1$d children loaded.</string>
+    <string name="history_ready_auto">Shared history verified and ready.</string>
     <string name="shared_children">Verified shared children</string>
-    <string name="shared_manual_sync">New entries save on this device. Use Sync shared Family to upload and check for changes.</string>
+    <string name="shared_manual_sync">New entries save on this device. The app syncs while open; use the button to retry now.</string>
     <string name="sync_shared">Sync shared Family</string>
     <string name="shared_synced">Verified relay history through cursor %1$d.</string>
     <string name="shared_entry">%1$s · %2$s</string>

@@ -3,7 +3,9 @@
 The debug app tracks local Families and runs the first two-device sharing
 handoff on a development relay: promotion, invitation, claim, challenge,
 proof, grant, and recipient history verification. The shared tracking view,
-automatic sync, removal, and shared backup UI are still being implemented. The release
+background wake, removal, and shared backup UI are still being implemented.
+While the app is in the foreground it polls the relay every 30 seconds and
+advances the first join and encrypted data sync without further buttons. The release
 manifest does not allow cleartext HTTP.
 
 To exercise the current relay slice on an emulator:
@@ -49,6 +51,9 @@ To exercise the current relay slice on an emulator:
 9. After app restart, select the joined Family in the join preview to resume
    proof, history loading, or manual sync without pasting the invitation
    again. The manager's relay origin is saved after sharing is confirmed.
+   If both apps run at different times, each foreground pass advances the
+   next verified protocol step. A failed pass leaves local work saved and
+   shows a delayed-sync message until a later attempt succeeds.
 
 The on-device integration test calls the same Keystore and transport adapter
 through a real relay. With the emulator and `adb reverse` running, build it
@@ -72,6 +77,8 @@ committed. The recipient then saves a child and diaper offline, uploads them,
 and the manager pulls them. The manager saves another child, uploads it, and
 the recipient pulls it. The test reopens the recipient store and resumes by
 Family identity without the fragment. It also drops one accepted upload
-response and recovers through the signed log. The
+response and recovers through the signed log. A second test alternates
+manager and recipient foreground passes to finish the join without another
+manual holder action. The
 default Android CI compiles this test, while
 execution currently uses the local emulator and relay.

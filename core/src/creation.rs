@@ -244,6 +244,24 @@ impl ManagerCreation {
             self.agreement_private,
         )?)
     }
+    /// The initial v1 two-device handoff has fixed control positions.
+    /// Inspect only the fully verified durable chain, never a relay hint.
+    pub fn first_join_action(&self, store: &SqliteStore) -> Result<u8, Error> {
+        PublicHistorySession::resume(store, self.family)?;
+        let history = store
+            .shared_history(self.family)?
+            .ok_or(Error::Invalid("shared genesis absent"))?;
+        let controls = 1 + history
+            .entries
+            .iter()
+            .filter(|entry| entry.kind == 1)
+            .count();
+        Ok(match controls {
+            3 => 1, // claim committed: challenge or exact retry
+            5 => 2, // proof committed: admission or exact retry
+            _ => 0,
+        })
+    }
     pub(crate) fn signing_seed(&self) -> [u8; 32] {
         self.signing_seed
     }

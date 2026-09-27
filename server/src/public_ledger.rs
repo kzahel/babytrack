@@ -49,10 +49,27 @@ pub(crate) struct PublicLedger {
     commitment: [u8; 32],
     last_commit_ms: i64,
     issue_times: BTreeMap<[u8; 16], i64>,
+    invitation_objects: BTreeMap<[u8; 16], [u8; 16]>,
     challenges: BTreeMap<[u8; 16], ([u8; 16], [u8; 32])>,
+    challenge_objects: BTreeMap<[u8; 16], [u8; 16]>,
     admissions: BTreeMap<[u8; 16], [u8; 16]>,
+    admitted_signers: BTreeMap<[u8; 16], [u8; 32]>,
     next_sequences: BTreeMap<[u8; 16], u64>,
     seen_ids: BTreeSet<[u8; 16]>,
+}
+
+pub(crate) enum PublicReader {
+    Manager([u8; 32]),
+    Active([u8; 32]),
+    Removed([u8; 32]),
+    Invitation {
+        signing_key: [u8; 32],
+        issue_object: [u8; 16],
+    },
+    Pending {
+        signing_key: [u8; 32],
+        challenge_object: Option<[u8; 16]>,
+    },
 }
 
 impl PublicLedger {
@@ -97,8 +114,11 @@ impl PublicLedger {
             commitment: genesis.epoch_commitment,
             last_commit_ms: receipt.committed_ms,
             issue_times: BTreeMap::new(),
+            invitation_objects: BTreeMap::new(),
             challenges: BTreeMap::new(),
+            challenge_objects: BTreeMap::new(),
             admissions: BTreeMap::new(),
+            admitted_signers: BTreeMap::from([(genesis.manager_id, genesis.manager_signing_key)]),
             next_sequences: BTreeMap::new(),
             seen_ids,
         })
@@ -128,13 +148,14 @@ impl PublicLedger {
         new_ids.extend(receipt.manifest.iter().map(|object| object.id));
         let mut issued = None;
         let mut challenged = None;
+        let mut challenge_object = None;
         let mut admitted = None;
         let mut rotated = None;
         let next = match receipt.kind {
             2 => {
                 let prepared = rules::prepare_issue(candidate, &self.state, self.head)?;
                 new_ids.push(prepared.invitation_id);
-                issued = Some(prepared.invitation_id);
+                issued = Some((prepared.invitation_id, prepared.manifest.object_id));
                 prepared.next_state
             }
             3 => rules::prepare_cancel(candidate, &self.state, self.head)?.next_state,
@@ -206,6 +227,15 @@ impl PublicLedger {
                     prepared.invitation_id,
                     (prepared.challenge_id, prepared.challenge_hash),
                 ));
+                challenge_object = Some((
+                    prepared.invitation_id,
+                    prepared
+                        .manifest
+                        .iter()
+                        .find(|entry| entry.kind == 2)
+                        .ok_or(Error::Invalid("challenge HPKE object absent"))?
+                        .object_id,
+                ));
                 prepared.next_state
             }
             _ => return Err(Error::Invalid("unsupported public control kind")),
@@ -222,28 +252,111 @@ impl PublicLedger {
         self.epochs
             .record(head, receipt.epoch, commitment)
             .map_err(|_| Error::Invalid("public epoch binding differs"))?;
+        if let Some((device, _)) = admitted {
+            let signing_key = active_signing_key(&next, device)?
+                .ok_or(Error::Invalid("admitted device absent from next state"))?;
+            self.admitted_signers.insert(device, signing_key);
+        }
         self.state = next;
         self.head = head;
         self.commitment = commitment;
         self.last_commit_ms = receipt.committed_ms;
         self.seen_ids.extend(new_ids);
-        if let Some(invitation) = issued {
+        if let Some((invitation, object_id)) = issued {
             self.issue_times.insert(invitation, receipt.committed_ms);
+            self.invitation_objects.insert(invitation, object_id);
         }
         if let Some((invitation, challenge)) = challenged {
             self.challenges.insert(invitation, challenge);
+        }
+        if let Some((invitation, object_id)) = challenge_object {
+            self.challenge_objects.insert(invitation, object_id);
         }
         if let Some((device, admission)) = admitted {
             self.admissions.insert(device, admission);
         }
         if rotated.is_some() {
             self.challenges.clear();
+            self.challenge_objects.clear();
         }
         Ok(())
     }
 
     pub(crate) fn head(&self) -> [u8; 32] {
         self.head
+    }
+
+    pub(crate) fn relay_id(&self) -> [u8; 32] {
+        self.relay_id
+    }
+
+    pub(crate) fn reader(&self, signer_id: [u8; 16]) -> Result<Option<PublicReader>, Error> {
+        let Value::Map(state) = &self.state else {
+            return Err(Error::Invalid("public state not map"));
+        };
+        let Value::Array(active) = &state[4].1 else {
+            return Err(Error::Invalid("active devices not array"));
+        };
+        for row in active {
+            let Value::Array(fields) = row else {
+                return Err(Error::Invalid("active row not array"));
+            };
+            if fixed::<16>(&fields[0])? == signer_id {
+                let key = fixed::<32>(&fields[1])?;
+                return Ok(Some(match fields[4] {
+                    Value::Integer(2) => PublicReader::Manager(key),
+                    Value::Integer(1) => PublicReader::Active(key),
+                    _ => return Err(Error::Invalid("active role invalid")),
+                }));
+            }
+        }
+        let Value::Array(pending) = &state[5].1 else {
+            return Err(Error::Invalid("pending devices not array"));
+        };
+        for row in pending {
+            let Value::Array(fields) = row else {
+                return Err(Error::Invalid("pending row not array"));
+            };
+            if fixed::<16>(&fields[1])? == signer_id {
+                let invitation_id = fixed::<16>(&fields[0])?;
+                return Ok(Some(PublicReader::Pending {
+                    signing_key: fixed::<32>(&fields[2])?,
+                    challenge_object: self.challenge_objects.get(&invitation_id).copied(),
+                }));
+            }
+        }
+        let Value::Array(invitations) = &state[6].1 else {
+            return Err(Error::Invalid("invitations not array"));
+        };
+        for row in invitations {
+            let Value::Array(fields) = row else {
+                return Err(Error::Invalid("invitation row not array"));
+            };
+            if fixed::<16>(&fields[0])? == signer_id {
+                let issued = self
+                    .issue_times
+                    .get(&signer_id)
+                    .ok_or(Error::Invalid("invitation issue time absent"))?;
+                let expires = issued
+                    .checked_add(604_800_000)
+                    .ok_or(Error::Invalid("invitation expiry overflow"))?;
+                if fields[5] != Value::Integer(1) || self.last_commit_ms >= expires {
+                    return Ok(None);
+                }
+                return Ok(Some(PublicReader::Invitation {
+                    signing_key: fixed::<32>(&fields[2])?,
+                    issue_object: *self
+                        .invitation_objects
+                        .get(&signer_id)
+                        .ok_or(Error::Invalid("invitation object absent"))?,
+                }));
+            }
+        }
+        Ok(self
+            .admitted_signers
+            .get(&signer_id)
+            .copied()
+            .map(PublicReader::Removed))
     }
 
     pub(crate) fn contains_id(&self, id: &[u8; 16]) -> bool {
@@ -329,6 +442,24 @@ fn fixed<const N: usize>(value: &Value) -> Result<[u8; N], Error> {
         .map_err(|_| Error::Invalid("bytes length"))
 }
 
+fn active_signing_key(state: &Value, device: [u8; 16]) -> Result<Option<[u8; 32]>, Error> {
+    let Value::Map(fields) = state else {
+        return Err(Error::Invalid("public state not map"));
+    };
+    let Value::Array(active) = &fields[4].1 else {
+        return Err(Error::Invalid("active devices not array"));
+    };
+    for row in active {
+        let Value::Array(parts) = row else {
+            return Err(Error::Invalid("active row not array"));
+        };
+        if fixed::<16>(&parts[0])? == device {
+            return Ok(Some(fixed::<32>(&parts[1])?));
+        }
+    }
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -354,6 +485,38 @@ mod tests {
         .try_into()
         .unwrap();
         let relay_public = crypto::signing_public_key(&seed);
+        let manager_id: [u8; 16] = hex(vector["test_only_inputs"]["manager_device_id_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let recipient_id: [u8; 16] = hex(vector["test_only_inputs"]["recipient_device_id_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let issue_state = cbor::decode(&hex(vector["transitions"][1]["state_cbor_hex"]
+            .as_str()
+            .unwrap()))
+        .unwrap();
+        let Value::Map(issue_fields) = issue_state else {
+            panic!()
+        };
+        let Value::Array(invitations) = &issue_fields[6].1 else {
+            panic!()
+        };
+        let Value::Array(invitation) = &invitations[0] else {
+            panic!()
+        };
+        let invitation_id = fixed::<16>(&invitation[0]).unwrap();
+        let issue_object: [u8; 16] =
+            hex(vector["transitions"][1]["manifest"][0][1].as_str().unwrap())
+                .try_into()
+                .unwrap();
+        let challenge_object: [u8; 16] =
+            hex(vector["transitions"][3]["manifest"][0][1].as_str().unwrap())
+                .try_into()
+                .unwrap();
         let mut ledger: Option<PublicLedger> = None;
         for transition in vector["transitions"].as_array().unwrap() {
             let committed = hex(transition["committed_cbor_hex"].as_str().unwrap());
@@ -379,6 +542,43 @@ mod tests {
                 "{} head",
                 transition["name"].as_str().unwrap()
             );
+            assert!(matches!(
+                current.reader(manager_id).unwrap(),
+                Some(PublicReader::Manager(_))
+            ));
+            match transition["name"].as_str().unwrap() {
+                "genesis" => {
+                    assert!(current.reader(invitation_id).unwrap().is_none());
+                    assert!(current.reader(recipient_id).unwrap().is_none());
+                }
+                "invite_issue" => assert!(matches!(
+                    current.reader(invitation_id).unwrap(),
+                    Some(PublicReader::Invitation { issue_object: id, .. }) if id == issue_object
+                )),
+                "invite_claim" => {
+                    assert!(current.reader(invitation_id).unwrap().is_none());
+                    assert!(matches!(
+                        current.reader(recipient_id).unwrap(),
+                        Some(PublicReader::Pending {
+                            challenge_object: None,
+                            ..
+                        })
+                    ));
+                }
+                "holder_challenge" | "key_proof" => assert!(matches!(
+                    current.reader(recipient_id).unwrap(),
+                    Some(PublicReader::Pending { challenge_object: Some(id), .. }) if id == challenge_object
+                )),
+                "admit_grant" | "grant_repair" => assert!(matches!(
+                    current.reader(recipient_id).unwrap(),
+                    Some(PublicReader::Active(_))
+                )),
+                "remove_active" => assert!(matches!(
+                    current.reader(recipient_id).unwrap(),
+                    Some(PublicReader::Removed(_))
+                )),
+                _ => panic!("unexpected vector transition"),
+            }
         }
         assert_eq!(ledger.unwrap().epochs().latest_epoch(), 2);
     }

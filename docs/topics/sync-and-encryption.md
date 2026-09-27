@@ -486,10 +486,20 @@ and pending-device removal) now have a transactional relay commit primitive
 that reconstructs the signed public ledger inside the SQLite writer lock,
 checks protocol IDs and actual commit time, and returns the original signed
 result on an exact retry before checking current authority. It is not exposed
-over HTTP until general historical read and batch authority use that ledger.
+over HTTP until general batch write authority and later-device route tests
+use that ledger.
 A regression found and corrected an erroneous manifest requirement in the
 shared reducer and client replay: these three transitions have no objects in
 v1.
+Authenticated relay GETs now classify readers from a freshly reconstructed
+public ledger. Active managers and members use their current signing keys;
+unused invitation credentials can read their one issue object; pending
+devices can read their latest addressed challenge object; historically
+admitted but removed devices retain only their own signed-result access.
+The invitation-result route finds the matching committed issue by ID rather
+than assuming a fixed control position. First-cohort vector replay asserts
+each of these reader stages. Full later-device route tests and a more
+efficient verified ledger cache remain before general authority exposure.
 Repair preparation requires a verified admission association and current
 epoch commitment from the caller's historical ledger.
 The common envelope verifier alone cannot authorize these controls. The

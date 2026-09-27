@@ -1268,6 +1268,14 @@ manifest object for these three kinds; the published contract requires none,
 and both now agree. HTTP exposure, later-device tests, and historical reader/batch
 authorization still need implementation.
 
+The relay's signed GET boundary now rebuilds the same ledger for reader
+classification instead of inferring current roles and removal from seven
+fixed control positions. Published first-cohort states assert manager,
+unused invitation, pending challenge, admitted member, and removed-device
+classes; the dynamic CLI and two-emulator flows exercise the HTTP paths.
+General later-device negative and post-rotation read cases are still needed
+before exposing the manager-change route.
+
 ## Advisory public-ledger restart review at bdbed9e
 
 Daybreak Blue at high thinking reviewed fixed clean commit

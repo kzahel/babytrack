@@ -2009,11 +2009,19 @@ impl RelayStore {
             return Err(Error::Invalid("invite path not canonical"));
         }
         let reader = self.verify_control_reader(family_id, exact_path, auth_bytes)?;
-        let issue = control_at(&self.db, family_id, 1)?;
-        let ids = control_birth_ids(&issue)?;
-        if ids.last() != Some(&invitation_id) {
-            return Err(Error::Invalid("invitation not committed"));
+        let mut controls = self.db.prepare(
+            "SELECT committed_bytes FROM entries WHERE family_id=?1 AND kind=1 ORDER BY cursor",
+        )?;
+        let rows = controls.query_map(params![&family_id[..]], |row| row.get::<_, Vec<u8>>(0))?;
+        let mut issue = None;
+        for row in rows {
+            let committed = row?;
+            if control_birth_ids(&committed)?.last() == Some(&invitation_id) {
+                issue = Some(committed);
+                break;
+            }
         }
+        let issue = issue.ok_or(Error::Invalid("invitation not committed"))?;
         if matches!(reader, ControlReader::Invitation { .. })
             && read_auth::claimed_signer(auth_bytes)? != invitation_id
         {
@@ -2120,109 +2128,36 @@ impl RelayStore {
         exact_path: &str,
         auth_bytes: &[u8],
     ) -> Result<ControlReader, Error> {
-        let saved: Option<(Vec<u8>,Vec<u8>)> = self
-            .db
-            .query_row(
-                "SELECT candidate_bytes,committed_bytes FROM families WHERE family_id=?1 AND active=1",
-                params![&family_id[..]],
-                |r| Ok((r.get(0)?,r.get(1)?)),
-            )
-            .optional()?;
-        let (genesis_bytes, genesis_committed) =
-            saved.ok_or(Error::Invalid("Family not active"))?;
-        let controls = control_count(&self.db, family_id)?;
-        if !(1..=7).contains(&controls) {
-            return Err(Error::Invalid("initial-cohort reader authority superseded"));
-        }
-        let genesis =
-            verify_stored_genesis(&self.db, family_id, &genesis_bytes, self.relay_public)?;
+        let ledger =
+            Self::verify_saved_family(&self.db, family_id, self.relay_public, &self.relay_seed)?;
         let signer = read_auth::claimed_signer(auth_bytes)?;
-        let (reader, signing_key) = if signer == genesis.manager_id {
-            (ControlReader::Manager, genesis.manager_signing_key)
-        } else {
-            if controls < 2 {
-                return Err(Error::Invalid("reader has no committed issue"));
-            }
-            let genesis_head = crypto::hash("control-head", &genesis_committed)?;
-            let issue_committed = control_at(&self.db, family_id, 1)?;
-            let issue = authority::verify_first_invite_issue(
-                &control_candidate(&issue_committed)?,
-                &genesis,
-                genesis_head,
-            )?;
-            if signer == issue.invitation_id && controls == 2 {
-                (
-                    ControlReader::Invitation {
-                        issue_object: issue.manifest.object_id,
-                    },
-                    issue.invite_public,
-                )
-            } else if controls >= 3 {
-                let claim_committed = control_at(&self.db, family_id, 2)?;
-                let issue_head = crypto::hash("control-head", &issue_committed)?;
-                let claim = authority::verify_first_claim(
-                    &control_candidate(&claim_committed)?,
-                    &genesis,
-                    &issue,
-                    issue_head,
-                )?;
-                if signer != claim.device_id {
-                    return Err(Error::Invalid("reader not pending device"));
-                }
-                if controls >= 6 {
-                    let proved = load_proved_prefix(&self.db, self.relay_public, family_id)?;
-                    let admitted = control_at(&self.db, family_id, 5)?;
-                    let admission = authority::verify_first_admission(
-                        &control_candidate(&admitted)?,
-                        &proved.join.genesis,
-                        &proved.join.issue,
-                        &proved.join.claim,
-                        &proved.challenge,
-                        &proved.proof,
-                        proved.proof_head,
-                    )?;
-                    if admission.recipient_id != signer {
-                        return Err(Error::Invalid("reader not admitted device"));
-                    }
-                    if controls == 7 {
-                        (
-                            ControlReader::Removed {
-                                device_id: claim.device_id,
-                                signing_public: claim.signing_public,
-                                relay_id: genesis.relay_id,
-                            },
-                            claim.signing_public,
-                        )
-                    } else {
-                        (ControlReader::Active, claim.signing_public)
-                    }
-                } else {
-                    let challenge_object = if controls >= 4 {
-                        let challenge_committed = control_at(&self.db, family_id, 3)?;
-                        let challenge = authority::verify_first_challenge(
-                            &control_candidate(&challenge_committed)?,
-                            &genesis,
-                            &issue,
-                            &claim,
-                            crypto::hash("control-head", &claim_committed)?,
-                        )?;
-                        Some(challenge.manifest[0].object_id)
-                    } else {
-                        None
-                    };
-                    (
-                        ControlReader::Pending { challenge_object },
-                        claim.signing_public,
-                    )
-                }
-            } else {
-                return Err(Error::Invalid("reader has no control access"));
-            }
+        let (reader, signing_key) = match ledger
+            .reader(signer)?
+            .ok_or(Error::Invalid("reader has no current control access"))?
+        {
+            public_ledger::PublicReader::Manager(key) => (ControlReader::Manager, key),
+            public_ledger::PublicReader::Active(key) => (ControlReader::Active, key),
+            public_ledger::PublicReader::Removed(key) => (
+                ControlReader::Removed {
+                    device_id: signer,
+                    signing_public: key,
+                    relay_id: ledger.relay_id(),
+                },
+                key,
+            ),
+            public_ledger::PublicReader::Invitation {
+                signing_key,
+                issue_object,
+            } => (ControlReader::Invitation { issue_object }, signing_key),
+            public_ledger::PublicReader::Pending {
+                signing_key,
+                challenge_object,
+            } => (ControlReader::Pending { challenge_object }, signing_key),
         };
         let verified = read_auth::verify_get(
             auth_bytes,
             family_id,
-            genesis.relay_id,
+            ledger.relay_id(),
             signer,
             signing_key,
             exact_path,
@@ -3304,6 +3239,19 @@ mod tests {
         let accepted = store
             .commit_manager_change_with_clock(family, &candidate, || Ok(genesis_ms + 2_000))
             .unwrap();
+        let after_cancel =
+            RelayStore::verify_saved_family(&store.db, family, store.relay_public, &seed).unwrap();
+        let Value::Map(issue_root) = cbor::decode(&issue_candidate).unwrap() else {
+            panic!()
+        };
+        let Value::Map(issue_unsigned) = &issue_root[0].1 else {
+            panic!()
+        };
+        let Value::Map(issue_delta) = &issue_unsigned[6].1 else {
+            panic!()
+        };
+        let invitation_id = fixed::<16>(&issue_delta[0].1).unwrap();
+        assert!(after_cancel.reader(invitation_id).unwrap().is_none());
         let cursor: i64 = store
             .db
             .query_row(

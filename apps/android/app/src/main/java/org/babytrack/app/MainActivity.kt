@@ -174,6 +174,7 @@ private fun TrackerScreen(
     var amount by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var automaticSyncDelayed by remember { mutableStateOf(false) }
+    var automaticSyncBlocked by remember { mutableStateOf(false) }
     var relayOrigin by remember { mutableStateOf("") }
     var relayPublicKey by remember { mutableStateOf("") }
     var shareStage by remember { mutableStateOf<String?>(null) }
@@ -204,24 +205,26 @@ private fun TrackerScreen(
     val passwordOrFileError = stringResource(R.string.password_or_file_error)
     LaunchedEffect(foreground, selectedRecipient) {
         if (foreground) while (isActive) {
-            val (delayed, recipientStages) = withContext(Dispatchers.IO) {
+            val (delayed, blocked, recipientStages) = withContext(Dispatchers.IO) {
                 var failed = false
+                var blocked = false
                 val stages = mutableMapOf<String, uniffi.babytrack_core_ffi.RecipientSyncRow>()
                 for (family in store.families()) {
                     val origin = lastRelayOrigin(family)
                     if (origin != null && sharing.isShared(family)) {
                         runCatching { sharing.advanceManager(family, origin) }
-                            .onFailure { failed = true }
+                            .onFailure { failed = true; if (it is SharedUploadBlocked) blocked = true }
                     }
                 }
                 for (family in sharing.recipientFamilies()) {
                     runCatching { sharing.advanceRecipient(family) }
                         .onSuccess { stages[family.familyId.key()] = it }
-                        .onFailure { failed = true }
+                        .onFailure { failed = true; if (it is SharedUploadBlocked) blocked = true }
                 }
-                failed to stages
+                Triple(failed, blocked, stages)
             }
             automaticSyncDelayed = delayed
+            automaticSyncBlocked = blocked
             recipientStages[selectedRecipient]?.let { progress ->
                 joinStage = when {
                     progress.ready -> context.getString(R.string.history_ready_auto)
@@ -328,7 +331,11 @@ private fun TrackerScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(stringResource(if (activeShared) R.string.shared_family else R.string.local_only), style = MaterialTheme.typography.labelMedium)
-            if (automaticSyncDelayed) Text(stringResource(R.string.automatic_sync_delayed))
+            if (automaticSyncDelayed && !automaticSyncBlocked) Text(stringResource(R.string.automatic_sync_delayed))
+            if (automaticSyncBlocked) Text(
+                stringResource(R.string.shared_upload_blocked),
+                color = MaterialTheme.colorScheme.error,
+            )
             if (activeShared) activeSharedSnapshot?.let { SharedHealth(it) }
             if (activeShared && family != null) OutlinedButton(onClick = {
                 scope.launch {
@@ -506,7 +513,7 @@ private fun TrackerScreen(
                                         sharedSnapshot = updated
                                         joinStage = sharedSyncMessage(context, progress)
                                         message = null
-                                    }.onFailure { message = errorText }
+                                    }.onFailure { message = if (it is SharedUploadBlocked) context.getString(R.string.shared_upload_blocked) else errorText }
                                 }
                             }) { Text(stringResource(R.string.sync_shared)) }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -690,7 +697,7 @@ private fun TrackerScreen(
                                         shareStage = sharedSyncMessage(context, progress)
                                         version++
                                         message = null
-                                    }.onFailure { message = errorText }
+                                    }.onFailure { message = if (it is SharedUploadBlocked) context.getString(R.string.shared_upload_blocked) else errorText }
                                 }
                             }) { Text(stringResource(R.string.sync_shared)) }
                         }

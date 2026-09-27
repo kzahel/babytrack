@@ -13,6 +13,8 @@ import uniffi.babytrack_core_ffi.SharedSyncRow
 import uniffi.babytrack_core_ffi.previewInvitation
 import uniffi.babytrack_core_ffi.validateRelayOrigin
 
+internal class SharedUploadBlocked : IllegalStateException("Signed relay rejection retained the saved batch")
+
 /** Platform transport for the Rust sharing preparation and confirmation API. */
 internal class ShareCoordinator(context: Context, databasePath: String) : AutoCloseable {
     private val keys = DeviceWrappingKey(context)
@@ -207,7 +209,7 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
                 if (!progress.ready) return@withWrapping progress
                 when (core.resolvePendingBatchResult(family, wrapping, reads).toInt()) {
                     2 -> return@withWrapping progress
-                    4 -> error("The saved batch was rejected; its local operation is retained")
+                    4 -> throw SharedUploadBlocked()
                 }
                 val bytes = core.prepareSharedUpload(family, wrapping) ?: return@withWrapping progress
                 relay.post("/v1/families/${family.familyId.hex()}/batches", bytes, allowBatchConflict = true)

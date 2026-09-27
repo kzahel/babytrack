@@ -92,6 +92,7 @@
     <string name="shared_pending_changes">%1$d shared changes saved on this device and awaiting relay confirmation.</string>
     <string name="shared_upload_pending">Changes are saved here and waiting for upload. Sync will retry while the app is open.</string>
     <string name="shared_upload_uncertain">The relay response is uncertain. Changes remain saved here; sync will verify the exact result before retrying.</string>
+    <string name="shared_upload_blocked">The relay rejected a saved shared batch. These edits are still on this device but have not been shared. Keep this device and save a private copy while access is available.</string>
     <string name="shared_unreadable_batches">%1$d verified shared batches could not be read. Some shared history may be missing.</string>
     <string name="shared_entry">%1$s · %2$s</string>
 </resources>

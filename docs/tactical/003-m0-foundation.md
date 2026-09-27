@@ -192,6 +192,11 @@ scheduled job and verifies that a saved manager edit drains without a
 foreground UI sync. Android may defer the periodic job (15-minute minimum),
 and a force-stop prevents it until the user next opens the app. Push remains
 a later wake optimization; cursor verification remains the sync source.
+When Rust verifies an unsupported rejection for an exact saved batch,
+Android now shows an explicit blocked-upload message in foreground and manual
+sync paths. The edits remain in the durable outbox, and the UI points to the
+available private-copy action. Recovery after a verified removal still needs
+the automatic copy path; this message does not claim the relay accepted work.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

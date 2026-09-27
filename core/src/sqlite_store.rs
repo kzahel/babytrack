@@ -2329,6 +2329,27 @@ mod invite_migration_tests {
     use super::*;
 
     #[test]
+    fn version_two_store_adds_claim_archive_without_changing_families() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("version-two.db");
+        let mut store = SqliteStore::open(&path).unwrap();
+        let family = store.create_family(v4(0x71), v4(0x72)).unwrap();
+        store
+            .connection
+            .execute_batch("DROP TABLE enrollment_claim_candidates; PRAGMA user_version = 2;")
+            .unwrap();
+        drop(store);
+        let store = SqliteStore::open(&path).unwrap();
+        assert_eq!(store.families().unwrap(), vec![family]);
+        assert!(store.archived_enrollment_claims(family).unwrap().is_empty());
+        let version: u32 = store
+            .connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 3);
+    }
+
+    #[test]
     fn legacy_first_invite_keeps_exact_bytes_after_v3_upgrade() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("legacy-invite.db");

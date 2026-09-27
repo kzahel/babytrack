@@ -29,6 +29,8 @@ outbox, complete vector coverage, and the M0 exit review remain open.
 Android local and first-cohort UI work, including solids, completed
 single-side breast-feed, and pumping logs, runs
 alongside M0 on emulators; its physical phone gates remain open.
+Android can now share an invitation through the system chooser and receive
+one through the text share target, prefilled for an explicit join action.
 
 | Field | Current answer |
 |---|---|

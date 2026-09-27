@@ -37,8 +37,10 @@ The early independent authority recheck passed for that implemented cohort
 at `82c0f4c`; [003](003-m0-foundation.md#early-m0-authority-recheck-at-82c0f4c)
 records its limits. No physical two-phone or full M0 exit gate has passed.
 Sharing setup and join controls are still debug UI with manual relay origin,
-public key, and invitation-fragment entry. They are not a released product
-flow.
+public key, and optional invitation-fragment entry. Android's share sheet can
+send a one-use fragment, and receiving a text fragment prefills the join form
+without claiming it. A focused emulator instrumentation test covers that
+handoff. This is still a development flow, not a released product flow.
 
 ## Ordered slices and gates
 
@@ -70,7 +72,8 @@ intended Family and child, and remains usable after process death.
   exposing those actions as ordinary Android sharing controls.
 - [ ] Make invitation handoff usable through a share/link flow with trusted
   relay pinning and clear pending, accepted, blocked, and removed states.
-  Remove debug-only gating after the M0 exit security review passes.
+  The share-sheet receive path now prefills without auto-claiming. Remove
+  debug-only gating after the M0 exit security review passes.
 - [ ] Run the [two-caregiver gate](../mvp-plan.md#testing-and-validation)
   on two physical phones: delayed join, offline edits on both, convergence,
   removal with pending work, private-copy destination, and failed background

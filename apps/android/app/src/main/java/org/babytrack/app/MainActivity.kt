@@ -3,6 +3,7 @@ package org.babytrack.app
 import android.os.Bundle
 import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -70,8 +71,11 @@ import java.util.Date
 import java.util.TimeZone
 
 class MainActivity : ComponentActivity() {
+    private var incomingInvitation by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        incomingInvitation = invitationFrom(intent)
         runCatching { SharedSyncJobService.schedule(this) }
             .onFailure { Log.w("BabytrackSync", "Could not schedule periodic shared sync", it) }
         val app = application as BabytrackApplication
@@ -87,6 +91,7 @@ class MainActivity : ComponentActivity() {
                 TrackerScreen(
                     store = app.localStore,
                     sharing = app.sharing,
+                    incomingInvitation = incomingInvitation,
                     readFile = { uri -> contentResolver.openInputStream(uri)?.use {
                         readBounded(it, backupReadLimit(availableMemory()))
                     } },
@@ -117,6 +122,18 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        incomingInvitation = invitationFrom(intent)
+    }
+}
+
+private fun invitationFrom(intent: Intent?): String? {
+    if (intent?.action != Intent.ACTION_SEND || intent.type != "text/plain") return null
+    val fragment = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim() ?: return null
+    return fragment.takeIf { it.length <= 2048 && it.startsWith("#bt-invite=v1.") }
 }
 
 private fun ByteArray.key(): String = joinToString("") { "%02x".format(it) }
@@ -140,6 +157,7 @@ private data class ScreenData(
 private fun TrackerScreen(
     store: NativeLocalStore,
     sharing: ShareCoordinator,
+    incomingInvitation: String?,
     readFile: (android.net.Uri) -> ByteArray?,
     writeFile: (android.net.Uri, ByteArray) -> Unit,
     availableMemory: () -> Long,
@@ -208,6 +226,13 @@ private fun TrackerScreen(
     var selectedRecipient by remember { mutableStateOf<String?>(null) }
     var sharedChildName by remember { mutableStateOf("") }
     var inviteAsManager by remember { mutableStateOf(false) }
+    LaunchedEffect(incomingInvitation) {
+        if (incomingInvitation != null) {
+            receivedFragment = incomingInvitation
+            selectedRecipient = null
+            showJoinForm = true
+        }
+    }
     val errorText = stringResource(R.string.error)
     val savedText = stringResource(R.string.saved)
     val restoredText = stringResource(R.string.restored)
@@ -700,6 +725,16 @@ private fun TrackerScreen(
                             invitationFragment?.let { fragment ->
                                 Text(stringResource(R.string.invite_fragment_label))
                                 SelectionContainer { Text(fragment) }
+                                OutlinedButton(onClick = {
+                                    val send = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, fragment)
+                                    }
+                                    context.startActivity(Intent.createChooser(
+                                        send,
+                                        context.getString(R.string.share_invitation),
+                                    ))
+                                }) { Text(stringResource(R.string.share_invitation)) }
                             }
                             OutlinedButton(onClick = {
                                 shareStage = context.getString(R.string.challenge_preparing)

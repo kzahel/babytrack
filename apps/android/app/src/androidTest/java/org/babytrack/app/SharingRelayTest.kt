@@ -1,6 +1,7 @@
 package org.babytrack.app
 
 import android.view.accessibility.AccessibilityNodeInfo
+import android.content.Intent
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -18,6 +19,35 @@ import uniffi.babytrack_core_ffi.previewInvitation
 
 @RunWith(AndroidJUnit4::class)
 class SharingRelayTest {
+    @Test
+    fun sharedInvitationOpensJoinFormWithoutRedeemingIt() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val fragment = "#bt-invite=v1.received-for-review"
+        val previousRecipients = ShareCoordinator(
+            context,
+            context.filesDir.resolve("families.db").absolutePath,
+        ).use { it.recipientFamilies().size }
+        val intent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_SEND
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, fragment)
+        }
+        ActivityScenario.launch<MainActivity>(intent).use {
+            val deadline = System.currentTimeMillis() + 10_000
+            var visible = false
+            while (System.currentTimeMillis() < deadline) {
+                visible = instrumentation.uiAutomation.rootInActiveWindow?.containsText(fragment) == true
+                if (visible) break
+                Thread.sleep(100)
+            }
+            assertTrue("Shared invitation should prefill the join form", visible)
+            ShareCoordinator(context, context.filesDir.resolve("families.db").absolutePath).use { sharing ->
+                assertEquals("Receiving an invitation must not claim it", previousRecipients, sharing.recipientFamilies().size)
+            }
+        }
+    }
+
     @Test
     fun activityRecreationResumesSavedRecipientClaim() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()

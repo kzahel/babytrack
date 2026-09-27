@@ -1282,8 +1282,9 @@ authenticated public ledger in the same SQLite writer transaction. A durable
 manager batch with an earlier same-epoch head commits after a cancellation;
 exact retry returns the saved receipt before and after restart. Workspace
 tests and the two-emulator join, bidirectional sync, removal, and private-copy
-flow pass. Later-device and rotation-race signed cases remain before the
-general authority gate closes.
+flow pass. The same verified no-object manager path now serves signed HTTP
+cancellation, role-change, and pending-removal requests. Later-device and
+rotation-race signed cases remain before the general authority gate closes.
 
 ## Advisory public-ledger restart review at bdbed9e
 

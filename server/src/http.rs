@@ -1,5 +1,5 @@
-//! Development relay routes for the first join and initial-cohort batches.
-//! Later membership and general repair remain closed.
+//! Development relay routes for the first join and public-ledger-backed
+//! manager changes and batches. Later membership and repair remain closed.
 
 use std::{
     path::Path,
@@ -234,6 +234,9 @@ async fn commit_control(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let response = match kind {
         4 => store.commit_first_claim_with_clock(family_id, &body, || {
+            clock.now_ms().map_err(|_| StoreError::Clock)
+        }),
+        3 | 7 | 9 => store.commit_manager_change_with_clock(family_id, &body, || {
             clock.now_ms().map_err(|_| StoreError::Clock)
         }),
         kind => {

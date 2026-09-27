@@ -1,0 +1,239 @@
+//! Deterministic public candidate checks shared by clients and the relay.
+//! Commit time, relay receipts, storage, and encrypted object opening belong
+//! to their respective callers.
+
+use crate::{
+    cbor::{self, Value},
+    crypto,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Error {
+    Cbor(cbor::Error),
+    Crypto(crypto::Error),
+    Invalid(&'static str),
+}
+impl From<cbor::Error> for Error {
+    fn from(value: cbor::Error) -> Self {
+        Self::Cbor(value)
+    }
+}
+impl From<crypto::Error> for Error {
+    fn from(value: crypto::Error) -> Self {
+        Self::Crypto(value)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ManifestEntry {
+    pub kind: u16,
+    pub object_id: [u8; 16],
+    pub object_hash: [u8; 32],
+    pub object_len: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct PreparedIssue {
+    pub family_id: [u8; 16],
+    pub transition_id: [u8; 16],
+    pub invitation_id: [u8; 16],
+    pub issuer_id: [u8; 16],
+    pub invite_public: [u8; 32],
+    pub role: u8,
+    pub manifest: ManifestEntry,
+    pub next_state: Value,
+}
+
+/// Check the signed issue and its deterministic public state effect against
+/// an already verified state/head. The caller checks the historical ID ledger,
+/// staged object bytes, commit-time rules, and the relay-signed receipt.
+pub fn prepare_issue(
+    candidate_bytes: &[u8],
+    state: &Value,
+    head: [u8; 32],
+) -> Result<PreparedIssue, Error> {
+    let candidate = cbor::decode_with_limits(
+        candidate_bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?;
+    let root = exact_map(&candidate, 2)?;
+    let unsigned = exact_map(&root[0].1, 11)?;
+    let old = exact_map(state, 7)?;
+    let family_id = fixed::<16>(&old[1].1)?;
+    let relay_id = fixed::<32>(&old[2].1)?;
+    let epoch = number(&old[3].1)?;
+    if number(&old[0].1)? != 1
+        || number(&unsigned[0].1)? != 1
+        || fixed::<16>(&unsigned[1].1)? != family_id
+        || fixed::<32>(&unsigned[2].1)? != relay_id
+        || fixed::<32>(&unsigned[3].1)? != head
+        || number(&unsigned[5].1)? != 2
+        || number(&unsigned[8].1)? != epoch
+    {
+        return Err(Error::Invalid(
+            "issue version, identity, head, kind, or epoch",
+        ));
+    }
+    let transition_id = fixed::<16>(&unsigned[4].1)?;
+    let delta = exact_map(&unsigned[6].1, 4)?;
+    let invitation_id = fixed::<16>(&delta[0].1)?;
+    let issuer_id = fixed::<16>(&delta[1].1)?;
+    let invite_public = fixed::<32>(&delta[2].1)?;
+    let role: u8 = number(&delta[3].1)?
+        .try_into()
+        .map_err(|_| Error::Invalid("issue role range"))?;
+    if !matches!(role, 1 | 2) || transition_id == invitation_id {
+        return Err(Error::Invalid("issue role or ID collision"));
+    }
+    let Value::Array(active) = &old[4].1 else {
+        return Err(Error::Invalid("active state not array"));
+    };
+    let issuer = active
+        .iter()
+        .find_map(|row| {
+            let fields = array(row, 5).ok()?;
+            (fixed::<16>(&fields[0]).ok()? == issuer_id).then_some(fields)
+        })
+        .ok_or(Error::Invalid("issue signer not active"))?;
+    if number(&issuer[4])? != 2 {
+        return Err(Error::Invalid("issue signer not manager"));
+    }
+    let signing_key = fixed::<32>(&issuer[1])?;
+    let Value::Array(invitations) = &old[6].1 else {
+        return Err(Error::Invalid("invitations not array"));
+    };
+    if invitations.iter().any(|row| {
+        array(row, 6).is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(invitation_id))
+    }) {
+        return Err(Error::Invalid("invitation ID reused"));
+    }
+    let manifest = array(&unsigned[9].1, 1)?;
+    let listed = array(&manifest[0], 4)?;
+    let kind: u16 = number(&listed[0])?
+        .try_into()
+        .map_err(|_| Error::Invalid("manifest kind range"))?;
+    let object_id = fixed::<16>(&listed[1])?;
+    let object_hash = fixed::<32>(&listed[2])?;
+    let object_len: u32 = number(&listed[3])?
+        .try_into()
+        .map_err(|_| Error::Invalid("manifest length range"))?;
+    if kind != 1
+        || object_len > 1024 * 1024
+        || object_id == transition_id
+        || object_id == invitation_id
+    {
+        return Err(Error::Invalid("issue manifest kind, size, or ID"));
+    }
+    let mut next_state = state.clone();
+    let Value::Map(next) = &mut next_state else {
+        unreachable!()
+    };
+    let Value::Array(next_invitations) = &mut next[6].1 else {
+        unreachable!()
+    };
+    next_invitations.push(Value::Array(vec![
+        Value::Bytes(invitation_id.to_vec()),
+        Value::Bytes(issuer_id.to_vec()),
+        Value::Bytes(invite_public.to_vec()),
+        Value::Integer(role.into()),
+        Value::Bytes(transition_id.to_vec()),
+        Value::Integer(1),
+    ]));
+    next_invitations.sort_by(|left, right| {
+        let Value::Array(left) = left else {
+            unreachable!()
+        };
+        let Value::Array(right) = right else {
+            unreachable!()
+        };
+        let Value::Bytes(left) = &left[0] else {
+            unreachable!()
+        };
+        let Value::Bytes(right) = &right[0] else {
+            unreachable!()
+        };
+        left.cmp(right)
+    });
+    if fixed::<32>(&unsigned[7].1)? != crypto::hash("auth-state", &cbor::encode(&next_state)?)? {
+        return Err(Error::Invalid("issue state hash"));
+    }
+    let core = Value::Array(
+        unsigned[..9]
+            .iter()
+            .map(|(_, value)| value.clone())
+            .collect(),
+    );
+    if fixed::<32>(&unsigned[10].1)? != crypto::hash("transition-core", &cbor::encode(&core)?)? {
+        return Err(Error::Invalid("issue core hash"));
+    }
+    let signatures = array(&root[1].1, 1)?;
+    let signature = array(&signatures[0], 2)?;
+    if fixed::<16>(&signature[0])? != issuer_id {
+        return Err(Error::Invalid("issue signature signer"));
+    }
+    crypto::verify_cbor(
+        "control-transition",
+        &cbor::encode(&root[0].1)?,
+        &signing_key,
+        &fixed::<64>(&signature[1])?,
+    )?;
+    Ok(PreparedIssue {
+        family_id,
+        transition_id,
+        invitation_id,
+        issuer_id,
+        invite_public,
+        role,
+        manifest: ManifestEntry {
+            kind,
+            object_id,
+            object_hash,
+            object_len,
+        },
+        next_state,
+    })
+}
+
+fn exact_map(value: &Value, width: usize) -> Result<&[(u64, Value)], Error> {
+    let Value::Map(fields) = value else {
+        return Err(Error::Invalid("map expected"));
+    };
+    if fields.len() != width
+        || fields
+            .iter()
+            .enumerate()
+            .any(|(index, (key, _))| *key != index as u64 + 1)
+    {
+        return Err(Error::Invalid("map keys"));
+    }
+    Ok(fields)
+}
+fn array(value: &Value, width: usize) -> Result<&[Value], Error> {
+    let Value::Array(items) = value else {
+        return Err(Error::Invalid("array expected"));
+    };
+    if items.len() != width {
+        return Err(Error::Invalid("array width"));
+    }
+    Ok(items)
+}
+fn fixed<const N: usize>(value: &Value) -> Result<[u8; N], Error> {
+    let Value::Bytes(bytes) = value else {
+        return Err(Error::Invalid("bytes expected"));
+    };
+    bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| Error::Invalid("bytes length"))
+}
+fn number(value: &Value) -> Result<u64, Error> {
+    let Value::Integer(number) = value else {
+        return Err(Error::Invalid("integer expected"));
+    };
+    (*number)
+        .try_into()
+        .map_err(|_| Error::Invalid("unsigned integer"))
+}

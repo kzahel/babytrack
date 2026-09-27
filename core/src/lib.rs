@@ -22,6 +22,7 @@ pub mod first_admission;
 pub mod first_challenge;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod first_proof;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod first_removal;
 pub mod grant;
 pub mod handoff;
@@ -36,6 +37,7 @@ pub mod operation;
 pub mod portable_file;
 pub mod projection;
 pub mod rotation;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod rotation_build;
 pub mod session;
 #[cfg(not(target_arch = "wasm32"))]

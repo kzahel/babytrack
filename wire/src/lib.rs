@@ -3,5 +3,6 @@
 
 #![forbid(unsafe_code)]
 
+pub mod authority;
 pub mod cbor;
 pub mod crypto;

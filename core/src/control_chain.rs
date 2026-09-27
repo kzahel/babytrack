@@ -19,6 +19,7 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
+    Public(babytrack_wire::authority::Error),
     Control(control::Error),
     Cbor(cbor::Error),
     Crypto(crypto::Error),
@@ -29,6 +30,11 @@ pub enum Error {
     Rotation(rotation::Error),
     Invalid(&'static str),
     UnsupportedKind,
+}
+impl From<babytrack_wire::authority::Error> for Error {
+    fn from(value: babytrack_wire::authority::Error) -> Self {
+        Self::Public(value)
+    }
 }
 impl From<control::Error> for Error {
     fn from(value: control::Error) -> Self {
@@ -378,114 +384,20 @@ impl ControlChain {
         let root = exact_map(&object, 4)?;
         let unsigned = exact_map(&root[0].1, 11)?;
         let (new_transition_id, new_object_ids, all_ids) = self.check_new_control_ids(unsigned)?;
-        if number(&unsigned[0].1)? != 1
-            || number(&unsigned[5].1)? != 2
-            || number(&unsigned[8].1)? != self.current_epoch()?
-            || fixed::<16>(&unsigned[1].1)? != self.genesis.family_id()
-            || fixed::<32>(&unsigned[2].1)? != self.genesis.relay_id()
-            || fixed::<32>(&unsigned[3].1)? != self.head_hash
-        {
-            return Err(Error::Invalid(
-                "invite issue version, Family, relay, epoch, or parent mismatch",
-            ));
-        }
-        let transition_id = fixed::<16>(&unsigned[4].1)?;
-        let delta = exact_map(&unsigned[6].1, 4)?;
-        let invitation_id = fixed::<16>(&delta[0].1)?;
-        let issuer_id = fixed::<16>(&delta[1].1)?;
-        let invite_public = fixed::<32>(&delta[2].1)?;
-        let role = number(&delta[3].1)?;
-        if role != 1 && role != 2 {
-            return Err(Error::Invalid("invalid invite role"));
-        }
-        let state = exact_map(&self.state, 7)?;
-        let active = match &state[4].1 {
-            Value::Array(items) => items,
-            _ => return Err(Error::Invalid("active state malformed")),
-        };
-        let issuer = active
-            .iter()
-            .find(|row| {
-                array(row, 5).is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(issuer_id))
-            })
-            .ok_or(Error::Invalid("invite issuer is not active"))?;
-        if number(&array(issuer, 5)?[4])? != 2 {
-            return Err(Error::Invalid("invite issuer is not manager"));
-        }
-        let invitations = match &state[6].1 {
-            Value::Array(items) => items,
-            _ => return Err(Error::Invalid("invitation state malformed")),
-        };
-        if invitations.iter().any(|row| {
-            array(row, 6).is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(invitation_id))
-        }) {
-            return Err(Error::Invalid("invitation ID reused"));
-        }
-        let mut next_state = self.state.clone();
-        let Value::Map(next_map) = &mut next_state else {
-            unreachable!()
-        };
-        let Value::Array(next_invitations) = &mut next_map[6].1 else {
-            unreachable!()
-        };
-        next_invitations.push(Value::Array(vec![
-            Value::Bytes(invitation_id.to_vec()),
-            Value::Bytes(issuer_id.to_vec()),
-            Value::Bytes(invite_public.to_vec()),
-            Value::Integer(role.into()),
-            Value::Bytes(transition_id.to_vec()),
-            Value::Integer(1),
-        ]));
-        next_invitations.sort_by(|left, right| {
-            let Value::Array(left) = left else {
-                unreachable!()
-            };
-            let Value::Array(right) = right else {
-                unreachable!()
-            };
-            let Value::Bytes(left) = &left[0] else {
-                unreachable!()
-            };
-            let Value::Bytes(right) = &right[0] else {
-                unreachable!()
-            };
-            left.cmp(right)
-        });
-        let next_hash = crypto::hash("auth-state", &cbor::encode(&next_state)?)?;
-        if fixed::<32>(&unsigned[7].1)? != next_hash {
-            return Err(Error::Invalid("invite issue state hash mismatch"));
-        }
-        let core = Value::Array(
-            unsigned[0..9]
-                .iter()
-                .map(|(_, value)| value.clone())
-                .collect(),
-        );
-        if fixed::<32>(&unsigned[10].1)? != crypto::hash("transition-core", &cbor::encode(&core)?)?
-        {
-            return Err(Error::Invalid("invite issue core hash mismatch"));
-        }
-        let manifest = array(&unsigned[9].1, 1)?;
-        let membership = array(&manifest[0], 4)?;
-        if number(&membership[0])? != 1 || number(&membership[3])? > 1024 * 1024 {
-            return Err(Error::Invalid("invite issue membership manifest invalid"));
-        }
-        let _object_id = fixed::<16>(&membership[1])?;
-        let _object_hash = fixed::<32>(&membership[2])?;
+        let signed_candidate = cbor::encode(&Value::Map(vec![
+            (1, root[0].1.clone()),
+            (2, root[1].1.clone()),
+        ]))?;
+        let prepared = babytrack_wire::authority::prepare_issue(
+            &signed_candidate,
+            &self.state,
+            self.head_hash,
+        )?;
+        let transition_id = prepared.transition_id;
+        let invitation_id = prepared.invitation_id;
+        let next_state = prepared.next_state;
         let membership_check = membership_from_unsigned(self.genesis.family_id(), unsigned)?
             .ok_or(Error::Invalid("invite issue missing membership object"))?;
-        let signatures = array(&root[1].1, 1)?;
-        let signature = array(&signatures[0], 2)?;
-        if fixed::<16>(&signature[0])? != issuer_id {
-            return Err(Error::Invalid("wrong invite issuer signer"));
-        }
-        let issuer_key = fixed::<32>(&array(issuer, 5)?[1])?;
-        crypto::verify_cbor(
-            "control-transition",
-            &cbor::encode(&root[0].1)?,
-            &issuer_key,
-            &fixed::<64>(&signature[1])?,
-        )?;
         let receipt = array(&root[2].1, 6)?;
         let expected_cursor = self
             .last_global_cursor

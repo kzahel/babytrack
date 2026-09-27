@@ -2,6 +2,7 @@
 //! No event schema, payload decryption, or client key material lives here.
 
 use babytrack_wire::{
+    authority as public_authority,
     cbor::{self, Value},
     crypto,
 };
@@ -10,9 +11,15 @@ use sha2::{Digest, Sha256};
 #[derive(Debug)]
 #[allow(dead_code)] // Error detail is consumed by the upcoming route boundary.
 pub(crate) enum Error {
+    Public(public_authority::Error),
     Cbor(cbor::Error),
     Crypto(crypto::Error),
     Invalid(&'static str),
+}
+impl From<public_authority::Error> for Error {
+    fn from(value: public_authority::Error) -> Self {
+        Self::Public(value)
+    }
 }
 impl From<cbor::Error> for Error {
     fn from(value: cbor::Error) -> Self {
@@ -179,108 +186,35 @@ pub(crate) fn verify_first_invite_issue(
     genesis: &GenesisCandidate,
     current_head: [u8; 32],
 ) -> Result<IssueCandidate, Error> {
-    let value = cbor::decode_with_limits(
-        candidate_bytes,
-        cbor::Limits {
-            max_bytes: 1024 * 1024,
-            max_depth: 16,
-        },
-    )?;
-    let root = exact_map(&value, 2)?;
-    let unsigned = exact_map(&root[0].1, 11)?;
-    if number(&unsigned[0].1)? != 1
-        || fixed::<16>(&unsigned[1].1)? != genesis.family_id
-        || fixed::<32>(&unsigned[2].1)? != genesis.relay_id
-        || fixed::<32>(&unsigned[3].1)? != current_head
-        || number(&unsigned[5].1)? != 2
-        || number(&unsigned[8].1)? != 1
-    {
-        return Err(Error::Invalid(
-            "issue version, Family, relay, parent, kind, or epoch",
-        ));
-    }
-    let transition_id = fixed::<16>(&unsigned[4].1)?;
-    if transition_id == genesis.transition_id {
-        return Err(Error::Invalid("issue transition ID reused"));
-    }
-    let delta = exact_map(&unsigned[6].1, 4)?;
-    let invitation_id = fixed::<16>(&delta[0].1)?;
-    let issuer = fixed::<16>(&delta[1].1)?;
-    let invite_public = fixed::<32>(&delta[2].1)?;
-    let role = number(&delta[3].1)?;
-    if issuer != genesis.manager_id || (role != 1 && role != 2) {
-        return Err(Error::Invalid("issue signer or role invalid"));
-    }
-    let invitation_row = Value::Array(vec![
-        Value::Bytes(invitation_id.to_vec()),
-        Value::Bytes(issuer.to_vec()),
-        delta[2].1.clone(),
-        Value::Integer(role.into()),
-        Value::Bytes(transition_id.to_vec()),
-        Value::Integer(1),
-    ]);
-    let resulting = Value::Map(vec![
+    let state = Value::Map(vec![
         (1, Value::Integer(1)),
         (2, Value::Bytes(genesis.family_id.to_vec())),
         (3, Value::Bytes(genesis.relay_id.to_vec())),
         (4, Value::Integer(1)),
         (5, Value::Array(vec![genesis.manager_row.clone()])),
         (6, Value::Array(vec![])),
-        (7, Value::Array(vec![invitation_row])),
+        (7, Value::Array(vec![])),
     ]);
-    if fixed::<32>(&unsigned[7].1)? != crypto::hash("auth-state", &cbor::encode(&resulting)?)? {
-        return Err(Error::Invalid("issue state hash mismatch"));
-    }
-    let core = Value::Array(
-        unsigned[..9]
-            .iter()
-            .map(|(_, value)| value.clone())
-            .collect(),
-    );
-    if fixed::<32>(&unsigned[10].1)? != crypto::hash("transition-core", &cbor::encode(&core)?)? {
-        return Err(Error::Invalid("issue core hash mismatch"));
-    }
-    let manifest = array(&unsigned[9].1, 1)?;
-    let entry = array(&manifest[0], 4)?;
-    let kind: u16 = number(&entry[0])?
-        .try_into()
-        .map_err(|_| Error::Invalid("kind range"))?;
-    let object_id = fixed::<16>(&entry[1])?;
-    let object_hash = fixed::<32>(&entry[2])?;
-    let object_len: u32 = number(&entry[3])?
-        .try_into()
-        .map_err(|_| Error::Invalid("length range"))?;
-    if kind != 1
-        || object_len > 1024 * 1024
+    let prepared = public_authority::prepare_issue(candidate_bytes, &state, current_head)?;
+    if prepared.transition_id == genesis.transition_id
         || genesis
             .manifest
             .iter()
-            .any(|prior| prior.object_id == object_id)
+            .any(|prior| prior.object_id == prepared.manifest.object_id)
     {
-        return Err(Error::Invalid("issue membership manifest invalid"));
+        return Err(Error::Invalid("issue ID reused from genesis"));
     }
-    let signatures = array(&root[1].1, 1)?;
-    let signature = array(&signatures[0], 2)?;
-    if fixed::<16>(&signature[0])? != issuer {
-        return Err(Error::Invalid("issue signature signer invalid"));
-    }
-    crypto::verify_cbor(
-        "control-transition",
-        &cbor::encode(&root[0].1)?,
-        &genesis.manager_signing_key,
-        &fixed::<64>(&signature[1])?,
-    )?;
     Ok(IssueCandidate {
-        family_id: genesis.family_id,
-        transition_id,
-        invitation_id,
-        invite_public,
-        role,
+        family_id: prepared.family_id,
+        transition_id: prepared.transition_id,
+        invitation_id: prepared.invitation_id,
+        invite_public: prepared.invite_public,
+        role: prepared.role.into(),
         manifest: ManifestEntry {
-            kind,
-            object_id,
-            object_hash,
-            object_len,
+            kind: prepared.manifest.kind,
+            object_id: prepared.manifest.object_id,
+            object_hash: prepared.manifest.object_hash,
+            object_len: prepared.manifest.object_len,
         },
     })
 }

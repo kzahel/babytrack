@@ -1136,6 +1136,14 @@ rows. This covers the candidate-isolation and restart part of FS68. The
 multi-object incomplete-A case and general later-device contenders remain
 open with the broader public-authority work.
 
+The first shared public candidate verifier for invitation issue now lives
+in `wire/` and is called by both the client control chain and the relay.
+The reviewed first-issue fixture, signed competing issue, core control
+chain, server, and real-relay flow remain byte-identical. It has no private
+key or relay clock input. This is a first extraction only: historical IDs,
+all other transition kinds, the rebuildable public ledger, and general
+later-device routes remain to be factored and tested.
+
 The corrected [topic proposal](../topics/sync-and-encryption.md#proposed-implementation-seam-for-general-relay-authority)
 uses a public candidate verifier, a relay commit wrapper, and a client
 committed verifier. It needs no v1 wire change if the ledger remains internal;

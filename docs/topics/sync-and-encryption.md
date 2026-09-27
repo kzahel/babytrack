@@ -430,6 +430,13 @@ history or verified against it after restart, not trusted as an unchecked
 database snapshot. An offline request or staged object never becomes a
 confirmed authority change. Unknown versions/kinds fail closed.
 
+The first extracted `wire` verifier now prepares invitation-issue candidates
+for both the client control chain and relay. It checks the signed manager,
+public state effect, hashes, and manifest without time, receipt, or object
+opening. Historical ID checks still live in the callers, and the other
+transition kinds still use their existing paths. The public ledger and
+general relay authority are not complete.
+
 This is an implementation proposal, not a new wire contract. Its first
 regression is byte-identical replay of the reviewed first cohort on both
 sides, including removal and signed post-removal result lookup. Then add a

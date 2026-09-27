@@ -36,6 +36,7 @@ pub(crate) struct VerifiedControlReceipt {
     pub candidate_bytes: Vec<u8>,
     pub family_id: [u8; 16],
     pub relay_id: [u8; 32],
+    pub parent_head: [u8; 32],
     pub cursor: u64,
 }
 
@@ -76,6 +77,7 @@ pub(crate) fn verify_control_receipt(
     }
     let family_id = fixed::<16>(&unsigned[1].1)?;
     let relay_id = fixed::<32>(&unsigned[2].1)?;
+    let parent_head = fixed::<32>(&unsigned[3].1)?;
     let transition_id = fixed::<16>(&unsigned[4].1)?;
     let Value::Array(receipt) = &root[2].1 else {
         return Err(Error::Invalid("control receipt not array"));
@@ -122,6 +124,7 @@ pub(crate) fn verify_control_receipt(
         ]))?,
         family_id,
         relay_id,
+        parent_head,
         cursor,
     })
 }

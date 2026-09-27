@@ -229,11 +229,91 @@ impl RelayStore {
         if stored != relay_public {
             return Err(Error::Invalid("relay signing identity changed on restart"));
         }
-        Ok(Self {
+        let store = Self {
             db,
             relay_seed,
             relay_public,
-        })
+        };
+        store.verify_saved_families()?;
+        Ok(store)
+    }
+
+    /// Reject a damaged durable log before serving a reopened relay. Derived
+    /// authority rows must never outrank the signed control and receipt chain.
+    fn verify_saved_families(&self) -> Result<(), Error> {
+        let snapshot = self.db.unchecked_transaction()?;
+        let mut families = snapshot.prepare(
+            "SELECT family_id,candidate_bytes,head_hash,cursor FROM families WHERE active=1",
+        )?;
+        let rows = families.query_map([], |row| {
+            Ok((
+                row.get::<_, Vec<u8>>(0)?,
+                row.get::<_, Vec<u8>>(1)?,
+                row.get::<_, Vec<u8>>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })?;
+        for row in rows {
+            let (family, candidate, saved_head, saved_cursor) = row?;
+            let family: [u8; 16] = family
+                .try_into()
+                .map_err(|_| Error::Invalid("stored Family ID length"))?;
+            let genesis = verify_stored_genesis(&snapshot, family, &candidate, self.relay_public)?;
+            let mut entries = snapshot.prepare(
+                "SELECT cursor,kind,committed_bytes FROM entries WHERE family_id=?1 ORDER BY cursor",
+            )?;
+            let mut log = entries.query(params![&family[..]])?;
+            let mut cursor = 0u64;
+            let mut head = [0u8; 32];
+            let mut control_count = 0u64;
+            while let Some(row) = log.next()? {
+                let position: i64 = row.get(0)?;
+                let kind: i64 = row.get(1)?;
+                let bytes: Vec<u8> = row.get(2)?;
+                cursor = cursor
+                    .checked_add(1)
+                    .ok_or(Error::Invalid("stored cursor overflow"))?;
+                if u64::try_from(position).ok() != Some(cursor) {
+                    return Err(Error::Invalid("stored log cursor gap"));
+                }
+                match kind {
+                    1 => {
+                        let receipt = receipt::verify_control_receipt(&bytes, &self.relay_public)?;
+                        if receipt.family_id != family
+                            || receipt.relay_id != genesis.relay_id
+                            || receipt.cursor != cursor
+                            || receipt.parent_head != head
+                        {
+                            return Err(Error::Invalid("stored control chain differs"));
+                        }
+                        head = crypto::hash("control-head", &bytes)?;
+                        control_count += 1;
+                    }
+                    2 => {
+                        let saved: Option<Vec<u8>> = snapshot
+                            .query_row(
+                                "SELECT envelope_bytes FROM batch_results WHERE family_id=?1 AND cursor=?2",
+                                params![&family[..], position],
+                                |row| row.get(0),
+                            )
+                            .optional()?;
+                        if saved.as_deref() != Some(bytes.as_slice()) {
+                            return Err(Error::Invalid("stored batch differs from log"));
+                        }
+                    }
+                    _ => return Err(Error::Invalid("stored log kind")),
+                }
+            }
+            if control_count == 0
+                || i64::try_from(cursor).ok() != Some(saved_cursor)
+                || saved_head != head
+            {
+                return Err(Error::Invalid("stored Family head or cursor differs"));
+            }
+        }
+        drop(families);
+        snapshot.commit()?;
+        Ok(())
     }
 
     pub fn relay_public_key(&self) -> [u8; 32] {
@@ -2329,11 +2409,14 @@ fn verify_stored_genesis(
     stored_candidate: &[u8],
     relay_public: [u8; 32],
 ) -> Result<authority::GenesisCandidate, Error> {
-    let committed: Vec<u8> = db.query_row(
-        "SELECT committed_bytes FROM families WHERE family_id=?1 AND active=1",
+    let (committed, reservation): (Vec<u8>, Vec<u8>) = db.query_row(
+        "SELECT committed_bytes,reservation_hash FROM families WHERE family_id=?1 AND active=1",
         params![&family[..]],
-        |row| row.get(0),
+        |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
+    if reservation != crypto::hash("genesis-reservation", stored_candidate)? {
+        return Err(Error::Invalid("genesis reservation differs from candidate"));
+    }
     let entry: Vec<u8> = db.query_row(
         "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=1 AND kind=1",
         params![&family[..]],
@@ -2874,13 +2957,45 @@ mod tests {
         for writer in writers {
             assert!(!writer.join().unwrap().is_empty());
         }
-        let db = Connection::open(path).unwrap();
-        let (cursor, controls, batches): (i64, i64, i64) = db.query_row(
-            "SELECT f.cursor, (SELECT COUNT(*) FROM entries WHERE family_id=f.family_id AND kind=1), (SELECT COUNT(*) FROM entries WHERE family_id=f.family_id AND kind=2) FROM families f WHERE f.family_id=?1",
+        let db = Connection::open(&path).unwrap();
+        let (cursor, controls, batches, head): (i64, i64, i64, Vec<u8>) = db.query_row(
+            "SELECT f.cursor, (SELECT COUNT(*) FROM entries WHERE family_id=f.family_id AND kind=1), (SELECT COUNT(*) FROM entries WHERE family_id=f.family_id AND kind=2), f.head_hash FROM families f WHERE f.family_id=?1",
             params![&family[..]],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         ).unwrap();
         assert_eq!((cursor, controls, batches), (3, 2, 1));
+        drop(db);
+        assert!(RelayStore::open(&path, seed).is_ok());
+        let db = Connection::open(&path).unwrap();
+        db.execute(
+            "UPDATE families SET head_hash=?2 WHERE family_id=?1",
+            params![&family[..], &[0u8; 32][..]],
+        )
+        .unwrap();
+        drop(db);
+        assert!(RelayStore::open(&path, seed).is_err());
+        let db = Connection::open(&path).unwrap();
+        db.execute(
+            "UPDATE families SET head_hash=?2 WHERE family_id=?1",
+            params![&family[..], &head],
+        )
+        .unwrap();
+        let issue_bytes: Vec<u8> = db
+            .query_row(
+                "SELECT committed_bytes FROM entries WHERE family_id=?1 AND kind=1 ORDER BY cursor LIMIT 1 OFFSET 1",
+                params![&family[..]],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let mut changed = issue_bytes;
+        *changed.last_mut().unwrap() ^= 1;
+        db.execute(
+            "UPDATE entries SET committed_bytes=?2 WHERE family_id=?1 AND kind=1 AND cursor>1",
+            params![&family[..], &changed],
+        )
+        .unwrap();
+        drop(db);
+        assert!(RelayStore::open(&path, seed).is_err());
     }
 
     #[test]
@@ -3192,20 +3307,20 @@ mod tests {
                 params![&family[..], &alternate],
             )
             .unwrap();
-        drop(store);
-        let mut store = RelayStore::open(&path, seed).unwrap();
         assert!(
             store
                 .stage_first_issue_object(family, issue_object, &issue_stage)
                 .is_err()
         );
-        store
-            .db
-            .execute(
-                "UPDATE families SET candidate_bytes=?2 WHERE family_id=?1",
-                params![&family[..], &genesis_candidate],
-            )
-            .unwrap();
+        drop(store);
+        assert!(RelayStore::open(&path, seed).is_err());
+        let db = Connection::open(&path).unwrap();
+        db.execute(
+            "UPDATE families SET candidate_bytes=?2 WHERE family_id=?1",
+            params![&family[..], &genesis_candidate],
+        )
+        .unwrap();
+        let mut store = RelayStore::open(&path, seed).unwrap();
         let mut changed = committed.clone();
         *changed.last_mut().unwrap() ^= 1;
         store
@@ -3232,6 +3347,8 @@ mod tests {
                 .stage_first_issue_object(family, issue_object, &issue_stage)
                 .is_err()
         );
+        drop(store);
+        assert!(RelayStore::open(&path, seed).is_err());
     }
 
     #[test]

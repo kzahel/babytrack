@@ -3,7 +3,8 @@
 Use this procedure at the [MVP security gates](mvp-plan.md#security-review-gates).
 The reviewer is a separate Daybreak Blue, high-thinking Codex session launched
 through the local Yep Anywhere API. It reviews a fixed repository revision in
-read-only plan mode. The implementation agent owns triage, fixes, regression
+a disposable detached checkout with `bypassPermissions` and an explicitly
+read-only prompt. The implementation agent owns triage, fixes, regression
 cases, and the gate record; a model verdict alone does not close a gate.
 
 ## Prepare the review
@@ -12,10 +13,10 @@ cases, and the gate record; a model verdict alone does not close a gate.
    be reviewed and commit it so the reviewer can name one immutable revision.
    Check `git status --short` and `git rev-parse HEAD`. If other work is still
    in the tree, do not present it as part of that revision. Keep the review
-   checkout unchanged until the session finishes. If implementation must
-   continue concurrently, launch the reviewer in a separate checkout pinned
-   to the target SHA and compute the Yep Anywhere project ID from that
-   checkout's absolute path.
+   checkout unchanged until the session finishes. Launch the reviewer in a
+   separate detached checkout pinned to the target SHA, never in the active
+   implementation tree, and compute the Yep Anywhere project ID from that
+   checkout's absolute path. Verify the checkout remains clean afterward.
 2. Select the product promises, protocol files, scenarios, vectors, and code
    that belong to this gate. For Family access, start with
    [Family sharing and trust](topics/family-sharing-and-trust.md), then
@@ -83,7 +84,7 @@ body = {
     "provider": "codex",
     "model": "gpt-daybreak-blue-latest",
     "thinking": "high",
-    "mode": "plan",
+    "mode": "bypassPermissions",
     "message": prompt,
 }
 request = Request(
@@ -101,7 +102,9 @@ PY
 ```
 
 Record the returned `sessionId`, `processId`, and `projectId` alongside the
-reviewed SHA and prompt. A `202` response means the request is queued and
+reviewed SHA and prompt. `bypassPermissions` is used only with this bounded,
+trusted local checkout; it must not authorize source edits, commits, or
+unrelated network calls. A `202` response means the request is queued and
 does not supply a reliably recoverable session ID: keep its queue ID, inspect
 the queue, and reconcile manually. Do not submit the same prompt again just
 because the first request is queued or times out. If the model alias is
@@ -118,6 +121,8 @@ Poll `GET /api/sessions/<sessionId>/process` about once a minute. Verify
 `needs-attention` state requires inspection; a terminal provider error,
 terminated/missing process, or repeated API error is not a review result.
 Do not approve an unexpected tool request or relaunch automatically.
+If the reviewer attempts to edit source or leave the scoped checkout, stop
+the session and record that no verdict was obtained.
 
 ```sh
 curl -fsS "$YEP_URL/api/sessions/<sessionId>/process"

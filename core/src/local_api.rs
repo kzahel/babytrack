@@ -532,6 +532,41 @@ impl LocalRepository {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn edit_medication(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        name: &str,
+        dose_amount: &str,
+        dose_unit: &str,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        if child.scope != Scope::Child || child.deleted {
+            return Err(Error::Invalid("target child unavailable"));
+        }
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("activity unavailable"))?;
+        let operation = edit_medication_operation(
+            family,
+            child_id,
+            activity,
+            name,
+            dose_amount,
+            dose_unit,
+            saved_at_ms,
+        )?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn edit_temperature_c(
         &mut self,
         family: FamilyHandle,
@@ -1551,6 +1586,20 @@ pub fn medication_operation(
     dose_unit: &str,
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
+    activity_operation(
+        family,
+        child_id,
+        "medication",
+        medication_fields(name, dose_amount, dose_unit)?,
+        time,
+    )
+}
+
+fn medication_fields(
+    name: &str,
+    dose_amount: &str,
+    dose_unit: &str,
+) -> Result<Vec<(u64, Value)>, Error> {
     let name = name.trim();
     let dose_amount = dose_amount.trim();
     let dose_unit = dose_unit.trim();
@@ -1563,22 +1612,47 @@ pub fn medication_operation(
     {
         return Err(Error::Invalid("medication name or dose empty or too long"));
     }
-    activity_operation(
-        family,
-        child_id,
-        "medication",
-        vec![
-            (100, Value::Text(name.to_owned())),
-            (
-                101,
-                Value::Array(vec![
-                    Value::Text(dose_amount.to_owned()),
-                    Value::Text(dose_unit.to_owned()),
-                ]),
-            ),
-        ],
-        time,
-    )
+    Ok(vec![
+        (100, Value::Text(name.to_owned())),
+        (
+            101,
+            Value::Array(vec![
+                Value::Text(dose_amount.to_owned()),
+                Value::Text(dose_unit.to_owned()),
+            ]),
+        ),
+    ])
+}
+
+pub fn edit_medication_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    name: &str,
+    dose_amount: &str,
+    dose_unit: &str,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    if activity.scope != Scope::Activity
+        || activity.child_id != Some(child_id)
+        || activity.record_type != "medication"
+        || activity.deleted
+    {
+        return Err(Error::Invalid("medication target unavailable"));
+    }
+    check_time(saved_at_ms)?;
+    Ok(NewOperation {
+        family_id: family.family_id,
+        operation_id: ids::random_v7(saved_at_ms)?,
+        record_id: activity.id,
+        scope: Scope::Activity,
+        kind: Kind::Set,
+        author_device_id: family.device_id,
+        hlc: placeholder_hlc(family),
+        record_type: None,
+        child_id: None,
+        fields: Some(medication_fields(name, dose_amount, dose_unit)?),
+    })
 }
 
 fn whole_measure(value: i64, unit: i128) -> Value {

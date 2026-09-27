@@ -100,6 +100,9 @@ freezer inventory balance.
 Pumping amount correction uses a field-set operation on the same activity.
 It clears the unselected amount form, preserving the interval, child target,
 and unknown fields.
+Medication name and entered dose corrections likewise update the same live
+activity, preserving its original time and other fields. They remain entered
+facts; the app does not interpret or recommend doses.
 
 Growth percentiles are computed from WHO tables when shown, never stored.
 Wake-window hints are computed from sleep events on the device.

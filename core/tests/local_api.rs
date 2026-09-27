@@ -753,6 +753,71 @@ fn medication_record_preserves_entered_name_and_dose_after_restore() {
 }
 
 #[test]
+fn medication_correction_keeps_target_and_original_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("medication-edit.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    let child = app.add_child(family, "Baby", 1_790_000_000_001).unwrap();
+    let other = app.add_child(family, "Other", 1_790_000_000_002).unwrap();
+    let time = ActivityTime {
+        start_utc_ms: 1_790_000_000_003,
+        offset_minutes: 60,
+        saved_at_ms: 1_790_000_000_004,
+    };
+    let medication = app
+        .log_medication(family, child, "Before", "2", "mL", time)
+        .unwrap();
+    assert!(
+        app.edit_medication(
+            family,
+            other,
+            medication,
+            "After",
+            "3",
+            "mL",
+            time.saved_at_ms + 1
+        )
+        .is_err()
+    );
+    assert!(
+        app.edit_medication(
+            family,
+            child,
+            medication,
+            "After",
+            "",
+            "mL",
+            time.saved_at_ms + 1
+        )
+        .is_err()
+    );
+    app.edit_medication(
+        family,
+        child,
+        medication,
+        " After ",
+        " 3.5 ",
+        " mL ",
+        time.saved_at_ms + 1,
+    )
+    .unwrap();
+    let before = app.timeline(family, child).unwrap();
+    assert_eq!(before.len(), 1);
+    assert_eq!(before[0].id, medication);
+    assert_eq!(before[0].start_utc_ms, time.start_utc_ms);
+    assert_eq!(before[0].medication_name.as_deref(), Some("After"));
+    assert_eq!(before[0].medication_dose_amount.as_deref(), Some("3.5"));
+    assert_eq!(before[0].medication_dose_unit.as_deref(), Some("mL"));
+    let backup = app.backup(family, time.saved_at_ms + 2).unwrap();
+    drop(app);
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.timeline(family, child).unwrap(), before);
+    let restored = app.restore(&backup, time.saved_at_ms + 3).unwrap();
+    assert_eq!(app.timeline(restored, child).unwrap(), before);
+}
+
+#[test]
 fn solids_foods_and_amount_survive_restart_and_file_restore() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("solids.db");

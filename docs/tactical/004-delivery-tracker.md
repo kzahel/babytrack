@@ -31,8 +31,8 @@ HTTP and Android instrumentation.
 Role changes, cancellation, browser shared
 outbox, complete vector coverage, and the M0 exit review remain open.
 Android local and first-cohort UI work, including solids, completed
-multi-segment breast-feed, pumping logs, and note, bottle, diaper, and pumping
-amount corrections, plus child name, growth, and completed sleep corrections, runs
+multi-segment breast-feed, pumping logs, and note, bottle, diaper, pumping,
+and medication corrections, plus child name, growth, and completed sleep corrections, runs
 alongside M0 on emulators; its physical phone gates remain open.
 Android can now share an invitation through the system chooser and receive
 one through the text share target, prefilled for an explicit join action.

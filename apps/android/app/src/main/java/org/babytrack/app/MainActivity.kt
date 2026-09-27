@@ -202,6 +202,15 @@ private data class PendingPumpEdit(
     val right: String,
     val total: String,
 )
+private data class PendingMedicationEdit(
+    val family: FamilyRef,
+    val childId: ByteArray,
+    val activityId: ByteArray,
+    val shared: Boolean,
+    val name: String,
+    val doseAmount: String,
+    val doseUnit: String,
+)
 private data class PendingSleepEdit(
     val family: FamilyRef,
     val childId: ByteArray,
@@ -392,6 +401,7 @@ private fun TrackerScreen(
     var pendingSolidsEdit by remember { mutableStateOf<PendingSolidsEdit?>(null) }
     var pendingGrowthEdit by remember { mutableStateOf<PendingGrowthEdit?>(null) }
     var pendingPumpEdit by remember { mutableStateOf<PendingPumpEdit?>(null) }
+    var pendingMedicationEdit by remember { mutableStateOf<PendingMedicationEdit?>(null) }
     var pendingSleepEdit by remember { mutableStateOf<PendingSleepEdit?>(null) }
     var pendingTemperatureEdit by remember { mutableStateOf<PendingTemperatureEdit?>(null) }
     var relayOrigin by remember { mutableStateOf("") }
@@ -1616,6 +1626,16 @@ private fun TrackerScreen(
                                         )
                                     }) { Text(stringResource(R.string.edit_pump)) }
                                 }
+                                if (entry.kind == "medication" && entry.medicationName != null) {
+                                    OutlinedButton(onClick = {
+                                        pendingMedicationEdit = PendingMedicationEdit(
+                                            family, entry.childId.copyOf(), entry.id.copyOf(), activeShared,
+                                            entry.medicationName.orEmpty(),
+                                            entry.medicationDoseAmount.orEmpty(),
+                                            entry.medicationDoseUnit.orEmpty(),
+                                        )
+                                    }) { Text(stringResource(R.string.edit_medication)) }
+                                }
                                 if (entry.kind == "growth") {
                                     OutlinedButton(onClick = {
                                         pendingGrowthEdit = PendingGrowthEdit(
@@ -2016,6 +2036,52 @@ private fun TrackerScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { pendingPumpEdit = null }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+    pendingMedicationEdit?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingMedicationEdit = null },
+            title = { Text(stringResource(R.string.edit_medication)) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = target.name,
+                        onValueChange = { pendingMedicationEdit = target.copy(name = it.take(256)) },
+                        label = { Text(stringResource(R.string.medication_name)) },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = target.doseAmount,
+                        onValueChange = { pendingMedicationEdit = target.copy(doseAmount = it.take(64)) },
+                        label = { Text(stringResource(R.string.dose_amount)) },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = target.doseUnit,
+                        onValueChange = { pendingMedicationEdit = target.copy(doseUnit = it.take(64)) },
+                        label = { Text(stringResource(R.string.dose_unit)) },
+                        singleLine = true,
+                    )
+                }
+            },
+            confirmButton = {
+                Button(enabled = target.name.isNotBlank() && target.doseAmount.isNotBlank() &&
+                    target.doseUnit.isNotBlank(), onClick = {
+                    pendingMedicationEdit = null
+                    val input = MedicationInput(target.name.trim(), target.doseAmount.trim(), target.doseUnit.trim())
+                    val savedAtMs = System.currentTimeMillis()
+                    change {
+                        if (target.shared) sharing.editMedication(
+                            target.family, target.childId, target.activityId, input, savedAtMs,
+                        ) else store.editMedication(
+                            target.family, target.childId, target.activityId, input, savedAtMs,
+                        )
+                    }
+                }) { Text(stringResource(R.string.save_changes)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingMedicationEdit = null }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }

@@ -56,6 +56,9 @@ Pumping amounts can now be corrected on the existing activity, including a
 switch between left/right amounts and a single total. The Rust operation
 clears the old form, retains the original interval and activity ID, and is
 checked across local restore and encrypted two-device sync.
+Medication name, amount, and unit can now be corrected together on the same
+activity without moving its time; local restore and encrypted two-device sync
+check the result.
 
 Two separate emulator installations and a disposable relay pass first-cohort
 join without simultaneous foreground use, reciprocal encrypted edits,
@@ -126,7 +129,7 @@ handoff. This is still a development flow, not a released product flow.
   millimetres, and entered Celsius decimals through the local/shared core.
 - [ ] Complete the MVP logging set: growth percentile display and practical
   edits beyond child name, note, bottle amount, diaper type, solids, growth,
-  pumping amounts, completed sleep, and temperature. Multi-segment breast
+  pumping amounts, medication, completed sleep, and temperature. Multi-segment breast
   feeds, note, bottle, diaper, and solids correction, and
   single-activity deletion now pass
   local restart/file restore, two-emulator encrypted sync, and UI tap flows.

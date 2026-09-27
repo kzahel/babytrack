@@ -205,6 +205,21 @@ class TwoDeviceRelayTest {
                 it.kind == "medication" && it.medicationName == "Test medicine marker 68" &&
                     it.medicationDoseAmount == "2.5" && it.medicationDoseUnit == "mL"
             })
+            val medication = sharing.snapshot(family).activities.single { it.kind == "medication" }
+            val wrongMedicationChild = sharing.snapshot(family).children.single {
+                !it.id.contentEquals(medication.childId)
+            }
+            assertTrue(runCatching {
+                sharing.editMedication(family, wrongMedicationChild.id, medication.id,
+                    MedicationInput("Corrected medicine", "3", "mL"), System.currentTimeMillis())
+            }.isFailure)
+            sharing.editMedication(family, medication.childId, medication.id,
+                MedicationInput("Corrected medicine", "3", "mL"), System.currentTimeMillis())
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.id.contentEquals(medication.id) && it.medicationName == "Corrected medicine" &&
+                    it.medicationDoseAmount == "3" && it.medicationDoseUnit == "mL" &&
+                    it.startUtcMs == medication.startUtcMs
+            })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "feed.solids" && it.solidsFoods == listOf("Pear marker 69", "Oatmeal") &&
                     it.solidsAmount == "two spoons"
@@ -309,6 +324,10 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "pump" && it.pumpTotalMl == 40L &&
                     it.pumpLeftMl == null && it.pumpRightMl == null
+            })
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.kind == "medication" && it.medicationName == "Corrected medicine" &&
+                    it.medicationDoseAmount == "3" && it.medicationDoseUnit == "mL"
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "growth" && it.growthWeightG == 4_300L && it.growthLengthMm == 540L

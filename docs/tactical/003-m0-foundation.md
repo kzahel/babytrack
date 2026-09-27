@@ -443,8 +443,13 @@ substitute for the end-of-M0 gate.
 
 The local SQLite schema now migrates the first invitation's exact prepared
 bytes into a per-invitation table on version-one upgrade. The first-invite
-path uses that table; later issuance, paged recipient ancestry, and general
-handoff remain open.
+path uses that table. A manager can prepare a second invitation against the
+verified shared head, reopen its exact candidate and membership object,
+commit both through the real relay, and obtain a link only after verifying
+the signed issue and encrypted membership. The CLI also commits a new
+invitation from the remaining manager after epoch-two removal and rotation.
+Recipient paging, later key handoff, a second manager acting as issuer, and
+Android exposure remain open.
 
 The next general-device pass follows these ordered implementation proofs:
 

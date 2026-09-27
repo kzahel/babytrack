@@ -17,7 +17,7 @@ use babytrack_core::{
     first_challenge::FirstChallenge,
     first_proof::FirstProof,
     first_removal::FirstRemoval,
-    issue::FirstInviteIssue,
+    issue::{FirstInviteIssue, LaterInviteIssue},
     operation::{Hlc, Kind, NewOperation, Scope},
     portable_file::{
         export_readable_local, export_readable_shared, parse_readable, private_copy_after_removal,
@@ -154,6 +154,111 @@ async fn manager_batch_interleaves_before_invite_and_recipient_joins() {
 #[tokio::test]
 async fn removed_recipient_recovers_accepted_result_after_lost_response() {
     dynamic_flow(false, true).await;
+}
+
+#[tokio::test]
+async fn later_issue_keeps_exact_candidate_and_commits_after_first_issue() {
+    let dir = tempfile::tempdir().unwrap();
+    let local_path = dir.path().join("manager.db");
+    let relay_path = dir.path().join("relay.db");
+    let relay_seed = [0x73; 32];
+    let family = FamilyHandle {
+        family_id: v4(0x41),
+        device_id: v4(0x42),
+    };
+    let wrapping = [0x43; 32];
+    let mut local = SqliteStore::open(&local_path).unwrap();
+    local
+        .create_family(family.family_id, family.device_id)
+        .unwrap();
+    let creation = ManagerCreation::prepare(
+        &mut local,
+        family,
+        crypto::signing_public_key(&relay_seed),
+        &wrapping,
+    )
+    .unwrap();
+    RelayStore::open(&relay_path, relay_seed).unwrap();
+    let app = test_router(&relay_path, relay_seed).unwrap();
+    stage_objects(&app, family.family_id, &creation.stage_bodies().unwrap()).await;
+    let genesis_response = commit_control(&app, family.family_id, creation.candidate_bytes()).await;
+    let Value::Map(genesis_result) = cbor::decode(&genesis_response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(genesis) = &genesis_result[1].1 else {
+        panic!()
+    };
+    creation.confirm(&mut local, genesis).unwrap();
+
+    let first = FirstInviteIssue::prepare(&mut local, &creation, &wrapping, 1).unwrap();
+    stage_objects(
+        &app,
+        family.family_id,
+        &[(first.object_id(), first.stage_body().unwrap())],
+    )
+    .await;
+    let first_response = commit_control(&app, family.family_id, first.candidate_bytes()).await;
+    let Value::Map(first_result) = cbor::decode(&first_response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(first_committed) = &first_result[1].1 else {
+        panic!()
+    };
+    first
+        .confirm(
+            &mut local,
+            &creation,
+            first_committed,
+            "http://localhost:3400",
+        )
+        .unwrap();
+
+    let later =
+        LaterInviteIssue::prepare_for_initial_manager(&mut local, &creation, &wrapping, 2).unwrap();
+    assert_ne!(later.invitation_id(), first.invitation_id());
+    let later_candidate = later.candidate_bytes().to_vec();
+    let later_stage = later.stage_body().unwrap();
+    drop(local);
+    let mut local = SqliteStore::open(&local_path).unwrap();
+    let later = LaterInviteIssue::resume(&local, family, later.invitation_id(), &wrapping).unwrap();
+    assert_eq!(later.candidate_bytes(), later_candidate);
+    assert_eq!(later.stage_body().unwrap(), later_stage);
+    assert!(LaterInviteIssue::resume(&local, family, later.invitation_id(), &[0; 32]).is_err());
+    stage_objects(&app, family.family_id, &[(later.object_id(), later_stage)]).await;
+    let second_response = commit_control(&app, family.family_id, &later_candidate).await;
+    assert_eq!(
+        commit_control(&app, family.family_id, &later_candidate).await,
+        second_response
+    );
+    let Value::Map(second_result) = cbor::decode(&second_response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(second_committed) = &second_result[1].1 else {
+        panic!()
+    };
+    let link = later
+        .confirm(&mut local, second_committed, "http://localhost:3400")
+        .unwrap();
+    assert_eq!(
+        InvitationBootstrap::from_fragment(&link.to_fragment().unwrap())
+            .unwrap()
+            .invitation_id(),
+        later.invitation_id()
+    );
+    assert_eq!(
+        PublicHistorySession::resume(&local, family)
+            .unwrap()
+            .cursor(),
+        3
+    );
+    assert_eq!(
+        ManagerCreation::resume(&local, family, &wrapping)
+            .unwrap()
+            .ready_session(&local)
+            .unwrap()
+            .observed_cursor(),
+        3
+    );
 }
 
 async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
@@ -897,6 +1002,15 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
     let recipient_ready =
         ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).unwrap();
     assert_eq!(recipient_ready.observed_cursor(), 7 + shift);
+    assert!(
+        LaterInviteIssue::prepare_for_admitted_manager(
+            &mut recipient_store,
+            &resumed_enrollment,
+            &recipient_wrap,
+            1,
+        )
+        .is_err()
+    );
     let batches_path = format!(
         "/v1/families/{}/batches?after={}",
         lower_hex(&family.family_id),
@@ -1885,4 +1999,31 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
             .record(&new_child)
             .is_some()
     );
+    if !early_batch && !accepted_before_removal {
+        let later =
+            LaterInviteIssue::prepare_for_initial_manager(&mut local, &resumed, &wrapping_key, 2)
+                .unwrap();
+        drop(local);
+        let mut local = SqliteStore::open(&local_path).unwrap();
+        let later =
+            LaterInviteIssue::resume(&local, family, later.invitation_id(), &wrapping_key).unwrap();
+        stage_objects(
+            &app,
+            family.family_id,
+            &[(later.object_id(), later.stage_body().unwrap())],
+        )
+        .await;
+        let response = commit_control(&app, family.family_id, later.candidate_bytes()).await;
+        let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(committed) = &fields[1].1 else {
+            panic!()
+        };
+        let link = later
+            .confirm(&mut local, committed, "http://localhost:3400")
+            .unwrap();
+        assert_eq!(link.fixed_role(), 2);
+        assert_eq!(resumed.ready_session(&local).unwrap().active_epoch(), 2);
+    }
 }

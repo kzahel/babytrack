@@ -77,6 +77,43 @@ impl InvitationBootstrap {
         invitation_sign_seed: [u8; 32],
         prior_batches: &[(&[u8], &[u8])],
     ) -> Result<Self, Error> {
+        let descriptor = Self::descriptor_from_issue(
+            relay_origin,
+            relay_public_key,
+            genesis_bytes,
+            issue_bytes,
+            invitation_sign_seed,
+        )?;
+        descriptor.verify_issue_with_batches(genesis_bytes, issue_bytes, prior_batches)?;
+        Ok(descriptor)
+    }
+
+    pub(crate) fn from_committed_issue_with_controls(
+        relay_origin: &str,
+        relay_public_key: [u8; 32],
+        genesis_bytes: &[u8],
+        issue_bytes: &[u8],
+        invitation_sign_seed: [u8; 32],
+        prior_controls: &[&[u8]],
+    ) -> Result<Self, Error> {
+        let descriptor = Self::descriptor_from_issue(
+            relay_origin,
+            relay_public_key,
+            genesis_bytes,
+            issue_bytes,
+            invitation_sign_seed,
+        )?;
+        descriptor.verify_issue_sparse_with_controls(genesis_bytes, issue_bytes, prior_controls)?;
+        Ok(descriptor)
+    }
+
+    fn descriptor_from_issue(
+        relay_origin: &str,
+        relay_public_key: [u8; 32],
+        genesis_bytes: &[u8],
+        issue_bytes: &[u8],
+        invitation_sign_seed: [u8; 32],
+    ) -> Result<Self, Error> {
         validate_relay_origin(relay_origin)?;
         let genesis = control::verify_genesis(genesis_bytes, &relay_public_key)?;
         let issue = cbor::decode_with_limits(
@@ -117,7 +154,6 @@ impl InvitationBootstrap {
             invitation_sign_seed,
             issue_signed_hash: crypto::hash("control-signed", &cbor::encode(&signed)?)?,
         };
-        descriptor.verify_issue_with_batches(genesis_bytes, issue_bytes, prior_batches)?;
         Ok(descriptor)
     }
 
@@ -245,7 +281,7 @@ impl InvitationBootstrap {
         issue_bytes: &[u8],
         prior_batches: &[(&[u8], &[u8])],
     ) -> Result<ControlChain, Error> {
-        self.verify_issue_inner(genesis_bytes, issue_bytes, prior_batches, false)
+        self.verify_issue_inner(genesis_bytes, issue_bytes, prior_batches, &[], false)
     }
 
     pub(crate) fn verify_issue_sparse(
@@ -253,7 +289,16 @@ impl InvitationBootstrap {
         genesis_bytes: &[u8],
         issue_bytes: &[u8],
     ) -> Result<ControlChain, Error> {
-        self.verify_issue_inner(genesis_bytes, issue_bytes, &[], true)
+        self.verify_issue_inner(genesis_bytes, issue_bytes, &[], &[], true)
+    }
+
+    pub(crate) fn verify_issue_sparse_with_controls(
+        &self,
+        genesis_bytes: &[u8],
+        issue_bytes: &[u8],
+        prior_controls: &[&[u8]],
+    ) -> Result<ControlChain, Error> {
+        self.verify_issue_inner(genesis_bytes, issue_bytes, &[], prior_controls, true)
     }
 
     fn verify_issue_inner(
@@ -261,6 +306,7 @@ impl InvitationBootstrap {
         genesis_bytes: &[u8],
         issue_bytes: &[u8],
         prior_batches: &[(&[u8], &[u8])],
+        prior_controls: &[&[u8]],
         sparse: bool,
     ) -> Result<ControlChain, Error> {
         let genesis = control::verify_genesis(genesis_bytes, &self.relay_public_key)?;
@@ -270,6 +316,9 @@ impl InvitationBootstrap {
         let mut chain = ControlChain::from_genesis(genesis_bytes, self.relay_public_key)?;
         for (envelope, receipt) in prior_batches {
             chain.apply_public_batch(envelope, receipt)?;
+        }
+        for control in prior_controls {
+            chain.apply_sparse_control(control)?;
         }
         let issue = cbor::decode_with_limits(
             issue_bytes,

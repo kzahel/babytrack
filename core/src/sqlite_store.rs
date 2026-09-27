@@ -2036,13 +2036,21 @@ impl SqliteStore {
     }
 
     pub(crate) fn save_first_invite_issue(&mut self, row: &InviteIssueRow) -> Result<(), Error> {
+        self.save_invite_issue(row, true)
+    }
+
+    pub(crate) fn save_later_invite_issue(&mut self, row: &InviteIssueRow) -> Result<(), Error> {
+        self.save_invite_issue(row, false)
+    }
+
+    fn save_invite_issue(&mut self, row: &InviteIssueRow, is_first: bool) -> Result<(), Error> {
         let transaction = self.connection.transaction()?;
         let _ = checked_family(&transaction, row.family)?;
         transaction.execute(
             "INSERT INTO invite_issues
              (family_id,device_id,invitation_id,transition_id,object_id,object_bytes,
               candidate_bytes,secret_nonce,secret_ciphertext,is_first)
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,1)",
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
             params![
                 &row.family.family_id[..],
                 &row.family.device_id[..],
@@ -2053,6 +2061,7 @@ impl SqliteStore {
                 &row.candidate_bytes,
                 &row.secret_nonce[..],
                 &row.secret_ciphertext,
+                i64::from(is_first),
             ],
         )?;
         transaction.commit()?;
@@ -2064,12 +2073,32 @@ impl SqliteStore {
         family: FamilyHandle,
     ) -> Result<Option<InviteIssueRow>, Error> {
         let _ = checked_family(&self.connection, family)?;
+        let invitation_id: Option<Vec<u8>> = self
+            .connection
+            .query_row(
+                "SELECT invitation_id FROM invite_issues WHERE family_id=?1 AND is_first=1",
+                [family.family_id.as_slice()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        invitation_id
+            .map(|id| self.invite_issue(family, id.try_into().map_err(|_| Error::CorruptState)?))
+            .transpose()
+            .map(|row| row.flatten())
+    }
+
+    pub(crate) fn invite_issue(
+        &self,
+        family: FamilyHandle,
+        invitation_id: [u8; 16],
+    ) -> Result<Option<InviteIssueRow>, Error> {
+        let _ = checked_family(&self.connection, family)?;
         self.connection
             .query_row(
                 "SELECT device_id,invitation_id,transition_id,object_id,object_bytes,
                     candidate_bytes,secret_nonce,secret_ciphertext
-             FROM invite_issues WHERE family_id=?1 AND is_first=1",
-                [&family.family_id[..]],
+             FROM invite_issues WHERE family_id=?1 AND invitation_id=?2",
+                params![family.family_id.as_slice(), invitation_id.as_slice()],
                 |r| {
                     Ok((
                         r.get::<_, Vec<u8>>(0)?,
@@ -2263,11 +2292,40 @@ mod invite_migration_tests {
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
         assert_eq!(version, 2);
-        drop(store);
-        assert!(
-            SqliteStore::open(&path)
-                .unwrap()
+        let later = InviteIssueRow {
+            family,
+            invitation_id: v4(7),
+            transition_id: v4(8),
+            object_id: v4(9),
+            object_bytes: vec![0x81, 0x07],
+            candidate_bytes: vec![0x82, 0x08, 0x09],
+            secret_nonce: [10; 24],
+            secret_ciphertext: vec![0x84, 0x0a],
+        };
+        let mut store = store;
+        store.save_later_invite_issue(&later).unwrap();
+        assert_eq!(
+            store
                 .first_invite_issue(family)
+                .unwrap()
+                .unwrap()
+                .invitation_id,
+            row.invitation_id
+        );
+        assert_eq!(
+            store
+                .invite_issue(family, later.invitation_id)
+                .unwrap()
+                .unwrap()
+                .candidate_bytes,
+            later.candidate_bytes
+        );
+        drop(store);
+        let reopened = SqliteStore::open(&path).unwrap();
+        assert!(reopened.first_invite_issue(family).unwrap().is_some());
+        assert!(
+            reopened
+                .invite_issue(family, later.invitation_id)
                 .unwrap()
                 .is_some()
         );

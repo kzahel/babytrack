@@ -450,8 +450,16 @@ impl ReadyFamilySession {
         self.observed_cursor
     }
 
+    pub(crate) fn observed_head(&self) -> [u8; 32] {
+        self.observed_head
+    }
+
     pub fn active_epoch(&self) -> u32 {
         self.active_epoch
+    }
+
+    pub(crate) fn current_key(&self) -> &VerifiedEpochKey {
+        &self.current_key
     }
 }
 

@@ -44,7 +44,8 @@ def nodes(target: str) -> list[ET.Element]:
     return list(ET.fromstring(adb(target, "exec-out", "cat", "/sdcard/babytrack-ui.xml")).iter("node"))
 
 
-def find(target: str, label: str, *, scroll: bool = False, occurrence: int = 0) -> ET.Element:
+def find(target: str, label: str, *, scroll: bool = False, occurrence: int = 0,
+         contains: bool = False) -> ET.Element:
     deadline = time.monotonic() + (100 if scroll else 20)
     scroll_count = 0
     size = re.search(r"(\d+)x(\d+)", adb(target, "shell", "wm", "size"))
@@ -52,7 +53,10 @@ def find(target: str, label: str, *, scroll: bool = False, occurrence: int = 0) 
         raise RuntimeError("Android display size unavailable")
     width, height = map(int, size.groups())
     while time.monotonic() < deadline:
-        matches = [node for node in nodes(target) if node.attrib.get("text") == label]
+        matches = [
+            node for node in nodes(target)
+            if (label in node.attrib.get("text", "") if contains else node.attrib.get("text") == label)
+        ]
         if len(matches) > occurrence:
             return matches[occurrence]
         if scroll and scroll_count < 40:
@@ -164,7 +168,18 @@ def main() -> None:
     find(target, "Breast · Left 5 min → Right 8 min", scroll=True)
     scroll_up(target)
     find(target, "Bottle · 120 mL", scroll=True)
-    print("Android UI Family, diaper edit/deletion, note and bottle edits, breast segments, and restart: OK")
+    adb(target, "shell", "am", "force-stop", PACKAGE)
+    adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    tap(target, "Rename child", scroll=True)
+    tap(target, "Child’s name", scroll=True)
+    adb(target, "shell", "input", "text", "Renamed")
+    adb(target, "shell", "input", "keyevent", "4")
+    tap(target, "Save changes", scroll=True)
+    find(target, "Renamed", scroll=True, contains=True)
+    adb(target, "shell", "am", "force-stop", PACKAGE)
+    adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    find(target, "Renamed", scroll=True, contains=True)
+    print("Android UI Family, child rename, diaper edit/deletion, note and bottle edits, breast segments, and restart: OK")
 
 
 if __name__ == "__main__":

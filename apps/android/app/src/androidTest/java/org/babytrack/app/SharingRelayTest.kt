@@ -40,18 +40,30 @@ class SharingRelayTest {
                 val running = runningSleepCount(local, sharing, listOf(family), emptyList())
                 assertEquals(1, running)
                 SleepTimerNotifications.update(context, running)
-                assertTrue(manager.activeNotifications.any {
-                    it.notification.extras.getString("android.title") == context.getString(R.string.sleep_notification_title)
-                })
+                assertTrue("Running timer notification should appear", waitForSleepNotification(manager, context, true))
                 local.stopSleep(family, child, activity, now + 60_000, 0, now + 60_000)
                 val stopped = runningSleepCount(local, sharing, listOf(family), emptyList())
                 assertEquals(0, stopped)
                 SleepTimerNotifications.update(context, stopped)
-                assertTrue(manager.activeNotifications.none {
-                    it.notification.extras.getString("android.title") == context.getString(R.string.sleep_notification_title)
-                })
+                assertTrue("Stopped timer notification should clear", waitForSleepNotification(manager, context, false))
             }
         }
+    }
+
+    private fun waitForSleepNotification(
+        manager: NotificationManager,
+        context: android.content.Context,
+        expected: Boolean,
+    ): Boolean {
+        val deadline = System.currentTimeMillis() + 10_000
+        do {
+            val present = manager.activeNotifications.any {
+                it.notification.extras.getString("android.title") == context.getString(R.string.sleep_notification_title)
+            }
+            if (present == expected) return true
+            Thread.sleep(50)
+        } while (System.currentTimeMillis() < deadline)
+        return false
     }
 
     @Test

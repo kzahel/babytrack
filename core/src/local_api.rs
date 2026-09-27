@@ -186,6 +186,23 @@ impl LocalRepository {
         Ok(child_id)
     }
 
+    pub fn rename_child(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        name: &str,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        let operation = rename_child_operation(family, child, name, saved_at_ms)?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn log_diaper(
         &mut self,
         family: FamilyHandle,
@@ -687,6 +704,34 @@ pub fn child_operation_with_metadata(
             fields: Some(fields),
         },
     ))
+}
+
+pub fn rename_child_operation(
+    family: FamilyHandle,
+    child: &Record,
+    name: &str,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    if child.scope != Scope::Child || child.record_type != "child" || child.deleted {
+        return Err(Error::Invalid("target child unavailable"));
+    }
+    check_time(saved_at_ms)?;
+    let name = name.trim();
+    if name.is_empty() || name.len() > 16 * 1024 {
+        return Err(Error::Invalid("child name empty or too long"));
+    }
+    Ok(NewOperation {
+        family_id: family.family_id,
+        operation_id: ids::random_v7(saved_at_ms)?,
+        record_id: child.id,
+        scope: Scope::Child,
+        kind: Kind::Set,
+        author_device_id: family.device_id,
+        hlc: placeholder_hlc(family),
+        record_type: None,
+        child_id: None,
+        fields: Some(vec![(1, Value::Text(name.to_owned()))]),
+    })
 }
 
 pub fn diaper_operation(

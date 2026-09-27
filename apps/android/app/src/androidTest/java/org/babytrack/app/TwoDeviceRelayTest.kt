@@ -81,6 +81,8 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).children.any {
                 it.name == "Shared child" && it.birthDay == 20_000L && it.sex == 1u.toUByte()
             })
+            val originalChild = sharing.snapshot(family).children.single { it.name == "Shared child" }
+            sharing.renameChild(family, originalChild.id, "Renamed shared child", System.currentTimeMillis())
             sharing.addChild(family, "Recipient child", System.currentTimeMillis())
             val end = System.currentTimeMillis()
             sharing.logSleep(family, sharing.snapshot(family).children.first().id,
@@ -119,6 +121,9 @@ class TwoDeviceRelayTest {
             val family = family()
             assertTrue(sharing.syncAndUpload(family, origin).ready)
             assertTrue(sharing.snapshot(family).children.any { it.name == "Recipient child" })
+            assertTrue(sharing.snapshot(family).children.any {
+                it.name == "Renamed shared child" && it.birthDay == 20_000L && it.sex == 1u.toUByte()
+            })
             assertTrue(sharing.snapshot(family).activities.any { it.kind == "sleep" && it.endUtcMs != null })
             assertTrue(sharing.snapshot(family).activities.any { it.note == "Care note marker 67" })
             assertTrue(String(sharing.analysisCsv(family)).contains("Care note marker 67"))

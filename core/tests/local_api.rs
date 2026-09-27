@@ -24,14 +24,28 @@ fn child_birth_day_and_sex_survive_restart_and_file_restore() {
     assert_eq!(app.children(family).unwrap()[0].id, child);
     assert_eq!(app.children(family).unwrap()[0].birth_day, Some(20_000));
     assert_eq!(app.children(family).unwrap()[0].sex, Some(1));
-    let backup = app.backup(family, 1_790_000_000_003).unwrap();
+    let other = app.create_family(1_790_000_000_003).unwrap();
+    assert!(
+        app.rename_child(other, child, "Wrong", 1_790_000_000_004)
+            .is_err()
+    );
+    assert!(
+        app.rename_child(family, child, " ", 1_790_000_000_004)
+            .is_err()
+    );
+    app.rename_child(family, child, " New name ", 1_790_000_000_004)
+        .unwrap();
+    assert_eq!(app.children(family).unwrap()[0].name, "New name");
+    let backup = app.backup(family, 1_790_000_000_005).unwrap();
     drop(app);
 
     let mut app = LocalRepository::open(&path).unwrap();
     assert_eq!(app.children(family).unwrap()[0].birth_day, Some(20_000));
-    let restored = app.restore(&backup, 1_790_000_000_004).unwrap();
+    assert_eq!(app.children(family).unwrap()[0].name, "New name");
+    let restored = app.restore(&backup, 1_790_000_000_006).unwrap();
     assert_eq!(app.children(restored).unwrap()[0].birth_day, Some(20_000));
     assert_eq!(app.children(restored).unwrap()[0].sex, Some(1));
+    assert_eq!(app.children(restored).unwrap()[0].name, "New name");
 }
 
 #[test]

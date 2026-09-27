@@ -265,6 +265,7 @@ private fun TrackerScreen(
     var selectedFamily by remember { mutableStateOf<String?>(null) }
     var selectedChild by remember { mutableStateOf<String?>(null) }
     var childName by remember { mutableStateOf("") }
+    var childRename by remember { mutableStateOf<String?>(null) }
     var childBirthDate by remember { mutableStateOf("") }
     var childSex by remember { mutableStateOf(3u.toUByte()) }
     var amount by remember { mutableStateOf("") }
@@ -325,6 +326,7 @@ private fun TrackerScreen(
     LaunchedEffect(selectedFamily, selectedChild) {
         breastDraftSegments = emptyList()
         breastMinutes = ""
+        childRename = null
     }
     var pendingBackup by remember { mutableStateOf<BackupFileRow?>(null) }
     var pendingAnalysisCsv by remember { mutableStateOf<ByteArray?>(null) }
@@ -908,6 +910,33 @@ private fun TrackerScreen(
                         onClick = { selectedChild = item.id.key() },
                         label = { Text(item.name) },
                     )
+                }
+                if (child != null) {
+                    if (childRename == null) {
+                        OutlinedButton(onClick = { childRename = child.name }) {
+                            Text(stringResource(R.string.rename_child))
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = childRename.orEmpty(),
+                            onValueChange = { childRename = it.take(16 * 1024) },
+                            label = { Text(stringResource(R.string.child_name)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(enabled = !childRename.isNullOrBlank(), onClick = {
+                                val name = childRename?.trim() ?: return@Button
+                                change(onSaved = { childRename = null }) {
+                                    if (activeShared) sharing.renameChild(family, child.id, name, System.currentTimeMillis())
+                                    else store.renameChild(family, child.id, name, System.currentTimeMillis())
+                                }
+                            }) { Text(stringResource(R.string.save_changes)) }
+                            OutlinedButton(onClick = { childRename = null }) {
+                                Text(stringResource(R.string.cancel))
+                            }
+                        }
+                    }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(

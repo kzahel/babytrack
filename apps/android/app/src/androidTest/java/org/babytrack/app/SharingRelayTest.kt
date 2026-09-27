@@ -36,18 +36,33 @@ class SharingRelayTest {
             sharing.promote(family, origin, publicKey)
             sharing.invite(family, origin, 1u.toUByte())
         }
+        val preview = previewInvitation(fragment)
+        val wrapping = DeviceWrappingKey(context).loadOrCreate()
+        val waiting = try {
+            NativeSharedStore.open(secondDb.absolutePath).use { core ->
+                core.prepareJoin(fragment, RelayTransport(origin).get(preview.controlPath, preview.readAuth), wrapping).family
+            }
+        } finally {
+            wrapping.fill(0)
+        }
         ShareCoordinator(context, firstDb.absolutePath).use { sharing ->
             sharing.claim(fragment)
         }
         ShareCoordinator(context, secondDb.absolutePath).use { sharing ->
-            val result = runCatching { sharing.claim(fragment) }
+            val result = runCatching { sharing.advanceRecipient(waiting) }
             val terminal = result.exceptionOrNull() as? InvitationTerminal
             assertEquals(InvitationTerminalReason.CLAIMED, terminal?.reason)
-            assertTrue(sharing.recipientFamilies().isEmpty())
+            assertTrue(sharing.recipientFamilies().any { it.familyId.contentEquals(waiting.familyId) })
+        }
+        ShareCoordinator(context, secondDb.absolutePath).use { sharing ->
+            val result = runCatching { sharing.advanceRecipient(waiting) }
+            val terminal = result.exceptionOrNull() as? InvitationTerminal
+            assertEquals(InvitationTerminalReason.CLAIMED, terminal?.reason)
         }
     }
     @Test
     fun sharedInvitationOpensJoinFormWithoutRedeemingIt() {
+        wakeEmulatorScreen()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val fragment = "#bt-invite=v1.received-for-review"
@@ -77,6 +92,7 @@ class SharingRelayTest {
 
     @Test
     fun activityRecreationResumesSavedRecipientClaim() {
+        wakeEmulatorScreen()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
@@ -126,6 +142,14 @@ class SharingRelayTest {
     private fun AccessibilityNodeInfo.containsText(text: String): Boolean {
         if (this.text?.toString()?.contains(text) == true) return true
         return (0 until childCount).any { index -> getChild(index)?.containsText(text) == true }
+    }
+
+    private fun wakeEmulatorScreen() {
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        for (command in listOf("input keyevent KEYCODE_WAKEUP", "wm dismiss-keyguard")) {
+            ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand(command))
+                .bufferedReader().use { it.readText() }
+        }
     }
 
     @Test

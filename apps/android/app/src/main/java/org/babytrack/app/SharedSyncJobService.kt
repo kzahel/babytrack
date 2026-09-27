@@ -36,7 +36,7 @@ class SharedSyncJobService : JobService() {
                         for (family in sharing.recipientFamilies()) {
                             if (Thread.currentThread().isInterrupted) return@use
                             runCatching { sharing.advanceRecipient(family) }
-                                .onFailure { failed = true }
+                                .onFailure { if (it !is InvitationTerminal) failed = true }
                         }
                     }
                 }

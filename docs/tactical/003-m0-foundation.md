@@ -1504,6 +1504,35 @@ fork, signed-time lies, and coherent rollback remain documented limits.
 | Medium: issuer demotion/removal and explicit cancel all wrote invitation state `3`, so status reason `5` was unreachable; a later control could overwrite earlier expiry. | The relay now reconstructs the first terminal cause from verified transition kind and signed commit time, with expiry winning at or before that control. FS77's cause tests cover cancel versus issuer demotion/removal, expiry, and no revival in the reducer. A full end-to-end demotion/removal status test remains due. Fixed-revision review due. |
 | Known hardening: 64-page/16-MiB Android join history ceiling. | Still open for durable streaming and resume; excluded from this focused verdict but required before the unbounded history claim closes. |
 
+## Advisory later-invitation automatic-status recheck at 3f19890
+
+Daybreak Blue at high thinking reviewed clean fixed commit
+`3f19890c774272c2db04f478cbd55eaa5614d04c` in a detached read-only
+checkout through Yep Anywhere session
+`01a0e34c-0d55-7302-bb5d-b8ab05e00a3b`. It reached verified idle with
+an empty queue and no checkout edits. Result: **focused advisory FAIL** on
+one remaining medium Android automatic-status path. Core and relay repairs
+passed inspection: automatic action uses verified authority state, and the
+first terminal cause survives relay restart. The reviewer ran core (77
+tests), server (23), CLI (5 integration), Kotlin and Swift native smoke,
+Android JVM tests/build, and seven Android real-relay instrumentation cases.
+It did not exercise a terminal UI branch or later-device automatic retry in
+Android; neither was inferred from a passing adjacent test.
+
+The foreground poller discarded a typed `InvitationTerminal` and showed only
+generic sync delay; the background job recorded only a failure bit. A saved
+invitation that became unusable therefore needed a manual retry to reveal
+its already verified terminal reason. The repair adds a v4 local-store table
+for the exact signed status body, re-verifies it on reopen through the shared
+core, and returns the typed reason at the start of automatic recipient work.
+Foreground polling opens the join status and renders its distinct reason;
+the background job leaves the verified result in core storage for the next
+UI launch. The Android real-relay test prepares a second device's saved
+claim, lets another device consume the link, and checks automatic handling
+before and after coordinator restart. Other terminal fault cases and the
+fixed-revision independent recheck remain due. The 64-page/16-MiB history
+ceiling remains separate hardening.
+
 ## Completion condition
 
 All slice gates pass in CI and on the designated local testbeds, the

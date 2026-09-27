@@ -304,10 +304,11 @@ private fun TrackerScreen(
     val passwordOrFileError = stringResource(R.string.password_or_file_error)
     LaunchedEffect(foreground, selectedRecipient) {
         if (foreground) while (isActive) {
-            val (delayed, blocked, recipientStages) = withContext(Dispatchers.IO) {
+            val (syncResult, terminalReasons) = withContext(Dispatchers.IO) {
                 var failed = false
                 var blocked = false
                 val stages = mutableMapOf<String, uniffi.babytrack_core_ffi.RecipientSyncRow>()
+                val terminals = mutableMapOf<String, InvitationTerminalReason>()
                 for (family in store.families()) {
                     val origin = lastRelayOrigin(family)
                     if (origin != null && sharing.isShared(family)) {
@@ -318,12 +319,21 @@ private fun TrackerScreen(
                 for (family in sharing.recipientFamilies()) {
                     runCatching { sharing.advanceRecipient(family) }
                         .onSuccess { stages[family.familyId.key()] = it }
-                        .onFailure { failed = true; if (it is SharedUploadBlocked) blocked = true }
+                        .onFailure {
+                            if (it is InvitationTerminal) terminals[family.familyId.key()] = it.reason
+                            else { failed = true; if (it is SharedUploadBlocked) blocked = true }
+                        }
                 }
-                Triple(failed, blocked, stages)
+                Triple(failed, blocked, stages) to terminals
             }
-            automaticSyncDelayed = delayed
-            automaticSyncBlocked = blocked
+            automaticSyncDelayed = syncResult.first
+            automaticSyncBlocked = syncResult.second
+            val recipientStages = syncResult.third
+            terminalReasons[selectedRecipient]?.let { reason ->
+                joinStage = terminalInvitationMessage(context, reason)
+                showJoinForm = true
+                sharedSnapshot = null
+            }
             recipientStages[selectedRecipient]?.let { progress ->
                 if (progress.removed) sharedSnapshot = null
                 joinStage = when {
@@ -529,13 +539,9 @@ private fun TrackerScreen(
                                     joinStage = context.getString(R.string.join_pending)
                                     message = null
                                 }.onFailure { failure ->
-                                    joinStage = when ((failure as? InvitationTerminal)?.reason) {
-                                        InvitationTerminalReason.CLAIMED -> context.getString(R.string.join_claimed)
-                                        InvitationTerminalReason.CANCELED -> context.getString(R.string.join_canceled)
-                                        InvitationTerminalReason.EXPIRED -> context.getString(R.string.join_expired)
-                                        InvitationTerminalReason.ISSUER_INVALID -> context.getString(R.string.join_issuer_invalid)
-                                        null -> context.getString(R.string.join_retry)
-                                    }
+                                    joinStage = (failure as? InvitationTerminal)?.reason
+                                        ?.let { terminalInvitationMessage(context, it) }
+                                        ?: context.getString(R.string.join_retry)
                                     message = if (failure is InvitationTerminal) null else errorText
                                 }
                             }
@@ -1691,6 +1697,14 @@ private fun nowTime(): ActivityWhen {
     val now = System.currentTimeMillis()
     return ActivityWhen(now, (TimeZone.getDefault().getOffset(now) / 60_000).toShort(), now)
 }
+
+private fun terminalInvitationMessage(context: Context, reason: InvitationTerminalReason): String =
+    context.getString(when (reason) {
+        InvitationTerminalReason.CLAIMED -> R.string.join_claimed
+        InvitationTerminalReason.CANCELED -> R.string.join_canceled
+        InvitationTerminalReason.EXPIRED -> R.string.join_expired
+        InvitationTerminalReason.ISSUER_INVALID -> R.string.join_issuer_invalid
+    })
 
 @Composable
 private fun SharedHealth(snapshot: SharedSnapshotRow) {

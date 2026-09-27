@@ -619,6 +619,57 @@ impl NativeSharedStore {
         verify_invitation_status(attempt.invitation_fragment().to_owned(), response)
     }
 
+    pub fn record_join_terminal_status(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        response: Vec<u8>,
+    ) -> Result<InvitationStatusRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let attempt = EnrollmentAttempt::resume(
+            &mut store,
+            family.handle()?.family_id,
+            &fixed(&wrapping_key)?,
+        )
+        .map_err(rejected)?;
+        if attempt.family() != family.handle()? {
+            return Err(BindingError::InvalidBytes);
+        }
+        let status = attempt
+            .record_terminal_status(&mut store, &response)
+            .map_err(rejected)?;
+        Ok(InvitationStatusRow {
+            reason: status.reason,
+            cursor: status.cursor,
+            observed_ms: status.observed_ms,
+        })
+    }
+
+    pub fn saved_join_terminal_status(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+    ) -> Result<Option<InvitationStatusRow>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let attempt = EnrollmentAttempt::resume(
+            &mut store,
+            family.handle()?.family_id,
+            &fixed(&wrapping_key)?,
+        )
+        .map_err(rejected)?;
+        if attempt.family() != family.handle()? {
+            return Err(BindingError::InvalidBytes);
+        }
+        Ok(attempt
+            .saved_terminal_status(&store)
+            .map_err(rejected)?
+            .map(|status| InvitationStatusRow {
+                reason: status.reason,
+                cursor: status.cursor,
+                observed_ms: status.observed_ms,
+            }))
+    }
+
     pub fn refresh_join_pages(
         &self,
         family: FamilyRef,

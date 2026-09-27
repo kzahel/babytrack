@@ -427,16 +427,22 @@ impl SqliteStore {
         connection.execute_batch("PRAGMA foreign_keys = ON;")?;
         let schema_version: u32 =
             connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if schema_version == 4 {
+            return Ok(Self { connection });
+        }
         if schema_version == 3 {
+            migrate_enrollment_terminal_status(&connection)?;
             return Ok(Self { connection });
         }
         if schema_version == 2 {
             migrate_claim_candidates(&connection)?;
+            migrate_enrollment_terminal_status(&connection)?;
             return Ok(Self { connection });
         }
         if schema_version == 1 {
             migrate_invite_issues(&connection)?;
             migrate_claim_candidates(&connection)?;
+            migrate_enrollment_terminal_status(&connection)?;
             return Ok(Self { connection });
         }
         if schema_version != 0 {
@@ -643,6 +649,7 @@ impl SqliteStore {
         )?;
         migrate_invite_issues(&connection)?;
         migrate_claim_candidates(&connection)?;
+        migrate_enrollment_terminal_status(&connection)?;
         Ok(Self { connection })
     }
 
@@ -1906,6 +1913,37 @@ impl SqliteStore {
             .map_err(Error::from)
     }
 
+    pub(crate) fn enrollment_terminal_status(
+        &self,
+        family: FamilyHandle,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let _ = checked_family(&self.connection, family)?;
+        self.connection
+            .query_row(
+                "SELECT response_bytes FROM enrollment_terminal_status WHERE family_id=?1",
+                [family.family_id.as_slice()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(Error::from)
+    }
+
+    pub(crate) fn save_enrollment_terminal_status(
+        &mut self,
+        family: FamilyHandle,
+        response: &[u8],
+    ) -> Result<(), Error> {
+        let tx = self.connection.transaction()?;
+        let _ = checked_family(&tx, family)?;
+        tx.execute(
+            "INSERT OR IGNORE INTO enrollment_terminal_status(family_id,response_bytes)
+             VALUES(?1,?2)",
+            params![family.family_id.as_slice(), response],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Keep every superseded exact claim so an accepted lost response can
     /// still be reconciled after a newer verified head requires rebasing.
     pub(crate) fn swap_enrollment_claim(
@@ -2324,9 +2362,44 @@ fn migrate_claim_candidates(connection: &Connection) -> Result<(), Error> {
     Ok(())
 }
 
+fn migrate_enrollment_terminal_status(connection: &Connection) -> Result<(), Error> {
+    connection.execute_batch(
+        "BEGIN IMMEDIATE;
+         CREATE TABLE enrollment_terminal_status (
+           family_id BLOB PRIMARY KEY CHECK(length(family_id) = 16),
+           response_bytes BLOB NOT NULL,
+           FOREIGN KEY (family_id) REFERENCES enrollment_attempts(family_id)
+         );
+         PRAGMA user_version = 4;
+         COMMIT;",
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod invite_migration_tests {
     use super::*;
+
+    #[test]
+    fn version_three_store_adds_terminal_receipt_table() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("version-three.db");
+        let mut store = SqliteStore::open(&path).unwrap();
+        let family = store.create_family(v4(0x73), v4(0x74)).unwrap();
+        store
+            .connection
+            .execute_batch("DROP TABLE enrollment_terminal_status; PRAGMA user_version = 3;")
+            .unwrap();
+        drop(store);
+        let store = SqliteStore::open(&path).unwrap();
+        assert_eq!(store.families().unwrap(), vec![family]);
+        assert!(store.enrollment_terminal_status(family).unwrap().is_none());
+        let version: u32 = store
+            .connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 4);
+    }
 
     #[test]
     fn version_two_store_adds_claim_archive_without_changing_families() {
@@ -2336,7 +2409,7 @@ mod invite_migration_tests {
         let family = store.create_family(v4(0x71), v4(0x72)).unwrap();
         store
             .connection
-            .execute_batch("DROP TABLE enrollment_claim_candidates; PRAGMA user_version = 2;")
+            .execute_batch("DROP TABLE enrollment_terminal_status; DROP TABLE enrollment_claim_candidates; PRAGMA user_version = 2;")
             .unwrap();
         drop(store);
         let store = SqliteStore::open(&path).unwrap();
@@ -2346,11 +2419,11 @@ mod invite_migration_tests {
             .connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
     }
 
     #[test]
-    fn legacy_first_invite_keeps_exact_bytes_after_v3_upgrade() {
+    fn legacy_first_invite_keeps_exact_bytes_after_v4_upgrade() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("legacy-invite.db");
         let mut store = SqliteStore::open(&path).unwrap();
@@ -2387,7 +2460,7 @@ mod invite_migration_tests {
             .unwrap();
         store
             .connection
-            .execute_batch("DROP TABLE enrollment_claim_candidates; DROP TABLE invite_issues; PRAGMA user_version = 1;")
+            .execute_batch("DROP TABLE enrollment_terminal_status; DROP TABLE enrollment_claim_candidates; DROP TABLE invite_issues; PRAGMA user_version = 1;")
             .unwrap();
         drop(store);
 
@@ -2404,7 +2477,7 @@ mod invite_migration_tests {
             .connection
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
         let later = InviteIssueRow {
             family,
             invitation_id: v4(7),

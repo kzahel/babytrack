@@ -111,19 +111,22 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
             val read = if (fragment != null) invitationStatusRead(fragment)
                 else core.savedInvitationStatusRead(saved ?: return null, wrapping)
             val response = relay.get(read.path, read.auth)
-            if (fragment != null) verifyInvitationStatus(fragment, response)
-                else core.verifySavedInvitationStatus(saved ?: return null, wrapping, response)
+            if (saved != null) core.recordJoinTerminalStatus(saved, wrapping, response)
+                else verifyInvitationStatus(fragment ?: return null, response)
         } catch (_: Exception) {
             return null
         }
-        return when (status.reason) {
+        return terminalReason(status.reason)
+    }
+
+    private fun terminalReason(reason: UByte): InvitationTerminalReason? =
+        when (reason) {
             2u.toUByte() -> InvitationTerminalReason.CLAIMED
             3u.toUByte() -> InvitationTerminalReason.CANCELED
             4u.toUByte() -> InvitationTerminalReason.EXPIRED
             5u.toUByte() -> InvitationTerminalReason.ISSUER_INVALID
             else -> null
         }
-    }
 
     private fun joinControlPages(
         relay: RelayTransport,
@@ -411,6 +414,10 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     }
 
     fun advanceRecipient(family: FamilyRef): RecipientSyncRow {
+        val savedTerminal = withWrapping { wrapping -> core.savedJoinTerminalStatus(family, wrapping) }
+        savedTerminal?.let { status ->
+            terminalReason(status.reason)?.let { throw InvitationTerminal(it) }
+        }
         if (withWrapping { wrapping -> core.recipientFirstJoinAction(family, wrapping) }.toInt() == 2) {
             retryClaim(family)
         }

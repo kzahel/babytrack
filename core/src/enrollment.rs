@@ -2,7 +2,7 @@
 //! commit locally before the first claim POST; retries use exact bytes.
 
 use crate::{
-    bootstrap::{self, InvitationBootstrap},
+    bootstrap::{self, InvitationBootstrap, InvitationStatus},
     cbor::{self, Value},
     control_chain, crypto, hpke,
     shared_history::{self, PublicHistorySession},
@@ -560,6 +560,44 @@ impl EnrollmentAttempt {
     }
     pub fn invitation_fragment(&self) -> &str {
         &self.bootstrap_fragment
+    }
+    pub fn record_terminal_status(
+        &self,
+        store: &mut SqliteStore,
+        response: &[u8],
+    ) -> Result<InvitationStatus, Error> {
+        let bootstrap = InvitationBootstrap::from_fragment(&self.bootstrap_fragment)?;
+        let status = bootstrap.verify_status(response)?;
+        if status.reason == 1 {
+            return Err(Error::Invalid("active invitation is not terminal"));
+        }
+        if let Some(saved) = store.enrollment_terminal_status(self.family)? {
+            let prior = bootstrap.verify_status(&saved)?;
+            if prior.reason != status.reason {
+                return Err(Error::Invalid(
+                    "conflicting signed invitation terminal status",
+                ));
+            }
+            return Ok(prior);
+        }
+        store.save_enrollment_terminal_status(self.family, response)?;
+        Ok(status)
+    }
+    pub fn saved_terminal_status(
+        &self,
+        store: &SqliteStore,
+    ) -> Result<Option<InvitationStatus>, Error> {
+        let bootstrap = InvitationBootstrap::from_fragment(&self.bootstrap_fragment)?;
+        store
+            .enrollment_terminal_status(self.family)?
+            .map(|bytes| {
+                let status = bootstrap.verify_status(&bytes)?;
+                if status.reason == 1 {
+                    return Err(Error::Invalid("stored invitation status not terminal"));
+                }
+                Ok(status)
+            })
+            .transpose()
     }
     pub fn claim_candidate(&self) -> &[u8] {
         &self.candidate_bytes

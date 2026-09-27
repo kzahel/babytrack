@@ -15,4 +15,4 @@ fixture-api = []
 
 [dependencies]
 babytrack-core.workspace = true
-wasm-bindgen = "=0.2.127"
+wasm-bindgen = "=0.2.128"

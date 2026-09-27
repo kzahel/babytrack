@@ -227,7 +227,10 @@ private fun TrackerScreen(
             automaticSyncDelayed = delayed
             automaticSyncBlocked = blocked
             recipientStages[selectedRecipient]?.let { progress ->
+                if (progress.removed) sharedSnapshot = null
                 joinStage = when {
+                    progress.removed && progress.privateCopy != null -> context.getString(R.string.history_removed_copied)
+                    progress.removed -> context.getString(R.string.history_removed)
                     progress.ready -> context.getString(R.string.history_ready_auto)
                     progress.awaitingGrant -> context.getString(R.string.history_awaiting_grant, progress.pendingControlCursor.toLong())
                     else -> context.getString(R.string.history_pending, progress.verifiedCursor.toLong())
@@ -454,7 +457,11 @@ private fun TrackerScreen(
                                     }
                                 }.onSuccess { (progress, snapshot) ->
                                     sharedSnapshot = snapshot
-                                    joinStage = if (progress.ready) {
+                                    joinStage = if (progress.removed && progress.privateCopy != null) {
+                                        context.getString(R.string.history_removed_copied)
+                                    } else if (progress.removed) {
+                                        context.getString(R.string.history_removed)
+                                    } else if (progress.ready) {
                                         context.getString(R.string.history_ready, progress.childCount.toLong())
                                     } else if (progress.awaitingGrant) {
                                         context.getString(R.string.history_awaiting_grant, progress.pendingControlCursor.toLong())

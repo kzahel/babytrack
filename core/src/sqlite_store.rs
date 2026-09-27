@@ -29,6 +29,7 @@ pub enum Error {
     AppendIndexOverflow,
     CorruptState,
     NoUnsentOperation,
+    RemovedDevice,
     Random(getrandom::Error),
     Batch(batch::Error),
 }
@@ -163,6 +164,21 @@ pub struct RestoredOrigin {
     pub snapshot_utc_ms: i64,
     pub source_cursor: Option<u64>,
     pub known_gap: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum CopySource {
+    Manual(FamilyHandle),
+    Removal(FamilyHandle, [u8; 16]),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavedRemoval {
+    pub transition_id: [u8; 16],
+    pub cursor: u64,
+    pub source_cursor: u64,
+    pub known_gap: bool,
+    pub committed_bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -300,6 +316,27 @@ impl SqliteStore {
                copy_family_id BLOB NOT NULL UNIQUE CHECK(length(copy_family_id)=16),
                PRIMARY KEY (source_family_id,source_device_id),
                FOREIGN KEY (source_family_id) REFERENCES families(family_id),
+               FOREIGN KEY (copy_family_id) REFERENCES families(family_id)
+             );
+             CREATE TABLE IF NOT EXISTS verified_removals (
+               source_family_id BLOB NOT NULL CHECK(length(source_family_id)=16),
+               source_device_id BLOB NOT NULL CHECK(length(source_device_id)=16),
+               transition_id BLOB NOT NULL CHECK(length(transition_id)=16),
+               cursor INTEGER NOT NULL CHECK(cursor > 0),
+               source_cursor INTEGER NOT NULL CHECK(source_cursor > 0),
+               known_gap INTEGER NOT NULL CHECK(known_gap IN (0,1)),
+               committed_bytes BLOB NOT NULL,
+               PRIMARY KEY (source_family_id,source_device_id),
+               FOREIGN KEY (source_family_id) REFERENCES families(family_id)
+             );
+             CREATE TABLE IF NOT EXISTS removal_copies (
+               source_family_id BLOB NOT NULL CHECK(length(source_family_id)=16),
+               source_device_id BLOB NOT NULL CHECK(length(source_device_id)=16),
+               transition_id BLOB NOT NULL CHECK(length(transition_id)=16),
+               copy_family_id BLOB NOT NULL UNIQUE CHECK(length(copy_family_id)=16),
+               PRIMARY KEY (source_family_id,source_device_id,transition_id),
+               FOREIGN KEY (source_family_id,source_device_id)
+                 REFERENCES verified_removals(source_family_id,source_device_id),
                FOREIGN KEY (copy_family_id) REFERENCES families(family_id)
              );
              CREATE TABLE IF NOT EXISTS local_operations (
@@ -575,7 +612,7 @@ impl SqliteStore {
         operations: Vec<NewOperation>,
         now_ms: i64,
         origin: RestoredOrigin,
-        copy_source: Option<FamilyHandle>,
+        copy_source: Option<CopySource>,
     ) -> Result<FamilyHandle, Error> {
         if !ids::is_v4(&family_id) || !ids::is_v4(&device_id) {
             return Err(Error::InvalidId);
@@ -601,14 +638,27 @@ impl SqliteStore {
                 i64::from(origin.known_gap)],
         )?;
         if let Some(source) = copy_source {
-            if source.family_id != origin.source_family_id {
+            let source_family = match source {
+                CopySource::Manual(value) | CopySource::Removal(value, _) => value,
+            };
+            if source_family.family_id != origin.source_family_id {
                 return Err(Error::WrongFamily);
             }
-            checked_family(&transaction, source)?;
-            transaction.execute(
-                "INSERT INTO private_copies(source_family_id,source_device_id,copy_family_id) VALUES(?1,?2,?3)",
-                params![source.family_id.as_slice(),source.device_id.as_slice(),family_id.as_slice()],
-            )?;
+            checked_family(&transaction, source_family)?;
+            match source {
+                CopySource::Manual(source) => {
+                    transaction.execute(
+                        "INSERT INTO private_copies(source_family_id,source_device_id,copy_family_id) VALUES(?1,?2,?3)",
+                        params![source.family_id.as_slice(),source.device_id.as_slice(),family_id.as_slice()],
+                    )?;
+                }
+                CopySource::Removal(source, transition_id) => {
+                    transaction.execute(
+                        "INSERT INTO removal_copies(source_family_id,source_device_id,transition_id,copy_family_id) VALUES(?1,?2,?3,?4)",
+                        params![source.family_id.as_slice(),source.device_id.as_slice(),transition_id.as_slice(),family_id.as_slice()],
+                    )?;
+                }
+            }
         }
         let mut projection = LocalProjection::new(family_id);
         let mut clock = Clock::restore(family_id, device_id, None, None)?;
@@ -656,6 +706,95 @@ impl SqliteStore {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?;
+        saved
+            .map(|(family_id, device_id)| {
+                Ok(FamilyHandle {
+                    family_id: family_id.try_into().map_err(|_| Error::CorruptState)?,
+                    device_id: device_id.try_into().map_err(|_| Error::CorruptState)?,
+                })
+            })
+            .transpose()
+    }
+
+    pub fn saved_removal(&self, source: FamilyHandle) -> Result<Option<SavedRemoval>, Error> {
+        checked_family(&self.connection, source)?;
+        type SavedRemovalRow = (Vec<u8>, i64, i64, i64, Vec<u8>);
+        let saved: Option<SavedRemovalRow> = self
+            .connection
+            .query_row(
+                "SELECT transition_id,cursor,source_cursor,known_gap,committed_bytes
+             FROM verified_removals WHERE source_family_id=?1 AND source_device_id=?2",
+                params![source.family_id.as_slice(), source.device_id.as_slice()],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .optional()?;
+        saved
+            .map(
+                |(transition_id, cursor, source_cursor, known_gap, committed_bytes)| {
+                    Ok(SavedRemoval {
+                        transition_id: transition_id.try_into().map_err(|_| Error::CorruptState)?,
+                        cursor: cursor.try_into().map_err(|_| Error::CorruptState)?,
+                        source_cursor: source_cursor.try_into().map_err(|_| Error::CorruptState)?,
+                        known_gap: match known_gap {
+                            0 => false,
+                            1 => true,
+                            _ => return Err(Error::CorruptState),
+                        },
+                        committed_bytes,
+                    })
+                },
+            )
+            .transpose()
+    }
+
+    pub(crate) fn save_verified_removal(
+        &mut self,
+        source: FamilyHandle,
+        removal: &SavedRemoval,
+    ) -> Result<(), Error> {
+        if let Some(existing) = self.saved_removal(source)? {
+            return if existing == *removal {
+                Ok(())
+            } else {
+                Err(Error::CorruptState)
+            };
+        }
+        let history = self.shared_history(source)?.ok_or(Error::CorruptState)?;
+        if history.pinned_cursor != removal.source_cursor || removal.cursor <= removal.source_cursor
+        {
+            return Err(Error::CorruptState);
+        }
+        self.connection.execute(
+            "INSERT INTO verified_removals(source_family_id,source_device_id,transition_id,cursor,source_cursor,known_gap,committed_bytes)
+             VALUES(?1,?2,?3,?4,?5,?6,?7)",
+            params![source.family_id.as_slice(),source.device_id.as_slice(),removal.transition_id.as_slice(),
+                i64::try_from(removal.cursor).map_err(|_| Error::CorruptState)?,
+                i64::try_from(removal.source_cursor).map_err(|_| Error::CorruptState)?,
+                i64::from(removal.known_gap),&removal.committed_bytes],
+        )?;
+        Ok(())
+    }
+
+    pub fn removal_copy_of(
+        &self,
+        source: FamilyHandle,
+        transition_id: [u8; 16],
+    ) -> Result<Option<FamilyHandle>, Error> {
+        checked_family(&self.connection, source)?;
+        let saved: Option<(Vec<u8>,Vec<u8>)> = self.connection.query_row(
+            "SELECT f.family_id,f.device_id FROM removal_copies r JOIN families f ON f.family_id=r.copy_family_id
+             WHERE r.source_family_id=?1 AND r.source_device_id=?2 AND r.transition_id=?3",
+            params![source.family_id.as_slice(),source.device_id.as_slice(),transition_id.as_slice()],
+            |row| Ok((row.get(0)?,row.get(1)?)),
+        ).optional()?;
         saved
             .map(|(family_id, device_id)| {
                 Ok(FamilyHandle {
@@ -910,6 +1049,9 @@ impl SqliteStore {
             || verified.last_cursor() != pinned_cursor
         {
             return Err(Error::WrongFamily);
+        }
+        if self.saved_removal(family)?.is_some() {
+            return Err(Error::RemovedDevice);
         }
         let transaction = self.connection.transaction()?;
         let (last_index, previous) = checked_family(&transaction, family)?;

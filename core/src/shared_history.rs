@@ -8,7 +8,7 @@ use crate::{
     control::{self, exact_map, fixed, number},
     control_chain::{self, ControlChain},
     crypto, session,
-    sqlite_store::{self, FamilyHandle, SqliteStore, VerifiedSharedEntry},
+    sqlite_store::{self, FamilyHandle, SavedRemoval, SqliteStore, VerifiedSharedEntry},
     sync_wire,
 };
 
@@ -83,12 +83,36 @@ pub struct VerifiedRemovalProof {
     pub committed_bytes: Vec<u8>,
 }
 
+impl From<VerifiedRemovalProof> for SavedRemoval {
+    fn from(value: VerifiedRemovalProof) -> Self {
+        Self {
+            transition_id: value.transition_id,
+            cursor: value.cursor,
+            source_cursor: value.source_cursor,
+            known_gap: value.known_gap,
+            committed_bytes: value.committed_bytes,
+        }
+    }
+}
+
 pub struct PublicHistorySession {
     family: FamilyHandle,
     chain: ControlChain,
 }
 
 impl PublicHistorySession {
+    pub fn save_removed_control_page(
+        &self,
+        store: &mut SqliteStore,
+        page_bytes: &[u8],
+    ) -> Result<Option<SavedRemoval>, Error> {
+        let Some(proof) = self.verify_removed_control_page(page_bytes)? else {
+            return Ok(None);
+        };
+        let saved = SavedRemoval::from(proof);
+        store.save_verified_removal(self.family, &saved)?;
+        Ok(Some(saved))
+    }
     /// A removed credential can fetch signed public controls after its data
     /// reads have been revoked. Verify their ancestry without advancing the
     /// contiguous data pin or claiming any skipped batches were downloaded.

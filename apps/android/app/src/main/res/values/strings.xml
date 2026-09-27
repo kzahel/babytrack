@@ -85,6 +85,8 @@
     <string name="history_pending">Verified through cursor %1$d. Waiting for more history or objects; retry on the next sync opportunity.</string>
     <string name="history_ready">Shared history verified. %1$d children loaded.</string>
     <string name="history_ready_auto">Shared history verified and ready.</string>
+    <string name="history_removed">This device’s removal was verified. The shared Family is read only here; you can still export its locally held data.</string>
+    <string name="history_removed_copied">This device’s removal was verified. Pending edits were saved in a new private Family. The original shared Family is read only.</string>
     <string name="shared_children">Verified shared children</string>
     <string name="shared_devices">Devices with verified access</string>
     <string name="remove_device">Remove device %1$s</string>

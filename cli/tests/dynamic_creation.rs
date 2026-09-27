@@ -20,7 +20,8 @@ use babytrack_core::{
     issue::FirstInviteIssue,
     operation::{Hlc, Kind, NewOperation, Scope},
     portable_file::{
-        export_readable_local, export_readable_shared, parse_readable, private_copy_shared,
+        export_readable_local, export_readable_shared, parse_readable, private_copy_after_removal,
+        private_copy_shared,
     },
     shared_history::{self, PendingBatchResult, PublicHistorySession},
     shared_ready::{NextUpload, ReadyFamilySession},
@@ -1334,6 +1335,82 @@ async fn dynamic_flow(early_batch: bool) {
     assert_eq!(proof.cursor, manager_after.observed_cursor());
     assert_eq!(proof.source_cursor, recipient_ready.observed_cursor());
     assert_eq!(proof.known_gap, early_batch);
+    let saved = recipient_public
+        .save_removed_control_page(&mut recipient_store, &proof_bytes)
+        .unwrap()
+        .unwrap();
+    assert_eq!(saved.transition_id, proof.transition_id);
+    assert_eq!(
+        recipient_store.saved_removal(enrollment.family()).unwrap(),
+        Some(saved.clone())
+    );
+    assert!(
+        recipient_ready
+            .append_local(
+                &mut recipient_store,
+                NewOperation {
+                    family_id: enrollment.family().family_id,
+                    operation_id: v7(0x3f),
+                    record_id: v7(0x40),
+                    scope: Scope::Child,
+                    kind: Kind::Create,
+                    author_device_id: enrollment.family().device_id,
+                    hlc: Hlc {
+                        wall_ms: 1_700_000_004_600,
+                        counter: 0,
+                        device_id: enrollment.family().device_id
+                    },
+                    record_type: Some("child".to_owned()),
+                    child_id: None,
+                    fields: Some(vec![(1, Value::Text("Too late".to_owned()))]),
+                },
+                1_700_000_004_600,
+            )
+            .is_err()
+    );
+    let removed_copy = private_copy_after_removal(
+        &mut recipient_store,
+        &recipient_ready,
+        &saved,
+        1_700_000_004_601,
+    )
+    .unwrap();
+    assert_ne!(removed_copy, copy);
+    assert_eq!(
+        recipient_store
+            .load_local(removed_copy)
+            .unwrap()
+            .record(&pre_child_id)
+            .unwrap()
+            .field(1)
+            .unwrap()
+            .value,
+        Value::Text("Private pending".to_owned())
+    );
+    assert_eq!(
+        recipient_store
+            .restored_origin(removed_copy)
+            .unwrap()
+            .unwrap()
+            .known_gap,
+        early_batch
+    );
+    drop(recipient_store);
+    let mut recipient_store = SqliteStore::open(&recipient_path).unwrap();
+    assert_eq!(
+        recipient_store.saved_removal(enrollment.family()).unwrap(),
+        Some(saved.clone())
+    );
+    assert_eq!(
+        private_copy_after_removal(
+            &mut recipient_store,
+            &recipient_ready,
+            &saved,
+            1_700_000_004_602
+        )
+        .unwrap(),
+        removed_copy
+    );
     let page = ControlPage::decode(
         &proof_bytes,
         family.family_id,

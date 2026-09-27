@@ -202,6 +202,15 @@ pub struct RecipientSyncRow {
     pub remaining_objects: bool,
     pub ready: bool,
     pub child_count: u64,
+    pub removed: bool,
+    pub private_copy: Option<FamilyRef>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct RemovedDeviceRow {
+    pub verified_cursor: u64,
+    pub known_gap: bool,
+    pub private_copy: Option<FamilyRef>,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -809,6 +818,66 @@ impl NativeSharedStore {
             .map_err(rejected)
     }
 
+    /// Ask for public controls before data reads, so a revoked credential
+    /// can verify its removal even when the relay denies new ciphertext.
+    pub fn check_recipient_removal(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        now_ms: i64,
+        transport: Box<dyn RelayReadTransport>,
+    ) -> Result<Option<RemovedDeviceRow>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let wrapping = fixed(&wrapping_key)?;
+        let saved = if let Some(saved) = store.saved_removal(handle).map_err(rejected)? {
+            Some(saved)
+        } else {
+            let attempt = EnrollmentAttempt::resume(&mut store, handle.family_id, &wrapping)
+                .map_err(rejected)?;
+            if attempt.family() != handle
+                || !attempt.has_committed_admission(&store).map_err(rejected)?
+            {
+                return Ok(None);
+            }
+            let public = PublicHistorySession::resume(&store, handle).map_err(rejected)?;
+            let path = format!(
+                "/v1/families/{}/control?after={}",
+                lower_hex(&handle.family_id),
+                public.cursor()
+            );
+            let auth = attempt.sign_get(&path).map_err(rejected)?.bytes;
+            let page = transport.get(path, auth)?;
+            public
+                .save_removed_control_page(&mut store, &page)
+                .map_err(rejected)?
+        };
+        let Some(saved) = saved else { return Ok(None) };
+        let copy = if let Some(existing) = store
+            .removal_copy_of(handle, saved.transition_id)
+            .map_err(rejected)?
+        {
+            Some(existing)
+        } else {
+            let ready = ready_session_for(&mut store, handle, &wrapping)?;
+            if ready.has_unsent_local(&store).map_err(rejected)? {
+                Some(
+                    babytrack_core::portable_file::private_copy_after_removal(
+                        &mut store, &ready, &saved, now_ms,
+                    )
+                    .map_err(rejected)?,
+                )
+            } else {
+                None
+            }
+        };
+        Ok(Some(RemovedDeviceRow {
+            verified_cursor: saved.cursor,
+            known_gap: saved.known_gap,
+            private_copy: copy.map(Into::into),
+        }))
+    }
+
     /// One bounded sync pass. The platform fetches bytes; Rust signs every
     /// exact path, verifies the full log and manifests, and decides readiness.
     pub fn sync_recipient(
@@ -855,6 +924,8 @@ impl NativeSharedStore {
                 remaining_objects: true,
                 ready: false,
                 child_count: 0,
+                removed: false,
+                private_copy: None,
             });
         }
         let pull = futures::executor::block_on(active_pull::pull_active_log(
@@ -894,6 +965,8 @@ impl NativeSharedStore {
                 remaining_objects: hydration.remaining,
                 ready: false,
                 child_count: 0,
+                removed: false,
+                private_copy: None,
             });
         }
         let ready = ReadyFamilySession::from_enrollment(&store, &attempt).map_err(rejected)?;
@@ -912,6 +985,8 @@ impl NativeSharedStore {
             remaining_objects: false,
             ready: true,
             child_count: children as u64,
+            removed: false,
+            private_copy: None,
         })
     }
 
@@ -1169,6 +1244,9 @@ impl NativeSharedStore {
     ) -> Result<Option<Vec<u8>>, BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
         let handle = family.handle()?;
+        if store.saved_removal(handle).map_err(rejected)?.is_some() {
+            return Err(BindingError::Rejected("device removal verified".to_owned()));
+        }
         let wrapping = fixed(&wrapping_key)?;
         let ready = ready_session_for(&mut store, handle, &wrapping)?;
         if !ready.has_unsent_local(&store).map_err(rejected)? {
@@ -1206,6 +1284,9 @@ impl NativeSharedStore {
     ) -> Result<SharedSyncRow, BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
         let handle = family.handle()?;
+        if store.saved_removal(handle).map_err(rejected)?.is_some() {
+            return Err(BindingError::Rejected("device removal verified".to_owned()));
+        }
         let wrapping = fixed(&wrapping_key)?;
         let signer = if store
             .has_enrollment_attempt(handle.family_id)

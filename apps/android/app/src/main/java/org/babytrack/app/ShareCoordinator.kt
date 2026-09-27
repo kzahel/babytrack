@@ -7,6 +7,7 @@ import uniffi.babytrack_core_ffi.BackupFileRow
 import uniffi.babytrack_core_ffi.NativeSharedStore
 import uniffi.babytrack_core_ffi.PreparedJoinRow
 import uniffi.babytrack_core_ffi.RecipientSyncRow
+import uniffi.babytrack_core_ffi.RemovedDeviceRow
 import uniffi.babytrack_core_ffi.RelayReadTransport
 import uniffi.babytrack_core_ffi.SharedSnapshotRow
 import uniffi.babytrack_core_ffi.SharedSyncRow
@@ -171,6 +172,10 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         val relay = RelayTransport(recipientOrigin(family))
         val wrapping = keys.loadOrCreate()
         try {
+            val removed = core.checkRecipientRemoval(family, wrapping, System.currentTimeMillis(), object : RelayReadTransport {
+                override fun get(path: String, auth: ByteArray): ByteArray = relay.get(path, auth)
+            })
+            if (removed != null) return removedProgress(removed)
             return core.syncRecipient(family, wrapping, object : RelayReadTransport {
                 override fun get(path: String, auth: ByteArray): ByteArray = relay.get(path, auth)
             })
@@ -251,6 +256,7 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     }
 
     fun syncRecipientAndUpload(family: FamilyRef): SharedSyncRow {
+        check(!syncRecipient(family).removed) { "Verified device removal; shared uploads stopped" }
         return syncAndUpload(family, recipientOrigin(family))
     }
 
@@ -288,6 +294,18 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
 
     override fun close() = core.close()
 }
+
+private fun removedProgress(removed: RemovedDeviceRow): RecipientSyncRow = RecipientSyncRow(
+    verifiedCursor = removed.verifiedCursor,
+    pendingControlCursor = removed.verifiedCursor,
+    awaitingGrant = false,
+    noMoreVisible = false,
+    remainingObjects = false,
+    ready = false,
+    childCount = 0uL,
+    removed = true,
+    privateCopy = removed.privateCopy,
+)
 
 private fun parsePublicKey(text: String): ByteArray {
     val hex = text.trim().lowercase()

@@ -481,10 +481,16 @@ fn restore_readable_inner(
     store: &mut SqliteStore,
     bytes: &[u8],
     now_ms: i64,
-    copy_source: Option<FamilyHandle>,
+    copy_source: Option<sqlite_store::CopySource>,
 ) -> Result<FamilyHandle, Error> {
     let parsed = parse_readable(bytes)?;
-    if copy_source.is_some_and(|source| source.family_id != parsed.source_family_id) {
+    if copy_source.is_some_and(|source| {
+        let family = match source {
+            sqlite_store::CopySource::Manual(family)
+            | sqlite_store::CopySource::Removal(family, _) => family,
+        };
+        family.family_id != parsed.source_family_id
+    }) {
         return Err(Error::Invalid("copy source differs from backup"));
     }
     let mut family_id = new_v4()?;
@@ -605,11 +611,57 @@ pub fn private_copy_shared(
         return Ok(existing);
     }
     let readable = export_readable_shared(store, ready, now_ms)?;
-    match restore_readable_inner(store, &readable, now_ms, Some(source)) {
+    match restore_readable_inner(
+        store,
+        &readable,
+        now_ms,
+        Some(sqlite_store::CopySource::Manual(source)),
+    ) {
         Ok(copy) => Ok(copy),
         Err(Error::Store(sqlite_store::Error::Sqlite(_))) => store
             .private_copy_of(source)?
             .ok_or(Error::Invalid("private copy failed")),
+        Err(error) => Err(error),
+    }
+}
+
+/// Recover locally held state after a signed removal. The proof is saved
+/// before this call; a restart can retry the same transaction idempotently.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn private_copy_after_removal(
+    store: &mut SqliteStore,
+    ready: &ReadyFamilySession,
+    removal: &sqlite_store::SavedRemoval,
+    now_ms: i64,
+) -> Result<FamilyHandle, Error> {
+    let source = ready.family();
+    if store.saved_removal(source)?.as_ref() != Some(removal) {
+        return Err(Error::Invalid("removal proof not saved"));
+    }
+    if let Some(existing) = store.removal_copy_of(source, removal.transition_id)? {
+        return Ok(existing);
+    }
+    let projection = ready.projection_with_pending(store)?;
+    let readable = encode_readable(
+        source.family_id,
+        now_ms,
+        Some(ready.observed_cursor()),
+        removal.known_gap || !projection.inert_batches().is_empty(),
+        projection.records(),
+    )?;
+    match restore_readable_inner(
+        store,
+        &readable,
+        now_ms,
+        Some(sqlite_store::CopySource::Removal(
+            source,
+            removal.transition_id,
+        )),
+    ) {
+        Ok(copy) => Ok(copy),
+        Err(Error::Store(sqlite_store::Error::Sqlite(_))) => store
+            .removal_copy_of(source, removal.transition_id)?
+            .ok_or(Error::Invalid("removal copy failed")),
         Err(error) => Err(error),
     }
 }

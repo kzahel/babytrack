@@ -404,6 +404,15 @@ real-relay CLI test covers both a contiguous removal and one with an
 old-epoch batch hidden behind the removal proof. Proof persistence, Android
 notice, and automatic copy remain open.
 
+The Android recipient now checks the authenticated public control route
+before any data read. Rust saves the signed removal proof without advancing
+over missing data, blocks further source edits/uploads, and transactionally
+restores pending work into a distinct private Family keyed by the removal
+transition. A restart reuses that copy. The real-relay CLI covers a prior
+explicit copy and a cursor gap; the disposable-relay emulator verifies the
+removed notice and preserved offline child across coordinator restarts.
+The source Family remains locally readable and exportable.
+
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed
   batch receipts, and authenticated reads. Relay stores opaque bytes and
@@ -910,6 +919,29 @@ not claim protection from malicious relay withholding/forking. These fixes
 need a new fixed-revision follow-up before the advisory can be closed.
 General later-device enrollment, removal and epoch rotation, automatic
 private copy, and suspended-app delivery remain outside this preflight.
+
+## Early M0 implemented-authority review at 2507537
+
+The independent Daybreak Blue high-thinking session
+`01a0e102-c203-7c23-aa5d-c1af34088948` reviewed fixed commit
+`250753787f12cbfad3eda7dcfee6fea55f7ca8fe` in a detached read-only
+checkout through Yep Anywhere. The reviewer ran offline core, server, and
+real-relay CLI tests (56, 10, and 2 passed). The verdict was **FAIL**;
+the early M0 gate stays open. The reviewed SHA precedes the Android removal
+UI and the removed-device proof/copy implementation.
+
+| Finding | Disposition |
+|---|---|
+| Medium blocker: the relay denies a removed author its own accepted or rejected batch result after a lost POST response, so pending-work disposition cannot be verified. | Repair the removed-author batch-result ACL and rejected-result author binding, then exercise accepted-before-removal and rejected-after-removal lost responses. Rerun the independent gate at a fixed repair SHA. |
+| Medium hardening: protocol IDs can be reused across categories even though the contract says never reused. | Add a durable per-Family cross-category ID registry in relay authority and client replay before later-device authority expands. Add collision regressions. |
+| Low contract gap: three advertised GET routes are not implemented. | Add authenticated routes and API vectors or narrow the exact v1 contract before other clients rely on them. |
+
+The reviewer found no present two-device privilege escalation from the ID
+collision, and confirmed signed CAS, key rotation, verified grant/keyring,
+revoked data ACL, and epoch-two manager continuation in the reviewed path.
+These positive findings do not close the gate while the receipt blocker
+remains. Android/emulator, fuzzing, and power-loss campaigns were outside
+this review.
 
 ## Advisory byte/crypto preflight
 

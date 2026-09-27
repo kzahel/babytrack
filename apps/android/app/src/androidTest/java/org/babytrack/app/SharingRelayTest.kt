@@ -370,6 +370,8 @@ class SharingRelayTest {
         ShareCoordinator(context, recipient.absolutePath).use { sharing ->
             assertTrue(sharing.syncAndUpload(first.family, origin).ready)
             assertEquals(3, sharing.snapshot(first.family).children.size)
+            sharing.addChild(first.family, "Saved at removal", System.currentTimeMillis())
+            assertEquals(1uL, sharing.snapshot(first.family).unsentCount)
         }
         ShareCoordinator(context, database.absolutePath).use { sharing ->
             sharing.admitProvedDevice(family, origin)
@@ -391,6 +393,14 @@ class SharingRelayTest {
             assertEquals(0uL, sharing.snapshot(family).unsentCount)
         }
         ShareCoordinator(context, recipient.absolutePath).use { sharing ->
+            val removed = sharing.advanceRecipient(first.family)
+            assertTrue(removed.removed)
+            val copy = removed.privateCopy ?: error("Pending edit needs an independent copy")
+            assertTrue(!sharing.isShared(copy))
+            NativeLocalStore.open(recipient.absolutePath).use { local ->
+                assertTrue(local.children(copy).any { it.name == "Saved at removal" })
+            }
+            assertArrayEquals(copy.familyId, sharing.advanceRecipient(first.family).privateCopy!!.familyId)
             assertTrue(runCatching { sharing.syncAndUpload(first.family, origin) }.isFailure)
         }
     }

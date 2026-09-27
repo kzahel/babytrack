@@ -167,6 +167,15 @@ impl FirstProof {
         let history = store
             .shared_history(self.family)?
             .ok_or(Error::Invalid("shared history absent"))?;
+        if !store.enrollment_controls(self.family)?.is_empty() {
+            shared_history::accept_sparse_enrollment_control(
+                store,
+                self.family,
+                history.relay_public_key,
+                committed,
+            )?;
+            return Ok(());
+        }
         let committed_prior = history
             .entries
             .iter()

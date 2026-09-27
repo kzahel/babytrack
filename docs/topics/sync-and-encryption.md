@@ -100,6 +100,13 @@ Version-1 key choices follow the normative sharing contract.
   A key derived from a shared epoch key cannot enforce manager-only actions
   because every reader knows that key.
 
+During enrollment, invitation and pending devices can read signed public
+controls but not encrypted Family batches. They verify control ancestry
+across any skipped batch cursors and persist that pending progress. After
+admission, the new holder reads and verifies the contiguous full log and
+required data objects before the Family becomes ready. A filtered-control
+cursor alone never establishes complete shared history.
+
 Per-holder keypairs are needed because a removed device that knows the old
 shared key could otherwise read the new key while it is handed to the
 others. Roles limit use of the app's shared family; they cannot stop a

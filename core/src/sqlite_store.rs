@@ -311,6 +311,13 @@ impl SqliteStore {
                secret_ciphertext BLOB NOT NULL,
                FOREIGN KEY (family_id) REFERENCES families(family_id)
              );
+             CREATE TABLE IF NOT EXISTS enrollment_controls (
+               family_id BLOB NOT NULL,
+               cursor INTEGER NOT NULL CHECK(cursor > 1),
+               committed_bytes BLOB NOT NULL,
+               PRIMARY KEY (family_id,cursor),
+               FOREIGN KEY (family_id) REFERENCES enrollment_attempts(family_id)
+             );
              CREATE TABLE IF NOT EXISTS manager_creations (
                family_id BLOB PRIMARY KEY CHECK(length(family_id) = 16),
                device_id BLOB NOT NULL CHECK(length(device_id) = 16),
@@ -1386,7 +1393,11 @@ impl SqliteStore {
             .collect::<Result<Vec<_>, Error>>()
     }
 
-    pub(crate) fn create_enrollment_attempt(&mut self, row: &EnrollmentRow) -> Result<(), Error> {
+    pub(crate) fn create_enrollment_attempt(
+        &mut self,
+        row: &EnrollmentRow,
+        sparse_issue_cursor: Option<u64>,
+    ) -> Result<(), Error> {
         if !ids::is_v4(&row.family.family_id)
             || !ids::is_v4(&row.family.device_id)
             || !ids::is_v4(&row.invitation_id)
@@ -1421,7 +1432,66 @@ impl SqliteStore {
                 &row.secret_ciphertext
             ],
         )?;
+        if let Some(cursor) = sparse_issue_cursor {
+            transaction.execute(
+                "INSERT INTO enrollment_controls(family_id,cursor,committed_bytes) VALUES(?1,?2,?3)",
+                params![
+                    row.family.family_id.as_slice(),
+                    i64::try_from(cursor).map_err(|_| Error::CorruptState)?,
+                    &row.issue_bytes,
+                ],
+            )?;
+        }
         transaction.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn enrollment_controls(
+        &self,
+        family: FamilyHandle,
+    ) -> Result<Vec<(u64, Vec<u8>)>, Error> {
+        let _ = checked_family(&self.connection, family)?;
+        let mut query = self.connection.prepare(
+            "SELECT cursor,committed_bytes FROM enrollment_controls
+             WHERE family_id=?1 ORDER BY cursor",
+        )?;
+        query
+            .query_map([family.family_id.as_slice()], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })?
+            .map(|result| {
+                let (cursor, bytes) = result?;
+                Ok((
+                    u64::try_from(cursor).map_err(|_| Error::CorruptState)?,
+                    bytes,
+                ))
+            })
+            .collect()
+    }
+
+    pub(crate) fn append_enrollment_control(
+        &mut self,
+        family: FamilyHandle,
+        cursor: u64,
+        bytes: &[u8],
+    ) -> Result<(), Error> {
+        let tx = self.connection.transaction()?;
+        let _ = checked_family(&tx, family)?;
+        let cursor = i64::try_from(cursor).map_err(|_| Error::CorruptState)?;
+        tx.execute(
+            "INSERT OR IGNORE INTO enrollment_controls(family_id,cursor,committed_bytes)
+             VALUES(?1,?2,?3)",
+            params![family.family_id.as_slice(), cursor, bytes],
+        )?;
+        let prior: Vec<u8> = tx.query_row(
+            "SELECT committed_bytes FROM enrollment_controls WHERE family_id=?1 AND cursor=?2",
+            params![family.family_id.as_slice(), cursor],
+            |row| row.get(0),
+        )?;
+        if prior != bytes {
+            return Err(Error::CorruptState);
+        }
+        tx.commit()?;
         Ok(())
     }
 

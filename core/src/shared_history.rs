@@ -410,6 +410,13 @@ pub fn first_join_chain(
     relay_public: [u8; 32],
     expected_controls: usize,
 ) -> Result<ControlChain, Error> {
+    let sparse = store.enrollment_controls(family)?;
+    if !sparse.is_empty() {
+        if sparse.len() + 1 != expected_controls {
+            return Err(Error::Invalid("sparse first join control prefix differs"));
+        }
+        return sparse_enrollment_chain(store, family, relay_public);
+    }
     let history = store
         .shared_history(family)?
         .ok_or(Error::Invalid("genesis missing"))?;
@@ -425,4 +432,134 @@ pub fn first_join_chain(
         return Err(Error::Invalid("first join control prefix differs"));
     }
     Ok(PublicHistorySession::resume(store, family)?.chain().clone())
+}
+
+/// Pending devices verify the signed control ancestry without treating
+/// missing data cursors as verified. This never advances the contiguous
+/// shared history high-water mark.
+pub(crate) fn sparse_enrollment_chain(
+    store: &SqliteStore,
+    family: FamilyHandle,
+    relay_public: [u8; 32],
+) -> Result<ControlChain, Error> {
+    let row = store
+        .enrollment_attempt(family.family_id)?
+        .ok_or(Error::Invalid("no enrollment attempt"))?;
+    if row.family != family {
+        return Err(Error::Invalid("sparse enrollment Family handle differs"));
+    }
+    let history = store
+        .shared_history(family)?
+        .ok_or(Error::Invalid("shared genesis absent"))?;
+    if history.relay_public_key != relay_public || history.genesis_bytes != row.genesis_bytes {
+        return Err(Error::Invalid("sparse enrollment genesis pin differs"));
+    }
+    let controls = store.enrollment_controls(family)?;
+    if controls
+        .first()
+        .is_none_or(|(_, bytes)| *bytes != row.issue_bytes)
+    {
+        return Err(Error::Invalid("sparse enrollment issue absent"));
+    }
+    let mut chain = ControlChain::from_genesis(&row.genesis_bytes, relay_public)?;
+    for (cursor, bytes) in controls {
+        chain.apply_sparse_control(&bytes)?;
+        if chain.last_global_cursor() != cursor {
+            return Err(Error::Invalid(
+                "sparse control cursor differs from signed receipt",
+            ));
+        }
+    }
+    Ok(chain)
+}
+
+pub fn accept_sparse_enrollment_control(
+    store: &mut SqliteStore,
+    family: FamilyHandle,
+    relay_public: [u8; 32],
+    bytes: &[u8],
+) -> Result<(), Error> {
+    let mut chain = sparse_enrollment_chain(store, family, relay_public)?;
+    let prior = store.enrollment_controls(family)?;
+    if prior.last().is_some_and(|(_, saved)| saved == bytes) {
+        return Ok(());
+    }
+    chain.apply_sparse_control(bytes)?;
+    store.append_enrollment_control(family, chain.last_global_cursor(), bytes)?;
+    Ok(())
+}
+
+/// Verify an addressed object against a signed sparse control manifest.
+/// The object is stored under the pinned genesis root, but it does not make
+/// missing data cursors or Family keys ready.
+pub fn accept_sparse_enrollment_object(
+    store: &mut SqliteStore,
+    family: FamilyHandle,
+    relay_public: [u8; 32],
+    object_id: [u8; 16],
+    object_bytes: &[u8],
+) -> Result<(), Error> {
+    sparse_enrollment_chain(store, family, relay_public)?;
+    let row = store
+        .enrollment_attempt(family.family_id)?
+        .ok_or(Error::Invalid("no enrollment attempt"))?;
+    let controls = store.enrollment_controls(family)?;
+    for bytes in std::iter::once(row.genesis_bytes.as_slice())
+        .chain(controls.iter().map(|(_, bytes)| bytes.as_slice()))
+    {
+        let value = cbor::decode_with_limits(
+            bytes,
+            cbor::Limits {
+                max_bytes: 1024 * 1024,
+                max_depth: 16,
+            },
+        )?;
+        let Value::Map(root) = value else {
+            return Err(Error::Invalid("control not map"));
+        };
+        let Value::Map(unsigned) = &root[0].1 else {
+            return Err(Error::Invalid("unsigned control not map"));
+        };
+        let Value::Array(manifest) = &unsigned[9].1 else {
+            return Err(Error::Invalid("manifest not array"));
+        };
+        for item in manifest {
+            let Value::Array(fields) = item else {
+                return Err(Error::Invalid("manifest entry not array"));
+            };
+            if fields[1] != Value::Bytes(object_id.to_vec()) {
+                continue;
+            }
+            let Value::Bytes(expected_hash) = &fields[2] else {
+                return Err(Error::Invalid("manifest hash not bytes"));
+            };
+            if fields[3] != Value::Integer(object_bytes.len() as i128)
+                || expected_hash.as_slice() != crypto::hash("object", object_bytes)?
+            {
+                return Err(Error::Invalid("object differs from sparse manifest"));
+            }
+            let Value::Integer(kind) = fields[0] else {
+                return Err(Error::Invalid("manifest kind not integer"));
+            };
+            let kind = u16::try_from(kind).map_err(|_| Error::Invalid("object kind range"))?;
+            let Value::Bytes(transition_id) = &unsigned[4].1 else {
+                return Err(Error::Invalid("transition ID not bytes"));
+            };
+            let transition_id: [u8; 16] = transition_id
+                .as_slice()
+                .try_into()
+                .map_err(|_| Error::Invalid("transition ID length"))?;
+            store.store_verified_shared_object(
+                family,
+                transition_id,
+                kind,
+                object_id,
+                object_bytes,
+            )?;
+            return Ok(());
+        }
+    }
+    Err(Error::Invalid(
+        "object absent from sparse control manifests",
+    ))
 }

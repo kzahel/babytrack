@@ -7,6 +7,7 @@ use axum::{
 };
 
 use babytrack_core::{
+    batch,
     bootstrap::InvitationBootstrap,
     cbor::{self, Value},
     creation::ManagerCreation,
@@ -20,7 +21,7 @@ use babytrack_core::{
     portable_file::{
         export_readable_local, export_readable_shared, parse_readable, private_copy_shared,
     },
-    shared_history::PublicHistorySession,
+    shared_history::{self, PublicHistorySession},
     shared_ready::{NextUpload, ReadyFamilySession},
     sqlite_store::{FamilyHandle, SqliteStore},
     sync_wire::{BatchResult, ControlPage, LogPage, OpaqueObject},
@@ -29,6 +30,17 @@ use babytrack_server::{RelayStore, test_router};
 use tower::ServiceExt;
 
 async fn http_bytes(app: &Router, method: Method, path: &str, body: Vec<u8>) -> Vec<u8> {
+    let (status, bytes) = http_response(app, method, path, body).await;
+    assert_eq!(status, StatusCode::OK);
+    bytes
+}
+
+async fn http_response(
+    app: &Router,
+    method: Method,
+    path: &str,
+    body: Vec<u8>,
+) -> (StatusCode, Vec<u8>) {
     let request = Request::builder()
         .method(method)
         .uri(path)
@@ -36,11 +48,12 @@ async fn http_bytes(app: &Router, method: Method, path: &str, body: Vec<u8>) -> 
         .body(Body::from(body))
         .unwrap();
     let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    to_bytes(response.into_body(), 4 * 1024 * 1024)
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 4 * 1024 * 1024)
         .await
         .unwrap()
-        .to_vec()
+        .to_vec();
+    (status, bytes)
 }
 
 async fn stage_objects(app: &Router, family: [u8; 16], bodies: &[([u8; 16], Vec<u8>)]) {
@@ -231,7 +244,7 @@ async fn dynamic_flow(early_batch: bool) {
         NextUpload::RetryExact(_) => panic!("manager batch was already pending"),
     };
     assert_eq!(staged_manager_batch.from_index, 2);
-    let early_receipt = if early_batch {
+    if early_batch {
         let batch_path = format!("/v1/families/{}/batches", lower_hex(&family.family_id));
         let response = http_bytes(
             &app,
@@ -250,10 +263,7 @@ async fn dynamic_flow(early_batch: bool) {
         public
             .accept_batch(&mut local, &staged_manager_batch.envelope_bytes, receipt)
             .unwrap();
-        Some(receipt.clone())
-    } else {
-        None
-    };
+    }
 
     let issue = FirstInviteIssue::prepare(&mut local, &resumed, &wrapping_key, 1).unwrap();
     let issue_candidate = issue.candidate_bytes().to_vec();
@@ -306,9 +316,7 @@ async fn dynamic_flow(early_batch: bool) {
     );
     let auth = received_link.sign_get(&path).unwrap();
     let page = ControlPage::decode(
-        &relay
-            .control_page_authenticated(family.family_id, 0, &path, &auth.bytes)
-            .unwrap(),
+        &http_bytes(&app, Method::GET, &path, auth.bytes.clone()).await,
         family.family_id,
         0,
     )
@@ -317,23 +325,31 @@ async fn dynamic_flow(early_batch: bool) {
     let recipient_path = dir.path().join("recipient.db");
     let recipient_wrap = [0x8b; 32];
     let mut recipient_store = SqliteStore::open(&recipient_path).unwrap();
-    let prior_batches: Vec<(&[u8], &[u8])> = early_receipt
-        .as_ref()
-        .map(|receipt| {
-            vec![(
-                staged_manager_batch.envelope_bytes.as_slice(),
-                receipt.as_slice(),
-            )]
-        })
-        .unwrap_or_default();
-    let enrollment = EnrollmentAttempt::prepare_with_batches(
-        &mut recipient_store,
-        &received_link,
-        &page.entries[0].committed_bytes,
-        &page.entries[1].committed_bytes,
-        &prior_batches,
-        &recipient_wrap,
-    )
+    let enrollment = if early_batch {
+        let log_path = format!("/v1/families/{}/log?after=0", lower_hex(&family.family_id));
+        let unauthorized = received_link.sign_get(&log_path).unwrap();
+        assert_eq!(
+            http_response(&app, Method::GET, &log_path, unauthorized.bytes)
+                .await
+                .0,
+            StatusCode::FORBIDDEN
+        );
+        EnrollmentAttempt::prepare_sparse(
+            &mut recipient_store,
+            &received_link,
+            &page.entries[0].committed_bytes,
+            &page.entries[1].committed_bytes,
+            &recipient_wrap,
+        )
+    } else {
+        EnrollmentAttempt::prepare(
+            &mut recipient_store,
+            &received_link,
+            &page.entries[0].committed_bytes,
+            &page.entries[1].committed_bytes,
+            &recipient_wrap,
+        )
+    }
     .unwrap();
     let claim_candidate = enrollment.claim_candidate().to_vec();
     drop(recipient_store);
@@ -349,10 +365,25 @@ async fn dynamic_flow(early_batch: bool) {
         panic!()
     };
     let mut public = PublicHistorySession::resume(&recipient_store, enrollment.family()).unwrap();
-    public
-        .accept_control(&mut recipient_store, committed_claim)
-        .unwrap();
-    assert_eq!(public.cursor(), 3 + shift);
+    if early_batch {
+        resumed_enrollment
+            .accept_sparse_control(&mut recipient_store, committed_claim)
+            .unwrap();
+        assert_eq!(public.cursor(), 1);
+        let log_path = format!("/v1/families/{}/log?after=0", lower_hex(&family.family_id));
+        let read = resumed_enrollment.sign_get(&log_path).unwrap();
+        assert_eq!(
+            http_response(&app, Method::GET, &log_path, read.bytes)
+                .await
+                .0,
+            StatusCode::FORBIDDEN
+        );
+    } else {
+        public
+            .accept_control(&mut recipient_store, committed_claim)
+            .unwrap();
+        assert_eq!(public.cursor(), 3);
+    }
     assert!(
         relay
             .control_page_authenticated(family.family_id, 0, &path, &auth.bytes)
@@ -396,19 +427,25 @@ async fn dynamic_flow(early_batch: bool) {
     );
     let read = resumed_enrollment.sign_get(&pending_path).unwrap();
     let page = ControlPage::decode(
-        &relay
-            .control_page_authenticated(family.family_id, 3 + shift, &pending_path, &read.bytes)
-            .unwrap(),
+        &http_bytes(&app, Method::GET, &pending_path, read.bytes).await,
         family.family_id,
         3 + shift,
     )
     .unwrap();
     assert_eq!(page.entries.len(), 1);
-    public
-        .accept_control(&mut recipient_store, &page.entries[0].committed_bytes)
-        .unwrap();
-    let verified = public
-        .chain()
+    if early_batch {
+        resumed_enrollment
+            .accept_sparse_control(&mut recipient_store, &page.entries[0].committed_bytes)
+            .unwrap();
+    } else {
+        public
+            .accept_control(&mut recipient_store, &page.entries[0].committed_bytes)
+            .unwrap();
+    }
+    let pending_chain =
+        shared_history::first_join_chain(&recipient_store, enrollment.family(), relay_public, 4)
+            .unwrap();
+    let verified = pending_chain
         .latest_challenge(&issue.invitation_id())
         .unwrap();
     let hpke_id = verified.hpke_object_id();
@@ -419,15 +456,19 @@ async fn dynamic_flow(early_batch: bool) {
     );
     let read = resumed_enrollment.sign_get(&object_path).unwrap();
     let hpke_object = OpaqueObject::decode(
-        &relay
-            .object_authenticated(family.family_id, hpke_id, &object_path, &read.bytes)
-            .unwrap(),
+        &http_bytes(&app, Method::GET, &object_path, read.bytes).await,
         hpke_id,
     )
     .unwrap();
-    public
-        .accept_object(&mut recipient_store, hpke_id, &hpke_object.object_bytes)
-        .unwrap();
+    if early_batch {
+        resumed_enrollment
+            .accept_sparse_object(&mut recipient_store, hpke_id, &hpke_object.object_bytes)
+            .unwrap();
+    } else {
+        public
+            .accept_object(&mut recipient_store, hpke_id, &hpke_object.object_bytes)
+            .unwrap();
+    }
     assert!(
         resumed_enrollment
             .prove_challenge(verified, &hpke_object.object_bytes)
@@ -546,17 +587,66 @@ async fn dynamic_flow(early_batch: bool) {
     );
     let read = resumed_enrollment.sign_get(&admission_path).unwrap();
     let page = ControlPage::decode(
-        &relay
-            .control_page_authenticated(family.family_id, 5 + shift, &admission_path, &read.bytes)
-            .unwrap(),
+        &http_bytes(&app, Method::GET, &admission_path, read.bytes).await,
         family.family_id,
         5 + shift,
     )
     .unwrap();
     assert_eq!(page.entries.len(), 1);
-    recipient_public
-        .accept_control(&mut recipient_store, &page.entries[0].committed_bytes)
+    if early_batch {
+        resumed_enrollment
+            .accept_sparse_control(&mut recipient_store, &page.entries[0].committed_bytes)
+            .unwrap();
+        assert!(
+            ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).is_err()
+        );
+        let log_path = format!("/v1/families/{}/log?after=0", lower_hex(&family.family_id));
+        let read = resumed_enrollment.sign_get(&log_path).unwrap();
+        let log = LogPage::decode(
+            &http_bytes(&app, Method::GET, &log_path, read.bytes).await,
+            family.family_id,
+            0,
+        )
         .unwrap();
+        assert_eq!(log.entries.len(), 7);
+        assert_eq!(log.entries[0].cursor, 1);
+        for entry in log.entries.iter().skip(1) {
+            match entry.kind {
+                1 => recipient_public
+                    .accept_control(&mut recipient_store, &entry.committed_bytes)
+                    .unwrap(),
+                2 => {
+                    let Value::Map(envelope) = cbor::decode(&entry.committed_bytes).unwrap() else {
+                        panic!()
+                    };
+                    let header =
+                        batch::Header::decode(&cbor::encode(&envelope[0].1).unwrap()).unwrap();
+                    let result_path = format!(
+                        "/v1/families/{}/batch-results/{}",
+                        lower_hex(&family.family_id),
+                        lower_hex(&header.batch_id)
+                    );
+                    let read = resumed_enrollment.sign_get(&result_path).unwrap();
+                    let result = BatchResult::decode(
+                        &http_bytes(&app, Method::GET, &result_path, read.bytes).await,
+                    )
+                    .unwrap();
+                    recipient_public
+                        .accept_batch(
+                            &mut recipient_store,
+                            &entry.committed_bytes,
+                            result.receipt_bytes.as_ref().unwrap(),
+                        )
+                        .unwrap();
+                }
+                _ => panic!("unexpected log kind"),
+            }
+        }
+    } else {
+        recipient_public
+            .accept_control(&mut recipient_store, &page.entries[0].committed_bytes)
+            .unwrap();
+    }
     assert!(ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).is_err());
     let chunk_id = genesis_stages[1].0;
     let mut object_ids = vec![object_id, issue.object_id()];

@@ -104,6 +104,46 @@ impl EnrollmentAttempt {
         prior_batches: &[(&[u8], &[u8])],
         local_wrapping_key: &[u8; 32],
     ) -> Result<Self, Error> {
+        Self::prepare_mode(
+            store,
+            bootstrap,
+            genesis_bytes,
+            issue_bytes,
+            prior_batches,
+            local_wrapping_key,
+            false,
+        )
+    }
+
+    /// Prepare from an invitation-visible control page with data gaps.
+    /// The first full-log replay happens only after admission.
+    pub fn prepare_sparse(
+        store: &mut SqliteStore,
+        bootstrap: &InvitationBootstrap,
+        genesis_bytes: &[u8],
+        issue_bytes: &[u8],
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
+        Self::prepare_mode(
+            store,
+            bootstrap,
+            genesis_bytes,
+            issue_bytes,
+            &[],
+            local_wrapping_key,
+            true,
+        )
+    }
+
+    fn prepare_mode(
+        store: &mut SqliteStore,
+        bootstrap: &InvitationBootstrap,
+        genesis_bytes: &[u8],
+        issue_bytes: &[u8],
+        prior_batches: &[(&[u8], &[u8])],
+        local_wrapping_key: &[u8; 32],
+        sparse: bool,
+    ) -> Result<Self, Error> {
         if store.enrollment_attempt(bootstrap.family_id())?.is_some() {
             let existing = Self::resume(store, bootstrap.family_id(), local_wrapping_key)?;
             if existing.bootstrap_fragment != bootstrap.to_fragment()? {
@@ -113,8 +153,11 @@ impl EnrollmentAttempt {
             }
             return Ok(existing);
         }
-        let chain =
-            bootstrap.verify_issue_with_batches(genesis_bytes, issue_bytes, prior_batches)?;
+        let chain = if sparse {
+            bootstrap.verify_issue_sparse(genesis_bytes, issue_bytes)?
+        } else {
+            bootstrap.verify_issue_with_batches(genesis_bytes, issue_bytes, prior_batches)?
+        };
         let family = FamilyHandle {
             family_id: bootstrap.family_id(),
             device_id: random_v4()?,
@@ -143,25 +186,30 @@ impl EnrollmentAttempt {
         let aad = local_aad(family, bootstrap.invitation_id())?;
         let secret_ciphertext =
             crypto::seal_with_nonce(local_wrapping_key, &secret_nonce, &aad, &secret)?;
-        store.create_enrollment_attempt(&EnrollmentRow {
-            family,
-            invitation_id: bootstrap.invitation_id(),
-            genesis_bytes: genesis_bytes.to_vec(),
-            issue_bytes: issue_bytes.to_vec(),
-            candidate_bytes: candidate_bytes.clone(),
-            secret_nonce,
-            secret_ciphertext,
-        })?;
+        store.create_enrollment_attempt(
+            &EnrollmentRow {
+                family,
+                invitation_id: bootstrap.invitation_id(),
+                genesis_bytes: genesis_bytes.to_vec(),
+                issue_bytes: issue_bytes.to_vec(),
+                candidate_bytes: candidate_bytes.clone(),
+                secret_nonce,
+                secret_ciphertext,
+            },
+            sparse.then_some(chain.last_global_cursor()),
+        )?;
         let mut public = PublicHistorySession::begin(
             store,
             family,
             genesis_bytes,
             bootstrap.relay_public_key_internal(),
         )?;
-        for (envelope, receipt) in prior_batches {
-            public.accept_batch(store, envelope, receipt)?;
+        if !sparse {
+            for (envelope, receipt) in prior_batches {
+                public.accept_batch(store, envelope, receipt)?;
+            }
+            public.accept_control(store, issue_bytes)?;
         }
-        public.accept_control(store, issue_bytes)?;
         Self::resume(store, family.family_id, local_wrapping_key)
     }
 
@@ -205,6 +253,8 @@ impl EnrollmentAttempt {
         let history = store
             .shared_history(row.family)?
             .ok_or(Error::Invalid("shared history absent after enrollment"))?;
+        let sparse_controls = store.enrollment_controls(row.family)?;
+        let sparse = !sparse_controls.is_empty();
         let prior_batches: Vec<(&[u8], &[u8])> = history
             .entries
             .iter()
@@ -216,11 +266,20 @@ impl EnrollmentAttempt {
                 )
             })
             .collect();
-        let chain = bootstrap.verify_issue_with_batches(
-            &row.genesis_bytes,
-            &row.issue_bytes,
-            &prior_batches,
-        )?;
+        let chain = if sparse {
+            shared_history::sparse_enrollment_chain(
+                store,
+                row.family,
+                bootstrap.relay_public_key_internal(),
+            )?;
+            bootstrap.verify_issue_sparse(&row.genesis_bytes, &row.issue_bytes)?
+        } else {
+            bootstrap.verify_issue_with_batches(
+                &row.genesis_bytes,
+                &row.issue_bytes,
+                &prior_batches,
+            )?
+        };
         let device_sign_seed = fixed(&parts[2])?;
         let device_agreement_private = fixed(&parts[3])?;
         let enrollment_nonce = fixed(&parts[4])?;
@@ -243,23 +302,34 @@ impl EnrollmentAttempt {
             &row.genesis_bytes,
             bootstrap.relay_public_key_internal(),
         )?;
-        if public.cursor() < chain.last_global_cursor() {
+        if !sparse && public.cursor() < chain.last_global_cursor() {
             public.accept_control(store, &row.issue_bytes)?;
         }
-        if history
-            .entries
-            .iter()
-            .find(|entry| entry.kind == 1)
-            .is_none_or(|first| first.committed_bytes != row.issue_bytes)
+        if !sparse
+            && history
+                .entries
+                .iter()
+                .find(|entry| entry.kind == 1)
+                .is_none_or(|first| first.committed_bytes != row.issue_bytes)
         {
             return Err(Error::Invalid("stored issue differs from pinned history"));
         }
-        for entry in &history.entries {
-            if entry.kind != 1 {
-                continue;
-            }
+        let committed_controls: Vec<&[u8]> = if sparse {
+            sparse_controls
+                .iter()
+                .map(|(_, bytes)| bytes.as_slice())
+                .collect()
+        } else {
+            history
+                .entries
+                .iter()
+                .filter(|entry| entry.kind == 1)
+                .map(|entry| entry.committed_bytes.as_slice())
+                .collect()
+        };
+        for bytes in committed_controls {
             let committed = cbor::decode_with_limits(
-                &entry.committed_bytes,
+                bytes,
                 cbor::Limits {
                     max_bytes: 1024 * 1024,
                     max_depth: 16,
@@ -308,6 +378,34 @@ impl EnrollmentAttempt {
     }
     pub fn claim_candidate(&self) -> &[u8] {
         &self.candidate_bytes
+    }
+    pub fn accept_sparse_control(
+        &self,
+        store: &mut SqliteStore,
+        committed: &[u8],
+    ) -> Result<(), Error> {
+        shared_history::accept_sparse_enrollment_control(
+            store,
+            self.family,
+            self.relay_public_key()?,
+            committed,
+        )?;
+        Ok(())
+    }
+    pub fn accept_sparse_object(
+        &self,
+        store: &mut SqliteStore,
+        object_id: [u8; 16],
+        object_bytes: &[u8],
+    ) -> Result<(), Error> {
+        shared_history::accept_sparse_enrollment_object(
+            store,
+            self.family,
+            self.relay_public_key()?,
+            object_id,
+            object_bytes,
+        )?;
+        Ok(())
     }
     pub fn device_sign_public(&self) -> [u8; 32] {
         crypto::signing_public_key(&self.device_sign_seed)

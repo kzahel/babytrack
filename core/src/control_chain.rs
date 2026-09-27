@@ -217,6 +217,32 @@ impl ControlChain {
         }
     }
 
+    /// Pending enrollment may see signed controls while intervening data
+    /// entries remain unreadable. This verifies the control's relay-signed
+    /// cursor and full authority transition, but never establishes data
+    /// readiness or authorizes batch writes. Complete history is replayed
+    /// separately after admission.
+    pub(crate) fn apply_sparse_control(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        let value = cbor::decode_with_limits(
+            bytes,
+            cbor::Limits {
+                max_bytes: 1024 * 1024,
+                max_depth: 16,
+            },
+        )?;
+        let root = exact_map(&value, 4)?;
+        let receipt = array(&root[2].1, 6)?;
+        let cursor = number(&receipt[3])?;
+        if cursor <= self.last_global_cursor {
+            return Err(Error::Invalid("sparse control cursor did not advance"));
+        }
+        let mut candidate = self.clone();
+        candidate.last_global_cursor = cursor - 1;
+        candidate.apply_control(bytes)?;
+        *self = candidate;
+        Ok(())
+    }
+
     pub fn latest_challenge(&self, invitation_id: &[u8; 16]) -> Option<&VerifiedChallenge> {
         self.challenges.get(invitation_id)
     }

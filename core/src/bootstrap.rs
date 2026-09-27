@@ -245,6 +245,24 @@ impl InvitationBootstrap {
         issue_bytes: &[u8],
         prior_batches: &[(&[u8], &[u8])],
     ) -> Result<ControlChain, Error> {
+        self.verify_issue_inner(genesis_bytes, issue_bytes, prior_batches, false)
+    }
+
+    pub(crate) fn verify_issue_sparse(
+        &self,
+        genesis_bytes: &[u8],
+        issue_bytes: &[u8],
+    ) -> Result<ControlChain, Error> {
+        self.verify_issue_inner(genesis_bytes, issue_bytes, &[], true)
+    }
+
+    fn verify_issue_inner(
+        &self,
+        genesis_bytes: &[u8],
+        issue_bytes: &[u8],
+        prior_batches: &[(&[u8], &[u8])],
+        sparse: bool,
+    ) -> Result<ControlChain, Error> {
         let genesis = control::verify_genesis(genesis_bytes, &self.relay_public_key)?;
         if genesis.family_id() != self.family_id || genesis.head_hash() != self.genesis_head {
             return Err(Error::Invalid("linked genesis differs from verified bytes"));
@@ -286,7 +304,11 @@ impl InvitationBootstrap {
         {
             return Err(Error::Invalid("issue invitation ID, role, or key mismatch"));
         }
-        chain.apply_invite_issue(issue_bytes)?;
+        if sparse {
+            chain.apply_sparse_control(issue_bytes)?;
+        } else {
+            chain.apply_invite_issue(issue_bytes)?;
+        }
         Ok(chain)
     }
 }

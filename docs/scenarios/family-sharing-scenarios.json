@@ -1158,7 +1158,7 @@
         "relay omits or substitutes a manifested chunk",
         "new local operation while promotion is staged",
         "manager batch sealed at genesis retries exact bytes after join controls advance",
-        "manager batch commits before invitation and occupies a global cursor between genesis and issue; recipient verifies it before claiming",
+        "manager batch commits before invitation and occupies a global cursor between genesis and issue; recipient verifies sparse control ancestry to claim, then fetches and verifies the full log after admission before data readiness",
         "unknown event fields"
       ]
     },

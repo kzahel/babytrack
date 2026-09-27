@@ -514,6 +514,15 @@ matching entry exists. Clients advance only after verifying each included
 signed entry. An unlisted latest entry may still be hidden by a malicious
 relay, as already accepted.
 
+An invitation or pending device verifies the signed, parent-linked control
+ancestry and each control's global cursor from this filtered feed. It may
+advance its pending control state across intervening batch cursors without
+claiming that those batches or their data are verified. Its local Family is
+not data-ready at admission. Once active, the device fetches the full log
+from its pinned genesis through admission, verifies every contiguous entry
+and required object and batch receipt, then establishes data readiness.
+The relay does not expose skipped batch bytes through pending read access.
+
 Normal object staging is `POST
 /v1/families/{family_hex}/objects/{object_hex}` with body CBOR
 `{1:1, 2:unsigned_transition, 3:sorted_signatures,

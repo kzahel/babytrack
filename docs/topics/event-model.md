@@ -60,6 +60,12 @@ complete list, with the other inspectable in history.
 | `temperature` | `value`, optional `method` |
 | `note` | text only |
 
+The Android first-cohort build currently records growth as whole grams and
+millimetres, either or both in one event. The core writes the published
+measure map with the entered unit and rejects empty or out-of-range values.
+Local restart/file restore and cross-device encrypted sync preserve these
+measurements. Other published event types and entered units remain M1 work.
+
 Growth percentiles are computed from WHO tables when shown, never stored.
 Wake-window hints are computed from sleep events on the device.
 Freezer milk inventory is outside the MVP; pumping records do not imply a

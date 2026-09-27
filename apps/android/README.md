@@ -6,8 +6,11 @@ proof, grant, and recipient history verification. Both devices can edit and
 sync; each can save a shared backup or make an independent private copy.
 While the app is in the foreground it polls the relay every 30 seconds. A
 persisted Android job also requests network sync when the OS allows it.
-Removal and automatic copy after verified removal remain open. The release
-manifest does not allow cleartext HTTP.
+The manager can remove the first recipient. After verifying a signed
+removal, that device stops shared writes and automatically makes a private
+Family copy when it has pending changes. The release manifest does not allow
+cleartext HTTP; sharing controls remain in the debug UI while broader
+membership and the M0 security gate are open.
 
 To exercise the current relay slice on an emulator:
 
@@ -55,6 +58,11 @@ To exercise the current relay slice on an emulator:
    If both apps run at different times, each foreground or scheduled pass
    advances the next verified protocol step. A failed pass leaves local work
    saved and shows delayed or blocked status until resolved.
+10. The tracking screen can save a growth entry with whole grams and
+    millimetres. The same Rust operation is used for local and shared
+    Families; the two-emulator test verifies the recipient's entry on the
+    manager's device. The manager can remove that first recipient; pending
+    edits on the removed device become an independent private Family copy.
 
 The on-device integration test calls the same Keystore and transport adapter
 through a real relay. With an emulator running, build both APKs with

@@ -174,6 +174,8 @@ private fun TrackerScreen(
     var amount by remember { mutableStateOf("") }
     var sleepMinutes by remember { mutableStateOf("") }
     var noteText by remember { mutableStateOf("") }
+    var growthWeight by remember { mutableStateOf("") }
+    var growthLength by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var automaticSyncDelayed by remember { mutableStateOf(false) }
     var automaticSyncBlocked by remember { mutableStateOf(false) }
@@ -822,6 +824,47 @@ private fun TrackerScreen(
                             sleepMinutes = ""
                         }) { Text(stringResource(R.string.save_sleep)) }
                     }
+                    Text(stringResource(R.string.log_growth), style = MaterialTheme.typography.titleLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = growthWeight,
+                            onValueChange = { growthWeight = it.filter(Char::isDigit) },
+                            label = { Text(stringResource(R.string.weight_g)) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            value = growthLength,
+                            onValueChange = { growthLength = it.filter(Char::isDigit) },
+                            label = { Text(stringResource(R.string.length_mm)) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                    }
+                    val weight = growthWeight.toLongOrNull()
+                    val length = growthLength.toLongOrNull()
+                    Button(
+                        enabled = (weight != null || length != null) &&
+                            (growthWeight.isBlank() || (weight != null && weight in 1L..100_000L)) &&
+                            (growthLength.isBlank() || (length != null && length in 1L..2_500L)),
+                        onClick = {
+                            val savedWeight = growthWeight
+                            val savedLength = growthLength
+                            scope.launch {
+                                runCatching { withContext(Dispatchers.IO) {
+                                    if (activeShared) sharing.logGrowth(family, child.id, weight, length, nowTime())
+                                    else store.logGrowth(family, child.id, weight, length, nowTime())
+                                } }.onSuccess {
+                                    if (growthWeight == savedWeight) growthWeight = ""
+                                    if (growthLength == savedLength) growthLength = ""
+                                    version++
+                                    message = null
+                                }.onFailure { message = errorText }
+                            }
+                        },
+                    ) { Text(stringResource(R.string.save_growth)) }
                     Text(stringResource(R.string.log_note), style = MaterialTheme.typography.titleLarge)
                     OutlinedTextField(
                         value = noteText,
@@ -851,6 +894,12 @@ private fun TrackerScreen(
                                 stringResource(R.string.sleep_duration, (entry.endUtcMs!! - entry.startUtcMs) / 60_000)
                             entry.kind == "sleep" -> stringResource(R.string.sleep_running)
                             entry.note != null -> stringResource(R.string.note_entry, entry.note!!)
+                            entry.kind == "growth" && entry.growthWeightG != null && entry.growthLengthMm != null ->
+                                stringResource(R.string.growth_both, entry.growthWeightG!!, entry.growthLengthMm!!)
+                            entry.kind == "growth" && entry.growthWeightG != null ->
+                                stringResource(R.string.growth_weight, entry.growthWeightG!!)
+                            entry.kind == "growth" && entry.growthLengthMm != null ->
+                                stringResource(R.string.growth_length, entry.growthLengthMm!!)
                             entry.diaperKind != null -> stringResource(R.string.diaper, when (entry.diaperKind!!.toInt()) {
                                 1 -> stringResource(R.string.wet)
                                 2 -> stringResource(R.string.dirty)

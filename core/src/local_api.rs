@@ -52,6 +52,8 @@ pub struct Activity {
     pub note: Option<String>,
     pub diaper_kind: Option<u8>,
     pub bottle_ml: Option<i64>,
+    pub growth_weight_g: Option<i64>,
+    pub growth_length_mm: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -228,6 +230,20 @@ impl LocalRepository {
         time: ActivityTime,
     ) -> Result<[u8; 16], Error> {
         let (activity_id, operation) = note_operation(family, child_id, note, time)?;
+        self.append_activity(family, child_id, operation, time.saved_at_ms)?;
+        Ok(activity_id)
+    }
+
+    pub fn log_growth(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        weight_g: Option<i64>,
+        length_mm: Option<i64>,
+        time: ActivityTime,
+    ) -> Result<[u8; 16], Error> {
+        let (activity_id, operation) =
+            growth_operation(family, child_id, weight_g, length_mm, time)?;
         self.append_activity(family, child_id, operation, time.saved_at_ms)?;
         Ok(activity_id)
     }
@@ -560,6 +576,39 @@ pub fn note_operation(
     )
 }
 
+pub fn growth_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    weight_g: Option<i64>,
+    length_mm: Option<i64>,
+    time: ActivityTime,
+) -> Result<([u8; 16], NewOperation), Error> {
+    if weight_g.is_none() && length_mm.is_none() {
+        return Err(Error::Invalid("growth needs weight or length"));
+    }
+    if weight_g.is_some_and(|value| !(1..=100_000).contains(&value))
+        || length_mm.is_some_and(|value| !(1..=2_500).contains(&value))
+    {
+        return Err(Error::Invalid("growth measurement outside supported range"));
+    }
+    let mut fields = Vec::new();
+    if let Some(value) = weight_g {
+        fields.push((100, whole_measure(value, 10)));
+    }
+    if let Some(value) = length_mm {
+        fields.push((101, whole_measure(value, 20)));
+    }
+    activity_operation(family, child_id, "growth", fields, time)
+}
+
+fn whole_measure(value: i64, unit: i128) -> Value {
+    Value::Map(vec![
+        (1, Value::Integer(value.into())),
+        (2, Value::Text(value.to_string())),
+        (3, Value::Integer(unit)),
+    ])
+}
+
 fn activity_operation(
     family: FamilyHandle,
     child_id: [u8; 16],
@@ -649,6 +698,15 @@ fn activity_summary(record: &Record) -> Option<Activity> {
     } else {
         None
     };
+    let growth_measure = |field| -> Option<i64> {
+        let Value::Map(measure) = &record.field(field)?.value else {
+            return None;
+        };
+        let (1, Value::Integer(value)) = measure.first()? else {
+            return None;
+        };
+        i64::try_from(*value).ok()
+    };
     Some(Activity {
         id: record.id,
         child_id: record.child_id?,
@@ -674,6 +732,16 @@ fn activity_summary(record: &Record) -> Option<Activity> {
         },
         diaper_kind,
         bottle_ml,
+        growth_weight_g: if record.record_type == "growth" {
+            growth_measure(100)
+        } else {
+            None
+        },
+        growth_length_mm: if record.record_type == "growth" {
+            growth_measure(101)
+        } else {
+            None
+        },
     })
 }
 

@@ -213,3 +213,60 @@ fn local_tracking_targets_explicit_family_and_survives_restart() {
     assert_ne!(copy.family_id, first.family_id);
     assert_eq!(app.timeline(copy, child).unwrap().len(), 5);
 }
+
+#[test]
+fn growth_measurements_survive_restart_and_file_restore() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("growth.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    let child = app.add_child(family, "Baby", 1_790_000_000_001).unwrap();
+    let time = ActivityTime {
+        start_utc_ms: 1_790_000_000_002,
+        offset_minutes: 120,
+        saved_at_ms: 1_790_000_000_002,
+    };
+    assert!(app.log_growth(family, child, None, None, time).is_err());
+    assert!(app.log_growth(family, child, Some(0), None, time).is_err());
+    assert!(
+        app.log_growth(family, child, None, Some(2_501), time)
+            .is_err()
+    );
+    let id = app
+        .log_growth(family, child, Some(4_200), Some(540), time)
+        .unwrap();
+    let weight_only = app
+        .log_growth(family, child, Some(4_300), None, time)
+        .unwrap();
+    let before = app.timeline(family, child).unwrap();
+    assert_eq!(
+        before
+            .iter()
+            .find(|row| row.id == id)
+            .unwrap()
+            .growth_weight_g,
+        Some(4_200)
+    );
+    assert_eq!(
+        before
+            .iter()
+            .find(|row| row.id == id)
+            .unwrap()
+            .growth_length_mm,
+        Some(540)
+    );
+    assert_eq!(
+        before
+            .iter()
+            .find(|row| row.id == weight_only)
+            .unwrap()
+            .growth_length_mm,
+        None
+    );
+    let backup = app.backup(family, 1_790_000_000_003).unwrap();
+    drop(app);
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.timeline(family, child).unwrap(), before);
+    let restored = app.restore(&backup, 1_790_000_000_004).unwrap();
+    assert_eq!(app.timeline(restored, child).unwrap(), before);
+}

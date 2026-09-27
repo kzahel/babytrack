@@ -44,7 +44,7 @@
     <string name="confirm_restore">Restore as new Family</string>
     <string name="error">Could not complete the action. Try again.</string>
     <string name="dev_share_title">Sharing setup preview</string>
-    <string name="dev_share_description">Connect to a development relay. This screen can prepare sharing and an invitation; receiving and automatic sync are still in progress. Use a local relay only for test data.</string>
+    <string name="dev_share_description">Connect to a development relay. This screen can prepare sharing and an invitation; key handoff and automatic sync are still in progress. Use a local relay only for test data.</string>
     <string name="relay_origin">Relay origin (HTTPS or localhost)</string>
     <string name="relay_public_key">Relay public key (64 hex digits)</string>
     <string name="share_preparing">Preparing encrypted history and contacting the relay…</string>
@@ -57,4 +57,11 @@
     <string name="invite_confirmed">Invitation committed. Keep this fragment private.</string>
     <string name="create_invite">Create or retry invitation</string>
     <string name="invite_fragment_label">Invitation fragment for development testing</string>
+    <string name="dev_join_title">Join preview</string>
+    <string name="dev_join_description">Paste a one-device invitation fragment. This commits a keyless claim to the relay. A key holder still needs to respond; the receiving and sync screens are in progress.</string>
+    <string name="received_fragment">Invitation fragment</string>
+    <string name="join_preparing">Checking invitation and submitting a keyless claim…</string>
+    <string name="join_pending">Claim committed. Waiting for a Family key holder; shared data is not available yet.</string>
+    <string name="join_retry">Could not confirm this claim. Keep the fragment and retry; the saved identity and claim stay the same.</string>
+    <string name="join_or_retry">Join or retry claim</string>
 </resources>

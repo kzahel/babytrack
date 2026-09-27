@@ -17,9 +17,9 @@ control/object reads and accept encrypted epoch-one batches for the first
 two devices. General membership, removal, rotation, and transport recovery
 remain open. The Android app handles local tracking and readable or
 password-protected file backup. Its debug sharing preview can promote a
-Family and issue an invitation through a development relay, but recipient
-join and automatic sync are still open. Scenario files still include symbolic
-expectations.
+Family, issue an invitation, and submit a recipient's keyless claim through a
+development relay. Key handoff and automatic sync are still open. Scenario
+files still include symbolic expectations.
 
 ## Product and architecture
 

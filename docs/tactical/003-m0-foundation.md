@@ -81,8 +81,16 @@ confirms the signed genesis before seeing a share result; first invite issue
 likewise yields its fragment only after signed commit. An emulator test
 against a local relay with `adb reverse` promoted a child Family, issued an
 invite, reopened the app store, and retried both writes. Android CI compiles
-the instrumentation test but does not run an emulator. This preview does not
-yet receive invites or sync subsequent edits, and says so in the UI.
+the instrumentation test but does not run an emulator. A separate recipient
+store now parses the invitation, fetches its public control page using the
+Android-compatible signed-read header, verifies the link in Rust, and commits
+an exact keyless claim. The emulator test restarts and retries that claim
+without an invitation read, since that authority closes when the claim
+commits. The UI reports waiting for a key holder. Key handoff, data readiness,
+subsequent edit sync, and removal remain open.
+The local-only tracker hides this pending recipient Family and rejects writes
+through its handle; the emulator test checks that boundary. A verified shared
+session will supply the recipient's usable view after handoff and hydration.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

@@ -5,11 +5,14 @@
 use std::sync::{Arc, Mutex};
 
 use babytrack_core::{
+    bootstrap::InvitationBootstrap,
     cbor::{self, Value},
     creation::ManagerCreation,
+    enrollment::EnrollmentAttempt,
     issue::FirstInviteIssue,
     local_api::{ActivityTime, LocalRepository},
     sqlite_store::{FamilyHandle, SqliteStore},
+    sync_wire::ControlPage,
 };
 
 #[cfg(feature = "fixture-api")]
@@ -136,6 +139,21 @@ pub struct PreparedInviteRow {
     pub object: StagedObjectRow,
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct InvitationPreviewRow {
+    pub family_id: Vec<u8>,
+    pub relay_origin: String,
+    pub role: u8,
+    pub control_path: String,
+    pub read_auth: Vec<u8>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PreparedJoinRow {
+    pub family: FamilyRef,
+    pub candidate_bytes: Vec<u8>,
+}
+
 #[derive(uniffi::Object)]
 pub struct NativeSharedStore {
     store: Mutex<SqliteStore>,
@@ -243,6 +261,97 @@ impl NativeSharedStore {
             .to_fragment()
             .map_err(rejected)
     }
+
+    /// Retry the exact saved claim after invitation read access closes.
+    pub fn resume_join(
+        &self,
+        fragment: String,
+        wrapping_key: Vec<u8>,
+    ) -> Result<Option<PreparedJoinRow>, BindingError> {
+        let bootstrap = InvitationBootstrap::from_fragment(&fragment).map_err(rejected)?;
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        Ok(
+            EnrollmentAttempt::resume_for_invitation(
+                &mut store,
+                &bootstrap,
+                &fixed(&wrapping_key)?,
+            )
+            .map_err(rejected)?
+            .map(|attempt| PreparedJoinRow {
+                family: attempt.family().into(),
+                candidate_bytes: attempt.claim_candidate().to_vec(),
+            }),
+        )
+    }
+
+    /// Verify the invitation-linked public controls before generating or
+    /// storing this installation's recipient credentials.
+    pub fn prepare_join(
+        &self,
+        fragment: String,
+        control_page: Vec<u8>,
+        wrapping_key: Vec<u8>,
+    ) -> Result<PreparedJoinRow, BindingError> {
+        let bootstrap = InvitationBootstrap::from_fragment(&fragment).map_err(rejected)?;
+        let page =
+            ControlPage::decode(&control_page, bootstrap.family_id(), 0).map_err(rejected)?;
+        if page.entries.len() < 2 || page.entries[0].cursor != 1 {
+            return Err(BindingError::InvalidBytes);
+        }
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let attempt = EnrollmentAttempt::prepare_sparse(
+            &mut store,
+            &bootstrap,
+            &page.entries[0].committed_bytes,
+            &page.entries[1].committed_bytes,
+            &fixed(&wrapping_key)?,
+        )
+        .map_err(rejected)?;
+        Ok(PreparedJoinRow {
+            family: attempt.family().into(),
+            candidate_bytes: attempt.claim_candidate().to_vec(),
+        })
+    }
+
+    /// A successful HTTP status is insufficient: bind the signed relay
+    /// commit to the exact durable claim before recording pending progress.
+    pub fn confirm_join_claim(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        commit_response: Vec<u8>,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let attempt = EnrollmentAttempt::resume(
+            &mut store,
+            family.handle()?.family_id,
+            &fixed(&wrapping_key)?,
+        )
+        .map_err(rejected)?;
+        if attempt.family() != family.handle()? {
+            return Err(BindingError::InvalidBytes);
+        }
+        attempt
+            .confirm_sparse_claim(&mut store, &committed_control(&commit_response)?)
+            .map_err(rejected)
+    }
+}
+
+#[uniffi::export]
+pub fn preview_invitation(fragment: String) -> Result<InvitationPreviewRow, BindingError> {
+    let bootstrap = InvitationBootstrap::from_fragment(&fragment).map_err(rejected)?;
+    let path = format!(
+        "/v1/families/{}/control?after=0",
+        lower_hex(&bootstrap.family_id())
+    );
+    let read = bootstrap.sign_get(&path).map_err(rejected)?;
+    Ok(InvitationPreviewRow {
+        family_id: bootstrap.family_id().to_vec(),
+        relay_origin: bootstrap.relay_origin().to_owned(),
+        role: bootstrap.fixed_role(),
+        control_path: path,
+        read_auth: read.bytes,
+    })
 }
 
 #[derive(uniffi::Object)]
@@ -618,6 +727,10 @@ pub fn seal_one(
 
 fn fixed<const N: usize>(bytes: &[u8]) -> Result<[u8; N], BindingError> {
     bytes.try_into().map_err(|_| BindingError::InvalidBytes)
+}
+
+fn lower_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn committed_control(response: &[u8]) -> Result<Vec<u8>, BindingError> {

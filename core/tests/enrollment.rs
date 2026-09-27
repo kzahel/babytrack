@@ -151,6 +151,21 @@ fn join_claim_keeps_two_keys_and_exact_candidate_through_restart() {
         (4, Value::Bytes(relay_signature.to_vec())),
     ]))
     .unwrap();
+    let Value::Map(mut wrong_claim) = cbor::decode(&committed).unwrap() else {
+        unreachable!()
+    };
+    wrong_claim[1].1 = Value::Array(vec![]);
+    assert!(
+        resumed
+            .confirm_sparse_claim(&mut store, &cbor::encode(&Value::Map(wrong_claim)).unwrap())
+            .is_err()
+    );
+    assert_eq!(
+        PublicHistorySession::resume(&store, family)
+            .unwrap()
+            .cursor(),
+        2
+    );
     let mut chain = ControlChain::from_genesis(&genesis, relay_public).unwrap();
     chain.apply_invite_issue(&issue).unwrap();
     chain.apply_invite_claim(&committed).unwrap();

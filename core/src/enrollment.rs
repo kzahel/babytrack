@@ -79,6 +79,23 @@ pub struct EnrollmentAttempt {
 }
 
 impl EnrollmentAttempt {
+    pub fn resume_for_invitation(
+        store: &mut SqliteStore,
+        bootstrap: &InvitationBootstrap,
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Option<Self>, Error> {
+        if store.enrollment_attempt(bootstrap.family_id())?.is_none() {
+            return Ok(None);
+        }
+        let attempt = Self::resume(store, bootstrap.family_id(), local_wrapping_key)?;
+        if attempt.bootstrap_fragment != bootstrap.to_fragment()? {
+            return Err(Error::Invalid(
+                "another invitation already owns this Family",
+            ));
+        }
+        Ok(Some(attempt))
+    }
+
     pub fn prepare(
         store: &mut SqliteStore,
         bootstrap: &InvitationBootstrap,
@@ -124,13 +141,7 @@ impl EnrollmentAttempt {
         local_wrapping_key: &[u8; 32],
         sparse: bool,
     ) -> Result<Self, Error> {
-        if store.enrollment_attempt(bootstrap.family_id())?.is_some() {
-            let existing = Self::resume(store, bootstrap.family_id(), local_wrapping_key)?;
-            if existing.bootstrap_fragment != bootstrap.to_fragment()? {
-                return Err(Error::Invalid(
-                    "another invitation already owns this Family",
-                ));
-            }
+        if let Some(existing) = Self::resume_for_invitation(store, bootstrap, local_wrapping_key)? {
             return Ok(existing);
         }
         let chain = if sparse {
@@ -357,6 +368,30 @@ impl EnrollmentAttempt {
     }
     pub fn claim_candidate(&self) -> &[u8] {
         &self.candidate_bytes
+    }
+    /// Confirm only the exact claim saved before the first POST. A relay
+    /// response for a competing redemption must not advance local progress.
+    pub fn confirm_sparse_claim(
+        &self,
+        store: &mut SqliteStore,
+        committed: &[u8],
+    ) -> Result<(), Error> {
+        let Value::Map(root) = cbor::decode(committed)? else {
+            return Err(Error::Invalid("committed claim not map"));
+        };
+        if root.len() != 4 {
+            return Err(Error::Invalid("committed claim width"));
+        }
+        let candidate = cbor::encode(&Value::Map(vec![
+            (1, root[0].1.clone()),
+            (2, root[1].1.clone()),
+        ]))?;
+        if candidate != self.candidate_bytes {
+            return Err(Error::Invalid(
+                "committed claim differs from saved candidate",
+            ));
+        }
+        self.accept_sparse_control(store, committed)
     }
     pub fn accept_sparse_control(
         &self,

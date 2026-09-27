@@ -85,7 +85,26 @@ impl LocalRepository {
     }
 
     pub fn families(&self) -> Result<Vec<FamilyHandle>, Error> {
-        Ok(self.store.families()?)
+        self.store
+            .families()?
+            .into_iter()
+            .filter_map(
+                |family| match self.store.has_enrollment_attempt(family.family_id) {
+                    Ok(false) => Some(Ok(family)),
+                    Ok(true) => None,
+                    Err(error) => Some(Err(error.into())),
+                },
+            )
+            .collect()
+    }
+
+    fn ensure_local_surface(&self, family: FamilyHandle) -> Result<(), Error> {
+        if self.store.has_enrollment_attempt(family.family_id)? {
+            return Err(Error::Invalid(
+                "recipient enrollment is not a local-only Family",
+            ));
+        }
+        Ok(())
     }
 
     pub fn create_family(&mut self, now_ms: i64) -> Result<FamilyHandle, Error> {
@@ -102,6 +121,7 @@ impl LocalRepository {
     }
 
     pub fn children(&self, family: FamilyHandle) -> Result<Vec<Child>, Error> {
+        self.ensure_local_surface(family)?;
         let projection = self.store.load_local(family)?;
         let mut children = Vec::new();
         for record in projection.records() {
@@ -126,6 +146,7 @@ impl LocalRepository {
         name: &str,
         now_ms: i64,
     ) -> Result<[u8; 16], Error> {
+        self.ensure_local_surface(family)?;
         check_time(now_ms)?;
         if name.trim().is_empty() || name.len() > 16 * 1024 {
             return Err(Error::Invalid("child name empty or too long"));
@@ -207,6 +228,7 @@ impl LocalRepository {
         fields: Vec<(u64, Value)>,
         time: ActivityTime,
     ) -> Result<[u8; 16], Error> {
+        self.ensure_local_surface(family)?;
         check_time(time.saved_at_ms)?;
         if !(-840..=840).contains(&time.offset_minutes) {
             return Err(Error::Invalid("recorded offset outside v1 range"));
@@ -251,6 +273,7 @@ impl LocalRepository {
         family: FamilyHandle,
         child_id: [u8; 16],
     ) -> Result<Vec<Activity>, Error> {
+        self.ensure_local_surface(family)?;
         let projection = self.store.load_local(family)?;
         if projection
             .record(&child_id)
@@ -272,6 +295,7 @@ impl LocalRepository {
     }
 
     pub fn backup(&self, family: FamilyHandle, now_ms: i64) -> Result<Vec<u8>, Error> {
+        self.ensure_local_surface(family)?;
         Ok(portable_file::export_readable_local(
             &self.store,
             family,
@@ -280,6 +304,7 @@ impl LocalRepository {
     }
 
     pub fn revision(&self, family: FamilyHandle) -> Result<u64, Error> {
+        self.ensure_local_surface(family)?;
         Ok(self.store.local_revision(family)?)
     }
 
@@ -287,6 +312,7 @@ impl LocalRepository {
         &self,
         family: FamilyHandle,
     ) -> Result<Option<sqlite_store::RestoredOrigin>, Error> {
+        self.ensure_local_surface(family)?;
         Ok(self.store.restored_origin(family)?)
     }
 

@@ -2,8 +2,9 @@
 
 The debug app tracks local Families and can prepare a Family for sharing on a
 development relay. It currently commits encrypted promotion history and a
-one-device invitation. Receiving an invitation, automatic sync, and removal
-are still being implemented; the screen states this explicitly. The release
+one-device invitation and a recipient's keyless claim. Completing key handoff,
+automatic sync, and removal are still being implemented; the screen states
+this explicitly. The release
 manifest does not allow cleartext HTTP.
 
 To exercise the current relay slice on an emulator:
@@ -18,6 +19,12 @@ To exercise the current relay slice on an emulator:
    **Create or retry invitation**. Exact prepared bytes survive process
    restart and uncertain POST responses; a confirmed invite yields a
    one-device fragment.
+4. On a receiving debug app, paste that fragment in **Join preview**. The app
+   signs an authenticated read, verifies the invitation-linked public
+   controls in Rust, and submits the exact durable claim. It reports waiting
+   for a key holder; this stage does not provide shared data yet. Retrying
+   after restart resubmits the saved claim without rereading through the
+   invitation credential, whose read access closes at claim commit.
 
 The on-device integration test calls the same Keystore and transport adapter
 through a real relay. With the emulator and `adb reverse` running, build it
@@ -30,5 +37,7 @@ adb shell am instrument -w -e relayPublicKey PUBLIC_KEY_HEX \
 ```
 
 The test creates its own Family, promotes a child record, commits an invite,
-reopens its store, and retries both requests. The default Android CI compiles
-this test, while execution currently uses the local emulator and relay.
+reopens its store, and retries both requests. A separate recipient store then
+claims the invitation and retries after restart with the same device identity
+and candidate bytes. The default Android CI compiles this test, while
+execution currently uses the local emulator and relay.

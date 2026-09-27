@@ -367,7 +367,7 @@ async fn dynamic_flow(early_batch: bool) {
     let mut public = PublicHistorySession::resume(&recipient_store, enrollment.family()).unwrap();
     if early_batch {
         resumed_enrollment
-            .accept_sparse_control(&mut recipient_store, committed_claim)
+            .confirm_sparse_claim(&mut recipient_store, committed_claim)
             .unwrap();
         assert_eq!(public.cursor(), 1);
         let log_path = format!("/v1/families/{}/log?after=0", lower_hex(&family.family_id));

@@ -38,4 +38,26 @@ internal class RelayTransport(origin: String) {
             connection.disconnect()
         }
     }
+
+    fun get(path: String, signedRead: ByteArray): ByteArray {
+        require(path.startsWith("/v1/families/") && !path.contains("..") && !path.contains('#'))
+        require(signedRead.isNotEmpty() && signedRead.size <= 2_048)
+        val auth = signedRead.joinToString("") { "%02x".format(it.toInt() and 255) }
+        val connection = URL(base + path).openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 15_000
+            connection.instanceFollowRedirects = false
+            connection.setRequestProperty("Authorization", "Babytrack-Read $auth")
+            check(connection.responseCode == HttpURLConnection.HTTP_OK) {
+                "Relay rejected request: ${connection.responseCode}"
+            }
+            connection.inputStream.use { input ->
+                return readBounded(input, 4_194_304)
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
 }

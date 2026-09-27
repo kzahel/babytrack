@@ -1632,6 +1632,18 @@ impl SqliteStore {
             .transpose()
     }
 
+    pub(crate) fn has_enrollment_attempt(&self, family_id: [u8; 16]) -> Result<bool, Error> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT 1 FROM enrollment_attempts WHERE family_id = ?1",
+                [family_id.as_slice()],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
     pub(crate) fn save_manager_creation(&mut self, row: &ManagerCreationRow) -> Result<(), Error> {
         let transaction = self.connection.transaction()?;
         let (last_index, _) = checked_family(&transaction, row.family)?;

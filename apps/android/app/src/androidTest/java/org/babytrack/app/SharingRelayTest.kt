@@ -30,14 +30,33 @@ class SharingRelayTest {
             local.addChild(family, "Relay test child", System.currentTimeMillis())
             family
         }
-        ShareCoordinator(context, database.absolutePath).use { sharing ->
+        val fragment = ShareCoordinator(context, database.absolutePath).use { sharing ->
             assertEquals(1uL, sharing.promote(family, origin, publicKey))
             val fragment = sharing.invite(family, origin, 1u.toUByte())
             assertTrue(fragment.startsWith("#bt-invite=v1."))
+            fragment
         }
         ShareCoordinator(context, database.absolutePath).use { sharing ->
             assertEquals(2uL, sharing.promote(family, origin, publicKey))
             assertTrue(sharing.invite(family, origin, 1u.toUByte()).startsWith("#bt-invite=v1."))
+        }
+        val recipient = context.filesDir.resolve("recipient-test-${System.nanoTime()}.db")
+        val first = ShareCoordinator(context, recipient.absolutePath).use { sharing ->
+            sharing.claim(fragment)
+        }
+        assertArrayEquals(family.familyId, first.family.familyId)
+        val retried = ShareCoordinator(context, recipient.absolutePath).use { sharing ->
+            sharing.claim(fragment)
+        }
+        assertEquals(first.family.deviceId.toList(), retried.family.deviceId.toList())
+        assertArrayEquals(first.candidateBytes, retried.candidateBytes)
+        NativeLocalStore.open(recipient.absolutePath).use { local ->
+            assertTrue(local.families().none { it.familyId.contentEquals(family.familyId) })
+            assertTrue(
+                runCatching {
+                    local.addChild(first.family, "Too early", System.currentTimeMillis())
+                }.isFailure,
+            )
         }
     }
 }

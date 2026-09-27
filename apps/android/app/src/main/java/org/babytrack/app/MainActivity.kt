@@ -143,6 +143,8 @@ private fun TrackerScreen(
     var relayPublicKey by remember { mutableStateOf("") }
     var shareStage by remember { mutableStateOf<String?>(null) }
     var invitationFragment by remember { mutableStateOf<String?>(null) }
+    var receivedFragment by remember { mutableStateOf("") }
+    var joinStage by remember { mutableStateOf<String?>(null) }
     var inviteAsManager by remember { mutableStateOf(false) }
     val errorText = stringResource(R.string.error)
     val savedText = stringResource(R.string.saved)
@@ -250,6 +252,39 @@ private fun TrackerScreen(
                         }.onFailure { message = errorText }
                 }
             }) { Text(stringResource(R.string.new_family)) }
+
+            if (BuildConfig.DEBUG) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(stringResource(R.string.dev_join_title), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.dev_join_description))
+                        OutlinedTextField(
+                            value = receivedFragment,
+                            onValueChange = { receivedFragment = it },
+                            label = { Text(stringResource(R.string.received_fragment)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Button(enabled = receivedFragment.isNotBlank(), onClick = {
+                            joinStage = context.getString(R.string.join_preparing)
+                            scope.launch {
+                                runCatching {
+                                    withContext(Dispatchers.IO) { sharing.claim(receivedFragment.trim()) }
+                                }.onSuccess {
+                                    joinStage = context.getString(R.string.join_pending)
+                                    message = null
+                                }.onFailure {
+                                    joinStage = context.getString(R.string.join_retry)
+                                    message = errorText
+                                }
+                            }
+                        }) { Text(stringResource(R.string.join_or_retry)) }
+                        joinStage?.let { Text(it) }
+                    }
+                }
+            }
 
             if (family != null) {
                 if (BuildConfig.DEBUG) {

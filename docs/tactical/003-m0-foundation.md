@@ -1111,6 +1111,17 @@ at expiry without advancing cursor/head, and preserves the published claim
 bytes and retry. FS65's later-device, restart, and interleaved-batch variants
 remain open. Other general-authority findings in this table remain open.
 
+The first-cohort batch path now parses only the claimed ID and author before
+acquiring an immediate SQLite write transaction. It returns a byte-identical
+accepted or rejected result before consulting current roles, then validates
+new work against one transaction snapshot. Accepted batches condition their
+cursor update on both the old cursor and control head and reject a failed
+update. Two separate relay connections racing the same signed envelope get
+one log entry and the same result; the HTTP retry agrees. This covers the
+exact-retry and same-envelope cursor portion of FS69-FS70. Distinct control
+versus batch and rotation races, later-role-loss retries, and crash points
+remain open for general authority.
+
 The corrected [topic proposal](../topics/sync-and-encryption.md#proposed-implementation-seam-for-general-relay-authority)
 uses a public candidate verifier, a relay commit wrapper, and a client
 committed verifier. It needs no v1 wire change if the ledger remains internal;

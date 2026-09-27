@@ -1273,21 +1273,46 @@ impl RelayStore {
         path_family: [u8; 16],
         envelope_bytes: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        let controls = control_count(&self.db, path_family)?;
+        let (claimed_id, author) = batch_authority::claimed_identity(envelope_bytes)?;
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let prior: Option<(Vec<u8>, Vec<u8>)> = tx.query_row(
+            "SELECT envelope_bytes,receipt_bytes FROM batch_results WHERE family_id=?1 AND batch_id=?2",
+            params![&path_family[..], &claimed_id[..]],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        ).optional()?;
+        if let Some((old_envelope, old_receipt)) = prior {
+            if old_envelope != envelope_bytes {
+                return Err(Error::Invalid("batch ID reused with different bytes"));
+            }
+            return Ok(receipt::batch_commit_response(&old_receipt)?);
+        }
+        let prior_rejection: Option<(Vec<u8>, Vec<u8>)> = tx.query_row(
+            "SELECT envelope_bytes,receipt_bytes FROM rejected_batch_results WHERE family_id=?1 AND batch_id=?2",
+            params![&path_family[..], &claimed_id[..]],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        ).optional()?;
+        if let Some((old_envelope, old_receipt)) = prior_rejection {
+            if old_envelope != envelope_bytes {
+                return Err(Error::Invalid("batch ID reused with different bytes"));
+            }
+            return Ok(receipt::batch_commit_response(&old_receipt)?);
+        }
+        let controls = control_count(&tx, path_family)?;
         if !(1..=7).contains(&controls) {
             return Err(Error::Invalid("initial-cohort batch authority superseded"));
         }
-        let (genesis_bytes, genesis_committed): (Vec<u8>, Vec<u8>) = self.db.query_row(
+        let (genesis_bytes, genesis_committed): (Vec<u8>, Vec<u8>) = tx.query_row(
             "SELECT candidate_bytes,committed_bytes FROM families WHERE family_id=?1 AND active=1",
             params![&path_family[..]],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
         let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
-        let author = batch_authority::claimed_author(envelope_bytes)?;
         let (signer, active_author) = if author == genesis.manager_id {
             (genesis.manager_signing_key, true)
         } else if controls >= 3 {
-            let prefix = load_join_prefix(&self.db, self.relay_public, path_family)?;
+            let prefix = load_join_prefix(&tx, self.relay_public, path_family)?;
             if author != prefix.claim.device_id {
                 return Err(Error::Invalid("batch author not enrolled"));
             }
@@ -1302,28 +1327,8 @@ impl RelayStore {
         {
             return Err(Error::Invalid("batch identity mismatch"));
         }
-        let tx = self.db.transaction()?;
-        let prior: Option<(Vec<u8>, Vec<u8>)> = tx.query_row(
-            "SELECT envelope_bytes,receipt_bytes FROM batch_results WHERE family_id=?1 AND batch_id=?2",
-            params![&path_family[..], &batch.batch_id[..]],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        ).optional()?;
-        if let Some((old_envelope, old_receipt)) = prior {
-            if old_envelope != envelope_bytes {
-                return Err(Error::Invalid("batch ID reused with different bytes"));
-            }
-            return Ok(receipt::batch_commit_response(&old_receipt)?);
-        }
-        let prior_rejection: Option<(Vec<u8>, Vec<u8>)> = tx.query_row(
-            "SELECT envelope_bytes,receipt_bytes FROM rejected_batch_results WHERE family_id=?1 AND batch_id=?2",
-            params![&path_family[..], &batch.batch_id[..]],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        ).optional()?;
-        if let Some((old_envelope, old_receipt)) = prior_rejection {
-            if old_envelope != envelope_bytes {
-                return Err(Error::Invalid("batch ID reused with different bytes"));
-            }
-            return Ok(receipt::batch_commit_response(&old_receipt)?);
+        if batch.batch_id != claimed_id || batch.author_id != author {
+            return Err(Error::Invalid("batch claimed identity mismatch"));
         }
         ensure_new_protocol_ids(&tx, path_family, &[batch.batch_id])?;
         let genesis_head = crypto::hash("control-head", &genesis_committed)?;
@@ -1404,14 +1409,20 @@ impl RelayStore {
                 i64::try_from(batch.sequence).map_err(|_| Error::Invalid("sequence range"))?,
                 envelope_bytes, &receipt, i64::try_from(next_cursor).map_err(|_| Error::Invalid("cursor range"))?],
         )?;
-        tx.execute(
-            "UPDATE families SET cursor=?2 WHERE family_id=?1 AND cursor=?3",
+        let updated = tx.execute(
+            "UPDATE families SET cursor=?2 WHERE family_id=?1 AND cursor=?3 AND head_hash=?4",
             params![
                 &path_family[..],
                 i64::try_from(next_cursor).map_err(|_| Error::Invalid("cursor range"))?,
-                cursor
+                cursor,
+                &current_head[..]
             ],
         )?;
+        if updated != 1 {
+            return Err(Error::Invalid(
+                "batch global cursor compare-and-swap failed",
+            ));
+        }
         tx.commit()?;
         Ok(receipt::batch_commit_response(&receipt)?)
     }

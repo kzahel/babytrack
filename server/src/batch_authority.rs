@@ -106,7 +106,7 @@ pub(crate) fn verify(
     })
 }
 
-pub(crate) fn claimed_author(bytes: &[u8]) -> Result<[u8; 16], Error> {
+pub(crate) fn claimed_identity(bytes: &[u8]) -> Result<([u8; 16], [u8; 16]), Error> {
     let value = cbor::decode_with_limits(
         bytes,
         cbor::Limits {
@@ -116,7 +116,7 @@ pub(crate) fn claimed_author(bytes: &[u8]) -> Result<[u8; 16], Error> {
     )?;
     let outer = exact_map(&value, 3)?;
     let header = exact_map(&outer[0].1, 10)?;
-    fixed::<16>(&header[6].1)
+    Ok((fixed::<16>(&header[5].1)?, fixed::<16>(&header[6].1)?))
 }
 
 fn exact_map(value: &Value, n: usize) -> Result<&[(u64, Value)], Error> {

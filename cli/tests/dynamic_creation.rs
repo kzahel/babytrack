@@ -304,6 +304,28 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
     assert_eq!(staged_manager_batch.from_index, 2);
     if early_batch {
         let batch_path = format!("/v1/families/{}/batches", lower_hex(&family.family_id));
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+        let mut writers = Vec::new();
+        for _ in 0..2 {
+            let mut connection = RelayStore::open(&relay_path, relay_seed).unwrap();
+            let barrier = barrier.clone();
+            let envelope = staged_manager_batch.envelope_bytes.clone();
+            let family_id = family.family_id;
+            writers.push(std::thread::spawn(move || {
+                barrier.wait();
+                for _ in 0..50 {
+                    if let Ok(result) = connection.commit_initial_cohort_batch(family_id, &envelope)
+                    {
+                        return result;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                panic!("concurrent exact batch retry did not resolve");
+            }));
+        }
+        barrier.wait();
+        let first = writers.remove(0).join().unwrap();
+        assert_eq!(writers.remove(0).join().unwrap(), first);
         let response = http_bytes(
             &app,
             Method::POST,
@@ -311,6 +333,24 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
             staged_manager_batch.envelope_bytes.clone(),
         )
         .await;
+        assert_eq!(response, first);
+        let db = rusqlite::Connection::open(&relay_path).unwrap();
+        let cursor: i64 = db
+            .query_row(
+                "SELECT cursor FROM families WHERE family_id=?1",
+                [&family.family_id[..]],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(cursor, 2);
+        let batches: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM entries WHERE family_id=?1 AND kind=2",
+                [&family.family_id[..]],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(batches, 1);
         let Value::Map(fields) = cbor::decode(&response).unwrap() else {
             panic!()
         };

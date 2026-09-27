@@ -148,8 +148,23 @@ fn completed_sleep_duration_correction_survives_restore() {
     let other = app.add_child(family, "Other", 1_790_000_000_002).unwrap();
     let start = 1_790_000_000_003;
     let saved = start + 60 * 60_000;
+    assert!(
+        app.log_sleep_with_place(
+            family,
+            child,
+            ActivityTime {
+                start_utc_ms: start,
+                offset_minutes: 60,
+                saved_at_ms: saved
+            },
+            saved,
+            60,
+            Some(6),
+        )
+        .is_err()
+    );
     let id = app
-        .log_sleep(
+        .log_sleep_with_place(
             family,
             child,
             ActivityTime {
@@ -159,6 +174,7 @@ fn completed_sleep_duration_correction_survives_restore() {
             },
             saved,
             60,
+            Some(1),
         )
         .unwrap();
     assert!(
@@ -179,6 +195,10 @@ fn completed_sleep_duration_correction_survives_restore() {
     assert_eq!(before[0].id, id);
     assert_eq!(before[0].start_utc_ms, start);
     assert_eq!(before[0].end_utc_ms, Some(start + 45 * 60_000));
+    assert_eq!(before[0].sleep_place, Some(1));
+    let csv = String::from_utf8(app.analysis_csv(family).unwrap()).unwrap();
+    assert!(csv.contains(",sleep_place\r\n"));
+    assert!(csv.contains("\"1\"\r\n"));
     let backup = app.backup(family, saved + 2).unwrap();
     drop(app);
     let mut app = LocalRepository::open(&path).unwrap();

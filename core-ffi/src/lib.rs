@@ -148,6 +148,7 @@ pub struct ActivityRow {
     pub start_utc_ms: i64,
     pub offset_minutes: i16,
     pub end_utc_ms: Option<i64>,
+    pub sleep_place: Option<u8>,
     pub note: Option<String>,
     pub diaper_kind: Option<u8>,
     pub bottle_ml: Option<i64>,
@@ -1540,6 +1541,7 @@ impl NativeSharedStore {
                 start_utc_ms: row.start_utc_ms,
                 offset_minutes: row.offset_minutes,
                 end_utc_ms: row.end_utc_ms,
+                sleep_place: row.sleep_place,
                 note: row.note,
                 diaper_kind: row.diaper_kind,
                 bottle_ml: row.bottle_ml,
@@ -2001,16 +2003,39 @@ impl NativeSharedStore {
         end_utc_ms: i64,
         end_offset_minutes: i16,
     ) -> Result<Vec<u8>, BindingError> {
+        self.log_shared_sleep_with_place(
+            family,
+            wrapping_key,
+            child_id,
+            time,
+            end_utc_ms,
+            end_offset_minutes,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn log_shared_sleep_with_place(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        time: ActivityWhen,
+        end_utc_ms: i64,
+        end_offset_minutes: i16,
+        place: Option<u8>,
+    ) -> Result<Vec<u8>, BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
         let handle = family.handle()?;
         let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
         let saved_at_ms = time.saved_at_ms;
-        let (id, operation) = local_api::sleep_operation(
+        let (id, operation) = local_api::sleep_operation_with_place(
             handle,
             fixed(&child_id)?,
             time.into(),
             end_utc_ms,
             end_offset_minutes,
+            place,
         )
         .map_err(rejected)?;
         ready
@@ -2026,13 +2051,28 @@ impl NativeSharedStore {
         child_id: Vec<u8>,
         time: ActivityWhen,
     ) -> Result<Vec<u8>, BindingError> {
+        self.start_shared_sleep_with_place(family, wrapping_key, child_id, time, None)
+    }
+
+    pub fn start_shared_sleep_with_place(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        time: ActivityWhen,
+        place: Option<u8>,
+    ) -> Result<Vec<u8>, BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
         let handle = family.handle()?;
         let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
         let saved_at_ms = time.saved_at_ms;
-        let (id, operation) =
-            local_api::running_sleep_operation(handle, fixed(&child_id)?, time.into())
-                .map_err(rejected)?;
+        let (id, operation) = local_api::running_sleep_operation_with_place(
+            handle,
+            fixed(&child_id)?,
+            time.into(),
+            place,
+        )
+        .map_err(rejected)?;
         ready
             .append_local(&mut store, operation, saved_at_ms)
             .map_err(rejected)?;
@@ -3289,16 +3329,29 @@ impl NativeLocalStore {
         end_utc_ms: i64,
         end_offset_minutes: i16,
     ) -> Result<Vec<u8>, BindingError> {
+        self.log_sleep_with_place(family, child_id, time, end_utc_ms, end_offset_minutes, None)
+    }
+
+    pub fn log_sleep_with_place(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        time: ActivityWhen,
+        end_utc_ms: i64,
+        end_offset_minutes: i16,
+        place: Option<u8>,
+    ) -> Result<Vec<u8>, BindingError> {
         Ok(self
             .repo
             .lock()
             .map_err(|_| BindingError::LockPoisoned)?
-            .log_sleep(
+            .log_sleep_with_place(
                 family.handle()?,
                 fixed(&child_id)?,
                 time.into(),
                 end_utc_ms,
                 end_offset_minutes,
+                place,
             )
             .map_err(rejected)?
             .to_vec())
@@ -3310,11 +3363,21 @@ impl NativeLocalStore {
         child_id: Vec<u8>,
         time: ActivityWhen,
     ) -> Result<Vec<u8>, BindingError> {
+        self.start_sleep_with_place(family, child_id, time, None)
+    }
+
+    pub fn start_sleep_with_place(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        time: ActivityWhen,
+        place: Option<u8>,
+    ) -> Result<Vec<u8>, BindingError> {
         Ok(self
             .repo
             .lock()
             .map_err(|_| BindingError::LockPoisoned)?
-            .start_sleep(family.handle()?, fixed(&child_id)?, time.into())
+            .start_sleep_with_place(family.handle()?, fixed(&child_id)?, time.into(), place)
             .map_err(rejected)?
             .to_vec())
     }
@@ -3730,6 +3793,7 @@ impl NativeLocalStore {
                 start_utc_ms: row.start_utc_ms,
                 offset_minutes: row.offset_minutes,
                 end_utc_ms: row.end_utc_ms,
+                sleep_place: row.sleep_place,
                 note: row.note,
                 diaper_kind: row.diaper_kind,
                 bottle_ml: row.bottle_ml,

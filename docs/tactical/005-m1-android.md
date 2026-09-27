@@ -56,6 +56,15 @@ restart/file restore and two-emulator encrypted convergence cover this edit.
 Completed sleep duration can likewise be corrected on the same event without
 moving its start time. Rust local restore and two-emulator encrypted sync
 exercise the correction.
+Running and completed sleep logs can now include the published optional
+place. Android shows it in the timeline; the Rust core carries it through
+file restore and analysis CSV, and the two-device relay case checks delivery
+for both running and completed sleep.
+That relay case exposed the foreground uploader's former sixteen-operation
+pass limit: the last queued child remained local after one tap. The pass now
+drains up to 64 single-operation batches, then leaves any larger backlog
+visible for another foreground or scheduled pass. The two-emulator flow
+checks the manager outbox is empty before the recipient reads that child.
 Entered Celsius can be corrected on the existing temperature event without
 changing its time or unknown fields; local restore and encrypted sync cover it.
 The selected child's name can now be corrected through a field-level Rust

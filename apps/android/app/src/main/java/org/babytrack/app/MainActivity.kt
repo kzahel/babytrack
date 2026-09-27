@@ -425,6 +425,7 @@ private fun TrackerScreen(
     var solidsFoods by remember { mutableStateOf("") }
     var solidsAmount by remember { mutableStateOf("") }
     var sleepMinutes by remember { mutableStateOf("") }
+    var sleepPlace by remember { mutableStateOf<UByte?>(null) }
     var noteText by remember { mutableStateOf("") }
     var growthWeight by remember { mutableStateOf("") }
     var growthLength by remember { mutableStateOf("") }
@@ -510,6 +511,7 @@ private fun TrackerScreen(
         solidsFoods = ""
         solidsAmount = ""
         sleepMinutes = ""
+        sleepPlace = null
         noteText = ""
         growthWeight = ""
         growthLength = ""
@@ -1517,14 +1519,35 @@ private fun TrackerScreen(
                         }
                     }) { Text(stringResource(R.string.save_solids)) }
                     Text(stringResource(R.string.log_sleep), style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.sleep_place_title))
+                    listOf(
+                        null to R.string.sleep_place_unspecified,
+                        1u.toUByte() to R.string.sleep_place_crib,
+                        2u.toUByte() to R.string.sleep_place_pram,
+                        3u.toUByte() to R.string.sleep_place_contact,
+                        4u.toUByte() to R.string.sleep_place_car,
+                        5u.toUByte() to R.string.sleep_place_other,
+                    ).chunked(2).forEach { options ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            options.forEach { (place, label) ->
+                                FilterChip(
+                                    selected = sleepPlace == place,
+                                    onClick = { sleepPlace = place },
+                                    label = { Text(stringResource(label)) },
+                                )
+                            }
+                        }
+                    }
                     Button(onClick = {
+                        val enteredPlace = sleepPlace
                         change(onSaved = {
+                            if (sleepPlace == enteredPlace) sleepPlace = null
                             if (Build.VERSION.SDK_INT >= 33 &&
                                 context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
                             ) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }) {
-                            if (activeShared) sharing.startSleep(family, child.id, nowTime())
-                            else store.startSleep(family, child.id, nowTime())
+                            if (activeShared) sharing.startSleepWithPlace(family, child.id, nowTime(), enteredPlace)
+                            else store.startSleepWithPlace(family, child.id, nowTime(), enteredPlace)
                         }
                     }) { Text(stringResource(R.string.start_sleep)) }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1538,6 +1561,7 @@ private fun TrackerScreen(
                         )
                         Button(enabled = (sleepMinutes.toLongOrNull() ?: 0L) in 1L..1440L, onClick = {
                             val enteredMinutes = sleepMinutes
+                            val enteredPlace = sleepPlace
                             val duration = sleepMinutes.toLongOrNull() ?: return@Button
                             val chosenAt = logAtMs
                             val end = logTime().startUtcMs
@@ -1548,9 +1572,10 @@ private fun TrackerScreen(
                             change(onSaved = {
                                 resetLogTime(chosenAt)
                                 if (sleepMinutes == enteredMinutes) sleepMinutes = ""
+                                if (sleepPlace == enteredPlace) sleepPlace = null
                             }) {
-                                if (activeShared) sharing.logSleep(family, child.id, whenStarted, end, endOffset)
-                                else store.logSleep(family, child.id, whenStarted, end, endOffset)
+                                if (activeShared) sharing.logSleepWithPlace(family, child.id, whenStarted, end, endOffset, enteredPlace)
+                                else store.logSleepWithPlace(family, child.id, whenStarted, end, endOffset, enteredPlace)
                             }
                         }) { Text(stringResource(R.string.save_sleep)) }
                     }
@@ -1805,6 +1830,16 @@ private fun TrackerScreen(
                             Column(Modifier.padding(12.dp)) {
                                 Text(label, fontWeight = FontWeight.SemiBold)
                                 Text(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(entry.startUtcMs)))
+                                if (entry.kind == "sleep" && entry.sleepPlace != null) {
+                                    val placeLabel = when (entry.sleepPlace!!.toInt()) {
+                                        1 -> R.string.sleep_place_crib
+                                        2 -> R.string.sleep_place_pram
+                                        3 -> R.string.sleep_place_contact
+                                        4 -> R.string.sleep_place_car
+                                        else -> R.string.sleep_place_other
+                                    }
+                                    Text(stringResource(R.string.sleep_place_entry, stringResource(placeLabel)))
+                                }
                                 if (entry.kind == "sleep" && entry.endUtcMs == null) {
                                     Button(onClick = {
                                         val end = System.currentTimeMillis()

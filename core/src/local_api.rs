@@ -51,6 +51,7 @@ pub struct Activity {
     pub start_utc_ms: i64,
     pub offset_minutes: i16,
     pub end_utc_ms: Option<i64>,
+    pub sleep_place: Option<u8>,
     pub note: Option<String>,
     pub diaper_kind: Option<u8>,
     pub bottle_ml: Option<i64>,
@@ -340,8 +341,26 @@ impl LocalRepository {
         end_utc_ms: i64,
         end_offset_minutes: i16,
     ) -> Result<[u8; 16], Error> {
-        let (activity_id, operation) =
-            sleep_operation(family, child_id, time, end_utc_ms, end_offset_minutes)?;
+        self.log_sleep_with_place(family, child_id, time, end_utc_ms, end_offset_minutes, None)
+    }
+
+    pub fn log_sleep_with_place(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        time: ActivityTime,
+        end_utc_ms: i64,
+        end_offset_minutes: i16,
+        place: Option<u8>,
+    ) -> Result<[u8; 16], Error> {
+        let (activity_id, operation) = sleep_operation_with_place(
+            family,
+            child_id,
+            time,
+            end_utc_ms,
+            end_offset_minutes,
+            place,
+        )?;
         self.append_activity(family, child_id, operation, time.saved_at_ms)?;
         Ok(activity_id)
     }
@@ -352,7 +371,18 @@ impl LocalRepository {
         child_id: [u8; 16],
         time: ActivityTime,
     ) -> Result<[u8; 16], Error> {
-        let (activity_id, operation) = running_sleep_operation(family, child_id, time)?;
+        self.start_sleep_with_place(family, child_id, time, None)
+    }
+
+    pub fn start_sleep_with_place(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        time: ActivityTime,
+        place: Option<u8>,
+    ) -> Result<[u8; 16], Error> {
+        let (activity_id, operation) =
+            running_sleep_operation_with_place(family, child_id, time, place)?;
         self.append_activity(family, child_id, operation, time.saved_at_ms)?;
         Ok(activity_id)
     }
@@ -1364,25 +1394,32 @@ pub fn sleep_operation(
     end_utc_ms: i64,
     end_offset_minutes: i16,
 ) -> Result<([u8; 16], NewOperation), Error> {
+    sleep_operation_with_place(family, child_id, time, end_utc_ms, end_offset_minutes, None)
+}
+
+pub fn sleep_operation_with_place(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    time: ActivityTime,
+    end_utc_ms: i64,
+    end_offset_minutes: i16,
+    place: Option<u8>,
+) -> Result<([u8; 16], NewOperation), Error> {
     if end_utc_ms < time.start_utc_ms || end_utc_ms > time.saved_at_ms {
         return Err(Error::Invalid("sleep end outside completed interval"));
     }
     if !(-840..=840).contains(&end_offset_minutes) {
         return Err(Error::Invalid("sleep end offset outside v1 range"));
     }
-    activity_operation(
-        family,
-        child_id,
-        "sleep",
-        vec![(
-            2,
-            Value::Array(vec![
-                Value::Integer(end_utc_ms.into()),
-                Value::Integer(end_offset_minutes.into()),
-            ]),
-        )],
-        time,
-    )
+    let mut fields = vec![(
+        2,
+        Value::Array(vec![
+            Value::Integer(end_utc_ms.into()),
+            Value::Integer(end_offset_minutes.into()),
+        ]),
+    )];
+    fields.extend(sleep_place_field(place)?);
+    activity_operation(family, child_id, "sleep", fields, time)
 }
 
 pub fn running_sleep_operation(
@@ -1390,7 +1427,24 @@ pub fn running_sleep_operation(
     child_id: [u8; 16],
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    activity_operation(family, child_id, "sleep", vec![], time)
+    running_sleep_operation_with_place(family, child_id, time, None)
+}
+
+pub fn running_sleep_operation_with_place(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    time: ActivityTime,
+    place: Option<u8>,
+) -> Result<([u8; 16], NewOperation), Error> {
+    activity_operation(family, child_id, "sleep", sleep_place_field(place)?, time)
+}
+
+fn sleep_place_field(place: Option<u8>) -> Result<Vec<(u64, Value)>, Error> {
+    match place {
+        Some(code @ 1..=5) => Ok(vec![(100, Value::Integer(code.into()))]),
+        Some(_) => Err(Error::Invalid("sleep place outside v1 range")),
+        None => Ok(Vec::new()),
+    }
 }
 
 pub fn stop_sleep_operation(
@@ -2149,6 +2203,14 @@ fn activity_summary(record: &Record) -> Option<Activity> {
             };
             i64::try_from(*end).ok()
         }),
+        sleep_place: if record.record_type == "sleep" {
+            record.field(100).and_then(|field| match field.value {
+                Value::Integer(value) => u8::try_from(value).ok(),
+                _ => None,
+            })
+        } else {
+            None
+        },
         note: if record.record_type == "note" {
             let Value::Text(note) = &record.field(4)?.value else {
                 return None;

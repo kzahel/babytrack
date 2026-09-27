@@ -131,8 +131,8 @@ class TwoDeviceRelayTest {
             sharing.editChildMetadata(family, originalChild.id, 20_001L, 2u.toUByte(), System.currentTimeMillis())
             sharing.addChild(family, "Recipient child", System.currentTimeMillis())
             val end = System.currentTimeMillis()
-            sharing.logSleep(family, sharing.snapshot(family).children.first().id,
-                ActivityWhen(end - 30 * 60_000L, 0, end), end, 0)
+            sharing.logSleepWithPlace(family, sharing.snapshot(family).children.first().id,
+                ActivityWhen(end - 30 * 60_000L, 0, end), end, 0, 1u.toUByte())
             sharing.logNote(family, sharing.snapshot(family).children.first().id,
                 "Care note marker 67", ActivityWhen(end, 0, end))
             sharing.logGrowthMeasurements(family, sharing.snapshot(family).children.first().id,
@@ -154,8 +154,8 @@ class TwoDeviceRelayTest {
                 ), ActivityWhen(breastStart, 0, end))
             sharing.logPump(family, sharing.snapshot(family).children.first().id,
                 PumpInput(20, 15, null), ActivityWhen(end - 10 * 60_000L, 0, end), end)
-            sharing.startSleep(family, sharing.snapshot(family).children.first().id,
-                ActivityWhen(end, 0, end))
+            sharing.startSleepWithPlace(family, sharing.snapshot(family).children.first().id,
+                ActivityWhen(end, 0, end), 3u.toUByte())
             assertTrue(String(sharing.analysisCsv(family)).contains("Care note marker 67"))
             assertTrue(sharing.syncRecipientAndUpload(family).ready)
             assertEquals(0uL, sharing.snapshot(family).unsentCount)
@@ -170,7 +170,9 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).children.any {
                 it.name == "Renamed shared child" && it.birthDay == 20_001L && it.sex == 2u.toUByte()
             })
-            assertTrue(sharing.snapshot(family).activities.any { it.kind == "sleep" && it.endUtcMs != null })
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.kind == "sleep" && it.endUtcMs != null && it.sleepPlace == 1u.toUByte()
+            })
             val completedSleep = sharing.snapshot(family).activities.single {
                 it.kind == "sleep" && it.endUtcMs != null
             }
@@ -319,10 +321,14 @@ class TwoDeviceRelayTest {
             val running = sharing.snapshot(family).activities.single {
                 it.kind == "sleep" && it.endUtcMs == null
             }
+            assertEquals(3u.toUByte(), running.sleepPlace)
             val stoppedAt = System.currentTimeMillis()
             sharing.stopSleep(family, running.childId, running.id, stoppedAt, 0)
             sharing.addChild(family, "Manager child", System.currentTimeMillis())
-            assertTrue(sharing.syncAndUpload(family, origin).ready)
+            val uploaded = sharing.syncAndUpload(family, origin)
+            assertTrue(uploaded.ready)
+            assertEquals("outbox ${uploaded.outboxState}, cursor ${uploaded.verifiedCursor}, inert ${uploaded.inertCount}",
+                0uL, sharing.snapshot(family).unsentCount)
         }
     }
 
@@ -330,7 +336,10 @@ class TwoDeviceRelayTest {
         val family = ShareCoordinator(context, db.absolutePath).use { sharing ->
             val family = sharing.recipientFamilies().single()
             assertTrue(sharing.syncRecipientAndUpload(family).ready)
-            assertTrue(sharing.snapshot(family).children.any { it.name == "Manager child" })
+            val synced = sharing.snapshot(family)
+            val children = synced.children
+            assertTrue("Recipient children: ${children.map { it.name }}; inert: ${synced.inertCount}; cursor: ${synced.verifiedCursor}",
+                children.any { it.name == "Manager child" })
             assertTrue(sharing.snapshot(family).activities.none { it.note == "Care note marker 67" })
             assertTrue(sharing.snapshot(family).activities.any { it.note == "After sync correction" })
             assertTrue(sharing.snapshot(family).activities.any {

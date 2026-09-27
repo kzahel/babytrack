@@ -8,7 +8,7 @@ use crate::{
     projection::Record,
 };
 
-const HEADER: &str = "family_id,child_id,child_name,child_birth_day,child_sex,activity_id,type,start_utc_ms,start_offset_minutes,end_utc_ms,note,diaper_kind,bottle_ml,bottle_content,breast_side,breast_segments,solids_foods,solids_amount,pump_left_ml,pump_right_ml,pump_total_ml,growth_weight_g,growth_length_mm,growth_head_mm,temperature_c,medication_name,medication_dose_amount,medication_dose_unit\r\n";
+const HEADER: &str = "family_id,child_id,child_name,child_birth_day,child_sex,activity_id,type,start_utc_ms,start_offset_minutes,end_utc_ms,note,diaper_kind,bottle_ml,bottle_content,breast_side,breast_segments,solids_foods,solids_amount,pump_left_ml,pump_right_ml,pump_total_ml,growth_weight_g,growth_length_mm,growth_head_mm,temperature_c,medication_name,medication_dose_amount,medication_dose_unit,sleep_place\r\n";
 
 pub fn export<'a>(family_id: [u8; 16], records: impl Iterator<Item = &'a Record>) -> Vec<u8> {
     let records = records.collect::<Vec<_>>();
@@ -70,6 +70,7 @@ pub fn export<'a>(family_id: [u8; 16], records: impl Iterator<Item = &'a Record>
             activity.medication_name.unwrap_or_default(),
             activity.medication_dose_amount.unwrap_or_default(),
             activity.medication_dose_unit.unwrap_or_default(),
+            display(activity.sleep_place),
         ];
         for (index, cell) in cells.iter().enumerate() {
             if index != 0 {

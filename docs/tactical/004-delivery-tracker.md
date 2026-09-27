@@ -36,6 +36,12 @@ and medication corrections, plus child name and growth-detail, growth-entry,
 and completed sleep corrections, runs
 alongside M0 on emulators; its physical phone gates remain open.
 The diaper form includes wet, dirty, both, and dry logging choices.
+Running and completed sleep can carry an optional place through the shared
+core, Android timeline, backup, and encrypted relay sync.
+The two-device relay flow also caught a routine offline backlog above the
+old sixteen-upload foreground cap. Android now attempts up to 64 uploads per
+pass and keeps excess work pending for later sync; the test verifies this
+flow drains before the second device reads the manager's new child.
 Android can now share an invitation through the system chooser and receive
 one through the text share target, prefilled for an explicit join action.
 Ready joined Families now enter the normal Android Family switcher and full

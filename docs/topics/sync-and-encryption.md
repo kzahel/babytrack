@@ -279,6 +279,10 @@ push leaves the durable attempt pending for the next available run. A wake
 never proves a batch, admission, or removal
 committed. The client obtains signed acceptance evidence or a verified log
 entry before showing shared success. The UI exposes each pending stage.
+The current foreground uploader attempts at most 64 single-operation batches
+per pass. Excess offline work remains in the durable outbox for the next
+foreground or scheduled pass; a pass returning does not imply all work was
+delivered.
 
 ## Encoding and versioning
 

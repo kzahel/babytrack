@@ -345,8 +345,16 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     fun logSleep(family: FamilyRef, childId: ByteArray, time: ActivityWhen, endUtcMs: Long, endOffsetMinutes: Short): ByteArray =
         withWrapping { wrapping -> core.logSharedSleep(family, wrapping, childId, time, endUtcMs, endOffsetMinutes) }
 
+    fun logSleepWithPlace(family: FamilyRef, childId: ByteArray, time: ActivityWhen,
+                          endUtcMs: Long, endOffsetMinutes: Short, place: UByte?): ByteArray =
+        withWrapping { wrapping -> core.logSharedSleepWithPlace(family, wrapping, childId, time,
+            endUtcMs, endOffsetMinutes, place) }
+
     fun startSleep(family: FamilyRef, childId: ByteArray, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.startSharedSleep(family, wrapping, childId, time) }
+
+    fun startSleepWithPlace(family: FamilyRef, childId: ByteArray, time: ActivityWhen, place: UByte?): ByteArray =
+        withWrapping { wrapping -> core.startSharedSleepWithPlace(family, wrapping, childId, time, place) }
 
     fun stopSleep(family: FamilyRef, childId: ByteArray, activityId: ByteArray, endUtcMs: Long, endOffsetMinutes: Short): Unit =
         withWrapping { wrapping -> core.stopSharedSleep(family, wrapping, childId, activityId,
@@ -424,7 +432,11 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
                 override fun get(path: String, auth: ByteArray): ByteArray = relay.get(path, auth)
             }
             var progress = core.syncShared(family, wrapping, reads)
-            repeat(16) {
+            // Each upload stages one local operation. A routine offline
+            // correction session can exceed sixteen operations before the
+            // caregiver returns to the app; keep this foreground pass bounded
+            // while draining a practical backlog.
+            repeat(64) {
                 if (!progress.ready) return@withWrapping progress
                 when (core.resolvePendingBatchResult(family, wrapping, reads).toInt()) {
                     2 -> return@withWrapping progress

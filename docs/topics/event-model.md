@@ -79,6 +79,11 @@ the core checks contiguous intervals, side values, offsets, and a total
 duration of at most four hours. Each segment keeps its start and end UTC
 offsets, including across a daylight-saving transition. Local files and
 encrypted shared sync preserve the segment sequence.
+Android can optionally mark a running or completed sleep as crib, pram,
+contact, car, or other. The shared core stores the published place code on
+the sleep event; stopping or correcting its duration retains that field.
+The timeline and analysis CSV show a recorded place, while older sleep
+entries without it remain valid.
 Correcting a completed breast feed replaces its segment list and derived end
 instant in one set operation while retaining its activity ID, original start,
 and unrelated or unknown fields. The core applies the same interval, side,

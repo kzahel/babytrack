@@ -36,6 +36,14 @@
     <string name="dirty">Dirty</string>
     <string name="both">Both</string>
     <string name="dry">Dry</string>
+    <string name="sleep_place_title">Where did the sleep happen?</string>
+    <string name="sleep_place_unspecified">Not recorded</string>
+    <string name="sleep_place_crib">Crib</string>
+    <string name="sleep_place_pram">Pram</string>
+    <string name="sleep_place_contact">Contact</string>
+    <string name="sleep_place_car">Car</string>
+    <string name="sleep_place_other">Other place</string>
+    <string name="sleep_place_entry">Place: %1$s</string>
     <string name="log_bottle">Log bottle</string>
     <string name="bottle_breast_milk">Breast milk</string>
     <string name="bottle_formula">Formula</string>

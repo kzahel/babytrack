@@ -48,6 +48,7 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
 
     fun invite(family: FamilyRef, origin: String, role: UByte): String {
         validateRelayOrigin(origin)
+        check(syncAndUpload(family, origin).ready) { "Shared history is not ready" }
         val relay = RelayTransport(origin)
         val wrapping = keys.loadOrCreate()
         try {

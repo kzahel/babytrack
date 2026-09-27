@@ -49,7 +49,6 @@ class TwoDeviceRelayTest {
 
     @Test fun managerLaterInvite() {
         ShareCoordinator(context, db.absolutePath).use { sharing ->
-            assertTrue(sharing.syncAndUpload(family(), origin).ready)
             context.filesDir.resolve("two-device-later-link.txt").writeText(
                 sharing.invite(family(), origin, 2u.toUByte())
             )

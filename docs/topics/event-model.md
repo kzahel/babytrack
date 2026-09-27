@@ -178,6 +178,10 @@ each represent the same real child but keep separate histories unless a user
 explicitly imports records into one of them. Logging for twins at once
 creates one event per child sharing a `group` id, so each child's history
 stays complete and either event can be edited alone.
+Android clears unsaved logging drafts and pending edit dialogs when the
+selected child or Family changes, so input prepared for one target does not
+carry into another. An unsuccessful completed-entry save keeps its draft for
+retry; a successful save clears only the values it submitted.
 
 ## Unknown types and fields
 

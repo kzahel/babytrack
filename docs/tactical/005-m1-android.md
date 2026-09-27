@@ -85,6 +85,14 @@ and returns to current time after a successful save; running sleep timers
 still start now. A failed save retains the choice for retry. On an emulator,
 a diaper saved for the previous day appeared at that time after process
 restart, and the time control reset to current for the next entry.
+Switching Family or child now clears unsaved logging inputs and pending edit
+dialogs tied to the previous target. Bottle and completed-sleep inputs are
+retained when a local save fails and cleared only after it succeeds; pumping
+and solids submissions likewise leave newly typed values intact when an
+earlier submission finishes.
+An emulator check rejected an oversized bottle entry without losing its
+draft, accepted the corrected amount, and cleared an unsaved note when the
+caregiver switched to another child.
 
 Two separate emulator installations and a disposable relay pass first-cohort
 join without simultaneous foreground use, reciprocal encrypted edits,

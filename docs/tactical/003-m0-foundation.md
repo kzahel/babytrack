@@ -477,6 +477,10 @@ The Android growth form writes grams and millimetres through the Rust
 local/shared operation path. A local restart and file restore preserve the
 measurements; the two-emulator relay check confirms the manager reads a
 recipient-created growth entry with both values.
+The Celsius path now uses Rust decimal conversion to published hundredths
+with half ties away from zero, preserving entered text in the timeline.
+Local restart/file restore and the two-emulator recipient-to-manager check
+cover the entry.
 An injected late SQLite failure during removal-triggered private-copy
 creation now proves the copy Family, source mapping, origin, and operations
 roll back together across reopen. Retrying the same copy after removing the

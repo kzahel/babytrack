@@ -95,6 +95,7 @@ pub struct ActivityRow {
     pub bottle_ml: Option<i64>,
     pub growth_weight_g: Option<i64>,
     pub growth_length_mm: Option<i64>,
+    pub temperature_c: Option<String>,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -1075,6 +1076,7 @@ impl NativeSharedStore {
                 bottle_ml: row.bottle_ml,
                 growth_weight_g: row.growth_weight_g,
                 growth_length_mm: row.growth_length_mm,
+                temperature_c: row.temperature_c,
             })
             .collect();
         Ok(SharedSnapshotRow {
@@ -1390,6 +1392,27 @@ impl NativeSharedStore {
             time.into(),
         )
         .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map_err(rejected)?;
+        Ok(id.to_vec())
+    }
+
+    pub fn log_shared_temperature_c(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        entered_c: String,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let saved_at_ms = time.saved_at_ms;
+        let (id, operation) =
+            local_api::temperature_c_operation(handle, fixed(&child_id)?, &entered_c, time.into())
+                .map_err(rejected)?;
         ready
             .append_local(&mut store, operation, saved_at_ms)
             .map_err(rejected)?;
@@ -1884,6 +1907,22 @@ impl NativeLocalStore {
             .to_vec())
     }
 
+    pub fn log_temperature_c(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        entered_c: String,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .log_temperature_c(family.handle()?, fixed(&child_id)?, &entered_c, time.into())
+            .map_err(rejected)?
+            .to_vec())
+    }
+
     pub fn timeline(
         &self,
         family: FamilyRef,
@@ -1908,6 +1947,7 @@ impl NativeLocalStore {
                 bottle_ml: row.bottle_ml,
                 growth_weight_g: row.growth_weight_g,
                 growth_length_mm: row.growth_length_mm,
+                temperature_c: row.temperature_c,
             })
             .collect())
     }

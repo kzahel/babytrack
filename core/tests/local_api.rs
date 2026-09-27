@@ -1,7 +1,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use babytrack_core::{
-    local_api::{ActivityTime, LocalRepository},
+    local_api::{ActivityTime, LocalRepository, temperature_c_operation},
     portable_file::parse_readable,
 };
 
@@ -262,6 +262,59 @@ fn growth_measurements_survive_restart_and_file_restore() {
             .unwrap()
             .growth_length_mm,
         None
+    );
+    let backup = app.backup(family, 1_790_000_000_003).unwrap();
+    drop(app);
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.timeline(family, child).unwrap(), before);
+    let restored = app.restore(&backup, 1_790_000_000_004).unwrap();
+    assert_eq!(app.timeline(restored, child).unwrap(), before);
+}
+
+#[test]
+fn entered_celsius_round_trips_through_core_and_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("temperature.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    let child = app.add_child(family, "Baby", 1_790_000_000_001).unwrap();
+    let time = ActivityTime {
+        start_utc_ms: 1_790_000_000_002,
+        offset_minutes: 120,
+        saved_at_ms: 1_790_000_000_002,
+    };
+    for invalid in ["", "37.", "037.5", "37,5", "1e3"] {
+        assert!(app.log_temperature_c(family, child, invalid, time).is_err());
+    }
+    let (_, rounded) = temperature_c_operation(family, child, "37.505", time).unwrap();
+    let fields = rounded.fields.unwrap();
+    let (100, babytrack_core::cbor::Value::Map(measure)) = &fields[1] else {
+        panic!("temperature measure missing");
+    };
+    assert_eq!(measure[0], (1, babytrack_core::cbor::Value::Integer(3751)));
+    assert_eq!(
+        measure[1],
+        (2, babytrack_core::cbor::Value::Text("37.505".into()))
+    );
+    let (_, negative) = temperature_c_operation(family, child, "-0.005", time).unwrap();
+    let negative_fields = negative.fields.unwrap();
+    let (100, babytrack_core::cbor::Value::Map(negative_measure)) = &negative_fields[1] else {
+        panic!("negative temperature measure missing");
+    };
+    assert_eq!(
+        negative_measure[0],
+        (1, babytrack_core::cbor::Value::Integer(-1))
+    );
+    let id = app.log_temperature_c(family, child, "37.50", time).unwrap();
+    let before = app.timeline(family, child).unwrap();
+    assert_eq!(
+        before
+            .iter()
+            .find(|row| row.id == id)
+            .unwrap()
+            .temperature_c
+            .as_deref(),
+        Some("37.50")
     );
     let backup = app.backup(family, 1_790_000_000_003).unwrap();
     drop(app);

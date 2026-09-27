@@ -59,10 +59,11 @@ To exercise the current relay slice on an emulator:
    advances the next verified protocol step. A failed pass leaves local work
    saved and shows delayed or blocked status until resolved.
 10. The tracking screen can save a growth entry with whole grams and
-    millimetres. The same Rust operation is used for local and shared
-    Families; the two-emulator test verifies the recipient's entry on the
-    manager's device. The manager can remove that first recipient; pending
-    edits on the removed device become an independent private Family copy.
+    millimetres and a Celsius decimal entry. The same Rust operation path
+    is used for local and shared Families; the two-emulator test verifies
+    the recipient's entries on the manager's device. The manager can remove
+    that first recipient; pending edits on the removed device become an
+    independent private Family copy.
 
 The on-device integration test calls the same Keystore and transport adapter
 through a real relay. With an emulator running, build both APKs with

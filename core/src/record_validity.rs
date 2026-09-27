@@ -280,7 +280,7 @@ fn unit_factor(unit: u64) -> (i128, i128) {
     }
 }
 
-fn parse_decimal(decimal: &str) -> Option<(i128, i128)> {
+pub(crate) fn parse_decimal(decimal: &str) -> Option<(i128, i128)> {
     let (negative, digits) = if let Some(rest) = decimal.strip_prefix('-') {
         (true, rest)
     } else {
@@ -308,7 +308,7 @@ fn parse_decimal(decimal: &str) -> Option<(i128, i128)> {
     Some((if negative { -numerator } else { numerator }, denominator))
 }
 
-fn round_ratio(numerator: i128, denominator: i128) -> Result<i128, &'static str> {
+pub(crate) fn round_ratio(numerator: i128, denominator: i128) -> Result<i128, &'static str> {
     let magnitude = numerator.checked_abs().ok_or("measure overflow")?;
     let mut result = magnitude / denominator;
     let remainder = magnitude % denominator;

@@ -36,6 +36,10 @@
     <string name="growth_both">Growth · %1$d g · %2$d mm</string>
     <string name="growth_weight">Growth · %1$d g</string>
     <string name="growth_length">Growth · %1$d mm</string>
+    <string name="log_temperature">Log temperature</string>
+    <string name="temperature_c">Temperature (°C)</string>
+    <string name="save_temperature">Save temperature</string>
+    <string name="temperature_entry">Temperature · %1$s °C</string>
     <string name="amount_ml">Amount (mL)</string>
     <string name="bottle">Bottle · %1$d mL</string>
     <string name="diaper">Diaper · %1$s</string>

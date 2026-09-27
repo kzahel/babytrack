@@ -84,6 +84,8 @@ class TwoDeviceRelayTest {
                 "Care note marker 67", ActivityWhen(end, 0, end))
             sharing.logGrowth(family, sharing.snapshot(family).children.first().id,
                 4_200, 540, ActivityWhen(end, 0, end))
+            sharing.logTemperatureC(family, sharing.snapshot(family).children.first().id,
+                "37.50", ActivityWhen(end, 0, end))
             sharing.startSleep(family, sharing.snapshot(family).children.first().id,
                 ActivityWhen(end, 0, end))
             assertTrue(sharing.syncRecipientAndUpload(family).ready)
@@ -100,6 +102,9 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).activities.any { it.note == "Care note marker 67" })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "growth" && it.growthWeightG == 4_200L && it.growthLengthMm == 540L
+            })
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.kind == "temperature" && it.temperatureC == "37.50"
             })
             val running = sharing.snapshot(family).activities.single {
                 it.kind == "sleep" && it.endUtcMs == null

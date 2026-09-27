@@ -244,6 +244,9 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     fun logGrowth(family: FamilyRef, childId: ByteArray, weightG: Long?, lengthMm: Long?, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedGrowth(family, wrapping, childId, weightG, lengthMm, time) }
 
+    fun logTemperatureC(family: FamilyRef, childId: ByteArray, enteredC: String, time: ActivityWhen): ByteArray =
+        withWrapping { wrapping -> core.logSharedTemperatureC(family, wrapping, childId, enteredC, time) }
+
     fun syncAndUpload(family: FamilyRef, origin: String): SharedSyncRow {
         validateRelayOrigin(origin)
         val relay = RelayTransport(origin)

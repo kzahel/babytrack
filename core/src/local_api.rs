@@ -54,6 +54,7 @@ pub struct Activity {
     pub bottle_ml: Option<i64>,
     pub growth_weight_g: Option<i64>,
     pub growth_length_mm: Option<i64>,
+    pub temperature_c: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -244,6 +245,18 @@ impl LocalRepository {
     ) -> Result<[u8; 16], Error> {
         let (activity_id, operation) =
             growth_operation(family, child_id, weight_g, length_mm, time)?;
+        self.append_activity(family, child_id, operation, time.saved_at_ms)?;
+        Ok(activity_id)
+    }
+
+    pub fn log_temperature_c(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        entered_c: &str,
+        time: ActivityTime,
+    ) -> Result<[u8; 16], Error> {
+        let (activity_id, operation) = temperature_c_operation(family, child_id, entered_c, time)?;
         self.append_activity(family, child_id, operation, time.saved_at_ms)?;
         Ok(activity_id)
     }
@@ -601,6 +614,40 @@ pub fn growth_operation(
     activity_operation(family, child_id, "growth", fields, time)
 }
 
+pub fn temperature_c_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    entered_c: &str,
+    time: ActivityTime,
+) -> Result<([u8; 16], NewOperation), Error> {
+    let decimal = entered_c.trim();
+    if decimal.is_empty() || decimal.len() > 16 {
+        return Err(Error::Invalid("temperature decimal empty or too long"));
+    }
+    let (numerator, denominator) = crate::record_validity::parse_decimal(decimal)
+        .ok_or(Error::Invalid("temperature decimal invalid"))?;
+    let scaled = numerator
+        .checked_mul(100)
+        .ok_or(Error::Invalid("temperature decimal overflow"))?;
+    let base = crate::record_validity::round_ratio(scaled, denominator)
+        .map_err(|_| Error::Invalid("temperature decimal overflow"))?;
+    i64::try_from(base).map_err(|_| Error::Invalid("temperature outside i64 range"))?;
+    activity_operation(
+        family,
+        child_id,
+        "temperature",
+        vec![(
+            100,
+            Value::Map(vec![
+                (1, Value::Integer(base)),
+                (2, Value::Text(decimal.to_owned())),
+                (3, Value::Integer(30)),
+            ]),
+        )],
+        time,
+    )
+}
+
 fn whole_measure(value: i64, unit: i128) -> Value {
     Value::Map(vec![
         (1, Value::Integer(value.into())),
@@ -707,6 +754,17 @@ fn activity_summary(record: &Record) -> Option<Activity> {
         };
         i64::try_from(*value).ok()
     };
+    let temperature_c = if record.record_type == "temperature" {
+        let Value::Map(measure) = &record.field(100)?.value else {
+            return None;
+        };
+        match measure.get(1) {
+            Some((2, Value::Text(decimal))) => Some(decimal.clone()),
+            _ => None,
+        }
+    } else {
+        None
+    };
     Some(Activity {
         id: record.id,
         child_id: record.child_id?,
@@ -742,6 +800,7 @@ fn activity_summary(record: &Record) -> Option<Activity> {
         } else {
             None
         },
+        temperature_c,
     })
 }
 

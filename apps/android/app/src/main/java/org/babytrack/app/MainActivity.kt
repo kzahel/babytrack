@@ -176,6 +176,7 @@ private fun TrackerScreen(
     var noteText by remember { mutableStateOf("") }
     var growthWeight by remember { mutableStateOf("") }
     var growthLength by remember { mutableStateOf("") }
+    var temperatureC by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var automaticSyncDelayed by remember { mutableStateOf(false) }
     var automaticSyncBlocked by remember { mutableStateOf(false) }
@@ -865,6 +866,30 @@ private fun TrackerScreen(
                             }
                         },
                     ) { Text(stringResource(R.string.save_growth)) }
+                    Text(stringResource(R.string.log_temperature), style = MaterialTheme.typography.titleLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = temperatureC,
+                            onValueChange = { temperatureC = it.take(16) },
+                            label = { Text(stringResource(R.string.temperature_c)) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        Button(enabled = temperatureC.isNotBlank(), onClick = {
+                            val entered = temperatureC.trim()
+                            scope.launch {
+                                runCatching { withContext(Dispatchers.IO) {
+                                    if (activeShared) sharing.logTemperatureC(family, child.id, entered, nowTime())
+                                    else store.logTemperatureC(family, child.id, entered, nowTime())
+                                } }.onSuccess {
+                                    if (temperatureC.trim() == entered) temperatureC = ""
+                                    version++
+                                    message = null
+                                }.onFailure { message = errorText }
+                            }
+                        }) { Text(stringResource(R.string.save_temperature)) }
+                    }
                     Text(stringResource(R.string.log_note), style = MaterialTheme.typography.titleLarge)
                     OutlinedTextField(
                         value = noteText,
@@ -900,6 +925,8 @@ private fun TrackerScreen(
                                 stringResource(R.string.growth_weight, entry.growthWeightG!!)
                             entry.kind == "growth" && entry.growthLengthMm != null ->
                                 stringResource(R.string.growth_length, entry.growthLengthMm!!)
+                            entry.kind == "temperature" && entry.temperatureC != null ->
+                                stringResource(R.string.temperature_entry, entry.temperatureC!!)
                             entry.diaperKind != null -> stringResource(R.string.diaper, when (entry.diaperKind!!.toInt()) {
                                 1 -> stringResource(R.string.wet)
                                 2 -> stringResource(R.string.dirty)

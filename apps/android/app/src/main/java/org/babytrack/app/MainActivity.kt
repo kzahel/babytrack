@@ -899,6 +899,16 @@ private fun nowTime(): ActivityWhen {
 
 @Composable
 private fun SharedHealth(snapshot: SharedSnapshotRow) {
+    Text(stringResource(R.string.shared_devices), style = MaterialTheme.typography.titleMedium)
+    snapshot.devices.forEach { device ->
+        val role = stringResource(if (device.role == 2.toUByte()) R.string.invite_manager else R.string.invite_member)
+        val who = if (device.deviceId.contentEquals(snapshot.family.deviceId)) {
+            stringResource(R.string.this_device)
+        } else {
+            stringResource(R.string.another_device)
+        }
+        Text(stringResource(R.string.shared_device_row, who, role, device.deviceId.key()))
+    }
     if (snapshot.unsentCount > 0uL) {
         Text(stringResource(R.string.shared_pending_changes, snapshot.unsentCount.toLong()))
     }

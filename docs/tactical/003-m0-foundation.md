@@ -221,6 +221,12 @@ foreground pass, and confirms the join screen remains available. The
 five-test real-relay emulator suite passes. A selected-recipient stage
 assertion is still open because the current scroll view exposes only visible
 text to Android accessibility in this test.
+The shared view now lists the verified active device credentials and roles
+from the Rust public authority chain. It labels this installation separately
+and shows the full Family-scoped device ID, without implying a person-level
+account. The emulator checks the manager-only list before admission and both
+manager/member credentials afterward. Removal controls and an action UI are
+still needed before device management is usable.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

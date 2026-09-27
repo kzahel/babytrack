@@ -206,6 +206,13 @@ pub struct SharedSnapshotRow {
     pub unsent_count: u64,
     pub inert_count: u64,
     pub recent_inert: Vec<InertBatchRow>,
+    pub devices: Vec<SharedDeviceRow>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct SharedDeviceRow {
+    pub device_id: Vec<u8>,
+    pub role: u8,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -864,6 +871,17 @@ impl NativeSharedStore {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
         let ready = ready_session_for(&mut store, family.handle()?, &fixed(&wrapping_key)?)?;
         let projection = ready.projection_with_pending(&store).map_err(rejected)?;
+        let devices = PublicHistorySession::resume(&store, family.handle()?)
+            .map_err(rejected)?
+            .chain()
+            .active_devices()
+            .map_err(rejected)?
+            .into_iter()
+            .map(|device| SharedDeviceRow {
+                device_id: device.device_id.to_vec(),
+                role: device.role,
+            })
+            .collect();
         let inert_count = projection.inert_batches().len() as u64;
         let recent_inert = projection
             .inert_batches()
@@ -903,6 +921,7 @@ impl NativeSharedStore {
             unsent_count: ready.unsent_local_count(&store).map_err(rejected)?,
             inert_count,
             recent_inert,
+            devices,
         })
     }
 

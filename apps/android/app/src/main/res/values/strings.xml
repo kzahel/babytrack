@@ -86,6 +86,10 @@
     <string name="history_ready">Shared history verified. %1$d children loaded.</string>
     <string name="history_ready_auto">Shared history verified and ready.</string>
     <string name="shared_children">Verified shared children</string>
+    <string name="shared_devices">Devices with verified access</string>
+    <string name="this_device">This device</string>
+    <string name="another_device">Other device</string>
+    <string name="shared_device_row">%1$s · %2$s · ID %3$s</string>
     <string name="shared_manual_sync">New entries save on this device. The app syncs while open and during scheduled background work; use the button to retry now.</string>
     <string name="sync_shared">Sync shared Family</string>
     <string name="shared_synced">Verified relay history through cursor %1$d.</string>

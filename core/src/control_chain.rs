@@ -97,6 +97,12 @@ pub struct ControlChain {
     rotations: BTreeMap<[u8; 16], VerifiedRotation>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActiveDevice {
+    pub device_id: [u8; 16],
+    pub role: u8,
+}
+
 struct FinalizePlan<'a> {
     next_state: Value,
     expected_signers: &'a [([u8; 16], [u8; 32])],
@@ -178,6 +184,24 @@ impl ControlChain {
         let row = find_row(&state[4].1, 5, 0, device_id)?
             .ok_or(Error::Invalid("device is not active"))?;
         Ok(fixed::<32>(&row[1])?)
+    }
+    /// Public, verified device grants. IDs identify credentials, not people.
+    pub fn active_devices(&self) -> Result<Vec<ActiveDevice>, Error> {
+        let state = exact_map(&self.state, 7)?;
+        let Value::Array(rows) = &state[4].1 else {
+            return Err(Error::Invalid("active devices not array"));
+        };
+        rows.iter()
+            .map(|row| {
+                let fields = array(row, 5)?;
+                Ok(ActiveDevice {
+                    device_id: fixed::<16>(&fields[0])?,
+                    role: number(&fields[4])?
+                        .try_into()
+                        .map_err(|_| Error::Invalid("device role outside u8"))?,
+                })
+            })
+            .collect()
     }
     pub fn next_sequence_for(&self, device_id: [u8; 16]) -> Result<u64, Error> {
         let _ = self.active_signing_public(device_id)?;

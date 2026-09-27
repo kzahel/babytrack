@@ -47,7 +47,7 @@ class SharingRelayTest {
             var visible = false
             while (System.currentTimeMillis() < deadline) {
                 val root = instrumentation.uiAutomation.rootInActiveWindow
-                visible = root?.containsText("Join preview") == true
+                visible = root?.containsText("Today") == true
                 val wrappingAfter = DeviceWrappingKey(context).loadOrCreate()
                 resumed = try {
                     NativeSharedStore.open(context.filesDir.resolve("families.db").absolutePath).use { core ->
@@ -59,7 +59,7 @@ class SharingRelayTest {
                 if (visible && resumed) break
                 Thread.sleep(100)
             }
-            assertTrue("Recreated UI should resume and confirm the saved claim", visible && resumed)
+            assertTrue("Recreated UI should resume and confirm the saved claim (visible=$visible, resumed=$resumed)", visible && resumed)
         }
         ShareCoordinator(context, context.filesDir.resolve("families.db").absolutePath).use { sharing ->
             assertTrue(sharing.recipientFamilies().any { it.familyId.contentEquals(recipient.familyId) })
@@ -204,6 +204,7 @@ class SharingRelayTest {
         val fragment = ShareCoordinator(context, database.absolutePath).use { sharing ->
             assertEquals(1uL, sharing.promote(family, origin, publicKey))
             assertEquals("Relay test child", sharing.snapshot(family).children.single().name)
+            assertEquals(1, sharing.snapshot(family).devices.size)
             NativeLocalStore.open(database.absolutePath).use { local ->
                 assertTrue(runCatching { local.addChild(family, "Wrong surface", System.currentTimeMillis()) }.isFailure)
             }
@@ -259,6 +260,10 @@ class SharingRelayTest {
             assertEquals(1uL, synced.childCount)
             val existing = sharing.snapshot(first.family).children.single()
             assertEquals("Relay test child", existing.name)
+            assertEquals(2, sharing.snapshot(first.family).devices.size)
+            assertTrue(sharing.snapshot(first.family).devices.any {
+                it.deviceId.contentEquals(first.family.deviceId) && it.role == 1u.toUByte()
+            })
             sharing.addChild(first.family, "Offline shared child", System.currentTimeMillis())
             val now = System.currentTimeMillis()
             assertTrue(runCatching {

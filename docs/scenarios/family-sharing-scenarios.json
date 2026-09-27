@@ -1472,8 +1472,8 @@
       "requirements": ["U3", "U4"],
       "given": "Later-device cancellation, role change, pending removal, and grant repair candidates are submitted to both client and relay public-authority reducers.",
       "actions": ["Replay identical signed bytes and prior verified state on each side, including a third-device enrollment and a publicly malformed grant envelope."],
-      "expect": ["Both sides return the same accept or reject decision and identical next public state bytes; the relay never supplies a divergent signer policy or state effect to a generic envelope check.", "A stale or member signer, last-manager demotion/removal, non-issuer cancellation, wrong pending target, wrong repair admission, and wrong public grant recipient/purpose/version/core binding are rejected."],
-      "variants": ["valid control bytes", "stale manager", "member signer", "last manager", "wrong issuer", "wrong pending device", "repair for another admission", "valid public envelope with undecryptable ciphertext"],
+      "expect": ["Both sides return the same accept or reject decision and identical next public state bytes; the relay never supplies a divergent signer policy or state effect to a generic envelope check.", "A stale or member signer, last-manager demotion/removal, wrong pending target, wrong repair admission, and wrong public grant recipient/purpose/version/core binding are rejected.", "Any active manager can cancel an unused invitation, including a manager other than its issuer."],
+      "variants": ["valid control bytes", "stale manager", "member signer", "last manager", "non-issuer active manager cancellation", "wrong pending device", "repair for another admission", "valid public envelope with undecryptable ciphertext"],
       "decisions": ["D2", "D4"]
     },
     {

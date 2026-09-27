@@ -441,13 +441,14 @@ candidates for both
 the client control chain and relay. It checks the
 public state effects, hashes, manifests, and applicable signatures without
 time, receipt, or object opening. Historical ID checks still live in the
-callers. The shared verifier also checks the common signed envelope for the
-remaining controls against caller-derived next state and signer sets; their
-other transition-specific state rules are still separate. Before general
-relay routes open, shared reducers must derive cancellation, role change,
-pending removal, and grant repair effects and signer policies from verified
-state and ledger facts. The common envelope verifier alone cannot authorize
-these controls. The public ledger and general relay authority are not
+callers. Shared reducers now also derive cancellation, role change, pending
+removal, and grant repair effects and signer policies, while a common signed
+envelope check enforces their bytes and signatures. The relay has no general
+routes for those four kinds yet.
+Repair preparation requires a verified admission association and current
+epoch commitment from the caller's historical ledger.
+The common envelope verifier alone cannot authorize these controls. The
+public ledger and general relay authority are not
 complete. The [focused verifier advisory](../tactical/003-m0-foundation.md#advisory-shared-authority-verifier-at-7566262)
 records this requirement and staging/restart hardening findings.
 

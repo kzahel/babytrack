@@ -119,6 +119,352 @@ pub struct PreparedRemoval {
     pub next_state: Value,
 }
 
+#[derive(Debug, Clone)]
+pub struct PreparedManagerChange {
+    pub transition_id: [u8; 16],
+    pub signer_id: [u8; 16],
+    pub signer_key: [u8; 32],
+    pub next_state: Value,
+}
+
+#[derive(Debug, Clone)]
+pub struct PreparedRepair {
+    pub transition_id: [u8; 16],
+    pub device_id: [u8; 16],
+    pub admission_id: [u8; 16],
+    pub signer_id: [u8; 16],
+    pub signer_key: [u8; 32],
+    pub agree_public: [u8; 32],
+    pub key_version: u32,
+    pub commitment: [u8; 32],
+    pub core_hash: [u8; 32],
+    pub manifest: Vec<ManifestEntry>,
+}
+
+/// A repair preserves authority state and targets the verified admission for
+/// an active device at the current epoch. The admission ID and commitment
+/// must come from authenticated historical ledger facts, never a candidate.
+pub fn prepare_repair(
+    candidate_bytes: &[u8],
+    state: &Value,
+    head: [u8; 32],
+    current_commitment: [u8; 32],
+    expected_admission_id: Option<[u8; 16]>,
+) -> Result<PreparedRepair, Error> {
+    let candidate = cbor::decode_with_limits(
+        candidate_bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?;
+    let root = exact_map(&candidate, 2)?;
+    let unsigned = exact_map(&root[0].1, 11)?;
+    let delta = exact_map(&unsigned[6].1, 3)?;
+    let device_id = fixed::<16>(&delta[0].1)?;
+    let admission_id = fixed::<16>(&delta[1].1)?;
+    let commitment = fixed::<32>(&delta[2].1)?;
+    if expected_admission_id != Some(admission_id) || commitment != current_commitment {
+        return Err(Error::Invalid("repair admission or commitment mismatch"));
+    }
+    let old = exact_map(state, 7)?;
+    if number(&old[0].1)? != 1 {
+        return Err(Error::Invalid("authority state version"));
+    }
+    let Value::Array(active) = &old[4].1 else {
+        return Err(Error::Invalid("active state not array"));
+    };
+    let recipient = active
+        .iter()
+        .find_map(|row| {
+            let fields = array(row, 5).ok()?;
+            (fixed::<16>(&fields[0]).ok()? == device_id).then_some(fields)
+        })
+        .ok_or(Error::Invalid("repair recipient not active"))?;
+    let agree_public = fixed::<32>(&recipient[2])?;
+    let key_version: u32 = number(&recipient[3])?
+        .try_into()
+        .map_err(|_| Error::Invalid("key version range"))?;
+    let signatures = array(&root[1].1, 1)?;
+    let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
+    let signer = active
+        .iter()
+        .find_map(|row| {
+            let fields = array(row, 5).ok()?;
+            (fixed::<16>(&fields[0]).ok()? == signer_id).then_some(fields)
+        })
+        .ok_or(Error::Invalid("repair signer not active"))?;
+    let signer_key = fixed::<32>(&signer[1])?;
+    let prepared = prepare_following(
+        candidate_bytes,
+        fixed::<16>(&old[1].1)?,
+        fixed::<32>(&old[2].1)?,
+        head,
+        10,
+        number(&old[3].1)?,
+        state,
+        &[(signer_id, signer_key)],
+        &[1, 4],
+    )?;
+    Ok(PreparedRepair {
+        transition_id: prepared.transition_id,
+        device_id,
+        admission_id,
+        signer_id,
+        signer_key,
+        agree_public,
+        key_version,
+        commitment,
+        core_hash: fixed::<32>(&unsigned[10].1)?,
+        manifest: prepared.manifest,
+    })
+}
+
+/// Cancel one unused invitation. Any currently active manager may sign,
+/// including a manager other than the invitation issuer.
+pub fn prepare_cancel(
+    candidate_bytes: &[u8],
+    state: &Value,
+    head: [u8; 32],
+) -> Result<PreparedManagerChange, Error> {
+    let candidate = cbor::decode_with_limits(
+        candidate_bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?;
+    let root = exact_map(&candidate, 2)?;
+    let unsigned = exact_map(&root[0].1, 11)?;
+    let delta = exact_map(&unsigned[6].1, 1)?;
+    let invitation_id = fixed::<16>(&delta[0].1)?;
+    let old = exact_map(state, 7)?;
+    let Value::Array(invitations) = &old[6].1 else {
+        return Err(Error::Invalid("invitations not array"));
+    };
+    let invitation = invitations
+        .iter()
+        .find_map(|row| {
+            let fields = array(row, 6).ok()?;
+            (fixed::<16>(&fields[0]).ok()? == invitation_id).then_some(fields)
+        })
+        .ok_or(Error::Invalid("invitation to cancel is absent"))?;
+    if number(&invitation[5])? != 1 {
+        return Err(Error::Invalid("only unused invitation can be canceled"));
+    }
+    let (signer_id, signer_key) = manager_signer(root, old)?;
+    let mut next_state = state.clone();
+    let Value::Map(next) = &mut next_state else {
+        unreachable!()
+    };
+    let Value::Array(rows) = &mut next[6].1 else {
+        unreachable!()
+    };
+    for row in rows {
+        let fields = array_mut(row, 6)?;
+        if fixed::<16>(&fields[0])? == invitation_id {
+            fields[5] = Value::Integer(3);
+        }
+    }
+    prepare_manager_change(
+        candidate_bytes,
+        state,
+        head,
+        3,
+        next_state,
+        signer_id,
+        signer_key,
+    )
+}
+
+/// Change one active role while preserving at least one manager. Demoting an
+/// invitation issuer terminally cancels that issuer's unused invitations.
+pub fn prepare_role_change(
+    candidate_bytes: &[u8],
+    state: &Value,
+    head: [u8; 32],
+) -> Result<PreparedManagerChange, Error> {
+    let candidate = cbor::decode_with_limits(
+        candidate_bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?;
+    let root = exact_map(&candidate, 2)?;
+    let unsigned = exact_map(&root[0].1, 11)?;
+    let delta = exact_map(&unsigned[6].1, 3)?;
+    let target_id = fixed::<16>(&delta[0].1)?;
+    let old_role = number(&delta[1].1)?;
+    let new_role = number(&delta[2].1)?;
+    if !matches!((old_role, new_role), (1, 2) | (2, 1)) {
+        return Err(Error::Invalid("role must switch member and manager"));
+    }
+    let old = exact_map(state, 7)?;
+    let Value::Array(active) = &old[4].1 else {
+        return Err(Error::Invalid("active state not array"));
+    };
+    let target = active
+        .iter()
+        .find_map(|row| {
+            let fields = array(row, 5).ok()?;
+            (fixed::<16>(&fields[0]).ok()? == target_id).then_some(fields)
+        })
+        .ok_or(Error::Invalid("role target not active"))?;
+    if number(&target[4])? != old_role {
+        return Err(Error::Invalid("prior role differs"));
+    }
+    let (signer_id, signer_key) = manager_signer(root, old)?;
+    let mut next_state = state.clone();
+    let Value::Map(next) = &mut next_state else {
+        unreachable!()
+    };
+    let Value::Array(rows) = &mut next[4].1 else {
+        unreachable!()
+    };
+    for row in rows.iter_mut() {
+        let fields = array_mut(row, 5)?;
+        if fixed::<16>(&fields[0])? == target_id {
+            fields[4] = Value::Integer(new_role.into());
+        }
+    }
+    if !rows
+        .iter()
+        .any(|row| array(row, 5).is_ok_and(|fields| number(&fields[4]).ok() == Some(2)))
+    {
+        return Err(Error::Invalid("role change would remove last manager"));
+    }
+    if old_role == 2 {
+        let Value::Array(invitations) = &mut next[6].1 else {
+            return Err(Error::Invalid("invitations not array"));
+        };
+        for row in invitations {
+            let fields = array_mut(row, 6)?;
+            if fixed::<16>(&fields[1])? == target_id && number(&fields[5])? == 1 {
+                fields[5] = Value::Integer(3);
+            }
+        }
+    }
+    prepare_manager_change(
+        candidate_bytes,
+        state,
+        head,
+        7,
+        next_state,
+        signer_id,
+        signer_key,
+    )
+}
+
+/// Remove exactly one pending device, without rotating the current epoch.
+pub fn prepare_pending_removal(
+    candidate_bytes: &[u8],
+    state: &Value,
+    head: [u8; 32],
+) -> Result<PreparedManagerChange, Error> {
+    let candidate = cbor::decode_with_limits(
+        candidate_bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?;
+    let root = exact_map(&candidate, 2)?;
+    let unsigned = exact_map(&root[0].1, 11)?;
+    let delta = exact_map(&unsigned[6].1, 2)?;
+    let invitation_id = fixed::<16>(&delta[0].1)?;
+    let device_id = fixed::<16>(&delta[1].1)?;
+    let old = exact_map(state, 7)?;
+    let Value::Array(pending) = &old[5].1 else {
+        return Err(Error::Invalid("pending state not array"));
+    };
+    let target = pending
+        .iter()
+        .find_map(|row| {
+            let fields = array(row, 9).ok()?;
+            (fixed::<16>(&fields[0]).ok()? == invitation_id).then_some(fields)
+        })
+        .ok_or(Error::Invalid("pending invitation absent"))?;
+    if fixed::<16>(&target[1])? != device_id {
+        return Err(Error::Invalid("pending device mismatch"));
+    }
+    let (signer_id, signer_key) = manager_signer(root, old)?;
+    let mut next_state = state.clone();
+    let Value::Map(next) = &mut next_state else {
+        unreachable!()
+    };
+    let Value::Array(rows) = &mut next[5].1 else {
+        unreachable!()
+    };
+    rows.retain(|row| {
+        !array(row, 9).is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(invitation_id))
+    });
+    prepare_manager_change(
+        candidate_bytes,
+        state,
+        head,
+        9,
+        next_state,
+        signer_id,
+        signer_key,
+    )
+}
+
+fn manager_signer(
+    root: &[(u64, Value)],
+    state: &[(u64, Value)],
+) -> Result<([u8; 16], [u8; 32]), Error> {
+    let signatures = array(&root[1].1, 1)?;
+    let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
+    let Value::Array(active) = &state[4].1 else {
+        return Err(Error::Invalid("active state not array"));
+    };
+    let signer = active
+        .iter()
+        .find_map(|row| {
+            let fields = array(row, 5).ok()?;
+            (fixed::<16>(&fields[0]).ok()? == signer_id).then_some(fields)
+        })
+        .ok_or(Error::Invalid("signer not active"))?;
+    if number(&signer[4])? != 2 {
+        return Err(Error::Invalid("signer not manager"));
+    }
+    Ok((signer_id, fixed::<32>(&signer[1])?))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prepare_manager_change(
+    candidate_bytes: &[u8],
+    state: &Value,
+    head: [u8; 32],
+    kind: u64,
+    next_state: Value,
+    signer_id: [u8; 16],
+    signer_key: [u8; 32],
+) -> Result<PreparedManagerChange, Error> {
+    let old = exact_map(state, 7)?;
+    if number(&old[0].1)? != 1 {
+        return Err(Error::Invalid("authority state version"));
+    }
+    let prepared = prepare_following(
+        candidate_bytes,
+        fixed::<16>(&old[1].1)?,
+        fixed::<32>(&old[2].1)?,
+        head,
+        kind,
+        number(&old[3].1)?,
+        &next_state,
+        &[(signer_id, signer_key)],
+        &[1],
+    )?;
+    Ok(PreparedManagerChange {
+        transition_id: prepared.transition_id,
+        signer_id,
+        signer_key,
+        next_state,
+    })
+}
+
 /// Remove an active device, advance the epoch, and invalidate outstanding
 /// challenges. The caller checks grant/keyring object contents and history.
 pub fn prepare_removal(

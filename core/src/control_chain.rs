@@ -449,44 +449,22 @@ impl ControlChain {
         let root = exact_map(&object, 4)?;
         let unsigned = exact_map(&root[0].1, 11)?;
         self.check_unsigned(unsigned, 3, self.current_epoch()?)?;
-        let delta = exact_map(&unsigned[6].1, 1)?;
-        let invitation_id = fixed::<16>(&delta[0].1)?;
-        let state = exact_map(&self.state, 7)?;
-        let invitation = find_row(&state[6].1, 6, 0, invitation_id)?
-            .ok_or(Error::Invalid("invitation to cancel is absent"))?;
-        if number(&invitation[5])? != 1 {
-            return Err(Error::Invalid("only an unused invitation can be canceled"));
-        }
-        let signatures = array(&root[1].1, 1)?;
-        let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
-        let signer = find_row(&state[4].1, 5, 0, signer_id)?
-            .ok_or(Error::Invalid("cancel signer not active"))?;
-        if number(&signer[4])? != 2 {
-            return Err(Error::Invalid("cancel signer not manager"));
-        }
-        let signer_key = fixed::<32>(&signer[1])?;
-        let mut next_state = self.state.clone();
-        let Value::Map(map) = &mut next_state else {
-            unreachable!()
-        };
-        let Value::Array(invitations) = &mut map[6].1 else {
-            unreachable!()
-        };
-        for row in invitations {
-            let Value::Array(fields) = row else {
-                unreachable!()
-            };
-            if fixed::<16>(&fields[0])? == invitation_id {
-                fields[5] = Value::Integer(3);
-            }
-        }
+        let signed_candidate = cbor::encode(&Value::Map(vec![
+            (1, root[0].1.clone()),
+            (2, root[1].1.clone()),
+        ]))?;
+        let prepared = babytrack_wire::authority::prepare_cancel(
+            &signed_candidate,
+            &self.state,
+            self.head_hash,
+        )?;
         self.finalize(
             bytes,
             root,
             unsigned,
             FinalizePlan {
-                next_state,
-                expected_signers: &[(signer_id, signer_key)],
+                next_state: prepared.next_state,
+                expected_signers: &[(prepared.signer_id, prepared.signer_key)],
                 manifest_kinds: &[1],
                 before_ms: None,
             },
@@ -504,68 +482,22 @@ impl ControlChain {
         let root = exact_map(&object, 4)?;
         let unsigned = exact_map(&root[0].1, 11)?;
         self.check_unsigned(unsigned, 7, self.current_epoch()?)?;
-        let delta = exact_map(&unsigned[6].1, 3)?;
-        let device_id = fixed::<16>(&delta[0].1)?;
-        let old_role = number(&delta[1].1)?;
-        let new_role = number(&delta[2].1)?;
-        if !matches!((old_role, new_role), (1, 2) | (2, 1)) {
-            return Err(Error::Invalid("role change must switch member and manager"));
-        }
-        let state = exact_map(&self.state, 7)?;
-        let target = find_row(&state[4].1, 5, 0, device_id)?
-            .ok_or(Error::Invalid("role target not active"))?;
-        if number(&target[4])? != old_role {
-            return Err(Error::Invalid("role target's prior role differs"));
-        }
-        let signatures = array(&root[1].1, 1)?;
-        let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
-        let signer = find_row(&state[4].1, 5, 0, signer_id)?
-            .ok_or(Error::Invalid("role signer not active"))?;
-        if number(&signer[4])? != 2 {
-            return Err(Error::Invalid("role signer not manager"));
-        }
-        let signer_key = fixed::<32>(&signer[1])?;
-        let mut next_state = self.state.clone();
-        let Value::Map(map) = &mut next_state else {
-            unreachable!()
-        };
-        let Value::Array(active) = &mut map[4].1 else {
-            unreachable!()
-        };
-        for row in active.iter_mut() {
-            let Value::Array(fields) = row else {
-                unreachable!()
-            };
-            if fixed::<16>(&fields[0])? == device_id {
-                fields[4] = Value::Integer(new_role.into());
-            }
-        }
-        if !active
-            .iter()
-            .any(|row| array(row, 5).is_ok_and(|fields| number(&fields[4]).ok() == Some(2)))
-        {
-            return Err(Error::Invalid("role change would remove the last manager"));
-        }
-        if old_role == 2 {
-            let Value::Array(invitations) = &mut map[6].1 else {
-                unreachable!()
-            };
-            for row in invitations {
-                let Value::Array(fields) = row else {
-                    unreachable!()
-                };
-                if fixed::<16>(&fields[1])? == device_id && number(&fields[5])? == 1 {
-                    fields[5] = Value::Integer(3);
-                }
-            }
-        }
+        let signed_candidate = cbor::encode(&Value::Map(vec![
+            (1, root[0].1.clone()),
+            (2, root[1].1.clone()),
+        ]))?;
+        let prepared = babytrack_wire::authority::prepare_role_change(
+            &signed_candidate,
+            &self.state,
+            self.head_hash,
+        )?;
         self.finalize(
             bytes,
             root,
             unsigned,
             FinalizePlan {
-                next_state,
-                expected_signers: &[(signer_id, signer_key)],
+                next_state: prepared.next_state,
+                expected_signers: &[(prepared.signer_id, prepared.signer_key)],
                 manifest_kinds: &[1],
                 before_ms: None,
             },
@@ -583,40 +515,23 @@ impl ControlChain {
         let root = exact_map(&object, 4)?;
         let unsigned = exact_map(&root[0].1, 11)?;
         self.check_unsigned(unsigned, 9, self.current_epoch()?)?;
-        let delta = exact_map(&unsigned[6].1, 2)?;
-        let invitation_id = fixed::<16>(&delta[0].1)?;
-        let device_id = fixed::<16>(&delta[1].1)?;
-        let state = exact_map(&self.state, 7)?;
-        let pending = find_row(&state[5].1, 9, 0, invitation_id)?
-            .ok_or(Error::Invalid("pending invitation to remove is absent"))?;
-        if fixed::<16>(&pending[1])? != device_id {
-            return Err(Error::Invalid("pending removal device mismatch"));
-        }
-        let signatures = array(&root[1].1, 1)?;
-        let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
-        let signer = find_row(&state[4].1, 5, 0, signer_id)?
-            .ok_or(Error::Invalid("pending removal signer not active"))?;
-        if number(&signer[4])? != 2 {
-            return Err(Error::Invalid("pending removal signer not manager"));
-        }
-        let signer_key = fixed::<32>(&signer[1])?;
-        let mut next_state = self.state.clone();
-        let Value::Map(map) = &mut next_state else {
-            unreachable!()
-        };
-        let Value::Array(pending_rows) = &mut map[5].1 else {
-            unreachable!()
-        };
-        pending_rows.retain(|row| {
-            !array(row, 9).is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(invitation_id))
-        });
+        let invitation_id = fixed::<16>(&exact_map(&unsigned[6].1, 2)?[0].1)?;
+        let signed_candidate = cbor::encode(&Value::Map(vec![
+            (1, root[0].1.clone()),
+            (2, root[1].1.clone()),
+        ]))?;
+        let prepared = babytrack_wire::authority::prepare_pending_removal(
+            &signed_candidate,
+            &self.state,
+            self.head_hash,
+        )?;
         self.finalize(
             bytes,
             root,
             unsigned,
             FinalizePlan {
-                next_state,
-                expected_signers: &[(signer_id, signer_key)],
+                next_state: prepared.next_state,
+                expected_signers: &[(prepared.signer_id, prepared.signer_key)],
                 manifest_kinds: &[1],
                 before_ms: None,
             },
@@ -858,59 +773,40 @@ impl ControlChain {
         let root = exact_map(&object, 4)?;
         let unsigned = exact_map(&root[0].1, 11)?;
         self.check_unsigned(unsigned, 10, self.current_epoch()?)?;
-        let delta = exact_map(&unsigned[6].1, 3)?;
-        let device_id = fixed::<16>(&delta[0].1)?;
-        let admission_id = fixed::<16>(&delta[1].1)?;
-        let commitment = fixed::<32>(&delta[2].1)?;
-        if self.admissions.get(&device_id) != Some(&admission_id)
-            || commitment != self.current_commitment
-        {
-            return Err(Error::Invalid(
-                "repair recipient, admission, or epoch commitment mismatch",
-            ));
-        }
-        let state = exact_map(&self.state, 7)?;
-        let recipient = find_row(&state[4].1, 5, 0, device_id)?
-            .ok_or(Error::Invalid("repair recipient no longer active"))?;
-        let agree_public = fixed::<32>(&recipient[2])?;
-        let key_version: u32 = number(&recipient[3])?
-            .try_into()
-            .map_err(|_| Error::Invalid("key version outside u32"))?;
-        let manifest = array(&unsigned[9].1, 2)?;
-        let grant_entry = array(&manifest[1], 4)?;
-        if number(&grant_entry[0])? != 4 {
-            return Err(Error::Invalid("repair grant manifest kind invalid"));
-        }
+        let device_id = fixed::<16>(&exact_map(&unsigned[6].1, 3)?[0].1)?;
+        let signed_candidate = cbor::encode(&Value::Map(vec![
+            (1, root[0].1.clone()),
+            (2, root[1].1.clone()),
+        ]))?;
+        let prepared = babytrack_wire::authority::prepare_repair(
+            &signed_candidate,
+            &self.state,
+            self.head_hash,
+            self.current_commitment,
+            self.admissions.get(&device_id).copied(),
+        )?;
         let grant = VerifiedRepairGrant {
             family_id: self.genesis.family_id(),
             relay_id: self.genesis.relay_id(),
-            epoch: self
-                .current_epoch()?
-                .try_into()
-                .map_err(|_| Error::Invalid("epoch outside u32"))?,
-            epoch_commitment: self.current_commitment,
-            core_hash: fixed::<32>(&unsigned[10].1)?,
-            prior_head: fixed::<32>(&unsigned[3].1)?,
-            transition_id: fixed::<16>(&unsigned[4].1)?,
-            admission_id,
-            device_id,
-            agree_public,
-            key_version,
-            grant_id: fixed::<16>(&grant_entry[1])?,
-            object_hash: fixed::<32>(&grant_entry[2])?,
+            epoch: self.epoch()?,
+            epoch_commitment: prepared.commitment,
+            core_hash: prepared.core_hash,
+            prior_head: self.head_hash,
+            transition_id: prepared.transition_id,
+            admission_id: prepared.admission_id,
+            device_id: prepared.device_id,
+            agree_public: prepared.agree_public,
+            key_version: prepared.key_version,
+            grant_id: prepared.manifest[1].object_id,
+            object_hash: prepared.manifest[1].object_hash,
         };
-        let signatures = array(&root[1].1, 1)?;
-        let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
-        let active = find_row(&state[4].1, 5, 0, signer_id)?
-            .ok_or(Error::Invalid("repair signer not active"))?;
-        let signer_key = fixed::<32>(&active[1])?;
         self.finalize(
             bytes,
             root,
             unsigned,
             FinalizePlan {
                 next_state: self.state.clone(),
-                expected_signers: &[(signer_id, signer_key)],
+                expected_signers: &[(prepared.signer_id, prepared.signer_key)],
                 manifest_kinds: &[1, 4],
                 before_ms: None,
             },

@@ -1187,6 +1187,16 @@ proofs, and the rotation manifest shape. The client still opens and verifies
 the new grants and keyring. General relay rotation and historical access
 remain open; the current route still covers the first cohort only.
 
+Unused-invitation cancellation, active role change, and pending-device
+removal now derive their state effects and active-manager signer policy in
+the shared verifier. The client control chain uses those preparations and
+the fixed control-chain fixture covers the three accepted transitions,
+last-manager rejection, and cancellation by a manager other than the issuer.
+The relay has no general routes for them yet. Grant repair now uses a shared
+reducer against the client's verified admission association and epoch
+commitment; the relay still needs a durable historical admission and
+commitment ledger before it can use that reducer.
+
 The corrected [topic proposal](../topics/sync-and-encryption.md#proposed-implementation-seam-for-general-relay-authority)
 uses a public candidate verifier, a relay commit wrapper, and a client
 committed verifier. It needs no v1 wire change if the ledger remains internal;
@@ -1235,7 +1245,7 @@ gate or a pass for later-device authority.
 
 | Finding | Disposition and required regression |
 |---|---|
-| G1 high: the common signed envelope checks caller-supplied state and signer policy; cancellation, role change, pending removal, and grant repair still lack shared specialized reducers. | Blocker before general routes. Derive each effect and signer set in the shared verifier; differential client/relay cases must reject stale or member signers, last-manager loss, wrong issuer/pending target, and wrong repair admission (FS71). |
+| G1 high: the common signed envelope checked caller-supplied state and signer policy. | Shared reducers now derive cancellation, role change, pending removal, and repair effects and signers for client replay. Still a blocker before general routes: relay must use them against an authenticated historical ledger, and differential client/relay cases must reject stale or member signers, last-manager loss, wrong pending target, and wrong repair admission (FS71). The review suggested rejecting cancellation by a non-issuer, but agreed D8 allows any active manager to cancel an unused invite; FS71 tests that valid case. |
 | G2 high: the public ledger proposal did not explicitly bind every epoch to its verified commitment. | Blocker before general routes. Persist and reconstruct head-to-epoch and epoch-to-commitment maps from committed bytes. Rotate, restart, admit a later device, and reject stale or substituted commitments (FS72). |
 | H1 medium: staging reserved object IDs only within a candidate; cleanup could allow reuse of an uncommitted ID with different bytes. | The relay now retains a Family-wide object-ID-to-hash reservation independently of candidate cleanup and migrates existing staged/committed rows, failing startup on conflicting bindings. A competing signed first-issue stage is rejected after cleanup and restart. Extend FS73 to cross-category stages before closing the full general route gate. |
 | H2 medium: first-cohort restart reconstruction does not authenticate every mutable stored authority link and receipt. | Rebuild from authenticated committed history or fail closed before commits and reads when bytes or derived rows are corrupted (FS74). |

@@ -313,6 +313,45 @@ fn admission_moves_proved_pending_device_to_active_and_repair_preserves_role() {
         chain.state_bytes().unwrap(),
         hex_bytes(transitions[5]["state_cbor_hex"].as_str().unwrap())
     );
+    let Value::Map(repair_root) = cbor::decode(&wire(6)).unwrap() else {
+        panic!()
+    };
+    let Value::Map(repair_unsigned) = &repair_root[0].1 else {
+        panic!()
+    };
+    let Value::Map(repair_delta) = &repair_unsigned[6].1 else {
+        panic!()
+    };
+    let manager_id = bytes::<16>(
+        fixture["test_only_inputs"]["manager_device_id_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let manager_seed = bytes::<32>(
+        fixture["test_only_inputs"]["manager_sign_seed_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let relay_seed = bytes::<32>(
+        fixture["test_only_inputs"]["relay_sign_seed_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let wrong_admission = test_control(
+        &chain,
+        10,
+        v4(244),
+        Value::Map(vec![
+            (1, Value::Bytes(recipient_id.to_vec())),
+            (2, Value::Bytes(v4(245).to_vec())),
+            (3, repair_delta[2].1.clone()),
+        ]),
+        cbor::decode(&chain.state_bytes().unwrap()).unwrap(),
+        (manager_id, manager_seed),
+        relay_seed,
+    );
+    assert!(chain.apply_grant_repair(&wrong_admission).is_err());
+    assert_eq!(chain.last_global_cursor(), 6);
     chain.apply_grant_repair(&wire(6)).unwrap();
     let repair_grant = chain.latest_repair_grant(&recipient_id).unwrap();
     let repair_object = hex_bytes(
@@ -855,6 +894,35 @@ fn manager_cancel_role_and_pending_removal_preserve_fixed_authority() {
         relay_seed,
     );
     role_chain.apply_control(&extra_issue).unwrap();
+    let mut other_manager_cancels = role_chain.clone();
+    let mut canceled_by_other_manager = with_unused_invite.clone();
+    if let Value::Map(state) = &mut canceled_by_other_manager
+        && let Value::Array(invitations) = &mut state[6].1
+    {
+        for row in invitations {
+            if let Value::Array(fields) = row
+                && fields[0] == Value::Bytes(extra_invitation_id.to_vec())
+            {
+                fields[5] = Value::Integer(3);
+            }
+        }
+    }
+    let cancel_by_other_manager = test_control(
+        &other_manager_cancels,
+        3,
+        v4(204),
+        Value::Map(vec![(1, Value::Bytes(extra_invitation_id.to_vec()))]),
+        canceled_by_other_manager.clone(),
+        (recipient_id, recipient_seed),
+        relay_seed,
+    );
+    other_manager_cancels
+        .apply_control(&cancel_by_other_manager)
+        .unwrap();
+    assert_eq!(
+        other_manager_cancels.state_bytes().unwrap(),
+        cbor::encode(&canceled_by_other_manager).unwrap()
+    );
     let mut demoted = with_unused_invite;
     if let Value::Map(state) = &mut demoted
         && let Value::Array(active) = &mut state[4].1

@@ -36,8 +36,18 @@ pub(crate) struct VerifiedControlReceipt {
     pub candidate_bytes: Vec<u8>,
     pub family_id: [u8; 16],
     pub relay_id: [u8; 32],
+    pub transition_id: [u8; 16],
     pub parent_head: [u8; 32],
     pub cursor: u64,
+    pub manifest: Vec<CommittedObjectRef>,
+}
+
+#[derive(Debug)]
+pub(crate) struct CommittedObjectRef {
+    pub kind: u16,
+    pub id: [u8; 16],
+    pub hash: [u8; 32],
+    pub len: u32,
 }
 
 /// Authenticate stored committed control bytes before they influence relay
@@ -79,6 +89,34 @@ pub(crate) fn verify_control_receipt(
     let relay_id = fixed::<32>(&unsigned[2].1)?;
     let parent_head = fixed::<32>(&unsigned[3].1)?;
     let transition_id = fixed::<16>(&unsigned[4].1)?;
+    let Value::Array(objects) = &unsigned[9].1 else {
+        return Err(Error::Invalid("control manifest not array"));
+    };
+    let mut manifest = Vec::with_capacity(objects.len());
+    for object in objects {
+        let Value::Array(fields) = object else {
+            return Err(Error::Invalid("control manifest entry not array"));
+        };
+        if fields.len() != 4 {
+            return Err(Error::Invalid("control manifest entry length"));
+        }
+        let Value::Integer(kind) = fields[0] else {
+            return Err(Error::Invalid("control object kind"));
+        };
+        let Value::Integer(len) = fields[3] else {
+            return Err(Error::Invalid("control object length"));
+        };
+        manifest.push(CommittedObjectRef {
+            kind: kind
+                .try_into()
+                .map_err(|_| Error::Invalid("control object kind range"))?,
+            id: fixed::<16>(&fields[1])?,
+            hash: fixed::<32>(&fields[2])?,
+            len: len
+                .try_into()
+                .map_err(|_| Error::Invalid("control object length range"))?,
+        });
+    }
     let Value::Array(receipt) = &root[2].1 else {
         return Err(Error::Invalid("control receipt not array"));
     };
@@ -124,8 +162,10 @@ pub(crate) fn verify_control_receipt(
         ]))?,
         family_id,
         relay_id,
+        transition_id,
         parent_head,
         cursor,
+        manifest,
     })
 }
 

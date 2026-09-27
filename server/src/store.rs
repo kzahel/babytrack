@@ -69,6 +69,7 @@ pub struct RelayStore {
 }
 
 type SavedReservation = (Vec<u8>, Vec<u8>, i64, Option<Vec<u8>>);
+type StoredCommittedObject = (i64, Vec<u8>, Vec<u8>, Vec<u8>);
 
 enum ControlReader {
     Manager,
@@ -266,6 +267,7 @@ impl RelayStore {
             let mut cursor = 0u64;
             let mut head = [0u8; 32];
             let mut control_count = 0u64;
+            let mut object_ids = BTreeSet::new();
             while let Some(row) = log.next()? {
                 let position: i64 = row.get(0)?;
                 let kind: i64 = row.get(1)?;
@@ -285,6 +287,29 @@ impl RelayStore {
                             || receipt.parent_head != head
                         {
                             return Err(Error::Invalid("stored control chain differs"));
+                        }
+                        for object in &receipt.manifest {
+                            if !object_ids.insert(object.id) {
+                                return Err(Error::Invalid("stored object ID repeated"));
+                            }
+                            let saved: Option<StoredCommittedObject> = snapshot
+                                .query_row(
+                                    "SELECT kind,object_hash,object_bytes,transition_id FROM committed_objects WHERE family_id=?1 AND object_id=?2",
+                                    params![&family[..], &object.id[..]],
+                                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                                )
+                                .optional()?;
+                            let Some((kind, hash, bytes, transition)) = saved else {
+                                return Err(Error::Invalid("committed manifest object missing"));
+                            };
+                            if kind != i64::from(object.kind)
+                                || hash != object.hash
+                                || bytes.len() != object.len as usize
+                                || crypto::hash("object", &bytes)? != object.hash
+                                || transition != receipt.transition_id
+                            {
+                                return Err(Error::Invalid("committed manifest object differs"));
+                            }
                         }
                         head = crypto::hash("control-head", &bytes)?;
                         control_count += 1;
@@ -309,6 +334,14 @@ impl RelayStore {
                 || saved_head != head
             {
                 return Err(Error::Invalid("stored Family head or cursor differs"));
+            }
+            let committed_count: i64 = snapshot.query_row(
+                "SELECT COUNT(*) FROM committed_objects WHERE family_id=?1",
+                params![&family[..]],
+                |row| row.get(0),
+            )?;
+            if usize::try_from(committed_count).ok() != Some(object_ids.len()) {
+                return Err(Error::Invalid("committed objects outside signed manifests"));
             }
         }
         drop(families);
@@ -3348,6 +3381,33 @@ mod tests {
                 .is_err()
         );
         drop(store);
+        assert!(RelayStore::open(&path, seed).is_err());
+        let db = Connection::open(&path).unwrap();
+        db.execute(
+            "UPDATE families SET committed_bytes=?2 WHERE family_id=?1",
+            params![&family[..], committed],
+        )
+        .unwrap();
+        db.execute(
+            "UPDATE entries SET committed_bytes=?2 WHERE family_id=?1 AND cursor=1",
+            params![&family[..], committed],
+        )
+        .unwrap();
+        let object: Vec<u8> = db
+            .query_row(
+                "SELECT object_bytes FROM committed_objects WHERE family_id=?1 AND object_id=?2",
+                params![&family[..], &promotion[..]],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let mut changed_object = object;
+        *changed_object.last_mut().unwrap() ^= 1;
+        db.execute(
+            "UPDATE committed_objects SET object_bytes=?3 WHERE family_id=?1 AND object_id=?2",
+            params![&family[..], &promotion[..], &changed_object],
+        )
+        .unwrap();
+        drop(db);
         assert!(RelayStore::open(&path, seed).is_err());
     }
 

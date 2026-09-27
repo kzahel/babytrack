@@ -39,7 +39,7 @@ one through the text share target, prefilled for an explicit join action.
 | Next dependent slice | The early first-cohort authority recheck passed. The general-authority seam advisory failed its initial sketch. First-cohort claim expiry, batch retry-first lookup and cursor CAS, candidate-scoped staging, and control/batch serialization have focused regressions. Client and relay now share invitation-issue, claim, holder-challenge, key-proof, admission, and active-removal preparation. Move remaining state rules and history into a rebuildable public ledger before later-device authority. Browser outbox, signed ID-collision coverage, and crash campaigns remain before M0 exit. |
 | Next independent review | The [early M0 authority recheck at `82c0f4c`](003-m0-foundation.md#early-m0-authority-recheck-at-82c0f4c) returned PASS for the implemented first cohort. The broader end-of-M0 recovery and mixed-client gate remains. |
 | Open advisory | The [Android sync recheck](003-m0-foundation.md#advisory-android-sync-recheck-at-00e827b) passed its two prior high findings at fixed revision `00e827b`. Activity recreation and forced recipient job retry pass on the real-relay emulator. Injected hostile-batch display proof and full M0 authority review remain. |
-| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Remote main run `36290799446` passed native and browser but failed at the Android SDK setup and UniFFI license gate. This slice updates the setup action and narrow pinned exceptions; a remote run of these repairs remains unverified. |
+| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Run `36306915747` passed Rust, native, browser, and Android build; seven emulator instrumentation cases passed, then the job stopped at a missing `rg` command. The assertion now uses portable `grep`; a green remote rerun remains open. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.
@@ -112,6 +112,12 @@ limited to the pinned MPL-2.0 UniFFI build dependencies. A green remote run
 is still required before marking CI healthy. Local `actionlint` and
 `cargo deny --all-features check advisories bans licenses sources` pass for
 this repair.
+
+Remote run `36306915747` at `443c259` passed Rust, both native binding jobs,
+browser wasm, and Android APK build. The real-relay Android job booted the
+emulator and passed all seven instrumentation cases, then failed because the
+runner lacks `rg` for the script's final result assertion. That assertion
+now uses `grep -E`; the emulator flow still needs a green remote rerun.
 
 For each gate, the owning tactical records the fixed commit, local commands,
 observed CI run, scenario IDs, security session/disposition if applicable,

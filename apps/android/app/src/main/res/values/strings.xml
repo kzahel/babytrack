@@ -183,7 +183,7 @@
     <string name="history_removed_rejected">This device’s removal was verified. The last upload was rejected; pending edits were saved in a new private Family.</string>
     <string name="shared_children">Verified shared children</string>
     <string name="shared_devices">Devices with verified access</string>
-    <string name="remove_device">Remove device %1$s</string>
+    <string name="remove_device">Remove %1$s</string>
     <string name="remove_device_title">Remove shared access?</string>
     <string name="remove_device_warning">Device %1$s will stop receiving new Family data after the relay confirms key rotation. It keeps data already stored on that device.</string>
     <string name="confirm_remove_device">Remove access</string>
@@ -192,6 +192,12 @@
     <string name="this_device">This device</string>
     <string name="another_device">Other device</string>
     <string name="shared_device_row">%1$s · %2$s · ID %3$s</string>
+    <string name="shared_named_device_row">%1$s · %2$s · %3$s · ID %4$s</string>
+    <string name="device_short_id">device %1$s</string>
+    <string name="named_device_id">%1$s (ID %2$s)</string>
+    <string name="name_device">Name device</string>
+    <string name="device_label_title">Name this device</string>
+    <string name="device_label_hint">Label on this phone</string>
     <string name="shared_manual_sync">New entries save on this device. The app syncs while open and during scheduled background work; use the button to retry now.</string>
     <string name="sync_shared">Sync shared Family</string>
     <string name="shared_synced">Verified relay history through cursor %1$d.</string>

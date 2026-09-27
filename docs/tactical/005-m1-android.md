@@ -89,6 +89,10 @@ checks the rotated membership, a verified removed status on the third
 device, and continued sync by the original manager. A saved removal no
 longer appears as an active shared snapshot in the tracker; the private
 copy path still has access to its retained records.
+The access list can give each verified device a label stored on this phone;
+the removal control uses that label and the confirmation still shows the
+complete device ID. Labels are only a local recognition aid, not proof of
+which person holds a credential or a change to Family authority.
 Ready joined Families now appear in the normal Family switcher and use the
 same full tracker, timeline, edits, backup, and analysis export as the
 initial manager Family through the shared Rust API. A keyless pending join

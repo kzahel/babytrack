@@ -146,6 +146,9 @@ private fun invitationFrom(intent: Intent?): String? {
 
 private fun ByteArray.key(): String = joinToString("") { "%02x".format(it) }
 
+private fun deviceLabelKey(familyId: ByteArray, deviceId: ByteArray): String =
+    familyId.key() + ":" + deviceId.key()
+
 private data class CompletedSave(val atMs: Long, val revision: ULong)
 private data class PendingActivityDelete(
     val family: FamilyRef,
@@ -365,6 +368,14 @@ private fun TrackerScreen(
     var automaticSyncDelayed by remember { mutableStateOf(false) }
     var automaticSyncBlocked by remember { mutableStateOf(false) }
     var removalTarget by remember { mutableStateOf<ByteArray?>(null) }
+    val deviceLabelPrefs = remember { context.getSharedPreferences("device_labels", Context.MODE_PRIVATE) }
+    var deviceLabels by remember {
+        mutableStateOf(deviceLabelPrefs.all.mapNotNull { (key, value) ->
+            (value as? String)?.let { key to it }
+        }.toMap())
+    }
+    var deviceLabelTarget by remember { mutableStateOf<String?>(null) }
+    var deviceLabelDraft by remember { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<PendingActivityDelete?>(null) }
     var pendingNoteEdit by remember { mutableStateOf<PendingNoteEdit?>(null) }
     var pendingBottleEdit by remember { mutableStateOf<PendingBottleEdit?>(null) }
@@ -559,13 +570,20 @@ private fun TrackerScreen(
                 color = MaterialTheme.colorScheme.error,
             )
             if (activeShared) activeSharedSnapshot?.let { snapshot ->
-                SharedHealth(snapshot)
+                SharedHealth(snapshot, deviceLabels, onNameDevice = { target ->
+                    val key = deviceLabelKey(snapshot.family.familyId, target)
+                    deviceLabelTarget = key
+                    deviceLabelDraft = deviceLabels[key].orEmpty()
+                })
                 if (family != null && snapshot.devices.any {
                     it.deviceId.contentEquals(family.deviceId) && it.role == 2.toUByte()
                 }) {
                     snapshot.devices.filterNot { it.deviceId.contentEquals(family.deviceId) }.forEach { device ->
+                        val label = deviceLabels[deviceLabelKey(snapshot.family.familyId, device.deviceId)]
+                            ?.takeIf { it.isNotBlank() }
+                            ?: stringResource(R.string.device_short_id, device.deviceId.key().take(8))
                         OutlinedButton(onClick = { removalTarget = device.deviceId }) {
-                            Text(stringResource(R.string.remove_device, device.deviceId.key()))
+                            Text(stringResource(R.string.remove_device, label))
                         }
                     }
                 }
@@ -704,7 +722,11 @@ private fun TrackerScreen(
                         sharedSnapshot?.let { snapshot ->
                             Text(stringResource(R.string.shared_children), style = MaterialTheme.typography.titleMedium)
                             Text(stringResource(R.string.shared_manual_sync))
-                            SharedHealth(snapshot)
+                            SharedHealth(snapshot, deviceLabels, onNameDevice = { target ->
+                                val key = deviceLabelKey(snapshot.family.familyId, target)
+                                deviceLabelTarget = key
+                                deviceLabelDraft = deviceLabels[key].orEmpty()
+                            })
                             if (snapshot.family.familyId.key() == selectedRecipient &&
                                 sharing.isAdmittedManager(snapshot.family)) {
                                 Text(stringResource(R.string.invite_manager), style = MaterialTheme.typography.titleMedium)
@@ -1989,10 +2011,14 @@ private fun TrackerScreen(
         )
     }
     removalTarget?.let { target ->
+        val targetLabel = family?.let { deviceLabels[deviceLabelKey(it.familyId, target)] }
+            ?.takeIf { it.isNotBlank() }
+        val targetDescription = if (targetLabel == null) target.key()
+            else context.getString(R.string.named_device_id, targetLabel, target.key())
         AlertDialog(
             onDismissRequest = { removalTarget = null },
             title = { Text(stringResource(R.string.remove_device_title)) },
-            text = { Text(stringResource(R.string.remove_device_warning, target.key())) },
+            text = { Text(stringResource(R.string.remove_device_warning, targetDescription)) },
             confirmButton = {
                 Button(onClick = {
                     removalTarget = null
@@ -2015,6 +2041,38 @@ private fun TrackerScreen(
             },
         )
     }
+    deviceLabelTarget?.let { key ->
+        AlertDialog(
+            onDismissRequest = { deviceLabelTarget = null },
+            title = { Text(stringResource(R.string.device_label_title)) },
+            text = {
+                OutlinedTextField(
+                    value = deviceLabelDraft,
+                    onValueChange = { deviceLabelDraft = it.take(40) },
+                    label = { Text(stringResource(R.string.device_label_hint)) },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val label = deviceLabelDraft.trim()
+                    if (label.isEmpty()) {
+                        deviceLabelPrefs.edit().remove(key).apply()
+                        deviceLabels = deviceLabels - key
+                    } else {
+                        deviceLabelPrefs.edit().putString(key, label).apply()
+                        deviceLabels = deviceLabels + (key to label)
+                    }
+                    deviceLabelTarget = null
+                }) { Text(stringResource(R.string.save_changes)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { deviceLabelTarget = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
 }
 
 private fun nowTime(): ActivityWhen {
@@ -2031,7 +2089,11 @@ private fun terminalInvitationMessage(context: Context, reason: InvitationTermin
     })
 
 @Composable
-private fun SharedHealth(snapshot: SharedSnapshotRow) {
+private fun SharedHealth(
+    snapshot: SharedSnapshotRow,
+    deviceLabels: Map<String, String>,
+    onNameDevice: (ByteArray) -> Unit,
+) {
     Text(stringResource(R.string.shared_devices), style = MaterialTheme.typography.titleMedium)
     snapshot.devices.forEach { device ->
         val role = stringResource(if (device.role == 2.toUByte()) R.string.invite_manager else R.string.invite_member)
@@ -2040,7 +2102,13 @@ private fun SharedHealth(snapshot: SharedSnapshotRow) {
         } else {
             stringResource(R.string.another_device)
         }
-        Text(stringResource(R.string.shared_device_row, who, role, device.deviceId.key()))
+        val label = deviceLabels[deviceLabelKey(snapshot.family.familyId, device.deviceId)]
+            ?.takeIf { it.isNotBlank() }
+        Text(if (label == null) stringResource(R.string.shared_device_row, who, role, device.deviceId.key())
+            else stringResource(R.string.shared_named_device_row, label, who, role, device.deviceId.key()))
+        OutlinedButton(onClick = { onNameDevice(device.deviceId) }) {
+            Text(stringResource(R.string.name_device))
+        }
     }
     if (snapshot.unsentCount > 0uL) {
         Text(stringResource(R.string.shared_pending_changes, snapshot.unsentCount.toLong()))

@@ -114,6 +114,9 @@ earlier submission finishes.
 An emulator check rejected an oversized bottle entry without losing its
 draft, accepted the corrected amount, and cleared an unsaved note when the
 caregiver switched to another child.
+The diaper form now exposes the core's dry kind alongside wet, dirty, and
+both, in two rows that fit larger text. The headed UI smoke logs a dry diaper
+and reads it back from the timeline.
 
 Two separate emulator installations and a disposable relay pass first-cohort
 join without simultaneous foreground use, reciprocal encrypted edits,
@@ -200,7 +203,9 @@ handoff. This is still a development flow, not a released product flow.
   for the exact source chosen; do not silently copy a restricted table.
 - [ ] Run local logging, Family switching, and restart on a physical Android
   phone. Check accessible labels, large text, dark night use, startup size
-  and latency, and the common feed/diaper path with one hand.
+  and latency, and the common feed/diaper path with one hand. On 2026-09-28,
+  the local ADB list and machine-control inventory offered only emulators,
+  with no physical Android phone available for this gate.
 
 Gate: the physical-phone flow works offline without an account, saves to the
 intended Family and child, and remains usable after process death.

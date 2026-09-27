@@ -1298,13 +1298,20 @@ private fun TrackerScreen(
                         }
                     }
                     Text(stringResource(R.string.log_diaper), style = MaterialTheme.typography.titleLarge)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(1u.toUByte() to R.string.wet, 2u.toUByte() to R.string.dirty, 3u.toUByte() to R.string.both).forEach { (kind, label) ->
-                            Button(onClick = { logCompleted { at ->
-                                if (activeShared) sharing.logDiaper(family, child.id, kind, at)
-                                else store.logDiaper(family, child.id, kind, at)
-                            } }) {
-                                Text(stringResource(label))
+                    listOf(
+                        1u.toUByte() to R.string.wet,
+                        2u.toUByte() to R.string.dirty,
+                        3u.toUByte() to R.string.both,
+                        4u.toUByte() to R.string.dry,
+                    ).chunked(2).forEach { options ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            options.forEach { (kind, label) ->
+                                Button(onClick = { logCompleted { at ->
+                                    if (activeShared) sharing.logDiaper(family, child.id, kind, at)
+                                    else store.logDiaper(family, child.id, kind, at)
+                                } }) {
+                                    Text(stringResource(label))
+                                }
                             }
                         }
                     }

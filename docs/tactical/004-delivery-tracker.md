@@ -35,6 +35,7 @@ multi-segment breast-feed, pumping logs, and note, bottle, diaper, pumping,
 and medication corrections, plus child name and growth-detail, growth-entry,
 and completed sleep corrections, runs
 alongside M0 on emulators; its physical phone gates remain open.
+The diaper form includes wet, dirty, both, and dry logging choices.
 Android can now share an invitation through the system chooser and receive
 one through the text share target, prefilled for an explicit join action.
 Ready joined Families now enter the normal Android Family switcher and full

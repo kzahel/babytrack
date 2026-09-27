@@ -8,6 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.babytrack_core_ffi.NativeLocalStore
+import uniffi.babytrack_core_ffi.ActivityWhen
 
 @RunWith(AndroidJUnit4::class)
 class SharingRelayTest {
@@ -70,6 +71,7 @@ class SharingRelayTest {
             assertTrue(pending.awaitingGrant)
             assertTrue(!pending.ready)
             assertTrue(runCatching { sharing.snapshot(first.family) }.isFailure)
+            assertTrue(runCatching { sharing.addChild(first.family, "Too early", System.currentTimeMillis()) }.isFailure)
         }
         ShareCoordinator(context, database.absolutePath).use { sharing ->
             sharing.admitProvedDevice(family, origin)
@@ -78,11 +80,21 @@ class SharingRelayTest {
             val synced = sharing.syncRecipient(fragment)
             assertTrue(synced.ready)
             assertEquals(1uL, synced.childCount)
-            assertEquals("Relay test child", sharing.snapshot(first.family).children.single().name)
+            val existing = sharing.snapshot(first.family).children.single()
+            assertEquals("Relay test child", existing.name)
+            sharing.addChild(first.family, "Offline shared child", System.currentTimeMillis())
+            val now = System.currentTimeMillis()
+            assertTrue(runCatching {
+                sharing.logDiaper(first.family, ByteArray(16), 1u.toUByte(), ActivityWhen(now, 0, now))
+            }.isFailure)
+            sharing.logDiaper(first.family, existing.id, 1u.toUByte(), ActivityWhen(now, 0, now))
+            assertEquals(2, sharing.snapshot(first.family).children.size)
+            assertEquals(1, sharing.snapshot(first.family).activities.size)
         }
         ShareCoordinator(context, recipient.absolutePath).use { sharing ->
             assertTrue(sharing.syncRecipient(fragment).ready)
-            assertEquals("Relay test child", sharing.snapshot(first.family).children.single().name)
+            assertEquals(2, sharing.snapshot(first.family).children.size)
+            assertEquals(1, sharing.snapshot(first.family).activities.size)
         }
         ShareCoordinator(context, database.absolutePath).use { sharing ->
             sharing.admitProvedDevice(family, origin)

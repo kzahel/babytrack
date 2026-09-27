@@ -818,24 +818,7 @@ impl NativeSharedStore {
         wrapping_key: Vec<u8>,
     ) -> Result<SharedSnapshotRow, BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
-        let handle = family.handle()?;
-        let wrapping = fixed(&wrapping_key)?;
-        let ready = if store
-            .has_enrollment_attempt(handle.family_id)
-            .map_err(rejected)?
-        {
-            let attempt = EnrollmentAttempt::resume(&mut store, handle.family_id, &wrapping)
-                .map_err(rejected)?;
-            if attempt.family() != handle {
-                return Err(BindingError::InvalidBytes);
-            }
-            ReadyFamilySession::from_enrollment(&store, &attempt).map_err(rejected)?
-        } else {
-            ManagerCreation::resume(&store, handle, &wrapping)
-                .map_err(rejected)?
-                .ready_session(&store)
-                .map_err(rejected)?
-        };
+        let ready = ready_session_for(&mut store, family.handle()?, &fixed(&wrapping_key)?)?;
         let projection = ready.projection_with_pending(&store).map_err(rejected)?;
         let children = local_api::children_from_records(projection.records())
             .into_iter()
@@ -862,6 +845,100 @@ impl NativeSharedStore {
             children,
             activities,
         })
+    }
+
+    pub fn add_shared_child(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        name: String,
+        now_ms: i64,
+    ) -> Result<Vec<u8>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let (id, operation) =
+            local_api::child_operation(handle, &name, now_ms).map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, now_ms)
+            .map_err(rejected)?;
+        Ok(id.to_vec())
+    }
+
+    pub fn log_shared_diaper(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        kind: u8,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let saved_at_ms = time.saved_at_ms;
+        let (id, operation) =
+            local_api::diaper_operation(handle, fixed(&child_id)?, kind, time.into())
+                .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map_err(rejected)?;
+        Ok(id.to_vec())
+    }
+
+    pub fn log_shared_bottle_ml(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        amount_ml: i64,
+        content: u8,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let saved_at_ms = time.saved_at_ms;
+        let (id, operation) =
+            local_api::bottle_operation(handle, fixed(&child_id)?, amount_ml, content, time.into())
+                .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map_err(rejected)?;
+        Ok(id.to_vec())
+    }
+}
+
+impl From<ActivityWhen> for ActivityTime {
+    fn from(value: ActivityWhen) -> Self {
+        Self {
+            start_utc_ms: value.start_utc_ms,
+            offset_minutes: value.offset_minutes,
+            saved_at_ms: value.saved_at_ms,
+        }
+    }
+}
+
+fn ready_session_for(
+    store: &mut SqliteStore,
+    family: FamilyHandle,
+    wrapping: &[u8; 32],
+) -> Result<ReadyFamilySession, BindingError> {
+    if store
+        .has_enrollment_attempt(family.family_id)
+        .map_err(rejected)?
+    {
+        let attempt =
+            EnrollmentAttempt::resume(store, family.family_id, wrapping).map_err(rejected)?;
+        if attempt.family() != family {
+            return Err(BindingError::InvalidBytes);
+        }
+        ReadyFamilySession::from_enrollment(store, &attempt).map_err(rejected)
+    } else {
+        ManagerCreation::resume(store, family, wrapping)
+            .map_err(rejected)?
+            .ready_session(store)
+            .map_err(rejected)
     }
 }
 

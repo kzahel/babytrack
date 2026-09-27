@@ -133,27 +133,8 @@ impl LocalRepository {
         now_ms: i64,
     ) -> Result<[u8; 16], Error> {
         self.ensure_local_surface(family)?;
-        check_time(now_ms)?;
-        if name.trim().is_empty() || name.len() > 16 * 1024 {
-            return Err(Error::Invalid("child name empty or too long"));
-        }
-        let child_id = ids::random_v7(now_ms)?;
-        self.store.append_local(
-            family,
-            NewOperation {
-                family_id: family.family_id,
-                operation_id: ids::random_v7(now_ms)?,
-                record_id: child_id,
-                scope: Scope::Child,
-                kind: Kind::Create,
-                author_device_id: family.device_id,
-                hlc: placeholder_hlc(family),
-                record_type: Some("child".to_owned()),
-                child_id: None,
-                fields: Some(vec![(1, Value::Text(name.trim().to_owned()))]),
-            },
-            now_ms,
-        )?;
+        let (child_id, operation) = child_operation(family, name, now_ms)?;
+        self.store.append_local(family, operation, now_ms)?;
         Ok(child_id)
     }
 
@@ -164,16 +145,9 @@ impl LocalRepository {
         diaper_kind: u8,
         time: ActivityTime,
     ) -> Result<[u8; 16], Error> {
-        if !(1..=4).contains(&diaper_kind) {
-            return Err(Error::Invalid("diaper kind outside published codes"));
-        }
-        self.log_activity(
-            family,
-            child_id,
-            "diaper",
-            vec![(100, Value::Integer(diaper_kind.into()))],
-            time,
-        )
+        let (activity_id, operation) = diaper_operation(family, child_id, diaper_kind, time)?;
+        self.append_activity(family, child_id, operation, time.saved_at_ms)?;
+        Ok(activity_id)
     }
 
     pub fn log_bottle_ml(
@@ -184,41 +158,20 @@ impl LocalRepository {
         content: u8,
         time: ActivityTime,
     ) -> Result<[u8; 16], Error> {
-        if !(1..=1_000_000).contains(&amount_ml) || !(1..=4).contains(&content) {
-            return Err(Error::Invalid("bottle amount or content invalid"));
-        }
-        self.log_activity(
-            family,
-            child_id,
-            "feed.bottle",
-            vec![
-                (
-                    100,
-                    Value::Map(vec![
-                        (1, Value::Integer(amount_ml.into())),
-                        (2, Value::Text(amount_ml.to_string())),
-                        (3, Value::Integer(1)),
-                    ]),
-                ),
-                (101, Value::Integer(content.into())),
-            ],
-            time,
-        )
+        let (activity_id, operation) =
+            bottle_operation(family, child_id, amount_ml, content, time)?;
+        self.append_activity(family, child_id, operation, time.saved_at_ms)?;
+        Ok(activity_id)
     }
 
-    fn log_activity(
+    fn append_activity(
         &mut self,
         family: FamilyHandle,
         child_id: [u8; 16],
-        record_type: &str,
-        fields: Vec<(u64, Value)>,
-        time: ActivityTime,
-    ) -> Result<[u8; 16], Error> {
+        operation: NewOperation,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
         self.ensure_local_surface(family)?;
-        check_time(time.saved_at_ms)?;
-        if !(-840..=840).contains(&time.offset_minutes) {
-            return Err(Error::Invalid("recorded offset outside v1 range"));
-        }
         let projection = self.store.load_local(family)?;
         if projection
             .record(&child_id)
@@ -226,32 +179,8 @@ impl LocalRepository {
         {
             return Err(Error::Invalid("target child is unavailable"));
         }
-        let activity_id = ids::random_v7(time.saved_at_ms)?;
-        let mut all_fields = vec![(
-            1,
-            Value::Array(vec![
-                Value::Integer(time.start_utc_ms.into()),
-                Value::Integer(time.offset_minutes.into()),
-            ]),
-        )];
-        all_fields.extend(fields);
-        self.store.append_local(
-            family,
-            NewOperation {
-                family_id: family.family_id,
-                operation_id: ids::random_v7(time.saved_at_ms)?,
-                record_id: activity_id,
-                scope: Scope::Activity,
-                kind: Kind::Create,
-                author_device_id: family.device_id,
-                hlc: placeholder_hlc(family),
-                record_type: Some(record_type.to_owned()),
-                child_id: Some(child_id),
-                fields: Some(all_fields),
-            },
-            time.saved_at_ms,
-        )?;
-        Ok(activity_id)
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
     }
 
     pub fn timeline(
@@ -375,6 +304,117 @@ impl LocalRepository {
             now_ms,
         )?)
     }
+}
+
+pub fn child_operation(
+    family: FamilyHandle,
+    name: &str,
+    now_ms: i64,
+) -> Result<([u8; 16], NewOperation), Error> {
+    check_time(now_ms)?;
+    if name.trim().is_empty() || name.len() > 16 * 1024 {
+        return Err(Error::Invalid("child name empty or too long"));
+    }
+    let id = ids::random_v7(now_ms)?;
+    Ok((
+        id,
+        NewOperation {
+            family_id: family.family_id,
+            operation_id: ids::random_v7(now_ms)?,
+            record_id: id,
+            scope: Scope::Child,
+            kind: Kind::Create,
+            author_device_id: family.device_id,
+            hlc: placeholder_hlc(family),
+            record_type: Some("child".to_owned()),
+            child_id: None,
+            fields: Some(vec![(1, Value::Text(name.trim().to_owned()))]),
+        },
+    ))
+}
+
+pub fn diaper_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    kind: u8,
+    time: ActivityTime,
+) -> Result<([u8; 16], NewOperation), Error> {
+    if !(1..=4).contains(&kind) {
+        return Err(Error::Invalid("diaper kind outside published codes"));
+    }
+    activity_operation(
+        family,
+        child_id,
+        "diaper",
+        vec![(100, Value::Integer(kind.into()))],
+        time,
+    )
+}
+
+pub fn bottle_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    amount_ml: i64,
+    content: u8,
+    time: ActivityTime,
+) -> Result<([u8; 16], NewOperation), Error> {
+    if !(1..=1_000_000).contains(&amount_ml) || !(1..=4).contains(&content) {
+        return Err(Error::Invalid("bottle amount or content invalid"));
+    }
+    activity_operation(
+        family,
+        child_id,
+        "feed.bottle",
+        vec![
+            (
+                100,
+                Value::Map(vec![
+                    (1, Value::Integer(amount_ml.into())),
+                    (2, Value::Text(amount_ml.to_string())),
+                    (3, Value::Integer(1)),
+                ]),
+            ),
+            (101, Value::Integer(content.into())),
+        ],
+        time,
+    )
+}
+
+fn activity_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    record_type: &str,
+    fields: Vec<(u64, Value)>,
+    time: ActivityTime,
+) -> Result<([u8; 16], NewOperation), Error> {
+    check_time(time.saved_at_ms)?;
+    if !(-840..=840).contains(&time.offset_minutes) {
+        return Err(Error::Invalid("recorded offset outside v1 range"));
+    }
+    let id = ids::random_v7(time.saved_at_ms)?;
+    let mut all_fields = vec![(
+        1,
+        Value::Array(vec![
+            Value::Integer(time.start_utc_ms.into()),
+            Value::Integer(time.offset_minutes.into()),
+        ]),
+    )];
+    all_fields.extend(fields);
+    Ok((
+        id,
+        NewOperation {
+            family_id: family.family_id,
+            operation_id: ids::random_v7(time.saved_at_ms)?,
+            record_id: id,
+            scope: Scope::Activity,
+            kind: Kind::Create,
+            author_device_id: family.device_id,
+            hlc: placeholder_hlc(family),
+            record_type: Some(record_type.to_owned()),
+            child_id: Some(child_id),
+            fields: Some(all_fields),
+        },
+    ))
 }
 
 pub fn children_from_records<'a>(records: impl Iterator<Item = &'a Record>) -> Vec<Child> {

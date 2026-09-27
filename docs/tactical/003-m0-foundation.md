@@ -127,6 +127,14 @@ pending recipient. The Android join preview shows shared children and entries
 after the bounded sync pass. Its real-relay emulator test checks the pending
 denial, manager snapshot, recipient child after hydration, and restart. Shared
 editing and automatic refresh are still open.
+The native shared binding now appends child, diaper, and bottle operations
+through the ready Family session, using the same input builders as local
+tracking. The Rust store validates each append against verified shared
+history plus the durable unsent overlay. The Android preview exposes child
+and wet-diaper actions and labels them as awaiting upload. Its real-relay
+emulator test checks keyless write denial, wrong-child rejection, local
+overlay visibility, and persistence across restart. Batch upload and remote
+convergence remain open.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

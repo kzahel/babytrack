@@ -2,6 +2,7 @@ package org.babytrack.app
 
 import android.content.Context
 import uniffi.babytrack_core_ffi.FamilyRef
+import uniffi.babytrack_core_ffi.ActivityWhen
 import uniffi.babytrack_core_ffi.NativeSharedStore
 import uniffi.babytrack_core_ffi.PreparedJoinRow
 import uniffi.babytrack_core_ffi.RecipientSyncRow
@@ -155,6 +156,25 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
             val family = core.resumeJoin(fragment, wrapping)?.family
                 ?: error("No durable recipient claim")
             return core.sharedSnapshot(family, wrapping)
+        } finally {
+            wrapping.fill(0)
+        }
+    }
+
+    fun addChild(family: FamilyRef, name: String, nowMs: Long): ByteArray = withWrapping { wrapping ->
+        core.addSharedChild(family, wrapping, name, nowMs)
+    }
+
+    fun logDiaper(family: FamilyRef, childId: ByteArray, kind: UByte, time: ActivityWhen): ByteArray =
+        withWrapping { wrapping -> core.logSharedDiaper(family, wrapping, childId, kind, time) }
+
+    fun logBottleMl(family: FamilyRef, childId: ByteArray, amountMl: Long, time: ActivityWhen): ByteArray =
+        withWrapping { wrapping -> core.logSharedBottleMl(family, wrapping, childId, amountMl, 2u.toUByte(), time) }
+
+    private inline fun <T> withWrapping(action: (ByteArray) -> T): T {
+        val wrapping = keys.loadOrCreate()
+        try {
+            return action(wrapping)
         } finally {
             wrapping.fill(0)
         }

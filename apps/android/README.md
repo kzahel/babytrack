@@ -3,7 +3,7 @@
 The debug app tracks local Families and runs the first two-device sharing
 handoff on a development relay: promotion, invitation, claim, challenge,
 proof, grant, and recipient history verification. The shared tracking view,
-shared editing, automatic sync, and removal are still being implemented. The release
+shared upload, automatic sync, and removal are still being implemented. The release
 manifest does not allow cleartext HTTP.
 
 To exercise the current relay slice on an emulator:
@@ -38,8 +38,8 @@ To exercise the current relay slice on an emulator:
    sync pass verifies signed control and batch history, fetches required
    encrypted objects, and opens the grant. It reports the verified cursor or
    readiness; repeat after a pending result. The join preview then shows
-   verified shared children and entries. Editing this Family is not yet
-   connected to the shared outbox.
+   verified shared children and entries. Adding a child or wet diaper saves
+   offline in the Rust shared outbox; upload is not connected yet.
 
 The on-device integration test calls the same Keystore and transport adapter
 through a real relay. With the emulator and `adb reverse` running, build it

@@ -79,5 +79,6 @@
     <string name="history_pending">Verified through cursor %1$d. Waiting for more history or objects; retry on the next sync opportunity.</string>
     <string name="history_ready">Shared history verified. %1$d children loaded.</string>
     <string name="shared_children">Verified shared children</string>
+    <string name="shared_pending_sync">New shared entries are saved on this device. Upload is still in progress.</string>
     <string name="shared_entry">%1$s · %2$s</string>
 </resources>

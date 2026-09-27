@@ -148,6 +148,7 @@ private fun TrackerScreen(
     var joinStage by remember { mutableStateOf<String?>(null) }
     var sharedSnapshot by remember { mutableStateOf<SharedSnapshotRow?>(null) }
     var sharedSelectedChild by remember { mutableStateOf<String?>(null) }
+    var sharedChildName by remember { mutableStateOf("") }
     var inviteAsManager by remember { mutableStateOf(false) }
     val errorText = stringResource(R.string.error)
     val savedText = stringResource(R.string.saved)
@@ -325,6 +326,30 @@ private fun TrackerScreen(
                         joinStage?.let { Text(it) }
                         sharedSnapshot?.let { snapshot ->
                             Text(stringResource(R.string.shared_children), style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.shared_pending_sync))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                    value = sharedChildName,
+                                    onValueChange = { sharedChildName = it },
+                                    label = { Text(stringResource(R.string.child_name)) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Button(enabled = sharedChildName.isNotBlank(), onClick = {
+                                    val name = sharedChildName.trim()
+                                    scope.launch {
+                                        runCatching {
+                                            withContext(Dispatchers.IO) {
+                                                sharing.addChild(snapshot.family, name, System.currentTimeMillis())
+                                                sharing.snapshot(snapshot.family)
+                                            }
+                                        }.onSuccess { updated ->
+                                            sharedSnapshot = updated
+                                            sharedChildName = ""
+                                            message = null
+                                        }.onFailure { message = errorText }
+                                    }
+                                }) { Text(stringResource(R.string.add_child)) }
+                            }
                             snapshot.children.forEach { item ->
                                 FilterChip(
                                     selected = item.id.key() == sharedSelectedChild,
@@ -333,6 +358,19 @@ private fun TrackerScreen(
                                 )
                             }
                             val target = sharedSelectedChild ?: snapshot.children.firstOrNull()?.id?.key()
+                            snapshot.children.find { it.id.key() == target }?.let { child ->
+                                Button(onClick = {
+                                    scope.launch {
+                                        runCatching {
+                                            withContext(Dispatchers.IO) {
+                                                sharing.logDiaper(snapshot.family, child.id, 1u.toUByte(), nowTime())
+                                                sharing.snapshot(snapshot.family)
+                                            }
+                                        }.onSuccess { sharedSnapshot = it; message = null }
+                                            .onFailure { message = errorText }
+                                    }
+                                }) { Text(stringResource(R.string.wet)) }
+                            }
                             snapshot.activities.filter { it.childId.key() == target }.forEach { entry ->
                                 Card(Modifier.fillMaxWidth()) {
                                     Text(

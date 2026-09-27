@@ -58,19 +58,22 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val database = filesDir.resolve("families.db")
+        val availableMemory = {
+            ActivityManager.MemoryInfo().also {
+                (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(it)
+            }.availMem
+        }
         setContent {
             MaterialTheme {
                 TrackerScreen(
                     store = remember { NativeLocalStore.open(database.absolutePath) },
-                    readFile = { uri -> contentResolver.openInputStream(uri)?.use { it.readBytes() } },
+                    readFile = { uri -> contentResolver.openInputStream(uri)?.use {
+                        readBounded(it, backupReadLimit(availableMemory()))
+                    } },
                     writeFile = { uri, bytes ->
                         contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("No output stream")
                     },
-                    availableMemory = {
-                        ActivityManager.MemoryInfo().also {
-                            (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(it)
-                        }.availMem
-                    },
+                    availableMemory = availableMemory,
                 )
             }
         }
@@ -108,6 +111,7 @@ private fun TrackerScreen(
     var pendingProtectedRestore by remember { mutableStateOf<ByteArray?>(null) }
     val passwordNeeded = stringResource(R.string.password_needed)
     val passwordOrFileError = stringResource(R.string.password_or_file_error)
+    val tooLargeError = stringResource(R.string.backup_too_large)
     val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri != null) scope.launch {
             runCatching { withContext(Dispatchers.IO) { writeFile(uri, pendingBackup ?: error("Missing backup")) } }
@@ -130,7 +134,7 @@ private fun TrackerScreen(
                     version++
                     message = restoredText
                 }
-            }.onFailure { message = errorText }
+            }.onFailure { message = if (it is BackupTooLarge) tooLargeError else errorText }
         }
     }
     fun change(action: () -> Unit) {

@@ -95,7 +95,7 @@ bash scripts/check_native_smoke.sh
 bash scripts/check_browser_smoke.sh
 python3 scripts/check_workspace.py
 cargo deny check advisories bans licenses sources
-apps/android/gradlew :app:assembleDebug --no-daemon
+apps/android/gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon
 ```
 
 Install `wasm-bindgen-cli` 0.2.127 and Node.js for the wasm smoke,

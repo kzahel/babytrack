@@ -508,12 +508,17 @@ cursor 2 before the invitation, shifts every later control cursor, and is
 verified by the recipient before its claim. Relay authority indexes controls
 by order, accepts a continuously authorized manager's same-epoch ancestor,
 and the core replays interleaved entries before preparing later controls.
+The follow-up below found that this test supplied the pre-invitation batch
+directly from the manager test process; the recipient could not fetch it
+under the actual pending-reader ACL. The pre-invitation transport path is
+therefore still open.
 The medium finding now has a real-relay credential-clone regression: one
 accepted batch and a competing exact batch receive distinct durable signed
 results, a lost response resolves by batch-ID query, and the rejected copy
 retains its operation until a verified competing prefix permits resealing at
-the next sequence. FS62/BATCH07 records the case. This closes the specific
-advisory finding; later epoch and removal variants remain in the M0 gates.
+the next sequence. FS62/BATCH07 records the case. This closes the
+sequence-conflict finding for the tested initial cohort; later epoch and
+removal variants remain in the M0 gates.
 
 The reviewer found no key/plaintext disclosure to relay storage, keyless
 admission, forged device authorship, or deletion of committed local
@@ -533,6 +538,36 @@ for a wrong password or corrupt ciphertext. A restore publishes a new
 Family and its saved-point/gap metadata in one SQLite transaction; source
 authority is not copied. Shared pending work, private copy, browser parity,
 and UI wiring remain open.
+
+## Advisory first-cohort follow-up
+
+Daybreak Blue at high thinking reviewed fixed commit
+`42cd7335cf89d8fe4721737c822835c7f5032845` through Yep Anywhere
+session `01a0e03e-9b0e-70b3-b16d-020cf8f6de0a` (process
+`9936c5ef-00c3-4c1a-a7f7-2e0c14a56b6f`) in read-only plan mode.
+The checkout remained clean. The reviewer ran the dynamic CLI, local API,
+server, shared-history, and portable-file Rust suites; all passed. Result:
+**advisory FAIL**, not the formal early M0 gate. Assumptions were an honest
+ordered relay, hostile enrolled device, compromised relay storage, and a
+malicious relay able to fork, withhold, or lie about time under the agreed
+limits.
+
+| Finding | Disposition |
+|---|---|
+| High: when a manager batch commits before invitation, the pending reader sees sparse controls but cannot fetch the intervening data. Contiguous `PublicHistorySession` refuses the issue, so the recipient cannot claim. The current test injects the batch from the manager store. | Blocker for FS49/U2. Persist and verify a sparse control-only enrollment chain; after admission fetch and verify the full log through relay routes. Add a separate-store, ACL-respecting, restart regression. |
+| Medium: Android reads the entire selected file before validation; Rust collects every line pointer before row-limit enforcement. | The parser now bounds its line index before collection. Android reads streams to a cap based on current available memory, at most 128 MiB, before UniFFI; an unknown-length provider test verifies early failure. Larger valid files need a later streaming native API. |
+| Medium: Android reports only transient save/restore success and does not show the file's snapshot point or later unsaved changes. | Persist completion metadata only after the file closes successfully, compare against core local revision, and show source snapshot time and gap on restore. Still open. |
+
+The reviewer found the signed sequence-conflict rejection and verified
+resealing coherent for the implemented first-cohort trace. A relay/client
+restart after rejected-result loss remains a useful additional regression.
+General membership, rotation, stale-epoch recovery, Keystore wrapping, and
+background sync were outside this advisory; it did not pass those gates.
+The bounded-read implementation passes the portable-file Rust test, Android
+JVM unit tests, and an Android debug APK build. The Android UI's temporary
+memory cap can be below the 2 GiB v1 file maximum; it reports that device
+limit rather than risking process termination. The full 2 GiB contract
+requires a streaming import path before it is claimed on Android.
 
 ## Advisory authority and key-handoff preflight
 

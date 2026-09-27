@@ -89,6 +89,14 @@ fn published_readable_file_parses_and_rejects_corruption() {
 }
 
 #[test]
+fn newline_dense_file_rejects_before_unbounded_line_index() {
+    let mut bytes = Vec::with_capacity(2_000_010);
+    bytes.extend_from_slice(b"{}\n");
+    bytes.extend(std::iter::repeat_n(b'\n', 1_000_004));
+    assert!(parse_readable(&bytes).is_err());
+}
+
+#[test]
 fn local_export_contains_current_child_and_fresh_family_metadata() {
     let temp = tempfile::tempdir().unwrap();
     let mut store = SqliteStore::open(temp.path().join("local.db")).unwrap();

@@ -354,12 +354,18 @@ pub fn parse_readable(bytes: &[u8]) -> Result<ParsedBackup, Error> {
     {
         return Err(Error::Invalid("backup file envelope invalid"));
     }
-    let lines = bytes.split(|byte| *byte == b'\n').collect::<Vec<_>>();
+    let mut lines = Vec::new();
+    for line in bytes.split(|byte| *byte == b'\n') {
+        // Header, at most one million rows, trailer, and final empty slice.
+        // Bound the index before collecting pointers from hostile input.
+        if lines.len() == 1_000_003 || line.len() > 1024 * 1024 {
+            return Err(Error::Invalid("backup line count or size invalid"));
+        }
+        lines.push(line);
+    }
     if lines.len() < 4
         || !lines.last().is_some_and(|line| line.is_empty())
-        || lines[..lines.len() - 1]
-            .iter()
-            .any(|line| line.is_empty() || line.len() > 1024 * 1024)
+        || lines[..lines.len() - 1].iter().any(|line| line.is_empty())
     {
         return Err(Error::Invalid("backup line count or size invalid"));
     }

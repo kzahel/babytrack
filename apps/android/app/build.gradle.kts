@@ -54,4 +54,5 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
     implementation("net.java.dev.jna:jna:5.17.0@aar")
+    testImplementation("junit:junit:4.13.2")
 }

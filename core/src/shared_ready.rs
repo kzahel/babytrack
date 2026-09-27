@@ -334,11 +334,15 @@ impl ReadyFamilySession {
     }
 
     pub fn has_unsent_local(&self, store: &SqliteStore) -> Result<bool, Error> {
+        Ok(self.unsent_local_count(store)? != 0)
+    }
+
+    pub fn unsent_local_count(&self, store: &SqliteStore) -> Result<u64, Error> {
         let public = PublicHistorySession::resume(store, self.family)?;
         if public.cursor() != self.observed_cursor || public.head_hash() != self.observed_head {
             return Err(Error::Invalid("ready view is behind verified history"));
         }
-        Ok(!store.unsent_operations(self.family)?.is_empty())
+        Ok(store.unsent_operations(self.family)?.len() as u64)
     }
 
     pub fn projection(&self) -> &Projection {

@@ -170,6 +170,13 @@ required device and relay are available; no concurrent app session or second
 manual approval is needed. An emulator test alternates manager and recipient
 processes through the full join. This is an app-open wake path only. Scheduled
 suspended-app work, push, and general later-device enrollment remain open.
+The shared Android view now displays durable unsent-operation counts and a
+warning when an authorized signed batch was inert during verified replay.
+Sync distinguishes a saved local outbox from an uncertain exact batch result.
+The real-relay emulator test checks that two offline edits remain visible as
+pending after restart and drain after a signed acceptance. The Rust replay
+test already covers continuation past an authorized unopenable batch; an
+Android injected hostile-batch display test remains open.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.
@@ -756,6 +763,28 @@ does not close the early M0 gate.
 The reviewer did not recommend a v2 wire change. The agreed v1 contract
 remains the target. See [the review runbook](../security-review-runbook.md)
 for the launch and evidence procedure.
+
+## Advisory Android sync review at 6b10805
+
+Daybreak Blue at high thinking reviewed fixed commit
+`6b108056b8407a61f8ecf27373318053aa229296` through Yep Anywhere
+session `01a0e0b2-c3e9-7ef2-82b3-7c83a9622525` in a read-only separate
+checkout. The reviewer ran offline core, CLI, and relay tests, inspected the
+Android test without running an emulator, and verified the checkout stayed
+at its target. Result: **advisory FAIL** with two high blockers and one
+medium visibility finding. This is not the early M0 security gate.
+
+| Finding | Disposition and evidence |
+|---|---|
+| A signed stale-epoch or sequence-conflict rejection could strand the Android outbox indefinitely after an uncertain POST. | `217e0bd` adds a signed exact batch-result query, verifies the accepted/rejected identity in Rust, and rebases only a supported rejection after the required verified prefix. A CLI competing-sequence regression and an emulator dropped-acceptance test pass. Unsupported rejections retain work and remain a UI/recovery gap. |
+| Enrollment continuation depended on the invitation fragment in UI memory, so a process restart could strand a recipient. | `3e6e84d` enumerates the durable recipient attempts and reuses their pinned relay origin. The emulator resumes by Family ID after reopening the coordinator. A full Activity force-stop/recreation test remains open. |
+| Authorized hostile batches become inert in the core, but the Android view hid the integrity gap. | The shared snapshot now carries inert count and recent reasons from verified replay, and both manager and recipient views show a history-gap warning. The core unopenable-batch continuation test passes; a real-relay Android display regression remains open. |
+
+The review assumed an honest ordered relay for the principal flow and did
+not claim protection from malicious relay withholding/forking. These fixes
+need a new fixed-revision follow-up before the advisory can be closed.
+General later-device enrollment, removal and epoch rotation, automatic
+private copy, and suspended-app delivery remain outside this preflight.
 
 ## Advisory byte/crypto preflight
 

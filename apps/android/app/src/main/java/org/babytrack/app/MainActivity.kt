@@ -60,6 +60,7 @@ import uniffi.babytrack_core_ffi.FamilyRef
 import uniffi.babytrack_core_ffi.NativeLocalStore
 import uniffi.babytrack_core_ffi.RestoredOriginRow
 import uniffi.babytrack_core_ffi.SharedSnapshotRow
+import uniffi.babytrack_core_ffi.SharedSyncRow
 import java.text.DateFormat
 import java.util.Date
 import java.util.TimeZone
@@ -123,6 +124,7 @@ private data class ScreenData(
     val revision: ULong,
     val restoredOrigin: RestoredOriginRow?,
     val shared: Boolean,
+    val mainSharedSnapshot: SharedSnapshotRow?,
     val recipients: List<FamilyRef>,
     val joinedSnapshot: SharedSnapshotRow?,
 )
@@ -160,6 +162,7 @@ private fun TrackerScreen(
     var revision by remember { mutableStateOf(0uL) }
     var restoredOrigin by remember { mutableStateOf<RestoredOriginRow?>(null) }
     var isShared by remember { mutableStateOf(false) }
+    var activeSharedSnapshot by remember { mutableStateOf<SharedSnapshotRow?>(null) }
     var loadedFamilyKey by remember { mutableStateOf<String?>(null) }
     var saveStatusVersion by remember { mutableStateOf(0) }
     var selectedFamily by remember { mutableStateOf<String?>(null) }
@@ -285,6 +288,7 @@ private fun TrackerScreen(
                     if (!shared) family?.let(store::revision) ?: 0uL else 0uL,
                     if (!shared) family?.let(store::restoredOrigin) else null,
                     shared,
+                    snapshot,
                     recipients,
                     joinedSnapshot,
                 )
@@ -300,6 +304,7 @@ private fun TrackerScreen(
             revision = data.revision
             restoredOrigin = data.restoredOrigin
             isShared = data.shared
+            activeSharedSnapshot = data.mainSharedSnapshot
             loadedFamilyKey = data.activeFamilyKey
             recipientFamilies = data.recipients
             selectedRecipient = data.recipients.find { it.familyId.key() == selectedRecipient }
@@ -321,6 +326,7 @@ private fun TrackerScreen(
         ) {
             Text(stringResource(if (activeShared) R.string.shared_family else R.string.local_only), style = MaterialTheme.typography.labelMedium)
             if (automaticSyncDelayed) Text(stringResource(R.string.automatic_sync_delayed))
+            if (activeShared) activeSharedSnapshot?.let { SharedHealth(it) }
             Text(stringResource(R.string.families), style = MaterialTheme.typography.titleLarge)
             families.forEachIndexed { index, item ->
                 FilterChip(
@@ -429,6 +435,7 @@ private fun TrackerScreen(
                         sharedSnapshot?.let { snapshot ->
                             Text(stringResource(R.string.shared_children), style = MaterialTheme.typography.titleMedium)
                             Text(stringResource(R.string.shared_manual_sync))
+                            SharedHealth(snapshot)
                             OutlinedButton(onClick = {
                                 scope.launch {
                                     runCatching {
@@ -438,7 +445,7 @@ private fun TrackerScreen(
                                         }
                                     }.onSuccess { (progress, updated) ->
                                         sharedSnapshot = updated
-                                        joinStage = context.getString(R.string.shared_synced, progress.verifiedCursor.toLong())
+                                        joinStage = sharedSyncMessage(context, progress)
                                         message = null
                                     }.onFailure { message = errorText }
                                 }
@@ -621,7 +628,7 @@ private fun TrackerScreen(
                                             sharing.syncAndUpload(family, relayOrigin.trim())
                                         }
                                     }.onSuccess { progress ->
-                                        shareStage = context.getString(R.string.shared_synced, progress.verifiedCursor.toLong())
+                                        shareStage = sharedSyncMessage(context, progress)
                                         version++
                                         message = null
                                     }.onFailure { message = errorText }
@@ -818,6 +825,26 @@ private fun TrackerScreen(
 private fun nowTime(): ActivityWhen {
     val now = System.currentTimeMillis()
     return ActivityWhen(now, (TimeZone.getDefault().getOffset(now) / 60_000).toShort(), now)
+}
+
+@Composable
+private fun SharedHealth(snapshot: SharedSnapshotRow) {
+    if (snapshot.unsentCount > 0uL) {
+        Text(stringResource(R.string.shared_pending_changes, snapshot.unsentCount.toLong()))
+    }
+    if (snapshot.inertCount > 0uL) {
+        Text(
+            stringResource(R.string.shared_unreadable_batches, snapshot.inertCount.toLong()),
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+}
+
+private fun sharedSyncMessage(context: Context, progress: SharedSyncRow): String = when {
+    !progress.ready -> context.getString(R.string.history_pending, progress.verifiedCursor.toLong())
+    progress.outboxState == 2.toUByte() -> context.getString(R.string.shared_upload_uncertain)
+    progress.outboxState == 1.toUByte() -> context.getString(R.string.shared_upload_pending)
+    else -> context.getString(R.string.shared_synced, progress.verifiedCursor.toLong())
 }
 
 private fun savedTime(utcMs: Long): String =

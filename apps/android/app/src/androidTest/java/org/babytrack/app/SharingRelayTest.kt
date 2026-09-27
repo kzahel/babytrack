@@ -133,6 +133,8 @@ class SharingRelayTest {
             sharing.logDiaper(first.family, existing.id, 1u.toUByte(), ActivityWhen(now, 0, now))
             assertEquals(2, sharing.snapshot(first.family).children.size)
             assertEquals(1, sharing.snapshot(first.family).activities.size)
+            assertEquals(2uL, sharing.snapshot(first.family).unsentCount)
+            assertEquals(0uL, sharing.snapshot(first.family).inertCount)
         }
         ShareCoordinator(context, recipient.absolutePath).use { sharing ->
             assertTrue(sharing.syncRecipient(first.family).ready)
@@ -150,7 +152,10 @@ class SharingRelayTest {
             } finally {
                 wrapping.fill(0)
             }
-            assertTrue(sharing.syncAndUpload(first.family, origin).ready)
+            val uploaded = sharing.syncAndUpload(first.family, origin)
+            assertTrue(uploaded.ready)
+            assertEquals(0u.toUByte(), uploaded.outboxState)
+            assertEquals(0uL, sharing.snapshot(first.family).unsentCount)
         }
         ShareCoordinator(context, database.absolutePath).use { sharing ->
             assertTrue(sharing.syncAndUpload(family, origin).ready)

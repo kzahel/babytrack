@@ -203,6 +203,16 @@ pub struct SharedSnapshotRow {
     pub verified_cursor: u64,
     pub children: Vec<ChildRow>,
     pub activities: Vec<ActivityRow>,
+    pub unsent_count: u64,
+    pub inert_count: u64,
+    pub recent_inert: Vec<InertBatchRow>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct InertBatchRow {
+    pub cursor: u64,
+    pub object_hash: Vec<u8>,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -211,6 +221,9 @@ pub struct SharedSyncRow {
     pub no_more_visible: bool,
     pub remaining_objects: bool,
     pub ready: bool,
+    /// 0 drained, 1 saved locally, 2 exact batch outcome uncertain.
+    pub outbox_state: u8,
+    pub inert_count: u64,
 }
 
 #[uniffi::export(callback_interface)]
@@ -828,6 +841,18 @@ impl NativeSharedStore {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
         let ready = ready_session_for(&mut store, family.handle()?, &fixed(&wrapping_key)?)?;
         let projection = ready.projection_with_pending(&store).map_err(rejected)?;
+        let inert_count = projection.inert_batches().len() as u64;
+        let recent_inert = projection
+            .inert_batches()
+            .iter()
+            .rev()
+            .take(16)
+            .map(|row| InertBatchRow {
+                cursor: row.cursor,
+                object_hash: row.object_hash.to_vec(),
+                reason: row.reason.clone(),
+            })
+            .collect();
         let children = local_api::children_from_records(projection.records())
             .into_iter()
             .map(|child| ChildRow {
@@ -852,6 +877,9 @@ impl NativeSharedStore {
             verified_cursor: ready.observed_cursor(),
             children,
             activities,
+            unsent_count: ready.unsent_local_count(&store).map_err(rejected)?,
+            inert_count,
+            recent_inert,
         })
     }
 
@@ -1081,17 +1109,32 @@ impl NativeSharedStore {
             },
         ))
         .map_err(rejected)?;
-        let ready = if pull.no_more_visible && !hydration.remaining {
-            ready_session_for(&mut store, handle, &wrapping)?;
-            true
+        let (ready, outbox_state, inert_count) = if pull.no_more_visible && !hydration.remaining {
+            let ready = ready_session_for(&mut store, handle, &wrapping)?;
+            let unsent = ready.unsent_local_count(&store).map_err(rejected)?;
+            let public = PublicHistorySession::resume(&store, handle).map_err(rejected)?;
+            let outbox = if unsent == 0 {
+                0
+            } else if public.pending_batch_id(&store).map_err(rejected)?.is_some() {
+                2
+            } else {
+                1
+            };
+            (
+                true,
+                outbox,
+                ready.projection().inert_batches().len() as u64,
+            )
         } else {
-            false
+            (false, 0, 0)
         };
         Ok(SharedSyncRow {
             verified_cursor: pull.verified_cursor,
             no_more_visible: pull.no_more_visible,
             remaining_objects: hydration.remaining,
             ready,
+            outbox_state,
+            inert_count,
         })
     }
 

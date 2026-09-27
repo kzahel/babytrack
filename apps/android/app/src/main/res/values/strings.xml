@@ -86,5 +86,9 @@
     <string name="shared_manual_sync">New entries save on this device. The app syncs while open; use the button to retry now.</string>
     <string name="sync_shared">Sync shared Family</string>
     <string name="shared_synced">Verified relay history through cursor %1$d.</string>
+    <string name="shared_pending_changes">%1$d shared changes saved on this device and awaiting relay confirmation.</string>
+    <string name="shared_upload_pending">Changes are saved here and waiting for upload. Sync will retry while the app is open.</string>
+    <string name="shared_upload_uncertain">The relay response is uncertain. Changes remain saved here; sync will verify the exact result before retrying.</string>
+    <string name="shared_unreadable_batches">%1$d verified shared batches could not be read. Some shared history may be missing.</string>
     <string name="shared_entry">%1$s · %2$s</string>
 </resources>

@@ -265,10 +265,41 @@ impl LocalRepository {
         )?)
     }
 
+    pub fn protected_backup(
+        &self,
+        family: FamilyHandle,
+        now_ms: i64,
+        password: &str,
+        available_memory_bytes: u64,
+    ) -> Result<Vec<u8>, Error> {
+        let readable = self.backup(family, now_ms)?;
+        Ok(portable_file::protect_readable(
+            &readable,
+            password,
+            available_memory_bytes,
+        )?)
+    }
+
     pub fn restore(&mut self, bytes: &[u8], now_ms: i64) -> Result<FamilyHandle, Error> {
         Ok(portable_file::restore_readable(
             &mut self.store,
             bytes,
+            now_ms,
+        )?)
+    }
+
+    pub fn restore_protected(
+        &mut self,
+        bytes: &[u8],
+        password: &str,
+        available_memory_bytes: u64,
+        now_ms: i64,
+    ) -> Result<FamilyHandle, Error> {
+        Ok(portable_file::restore_protected(
+            &mut self.store,
+            bytes,
+            password,
+            available_memory_bytes,
             now_ms,
         )?)
     }

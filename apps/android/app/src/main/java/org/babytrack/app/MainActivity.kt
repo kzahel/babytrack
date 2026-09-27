@@ -1,6 +1,8 @@
 package org.babytrack.app
 
 import android.os.Bundle
+import android.app.ActivityManager
+import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -36,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -63,6 +66,11 @@ class MainActivity : ComponentActivity() {
                     writeFile = { uri, bytes ->
                         contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("No output stream")
                     },
+                    availableMemory = {
+                        ActivityManager.MemoryInfo().also {
+                            (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(it)
+                        }.availMem
+                    },
                 )
             }
         }
@@ -77,6 +85,7 @@ private fun TrackerScreen(
     store: NativeLocalStore,
     readFile: (android.net.Uri) -> ByteArray?,
     writeFile: (android.net.Uri, ByteArray) -> Unit,
+    availableMemory: () -> Long,
 ) {
     DisposableEffect(store) { onDispose { store.close() } }
     val scope = rememberCoroutineScope()
@@ -93,6 +102,12 @@ private fun TrackerScreen(
     val savedText = stringResource(R.string.saved)
     val restoredText = stringResource(R.string.restored)
     var pendingBackup by remember { mutableStateOf<ByteArray?>(null) }
+    var protectBackup by remember { mutableStateOf(false) }
+    var backupPassword by remember { mutableStateOf("") }
+    var restorePassword by remember { mutableStateOf("") }
+    var pendingProtectedRestore by remember { mutableStateOf<ByteArray?>(null) }
+    val passwordNeeded = stringResource(R.string.password_needed)
+    val passwordOrFileError = stringResource(R.string.password_or_file_error)
     val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri != null) scope.launch {
             runCatching { withContext(Dispatchers.IO) { writeFile(uri, pendingBackup ?: error("Missing backup")) } }
@@ -104,13 +119,17 @@ private fun TrackerScreen(
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
             runCatching {
-                val restored = withContext(Dispatchers.IO) {
-                    store.restore(readFile(uri) ?: error("Missing backup"), System.currentTimeMillis())
+                val bytes = withContext(Dispatchers.IO) { readFile(uri) ?: error("Missing backup") }
+                if (bytes.size >= 5 && bytes.copyOfRange(0, 5).contentEquals("BTBK1".toByteArray())) {
+                    pendingProtectedRestore = bytes
+                    message = passwordNeeded
+                } else {
+                    val restored = withContext(Dispatchers.IO) { store.restore(bytes, System.currentTimeMillis()) }
+                    selectedFamily = restored.familyId.key()
+                    selectedChild = null
+                    version++
+                    message = restoredText
                 }
-                selectedFamily = restored.familyId.key()
-                selectedChild = null
-                version++
-                message = restoredText
             }.onFailure { message = errorText }
         }
     }
@@ -142,6 +161,7 @@ private fun TrackerScreen(
     val family = families.find { it.familyId.key() == selectedFamily }
     val child = children.find { it.id.key() == selectedChild }
     val filename = stringResource(R.string.backup_filename)
+    val protectedFilename = stringResource(R.string.protected_backup_filename)
 
     Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.screen_title)) }) }) { padding ->
         Column(
@@ -249,17 +269,64 @@ private fun TrackerScreen(
 
                 Spacer(Modifier.height(8.dp))
                 Text(stringResource(R.string.backup_title), style = MaterialTheme.typography.titleLarge)
-                Text(stringResource(R.string.backup_description))
+                Text(stringResource(if (protectBackup) R.string.protected_backup_description else R.string.backup_description))
+                FilterChip(
+                    selected = protectBackup,
+                    onClick = { protectBackup = !protectBackup },
+                    label = { Text(stringResource(R.string.protect_backup)) },
+                )
+                if (protectBackup) OutlinedTextField(
+                    value = backupPassword,
+                    onValueChange = { backupPassword = it },
+                    label = { Text(stringResource(R.string.backup_password)) },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                )
                 Button(onClick = {
                     scope.launch {
-                        runCatching { withContext(Dispatchers.IO) { store.backup(family, System.currentTimeMillis()) } }
-                            .onSuccess { pendingBackup = it; saveLauncher.launch(filename) }
+                        val password = backupPassword
+                        val protected = protectBackup
+                        runCatching { withContext(Dispatchers.IO) {
+                            if (protected) store.protectedBackup(
+                                family, System.currentTimeMillis(), password, availableMemory().toULong()
+                            ) else store.backup(family, System.currentTimeMillis())
+                        } }
+                            .onSuccess {
+                                pendingBackup = it
+                                backupPassword = ""
+                                saveLauncher.launch(if (protected) protectedFilename else filename)
+                            }
                             .onFailure { message = errorText }
                     }
-                }) { Text(stringResource(R.string.save_backup)) }
+                }, enabled = !protectBackup || backupPassword.isNotEmpty()) { Text(stringResource(R.string.save_backup)) }
             }
             OutlinedButton(onClick = { restoreLauncher.launch(arrayOf("application/octet-stream", "*/*")) }) {
                 Text(stringResource(R.string.restore_backup))
+            }
+            if (pendingProtectedRestore != null) {
+                OutlinedTextField(
+                    value = restorePassword,
+                    onValueChange = { restorePassword = it },
+                    label = { Text(stringResource(R.string.restore_password)) },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                )
+                Button(enabled = restorePassword.isNotEmpty(), onClick = {
+                    val bytes = pendingProtectedRestore ?: return@Button
+                    val password = restorePassword
+                    scope.launch {
+                        runCatching { withContext(Dispatchers.IO) {
+                            store.restoreProtected(bytes, password, availableMemory().toULong(), System.currentTimeMillis())
+                        } }.onSuccess { restored ->
+                            pendingProtectedRestore = null
+                            restorePassword = ""
+                            selectedFamily = restored.familyId.key()
+                            selectedChild = null
+                            version++
+                            message = restoredText
+                        }.onFailure { message = passwordOrFileError }
+                    }
+                }) { Text(stringResource(R.string.restore_protected)) }
             }
             message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }

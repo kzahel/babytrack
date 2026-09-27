@@ -54,7 +54,8 @@ an IndexedDB local-only journal adapter that calls Rust wasm validation and
 projection; accepted shared history and outboxes remain future work.
 `apps/android/` now contains the first phone UI and source-built Rust
 binding integration. It creates local Families and children, records diaper
-and bottle entries, reads timelines, and saves/restores a readable file. The
+and bottle entries, reads timelines, and saves/restores a readable or
+password-protected file. The
 sharing interface and service adapters remain later work. The web and iOS
 product paths are still future paths. The CBOR vector tests cover only the first byte subset;
 other targets reporting zero cases are not evidence of protocol or product

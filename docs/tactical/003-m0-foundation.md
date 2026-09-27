@@ -61,6 +61,12 @@ metadata create and its local row commit atomically. Rust, Kotlin, and
 Swift smoke paths create two Families, reject a cross-Family child target,
 reopen the database, and restore a backup. The Android UI and broader
 activity set remain M1 work.
+The native API now also exposes the core's fixed-profile Argon2id protected
+file path. Wrong passwords leave the Family list unchanged; a correct one
+restores into another local Family. Rust, Kotlin, and Swift round trips pass.
+The Android UI offers the password option and uses the device's current
+available-memory estimate rather than weakening the KDF on a low-memory
+device.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

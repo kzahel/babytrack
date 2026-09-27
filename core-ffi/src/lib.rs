@@ -230,12 +230,42 @@ impl NativeLocalStore {
             .map_err(rejected)
     }
 
+    pub fn protected_backup(
+        &self,
+        family: FamilyRef,
+        now_ms: i64,
+        password: String,
+        available_memory_bytes: u64,
+    ) -> Result<Vec<u8>, BindingError> {
+        self.repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .protected_backup(family.handle()?, now_ms, &password, available_memory_bytes)
+            .map_err(rejected)
+    }
+
     pub fn restore(&self, bytes: Vec<u8>, now_ms: i64) -> Result<FamilyRef, BindingError> {
         Ok(self
             .repo
             .lock()
             .map_err(|_| BindingError::LockPoisoned)?
             .restore(&bytes, now_ms)
+            .map_err(rejected)?
+            .into())
+    }
+
+    pub fn restore_protected(
+        &self,
+        bytes: Vec<u8>,
+        password: String,
+        available_memory_bytes: u64,
+        now_ms: i64,
+    ) -> Result<FamilyRef, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .restore_protected(&bytes, &password, available_memory_bytes, now_ms)
             .map_err(rejected)?
             .into())
     }

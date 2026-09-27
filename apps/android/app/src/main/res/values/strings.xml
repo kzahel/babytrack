@@ -21,9 +21,17 @@
     <string name="diaper">Diaper · %1$s</string>
     <string name="backup_title">Save a copy</string>
     <string name="backup_description">Save this Family’s records to a readable file. Anyone with the file can read it. Restoring creates a separate Family and does not restore shared access.</string>
+    <string name="protected_backup_description">A password protects this copy. Keep the password: it cannot be recovered. Restoring creates a separate Family and does not restore shared access.</string>
     <string name="save_backup">Save backup</string>
     <string name="restore_backup">Restore backup</string>
     <string name="backup_filename">babytrack-backup.cbor</string>
+    <string name="protected_backup_filename">babytrack-backup.btbk</string>
+    <string name="protect_backup">Protect with password</string>
+    <string name="backup_password">Backup password</string>
+    <string name="restore_password">Password for protected backup</string>
+    <string name="restore_protected">Restore protected backup</string>
+    <string name="password_needed">Enter the backup password to restore this file.</string>
+    <string name="password_or_file_error">Wrong password or damaged backup file.</string>
     <string name="saved">Backup saved</string>
     <string name="restored">Backup restored as a new Family</string>
     <string name="error">Could not complete the action. Try again.</string>

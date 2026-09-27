@@ -15,7 +15,8 @@ manager-issued invitation, recipient claim, holder challenge, pending
 key proof, and admission grant, then serve role-limited authenticated
 control/object reads and accept encrypted epoch-one batches for the first
 two devices. General membership, removal, rotation, and transport recovery
-remain open. The Android app handles local tracking and file backup, but
+remain open. The Android app handles local tracking and readable or
+password-protected file backup, but
 has no sharing UI yet. Scenario files still include symbolic expectations.
 
 ## Product and architecture

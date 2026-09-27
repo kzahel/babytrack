@@ -168,8 +168,21 @@ struct Smoke {
         let restored = try phone.restore(bytes: backup, nowMs: 1_790_000_000_006)
         try expect(restored.familyId != first.familyId)
         try expect(try phone.timeline(family: restored, childId: child).count == 2)
+        let protected = try phone.protectedBackup(
+            family: first, nowMs: 1_790_000_000_007, password: "secret",
+            availableMemoryBytes: 512 * 1024 * 1024)
+        do {
+            _ = try phone.restoreProtected(
+                bytes: protected, password: "wrong",
+                availableMemoryBytes: 512 * 1024 * 1024, nowMs: 1_790_000_000_008)
+            fatalError("wrong backup password accepted")
+        } catch {}
+        let protectedCopy = try phone.restoreProtected(
+            bytes: protected, password: "secret",
+            availableMemoryBytes: 512 * 1024 * 1024, nowMs: 1_790_000_000_009)
+        try expect(try phone.timeline(family: protectedCopy, childId: child).count == 2)
         let reopened = try NativeLocalStore.open(path: phonePath)
-        try expect(try reopened.families().count == 3)
+        try expect(try reopened.families().count == 4)
         print("Swift fixed encrypted batch, minor field, inertness, and authentication: OK")
     }
 }

@@ -49,4 +49,20 @@ fn local_tracking_targets_explicit_family_and_survives_restart() {
     assert_ne!(restored.family_id, first.family_id);
     assert_eq!(app.timeline(restored, child).unwrap().len(), 2);
     assert_eq!(app.children(second).unwrap().len(), 0);
+
+    let protected = app
+        .protected_backup(first, 1_790_000_000_008, "correct", 512 * 1024 * 1024)
+        .unwrap();
+    assert!(protected.starts_with(b"BTBK1"));
+    let before = app.families().unwrap().len();
+    assert!(
+        app.restore_protected(&protected, "wrong", 512 * 1024 * 1024, 1_790_000_000_009,)
+            .is_err()
+    );
+    assert_eq!(app.families().unwrap().len(), before);
+    let copy = app
+        .restore_protected(&protected, "correct", 512 * 1024 * 1024, 1_790_000_000_010)
+        .unwrap();
+    assert_ne!(copy.family_id, first.family_id);
+    assert_eq!(app.timeline(copy, child).unwrap().len(), 2);
 }

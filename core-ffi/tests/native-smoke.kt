@@ -113,9 +113,16 @@ fun main(args: Array<String>) {
         val restored = phone.restore(backup, 1_790_000_000_006)
         check(!restored.familyId.contentEquals(first.familyId))
         check(phone.timeline(restored, child).size == 2)
+        val protected = phone.protectedBackup(first, 1_790_000_000_007, "secret", 512uL * 1024uL * 1024uL)
+        check(runCatching {
+            phone.restoreProtected(protected, "wrong", 512uL * 1024uL * 1024uL, 1_790_000_000_008)
+        }.isFailure)
+        val protectedCopy = phone.restoreProtected(
+            protected, "secret", 512uL * 1024uL * 1024uL, 1_790_000_000_009)
+        check(phone.timeline(protectedCopy, child).size == 2)
     }
     NativeLocalStore.open(phonePath.toString()).use { phone ->
-        check(phone.families().size == 3)
+        check(phone.families().size == 4)
     }
     println("Kotlin fixed encrypted batch, minor field, inertness, and authentication: OK")
 }

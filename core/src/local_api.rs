@@ -183,6 +183,43 @@ impl LocalRepository {
         Ok(activity_id)
     }
 
+    pub fn start_sleep(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        time: ActivityTime,
+    ) -> Result<[u8; 16], Error> {
+        let (activity_id, operation) = running_sleep_operation(family, child_id, time)?;
+        self.append_activity(family, child_id, operation, time.saved_at_ms)?;
+        Ok(activity_id)
+    }
+
+    pub fn stop_sleep(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        end_utc_ms: i64,
+        end_offset_minutes: i16,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("sleep activity unavailable"))?;
+        let operation = stop_sleep_operation(
+            family,
+            child_id,
+            activity,
+            end_utc_ms,
+            end_offset_minutes,
+            saved_at_ms,
+        )?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn log_note(
         &mut self,
         family: FamilyHandle,
@@ -437,6 +474,71 @@ pub fn sleep_operation(
         )],
         time,
     )
+}
+
+pub fn running_sleep_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    time: ActivityTime,
+) -> Result<([u8; 16], NewOperation), Error> {
+    activity_operation(family, child_id, "sleep", vec![], time)
+}
+
+pub fn stop_sleep_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    end_utc_ms: i64,
+    end_offset_minutes: i16,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    if activity.scope != Scope::Activity
+        || activity.record_type != "sleep"
+        || activity.child_id != Some(child_id)
+        || activity.deleted
+        || activity
+            .field(2)
+            .is_some_and(|field| field.value != Value::Null)
+    {
+        return Err(Error::Invalid("sleep target is not running"));
+    }
+    let Value::Array(start) = &activity
+        .field(1)
+        .ok_or(Error::Invalid("sleep start absent"))?
+        .value
+    else {
+        return Err(Error::Invalid("sleep start invalid"));
+    };
+    let [Value::Integer(start_utc_ms), Value::Integer(_)] = start.as_slice() else {
+        return Err(Error::Invalid("sleep start invalid"));
+    };
+    let start_utc_ms = i64::try_from(*start_utc_ms)
+        .map_err(|_| Error::Invalid("sleep start outside i64 range"))?;
+    if end_utc_ms < start_utc_ms || end_utc_ms > saved_at_ms {
+        return Err(Error::Invalid("sleep end outside completed interval"));
+    }
+    if !(-840..=840).contains(&end_offset_minutes) {
+        return Err(Error::Invalid("sleep end offset outside v1 range"));
+    }
+    check_time(saved_at_ms)?;
+    Ok(NewOperation {
+        family_id: family.family_id,
+        operation_id: ids::random_v7(saved_at_ms)?,
+        record_id: activity.id,
+        scope: Scope::Activity,
+        kind: Kind::Set,
+        author_device_id: family.device_id,
+        hlc: placeholder_hlc(family),
+        record_type: None,
+        child_id: None,
+        fields: Some(vec![(
+            2,
+            Value::Array(vec![
+                Value::Integer(end_utc_ms.into()),
+                Value::Integer(end_offset_minutes.into()),
+            ]),
+        )]),
+    })
 }
 
 pub fn note_operation(

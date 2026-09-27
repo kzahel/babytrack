@@ -1293,6 +1293,57 @@ impl NativeSharedStore {
         Ok(id.to_vec())
     }
 
+    pub fn start_shared_sleep(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let saved_at_ms = time.saved_at_ms;
+        let (id, operation) =
+            local_api::running_sleep_operation(handle, fixed(&child_id)?, time.into())
+                .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map_err(rejected)?;
+        Ok(id.to_vec())
+    }
+
+    pub fn stop_shared_sleep(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        end: ActivityWhen,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let projection = ready.projection_with_pending(&store).map_err(rejected)?;
+        let activity_id = fixed(&activity_id)?;
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(BindingError::InvalidBytes)?;
+        let operation = local_api::stop_sleep_operation(
+            handle,
+            fixed(&child_id)?,
+            activity,
+            end.start_utc_ms,
+            end.offset_minutes,
+            end.saved_at_ms,
+        )
+        .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, end.saved_at_ms)
+            .map(|_| ())
+            .map_err(rejected)
+    }
+
     pub fn log_shared_note(
         &self,
         family: FamilyRef,
@@ -1723,6 +1774,44 @@ impl NativeLocalStore {
             )
             .map_err(rejected)?
             .to_vec())
+    }
+
+    pub fn start_sleep(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .start_sleep(family.handle()?, fixed(&child_id)?, time.into())
+            .map_err(rejected)?
+            .to_vec())
+    }
+
+    pub fn stop_sleep(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        end_utc_ms: i64,
+        end_offset_minutes: i16,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        self.repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .stop_sleep(
+                family.handle()?,
+                fixed(&child_id)?,
+                fixed(&activity_id)?,
+                end_utc_ms,
+                end_offset_minutes,
+                saved_at_ms,
+            )
+            .map_err(rejected)
     }
 
     pub fn log_note(

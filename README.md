@@ -14,10 +14,10 @@ recipient removal with epoch rotation, signed proof, revoked data access,
 and an epoch-two manager upload. General membership and removal recovery
 remain open.
 
-The Android debug app logs children, diapers, bottles, completed sleep, and notes
-locally or in a shared Family. It can promote a Family, invite one other
-device, complete
-keyless claim/challenge/proof/admission, and converge both devices through
+The Android debug app logs children, diapers, bottles, sleep timers,
+completed sleep, and notes locally or in a shared Family. It can promote
+a Family, invite one other device, complete keyless
+claim/challenge/proof/admission, and converge both devices through
 the relay. It resumes enrollment after restart, polls while open, schedules
 background sync work, and offers readable or protected backup plus an
 explicit private copy. The real-relay emulator suite covers those flows.

@@ -19,6 +19,9 @@
     <string name="both">Both</string>
     <string name="log_bottle">Log bottle</string>
     <string name="log_sleep">Log completed sleep</string>
+    <string name="start_sleep">Start sleep timer</string>
+    <string name="stop_sleep">Stop sleep</string>
+    <string name="sleep_running">Sleep · running</string>
     <string name="sleep_minutes">Minutes slept</string>
     <string name="save_sleep">Save sleep</string>
     <string name="sleep_duration">Sleep · %1$d min</string>

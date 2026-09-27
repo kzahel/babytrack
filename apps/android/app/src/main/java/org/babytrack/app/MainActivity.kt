@@ -795,6 +795,10 @@ private fun TrackerScreen(
                         }) { Text(stringResource(R.string.log_bottle)) }
                     }
                     Text(stringResource(R.string.log_sleep), style = MaterialTheme.typography.titleLarge)
+                    Button(onClick = { change {
+                        if (activeShared) sharing.startSleep(family, child.id, nowTime())
+                        else store.startSleep(family, child.id, nowTime())
+                    } }) { Text(stringResource(R.string.start_sleep)) }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = sleepMinutes,
@@ -845,6 +849,7 @@ private fun TrackerScreen(
                             entry.bottleMl != null -> stringResource(R.string.bottle, entry.bottleMl!!)
                             entry.kind == "sleep" && entry.endUtcMs != null ->
                                 stringResource(R.string.sleep_duration, (entry.endUtcMs!! - entry.startUtcMs) / 60_000)
+                            entry.kind == "sleep" -> stringResource(R.string.sleep_running)
                             entry.note != null -> stringResource(R.string.note_entry, entry.note!!)
                             entry.diaperKind != null -> stringResource(R.string.diaper, when (entry.diaperKind!!.toInt()) {
                                 1 -> stringResource(R.string.wet)
@@ -857,6 +862,16 @@ private fun TrackerScreen(
                             Column(Modifier.padding(12.dp)) {
                                 Text(label, fontWeight = FontWeight.SemiBold)
                                 Text(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(entry.startUtcMs)))
+                                if (entry.kind == "sleep" && entry.endUtcMs == null) {
+                                    Button(onClick = {
+                                        val end = System.currentTimeMillis()
+                                        val endOffset = (TimeZone.getDefault().getOffset(end) / 60_000).toShort()
+                                        change {
+                                            if (activeShared) sharing.stopSleep(family, entry.childId, entry.id, end, endOffset)
+                                            else store.stopSleep(family, entry.childId, entry.id, end, endOffset, end)
+                                        }
+                                    }) { Text(stringResource(R.string.stop_sleep)) }
+                                }
                             }
                         }
                     }

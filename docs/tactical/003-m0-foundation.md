@@ -77,6 +77,13 @@ Android retains typed note text until the write succeeds. The local
 backup/restore test preserves the note, and the two-emulator relay test
 checks its delivery to the manager and checks that a distinctive plaintext
 marker is absent from relay storage and logs.
+Sleep timers now create the published open sleep event and stop it with a
+field update against the explicit Family, child, and activity ID. The Rust
+core rejects a wrong child, wrong Family, or repeated stop. Local restart
+and backup/restore retain the end; in the two-emulator flow the recipient
+starts a timer, the manager sees and stops it, and the recipient later sees
+the completed interval. FS24's target isolation is covered in core; a
+stale widget/watch action after removal (FS25) remains later-surface work.
 The production native binding now exposes durable local-Family promotion
 preparation and first invitation issue through the shared Rust state machine.
 It returns exact staged object and candidate bytes to a platform transport,

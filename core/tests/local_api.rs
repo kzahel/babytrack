@@ -61,8 +61,77 @@ fn local_tracking_targets_explicit_family_and_survives_restart() {
         },
     )
     .unwrap();
+    let running = app
+        .start_sleep(
+            first,
+            child,
+            ActivityTime {
+                start_utc_ms: 1_789_999_000_000,
+                saved_at_ms: 1_790_000_000_005,
+                ..time
+            },
+        )
+        .unwrap();
+    assert!(
+        app.timeline(first, child)
+            .unwrap()
+            .iter()
+            .any(|row| row.id == running && row.end_utc_ms.is_none())
+    );
+    drop(app);
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert!(
+        app.stop_sleep(
+            first,
+            second.device_id,
+            running,
+            1_790_000_000_005,
+            120,
+            1_790_000_000_006
+        )
+        .is_err()
+    );
+    assert!(
+        app.stop_sleep(
+            second,
+            child,
+            running,
+            1_790_000_000_005,
+            120,
+            1_790_000_000_006
+        )
+        .is_err()
+    );
+    app.stop_sleep(
+        first,
+        child,
+        running,
+        1_790_000_000_005,
+        120,
+        1_790_000_000_006,
+    )
+    .unwrap();
+    assert!(
+        app.stop_sleep(
+            first,
+            child,
+            running,
+            1_790_000_000_005,
+            120,
+            1_790_000_000_006
+        )
+        .is_err()
+    );
     let timeline = app.timeline(first, child).unwrap();
-    assert_eq!(timeline.len(), 4);
+    assert_eq!(timeline.len(), 5);
+    assert_eq!(
+        timeline
+            .iter()
+            .find(|row| row.id == running)
+            .unwrap()
+            .end_utc_ms,
+        Some(1_790_000_000_005)
+    );
     assert_eq!(
         timeline
             .iter()
@@ -82,7 +151,7 @@ fn local_tracking_targets_explicit_family_and_survives_restart() {
     assert_eq!(
         timeline
             .iter()
-            .find(|row| row.kind == "sleep")
+            .find(|row| row.kind == "sleep" && row.id != running)
             .unwrap()
             .end_utc_ms,
         Some(1_790_000_000_000)
@@ -100,7 +169,7 @@ fn local_tracking_targets_explicit_family_and_survives_restart() {
     let file = app.backup_file(first, 1_790_000_000_006, None, 0).unwrap();
     assert_eq!(file.revision, revision);
     assert_eq!(file.info.snapshot_utc_ms, 1_790_000_000_006);
-    assert_eq!(file.info.record_count, 6);
+    assert_eq!(file.info.record_count, 7);
     assert!(!file.info.known_gap);
     let backup = app.backup(first, 1_790_000_000_006).unwrap();
     assert_eq!(
@@ -119,7 +188,7 @@ fn local_tracking_targets_explicit_family_and_survives_restart() {
             .snapshot_utc_ms,
         1_790_000_000_006
     );
-    assert_eq!(app.timeline(restored, child).unwrap().len(), 4);
+    assert_eq!(app.timeline(restored, child).unwrap().len(), 5);
     assert_eq!(app.children(second).unwrap().len(), 0);
 
     let protected = app
@@ -142,5 +211,5 @@ fn local_tracking_targets_explicit_family_and_survives_restart() {
         .restore_protected(&protected, "correct", 512 * 1024 * 1024, 1_790_000_000_010)
         .unwrap();
     assert_ne!(copy.family_id, first.family_id);
-    assert_eq!(app.timeline(copy, child).unwrap().len(), 4);
+    assert_eq!(app.timeline(copy, child).unwrap().len(), 5);
 }

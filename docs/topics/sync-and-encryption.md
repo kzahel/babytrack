@@ -449,8 +449,9 @@ receipt against the cursor-one log entry before authority reads or commits.
 On restart it also checks contiguous cursor positions, control receipt
 signatures and parent links, committed object bytes against signed manifests,
 the saved head and cursor, and accepted batch receipts and metadata against
-their log bytes. Full control and batch semantics, rejected-result rows, and
-other derived-row reconstruction are still required for the general ledger.
+their log bytes. The relay now also replays public control semantics with the
+shared reducers on restart. Full batch author semantics, rejected-result rows,
+and other derived-row reconstruction are still required for the general ledger.
 
 The extracted `wire` verifier prepares invitation-issue, two-signature
 claim, holder-challenge, pending key-proof, admission, and active-removal

@@ -40,8 +40,8 @@ pub(crate) struct VerifiedControlReceipt {
     pub parent_head: [u8; 32],
     pub kind: u16,
     pub epoch: u32,
-    pub rotation_commitment: Option<[u8; 32]>,
     pub cursor: u64,
+    pub committed_ms: i64,
     pub manifest: Vec<CommittedObjectRef>,
 }
 
@@ -186,17 +186,6 @@ pub(crate) fn verify_control_receipt(
     let epoch: u32 = epoch
         .try_into()
         .map_err(|_| Error::Invalid("control epoch range"))?;
-    let rotation_commitment = if kind == 8 {
-        let Value::Map(delta) = &unsigned[6].1 else {
-            return Err(Error::Invalid("rotation delta not map"));
-        };
-        if delta.len() != 3 || delta[2].0 != 3 {
-            return Err(Error::Invalid("rotation delta keys"));
-        }
-        Some(fixed::<32>(&delta[2].1)?)
-    } else {
-        None
-    };
     let Value::Array(objects) = &unsigned[9].1 else {
         return Err(Error::Invalid("control manifest not array"));
     };
@@ -247,7 +236,7 @@ pub(crate) fn verify_control_receipt(
     let Value::Integer(committed_ms) = &receipt[4] else {
         return Err(Error::Invalid("control time not integer"));
     };
-    let _: i64 = (*committed_ms)
+    let committed_ms: i64 = (*committed_ms)
         .try_into()
         .map_err(|_| Error::Invalid("control time range"))?;
     let signed_hash = crypto::hash(
@@ -274,8 +263,8 @@ pub(crate) fn verify_control_receipt(
         parent_head,
         kind,
         epoch,
-        rotation_commitment,
         cursor,
+        committed_ms,
         manifest,
     })
 }

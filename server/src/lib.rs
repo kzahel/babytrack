@@ -5,6 +5,7 @@
 mod authority;
 mod batch_authority;
 mod http;
+mod public_ledger;
 pub use http::serve;
 mod read_auth;
 mod receipt;

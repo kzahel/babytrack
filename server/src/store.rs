@@ -6,11 +6,10 @@ use std::{collections::BTreeSet, path::Path};
 use babytrack_wire::{
     cbor::{self, Value},
     crypto,
-    epoch_bindings::EpochBindings,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
-use crate::{authority, batch_authority, read_auth, receipt};
+use crate::{authority, batch_authority, public_ledger, read_auth, receipt};
 
 #[derive(Debug)]
 #[allow(dead_code)] // Detailed errors are mapped to protocol responses by routes.
@@ -20,6 +19,7 @@ pub enum Error {
     Cbor(cbor::Error),
     Crypto(crypto::Error),
     Authority(authority::Error),
+    Ledger(public_ledger::Error),
     Batch(batch_authority::Error),
     ReadAuth(read_auth::Error),
     Receipt(receipt::Error),
@@ -44,6 +44,11 @@ impl From<crypto::Error> for Error {
 impl From<authority::Error> for Error {
     fn from(v: authority::Error) -> Self {
         Self::Authority(v)
+    }
+}
+impl From<public_ledger::Error> for Error {
+    fn from(v: public_ledger::Error) -> Self {
+        Self::Ledger(v)
     }
 }
 impl From<batch_authority::Error> for Error {
@@ -271,7 +276,7 @@ impl RelayStore {
             let mut control_count = 0u64;
             let mut batch_count = 0u64;
             let mut object_ids = BTreeSet::new();
-            let mut epochs: Option<EpochBindings> = None;
+            let mut ledger: Option<public_ledger::PublicLedger> = None;
             while let Some(row) = log.next()? {
                 let position: i64 = row.get(0)?;
                 let kind: i64 = row.get(1)?;
@@ -317,27 +322,14 @@ impl RelayStore {
                         }
                         let next_head = crypto::hash("control-head", &bytes)?;
                         if control_count == 0 {
-                            if receipt.kind != 1 || receipt.epoch != 1 {
-                                return Err(Error::Invalid("stored genesis kind or epoch"));
-                            }
-                            epochs = Some(EpochBindings::from_genesis(
-                                next_head,
-                                genesis.epoch_commitment,
-                            ));
+                            ledger = Some(public_ledger::PublicLedger::from_genesis(
+                                &genesis, &receipt, &bytes,
+                            )?);
                         } else {
-                            let bindings = epochs
+                            ledger
                                 .as_mut()
-                                .ok_or(Error::Invalid("epoch bindings absent"))?;
-                            let commitment = receipt.rotation_commitment.unwrap_or(
-                                bindings
-                                    .commitment_for_epoch(bindings.latest_epoch())
-                                    .ok_or(Error::Invalid("current epoch commitment absent"))?,
-                            );
-                            bindings
-                                .record(next_head, receipt.epoch, commitment)
-                                .map_err(|_| {
-                                    Error::Invalid("stored head or epoch commitment differs")
-                                })?;
+                                .ok_or(Error::Invalid("public ledger absent"))?
+                                .apply(&receipt, &bytes)?;
                         }
                         head = next_head;
                         control_count += 1;
@@ -371,9 +363,10 @@ impl RelayStore {
                         {
                             return Err(Error::Invalid("stored batch result metadata differs"));
                         }
-                        let bindings = epochs
+                        let bindings = ledger
                             .as_ref()
-                            .ok_or(Error::Invalid("batch before genesis"))?;
+                            .ok_or(Error::Invalid("batch before genesis"))?
+                            .epochs();
                         if bindings.epoch_for_head(&verified.control_head) != Some(verified.epoch)
                             || bindings.latest_epoch() != verified.epoch
                         {
@@ -387,6 +380,7 @@ impl RelayStore {
             if control_count == 0
                 || i64::try_from(cursor).ok() != Some(saved_cursor)
                 || saved_head != head
+                || ledger.as_ref().map(public_ledger::PublicLedger::head) != Some(head)
             {
                 return Err(Error::Invalid("stored Family head or cursor differs"));
             }

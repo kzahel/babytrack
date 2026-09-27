@@ -55,6 +55,10 @@ class SharingRelayTest {
         }
         assertEquals(first.family.deviceId.toList(), retried.family.deviceId.toList())
         assertArrayEquals(first.candidateBytes, retried.candidateBytes)
+        ShareCoordinator(context, recipient.absolutePath).use { sharing ->
+            assertArrayEquals(first.family.familyId, sharing.recipientFamilies().single().familyId)
+            assertEquals(origin, sharing.recipientOrigin(first.family))
+        }
         NativeLocalStore.open(recipient.absolutePath).use { local ->
             assertTrue(local.families().none { it.familyId.contentEquals(family.familyId) })
             assertTrue(
@@ -67,10 +71,10 @@ class SharingRelayTest {
             sharing.respondToClaim(family, origin)
         }
         ShareCoordinator(context, recipient.absolutePath).use { sharing ->
-            sharing.proveChallenge(fragment)
+            sharing.proveChallenge(first.family)
         }
         ShareCoordinator(context, recipient.absolutePath).use { sharing ->
-            val pending = sharing.syncRecipient(fragment)
+            val pending = sharing.syncRecipient(first.family)
             assertTrue(pending.awaitingGrant)
             assertTrue(!pending.ready)
             assertTrue(runCatching { sharing.snapshot(first.family) }.isFailure)
@@ -80,7 +84,7 @@ class SharingRelayTest {
             sharing.admitProvedDevice(family, origin)
         }
         ShareCoordinator(context, recipient.absolutePath).use { sharing ->
-            val synced = sharing.syncRecipient(fragment)
+            val synced = sharing.syncRecipient(first.family)
             assertTrue(synced.ready)
             assertEquals(1uL, synced.childCount)
             val existing = sharing.snapshot(first.family).children.single()
@@ -95,7 +99,7 @@ class SharingRelayTest {
             assertEquals(1, sharing.snapshot(first.family).activities.size)
         }
         ShareCoordinator(context, recipient.absolutePath).use { sharing ->
-            assertTrue(sharing.syncRecipient(fragment).ready)
+            assertTrue(sharing.syncRecipient(first.family).ready)
             assertEquals(2, sharing.snapshot(first.family).children.size)
             assertEquals(1, sharing.snapshot(first.family).activities.size)
             assertTrue(sharing.syncAndUpload(first.family, origin).ready)

@@ -88,12 +88,16 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     }
 
     fun proveChallenge(fragment: String) {
-        val preview = previewInvitation(fragment)
-        val relay = RelayTransport(preview.relayOrigin)
+        val family = withWrapping { wrapping ->
+            core.resumeJoin(fragment, wrapping)?.family ?: error("No durable recipient claim")
+        }
+        proveChallenge(family)
+    }
+
+    fun proveChallenge(family: FamilyRef) {
+        val relay = RelayTransport(recipientOrigin(family))
         val wrapping = keys.loadOrCreate()
         try {
-            val family = core.resumeJoin(fragment, wrapping)?.family
-                ?: error("No durable recipient claim")
             val candidate = core.savedFirstProof(family, wrapping) ?: run {
                 val read = core.recipientControlRead(family, wrapping)
                 val page = relay.get(read.path, read.auth)
@@ -128,12 +132,16 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     }
 
     fun syncRecipient(fragment: String): RecipientSyncRow {
-        val preview = previewInvitation(fragment)
-        val relay = RelayTransport(preview.relayOrigin)
+        val family = withWrapping { wrapping ->
+            core.resumeJoin(fragment, wrapping)?.family ?: error("No durable recipient claim")
+        }
+        return syncRecipient(family)
+    }
+
+    fun syncRecipient(family: FamilyRef): RecipientSyncRow {
+        val relay = RelayTransport(recipientOrigin(family))
         val wrapping = keys.loadOrCreate()
         try {
-            val family = core.resumeJoin(fragment, wrapping)?.family
-                ?: error("No durable recipient claim")
             return core.syncRecipient(family, wrapping, object : RelayReadTransport {
                 override fun get(path: String, auth: ByteArray): ByteArray = relay.get(path, auth)
             })
@@ -162,6 +170,12 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         } finally {
             wrapping.fill(0)
         }
+    }
+
+    fun recipientFamilies(): List<FamilyRef> = core.recipientFamilies()
+
+    fun recipientOrigin(family: FamilyRef): String = withWrapping { wrapping ->
+        core.recipientRelayOrigin(family, wrapping)
     }
 
     fun addChild(family: FamilyRef, name: String, nowMs: Long): ByteArray = withWrapping { wrapping ->
@@ -193,8 +207,12 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     }
 
     fun syncRecipientAndUpload(fragment: String): SharedSyncRow {
-        val preview = previewInvitation(fragment)
-        return syncAndUpload(snapshotForFragment(fragment).family, preview.relayOrigin)
+        val family = snapshotForFragment(fragment).family
+        return syncRecipientAndUpload(family)
+    }
+
+    fun syncRecipientAndUpload(family: FamilyRef): SharedSyncRow {
+        return syncAndUpload(family, recipientOrigin(family))
     }
 
     private inline fun <T> withWrapping(action: (ByteArray) -> T): T {

@@ -65,6 +65,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val database = filesDir.resolve("families.db")
         val savedFiles = getSharedPreferences("completed_file_saves", MODE_PRIVATE)
+        val relayOrigins = getSharedPreferences("shared_relay_origins", MODE_PRIVATE)
         val availableMemory = {
             ActivityManager.MemoryInfo().also {
                 (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(it)
@@ -97,6 +98,10 @@ class MainActivity : ComponentActivity() {
                             "${file.info.snapshotUtcMs}:${file.revision}",
                         ).commit()
                     },
+                    lastRelayOrigin = { family -> relayOrigins.getString(family.familyId.key(), null) },
+                    recordRelayOrigin = { family, origin ->
+                        relayOrigins.edit().putString(family.familyId.key(), origin).commit()
+                    },
                 )
             }
         }
@@ -114,6 +119,8 @@ private data class ScreenData(
     val revision: ULong,
     val restoredOrigin: RestoredOriginRow?,
     val shared: Boolean,
+    val recipients: List<FamilyRef>,
+    val joinedSnapshot: SharedSnapshotRow?,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -126,6 +133,8 @@ private fun TrackerScreen(
     availableMemory: () -> Long,
     lastSave: (FamilyRef) -> CompletedSave?,
     recordSave: (BackupFileRow) -> Boolean,
+    lastRelayOrigin: (FamilyRef) -> String?,
+    recordRelayOrigin: (FamilyRef, String) -> Boolean,
 ) {
     val context = LocalContext.current
     DisposableEffect(store, sharing) { onDispose { store.close(); sharing.close() } }
@@ -152,11 +161,17 @@ private fun TrackerScreen(
     var joinStage by remember { mutableStateOf<String?>(null) }
     var sharedSnapshot by remember { mutableStateOf<SharedSnapshotRow?>(null) }
     var sharedSelectedChild by remember { mutableStateOf<String?>(null) }
+    var recipientFamilies by remember { mutableStateOf<List<FamilyRef>>(emptyList()) }
+    var selectedRecipient by remember { mutableStateOf<String?>(null) }
     var sharedChildName by remember { mutableStateOf("") }
     var inviteAsManager by remember { mutableStateOf(false) }
     val errorText = stringResource(R.string.error)
     val savedText = stringResource(R.string.saved)
     val restoredText = stringResource(R.string.restored)
+    LaunchedEffect(selectedFamily) {
+        val family = families.find { it.familyId.key() == selectedFamily }
+        relayOrigin = family?.let(lastRelayOrigin).orEmpty()
+    }
     var pendingBackup by remember { mutableStateOf<BackupFileRow?>(null) }
     var protectBackup by remember { mutableStateOf(false) }
     var backupPassword by remember { mutableStateOf("") }
@@ -203,10 +218,13 @@ private fun TrackerScreen(
                 .onFailure { message = errorText }
         }
     }
-    LaunchedEffect(version, selectedFamily, selectedChild) {
+    LaunchedEffect(version, selectedFamily, selectedChild, selectedRecipient) {
         runCatching {
             withContext(Dispatchers.IO) {
                 val all = store.families()
+                val recipients = sharing.recipientFamilies()
+                val recipient = recipients.find { it.familyId.key() == selectedRecipient } ?: recipients.firstOrNull()
+                val joinedSnapshot = recipient?.let { runCatching { sharing.snapshot(it) }.getOrNull() }
                 val family = all.find { it.familyId.key() == selectedFamily } ?: all.firstOrNull()
                 val shared = family?.let(sharing::isShared) ?: false
                 val snapshot = if (shared) sharing.snapshot(family) else null
@@ -221,6 +239,8 @@ private fun TrackerScreen(
                     if (!shared) family?.let(store::revision) ?: 0uL else 0uL,
                     if (!shared) family?.let(store::restoredOrigin) else null,
                     shared,
+                    recipients,
+                    joinedSnapshot,
                 )
             }
         }.onSuccess { data ->
@@ -235,6 +255,10 @@ private fun TrackerScreen(
             restoredOrigin = data.restoredOrigin
             isShared = data.shared
             loadedFamilyKey = data.activeFamilyKey
+            recipientFamilies = data.recipients
+            selectedRecipient = data.recipients.find { it.familyId.key() == selectedRecipient }
+                ?.familyId?.key() ?: data.recipients.firstOrNull()?.familyId?.key()
+            sharedSnapshot = data.joinedSnapshot
         }.onFailure { message = errorText }
     }
     val family = families.find { it.familyId.key() == selectedFamily }
@@ -278,6 +302,13 @@ private fun TrackerScreen(
                     ) {
                         Text(stringResource(R.string.dev_join_title), style = MaterialTheme.typography.titleMedium)
                         Text(stringResource(R.string.dev_join_description))
+                        recipientFamilies.forEachIndexed { index, recipient ->
+                            FilterChip(
+                                selected = recipient.familyId.key() == selectedRecipient,
+                                onClick = { selectedRecipient = recipient.familyId.key() },
+                                label = { Text(stringResource(R.string.joined_family_number, index + 1)) },
+                            )
+                        }
                         OutlinedTextField(
                             value = receivedFragment,
                             onValueChange = { receivedFragment = it },
@@ -289,7 +320,9 @@ private fun TrackerScreen(
                             scope.launch {
                                 runCatching {
                                     withContext(Dispatchers.IO) { sharing.claim(receivedFragment.trim()) }
-                                }.onSuccess {
+                                }.onSuccess { prepared ->
+                                    selectedRecipient = prepared.family.familyId.key()
+                                    version++
                                     joinStage = context.getString(R.string.join_pending)
                                     message = null
                                 }.onFailure {
@@ -298,11 +331,15 @@ private fun TrackerScreen(
                                 }
                             }
                         }) { Text(stringResource(R.string.join_or_retry)) }
-                        OutlinedButton(enabled = receivedFragment.isNotBlank(), onClick = {
+                        OutlinedButton(enabled = selectedRecipient != null || receivedFragment.isNotBlank(), onClick = {
                             joinStage = context.getString(R.string.proof_preparing)
                             scope.launch {
                                 runCatching {
-                                    withContext(Dispatchers.IO) { sharing.proveChallenge(receivedFragment.trim()) }
+                                    withContext(Dispatchers.IO) {
+                                        val recipient = recipientFamilies.find { it.familyId.key() == selectedRecipient }
+                                        if (recipient != null) sharing.proveChallenge(recipient)
+                                        else sharing.proveChallenge(receivedFragment.trim())
+                                    }
                                 }.onSuccess {
                                     joinStage = context.getString(R.string.proof_confirmed)
                                     message = null
@@ -312,13 +349,18 @@ private fun TrackerScreen(
                                 }
                             }
                         }) { Text(stringResource(R.string.prove_challenge)) }
-                        OutlinedButton(enabled = receivedFragment.isNotBlank(), onClick = {
+                        OutlinedButton(enabled = selectedRecipient != null || receivedFragment.isNotBlank(), onClick = {
                             joinStage = context.getString(R.string.history_loading)
                             scope.launch {
                                 runCatching {
                                     withContext(Dispatchers.IO) {
-                                        val progress = sharing.syncRecipient(receivedFragment.trim())
-                                        progress to if (progress.ready) sharing.snapshotForFragment(receivedFragment.trim()) else null
+                                        val recipient = recipientFamilies.find { it.familyId.key() == selectedRecipient }
+                                        val progress = if (recipient != null) sharing.syncRecipient(recipient)
+                                            else sharing.syncRecipient(receivedFragment.trim())
+                                        progress to if (progress.ready) {
+                                            if (recipient != null) sharing.snapshot(recipient)
+                                            else sharing.snapshotForFragment(receivedFragment.trim())
+                                        } else null
                                     }
                                 }.onSuccess { (progress, snapshot) ->
                                     sharedSnapshot = snapshot
@@ -344,7 +386,7 @@ private fun TrackerScreen(
                                 scope.launch {
                                     runCatching {
                                         withContext(Dispatchers.IO) {
-                                            val progress = sharing.syncRecipientAndUpload(receivedFragment.trim())
+                                            val progress = sharing.syncRecipientAndUpload(snapshot.family)
                                             progress to sharing.snapshot(snapshot.family)
                                         }
                                     }.onSuccess { (progress, updated) ->
@@ -448,7 +490,7 @@ private fun TrackerScreen(
                                     }.onSuccess { cursor ->
                                         shareStage = context.getString(R.string.share_confirmed, cursor.toLong())
                                         version++
-                                        message = null
+                                        message = if (recordRelayOrigin(family, relayOrigin.trim())) null else errorText
                                     }.onFailure {
                                         shareStage = context.getString(R.string.share_retry)
                                         message = errorText

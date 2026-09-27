@@ -24,7 +24,9 @@ shared history through a bounded manual sync pass. A verified shared snapshot
 can list children and entries in the Android join preview. Shared child,
 diaper, and bottle actions save offline in the Rust outbox, then a manual
 sync uploads signed encrypted batches and verifies their acceptance. The
-real-relay emulator test converges edits in both directions. Automatic sync,
+real-relay emulator test converges edits in both directions. Recipient
+enrollment resumes by stored Family identity and relay origin after restart;
+the Android manager screen retains its relay address. Automatic sync,
 removal, and shared backup UI remain open. Scenario
 files still include symbolic expectations.
 

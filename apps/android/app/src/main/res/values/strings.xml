@@ -59,6 +59,7 @@
     <string name="create_invite">Create or retry invitation</string>
     <string name="invite_fragment_label">Invitation fragment for development testing</string>
     <string name="dev_join_title">Join preview</string>
+    <string name="joined_family_number">Joined Family %1$d</string>
     <string name="dev_join_description">Paste a one-device invitation fragment. The joining device stays pending until a key holder responds and full history loads. Use Sync shared Family after joining.</string>
     <string name="received_fragment">Invitation fragment</string>
     <string name="join_preparing">Checking invitation and submitting a keyless claim…</string>

@@ -146,6 +146,13 @@ child and diaper, the manager pull them, then the manager save and upload a
 child that the recipient pulls. Both stores reopen and retry without duplicate
 records. This is manual foreground sync; wake scheduling, removal races,
 shared backup UI, and general epoch handling remain open.
+The recipient's encrypted durable attempt already holds its verified
+invitation origin and keys. Android now lists pending and ready recipient
+Families from the Rust store and can resume proof, history loading, and sync
+by selected Family after process restart without retaining the fragment in
+UI state. The manager's nonsecret relay origin is saved in Android settings
+after confirmed promotion; Rust still pins and verifies the relay identity.
+The real-relay emulator test reopens the recipient and resumes by Family ID.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

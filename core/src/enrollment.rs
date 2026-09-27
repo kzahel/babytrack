@@ -474,6 +474,13 @@ impl EnrollmentAttempt {
     pub fn relay_public_key(&self) -> Result<[u8; 32], Error> {
         Ok(InvitationBootstrap::from_fragment(&self.bootstrap_fragment)?.relay_public_key())
     }
+    pub fn relay_origin(&self) -> Result<String, Error> {
+        Ok(
+            InvitationBootstrap::from_fragment(&self.bootstrap_fragment)?
+                .relay_origin()
+                .to_owned(),
+        )
+    }
 }
 
 fn build_claim(

@@ -863,6 +863,40 @@ impl NativeSharedStore {
             .map_err(rejected)
     }
 
+    pub fn recipient_families(&self) -> Result<Vec<FamilyRef>, BindingError> {
+        let store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        store
+            .families()
+            .map_err(rejected)?
+            .into_iter()
+            .filter_map(
+                |family| match store.has_enrollment_attempt(family.family_id) {
+                    Ok(true) => Some(Ok(family.into())),
+                    Ok(false) => None,
+                    Err(error) => Some(Err(rejected(error))),
+                },
+            )
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    pub fn recipient_relay_origin(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+    ) -> Result<String, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let attempt = EnrollmentAttempt::resume(
+            &mut store,
+            family.handle()?.family_id,
+            &fixed(&wrapping_key)?,
+        )
+        .map_err(rejected)?;
+        if attempt.family() != family.handle()? {
+            return Err(BindingError::InvalidBytes);
+        }
+        attempt.relay_origin().map_err(rejected)
+    }
+
     pub fn add_shared_child(
         &self,
         family: FamilyRef,

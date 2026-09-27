@@ -196,6 +196,9 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     fun backupFile(family: FamilyRef, nowMs: Long, password: String?, availableMemory: ULong): BackupFileRow =
         withWrapping { wrapping -> core.sharedBackupFile(family, wrapping, nowMs, password, availableMemory) }
 
+    fun analysisCsv(family: FamilyRef): ByteArray =
+        withWrapping { wrapping -> core.sharedAnalysisCsv(family, wrapping) }
+
     fun privateCopy(family: FamilyRef, nowMs: Long): FamilyRef =
         withWrapping { wrapping -> core.privateCopyShared(family, wrapping, nowMs) }
 

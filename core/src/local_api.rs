@@ -439,6 +439,15 @@ impl LocalRepository {
         )?)
     }
 
+    pub fn analysis_csv(&self, family: FamilyHandle) -> Result<Vec<u8>, Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        Ok(crate::analysis_csv::export(
+            family.family_id,
+            projection.records(),
+        ))
+    }
+
     pub fn revision(&self, family: FamilyHandle) -> Result<u64, Error> {
         self.ensure_local_surface(family)?;
         Ok(self.store.local_revision(family)?)

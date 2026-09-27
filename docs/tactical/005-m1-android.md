@@ -97,7 +97,9 @@ delivered, and removed access cannot obtain new Family data.
   installation. Test missing/corrupt files, storage-provider failures, and
   explicit presentation of data saved after the file point.
 - [ ] Add the planned analysis export and Nara import through shared Rust
-  import/export, with real sanitized samples and target preview.
+  import/export, with real sanitized samples and target preview. The
+  current-state analysis CSV now exports local and shared Families through
+  the core, including pending local shared edits; Nara import remains.
 - [ ] Add an ongoing notification for timers and basic widgets without
   reimplementing event semantics in Android. Confirm stale actions after
   removal target a private copy or fail visibly.

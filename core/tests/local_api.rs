@@ -35,6 +35,49 @@ fn child_birth_day_and_sex_survive_restart_and_file_restore() {
 }
 
 #[test]
+fn analysis_csv_exports_current_activity_and_neutralizes_formula_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = LocalRepository::open(dir.path().join("analysis.db")).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    let child = app
+        .add_child_with_metadata(family, "=danger", Some(20_000), Some(2), 1_790_000_000_001)
+        .unwrap();
+    let note = app
+        .log_note(
+            family,
+            child,
+            "=SUM(1,2) \"quote\"",
+            ActivityTime {
+                start_utc_ms: 1_790_000_000_002,
+                offset_minutes: 60,
+                saved_at_ms: 1_790_000_000_003,
+            },
+        )
+        .unwrap();
+    let csv = String::from_utf8(app.analysis_csv(family).unwrap()).unwrap();
+    assert!(csv.starts_with("family_id,child_id,child_name,"));
+    assert!(csv.contains("\"'=danger\",\"20000\",\"2\""));
+    assert!(csv.contains("\"'=SUM(1,2) \"\"quote\"\"\""));
+    assert!(
+        csv.contains(
+            &note
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        )
+    );
+    app.delete_activity(family, child, note, 1_790_000_000_004)
+        .unwrap();
+    assert_eq!(
+        String::from_utf8(app.analysis_csv(family).unwrap())
+            .unwrap()
+            .lines()
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn activity_delete_targets_one_child_and_survives_restart() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("delete.db");

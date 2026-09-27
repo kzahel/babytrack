@@ -89,6 +89,8 @@
     <string name="private_copy_created">Private copy ready. It will not sync with the original Family.</string>
     <string name="protected_backup_description">A password protects this copy. Keep the password: it cannot be recovered. Restoring creates a separate Family and does not restore shared access.</string>
     <string name="save_backup">Save backup</string>
+    <string name="export_analysis_csv">Export analysis CSV</string>
+    <string name="analysis_csv_saved">Analysis CSV saved</string>
     <string name="restore_backup">Restore backup</string>
     <string name="backup_filename">babytrack-backup.cbor</string>
     <string name="protected_backup_filename">babytrack-backup.btbk</string>

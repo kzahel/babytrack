@@ -257,6 +257,7 @@ private fun TrackerScreen(
         breastMinutes = ""
     }
     var pendingBackup by remember { mutableStateOf<BackupFileRow?>(null) }
+    var pendingAnalysisCsv by remember { mutableStateOf<ByteArray?>(null) }
     var protectBackup by remember { mutableStateOf(false) }
     var backupPassword by remember { mutableStateOf("") }
     var restorePassword by remember { mutableStateOf("") }
@@ -312,6 +313,16 @@ private fun TrackerScreen(
                 .onFailure { message = errorText }
             pendingBackup = null
         }
+    }
+    val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri != null) scope.launch {
+            runCatching { withContext(Dispatchers.IO) {
+                writeFile(uri, pendingAnalysisCsv ?: error("Missing analysis export"))
+            } }
+                .onSuccess { message = context.getString(R.string.analysis_csv_saved) }
+                .onFailure { message = errorText }
+            pendingAnalysisCsv = null
+        } else pendingAnalysisCsv = null
     }
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
@@ -1329,6 +1340,15 @@ private fun TrackerScreen(
                             .onFailure { message = errorText }
                     }
                 }, enabled = !protectBackup || backupPassword.isNotEmpty()) { Text(stringResource(R.string.save_backup)) }
+                OutlinedButton(onClick = {
+                    scope.launch {
+                        runCatching { withContext(Dispatchers.IO) {
+                            if (activeShared) sharing.analysisCsv(family) else store.analysisCsv(family)
+                        } }
+                            .onSuccess { pendingAnalysisCsv = it; csvLauncher.launch("babytrack-analysis.csv") }
+                            .onFailure { message = errorText }
+                    }
+                }) { Text(stringResource(R.string.export_analysis_csv)) }
             }
             OutlinedButton(onClick = { restoreLauncher.launch(arrayOf("application/octet-stream", "*/*")) }) {
                 Text(stringResource(R.string.restore_backup))

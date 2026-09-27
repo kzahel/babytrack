@@ -1206,6 +1206,20 @@ impl NativeSharedStore {
         })
     }
 
+    pub fn shared_analysis_csv(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+    ) -> Result<Vec<u8>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let ready = ready_session_for(&mut store, family.handle()?, &fixed(&wrapping_key)?)?;
+        let projection = ready.projection_with_pending(&store).map_err(rejected)?;
+        Ok(babytrack_core::analysis_csv::export(
+            ready.family().family_id,
+            projection.records(),
+        ))
+    }
+
     /// Repeated requests return the same independent destination Family.
     pub fn private_copy_shared(
         &self,
@@ -2370,6 +2384,14 @@ impl NativeLocalStore {
             .lock()
             .map_err(|_| BindingError::LockPoisoned)?
             .backup(family.handle()?, now_ms)
+            .map_err(rejected)
+    }
+
+    pub fn analysis_csv(&self, family: FamilyRef) -> Result<Vec<u8>, BindingError> {
+        self.repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .analysis_csv(family.handle()?)
             .map_err(rejected)
     }
 

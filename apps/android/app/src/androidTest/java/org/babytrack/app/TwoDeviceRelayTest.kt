@@ -108,6 +108,7 @@ class TwoDeviceRelayTest {
                 PumpInput(20, 15, null), ActivityWhen(end - 10 * 60_000L, 0, end), end)
             sharing.startSleep(family, sharing.snapshot(family).children.first().id,
                 ActivityWhen(end, 0, end))
+            assertTrue(String(sharing.analysisCsv(family)).contains("Care note marker 67"))
             assertTrue(sharing.syncRecipientAndUpload(family).ready)
             assertEquals(0uL, sharing.snapshot(family).unsentCount)
         }
@@ -120,6 +121,7 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).children.any { it.name == "Recipient child" })
             assertTrue(sharing.snapshot(family).activities.any { it.kind == "sleep" && it.endUtcMs != null })
             assertTrue(sharing.snapshot(family).activities.any { it.note == "Care note marker 67" })
+            assertTrue(String(sharing.analysisCsv(family)).contains("Care note marker 67"))
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "growth" && it.growthWeightG == 4_200L && it.growthLengthMm == 540L
             })

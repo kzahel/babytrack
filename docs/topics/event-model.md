@@ -157,6 +157,13 @@ plan applied to events.
   unknown fields. It does not promise the source operation/edit history;
   displaced values remain inspectable in a live Family or private log copy,
   not after state-only file restore. CSV is not a full-fidelity backup.
+  The first analysis CSV writes one row per current activity with Family,
+  child, time, type, and known entered fields. Child birth day and growth-chart
+  sex travel with each row. Deleted activities, operation history, unknown
+  fields, and access credentials are absent; use a portable file for recovery.
+  JSON arrays inside cells preserve solids foods and breast segments. Text
+  beginning like a spreadsheet formula is prefixed with an apostrophe, so
+  analysis CSV is not a byte-exact text interchange format.
 - **File restore.** Restore the saved record state into a new independent
   local-only Family with fresh Family identity and keys while retaining
   child/activity record IDs inside that new Family scope, offline and without the

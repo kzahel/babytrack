@@ -596,22 +596,14 @@ mod tests {
             relay_public_key.to_vec(),
             hex_bytes(expected["relay_public_key_hex"].as_str().unwrap())
         );
-        let bootstrap = InvitationBootstrap {
-            relay_origin: "https://relay.example".into(),
-            relay_public_key,
-            family_id: hex_bytes(input["family_id_hex"].as_str().unwrap())
-                .try_into()
-                .unwrap(),
-            genesis_head: [0; 32],
-            invitation_id: hex_bytes(input["invitation_id_hex"].as_str().unwrap())
-                .try_into()
-                .unwrap(),
-            fixed_role: 1,
-            invitation_sign_seed: [0; 32],
-            issue_signed_hash: hex_bytes(input["issue_signed_hash_hex"].as_str().unwrap())
-                .try_into()
-                .unwrap(),
-        };
+        let bootstrap =
+            InvitationBootstrap::from_fragment(expected["invitation_fragment"].as_str().unwrap())
+                .unwrap();
+        assert_eq!(bootstrap.relay_public_key, relay_public_key);
+        assert_eq!(
+            bootstrap.family_id.to_vec(),
+            hex_bytes(input["family_id_hex"].as_str().unwrap())
+        );
         let body = hex_bytes(expected["body_hex"].as_str().unwrap());
         assert_eq!(
             crypto::sign_cbor("invitation-status", &body, &seed)

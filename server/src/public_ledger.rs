@@ -49,6 +49,7 @@ pub(crate) struct PublicLedger {
     commitment: [u8; 32],
     last_commit_ms: i64,
     issue_times: BTreeMap<[u8; 16], i64>,
+    terminal_invitations: BTreeMap<[u8; 16], (u8, i64)>,
     invitation_objects: BTreeMap<[u8; 16], [u8; 16]>,
     challenges: BTreeMap<[u8; 16], ([u8; 16], [u8; 32])>,
     challenge_objects: BTreeMap<[u8; 16], [u8; 16]>,
@@ -114,6 +115,7 @@ impl PublicLedger {
             commitment: genesis.epoch_commitment,
             last_commit_ms: receipt.committed_ms,
             issue_times: BTreeMap::new(),
+            terminal_invitations: BTreeMap::new(),
             invitation_objects: BTreeMap::new(),
             challenges: BTreeMap::new(),
             challenge_objects: BTreeMap::new(),
@@ -248,6 +250,7 @@ impl PublicLedger {
             return Err(Error::Invalid("public control ID reused"));
         }
         let head = crypto::hash("control-head", committed_bytes)?;
+        let newly_terminal = invitation_terminal_changes(&self.state, &next, receipt.kind)?;
         let commitment = rotated.unwrap_or(self.commitment);
         self.epochs
             .record(head, receipt.epoch, commitment)
@@ -261,6 +264,11 @@ impl PublicLedger {
         self.head = head;
         self.commitment = commitment;
         self.last_commit_ms = receipt.committed_ms;
+        for (invitation, reason) in newly_terminal {
+            self.terminal_invitations
+                .entry(invitation)
+                .or_insert((reason, receipt.committed_ms));
+        }
         self.seen_ids.extend(new_ids);
         if let Some((invitation, object_id)) = issued {
             self.issue_times.insert(invitation, receipt.committed_ms);
@@ -334,17 +342,23 @@ impl PublicLedger {
             if fixed::<16>(&fields[0])? != invitation_id {
                 continue;
             }
+            let issued = *self
+                .issue_times
+                .get(&invitation_id)
+                .ok_or(Error::Invalid("invitation issue time absent"))?;
+            let expires = issued
+                .checked_add(604_800_000)
+                .ok_or(Error::Invalid("invitation expiry overflow"))?;
             let status = match fields[5] {
                 Value::Integer(2) => 2, // claimed
-                Value::Integer(3) => 3, // canceled
-                Value::Integer(1) => {
-                    let issued = *self
-                        .issue_times
+                Value::Integer(3) => {
+                    let (reason, committed_ms) = self
+                        .terminal_invitations
                         .get(&invitation_id)
-                        .ok_or(Error::Invalid("invitation issue time absent"))?;
-                    let expires = issued
-                        .checked_add(604_800_000)
-                        .ok_or(Error::Invalid("invitation expiry overflow"))?;
+                        .ok_or(Error::Invalid("terminal invitation cause absent"))?;
+                    if *committed_ms >= expires { 4 } else { *reason }
+                }
+                Value::Integer(1) => {
                     if observed_ms >= expires {
                         4 // expired
                     } else {
@@ -546,6 +560,48 @@ fn active_signing_key(state: &Value, device: [u8; 16]) -> Result<Option<[u8; 32]
     Ok(None)
 }
 
+fn invitation_terminal_changes(
+    old_state: &Value,
+    next_state: &Value,
+    kind: u16,
+) -> Result<Vec<([u8; 16], u8)>, Error> {
+    if !matches!(kind, 3 | 7 | 8) {
+        return Ok(Vec::new());
+    }
+    let mut next_status = BTreeMap::new();
+    for row in invitation_rows(next_state)? {
+        let Value::Array(fields) = row else {
+            return Err(Error::Invalid("invitation row not array"));
+        };
+        next_status.insert(fixed::<16>(&fields[0])?, &fields[5]);
+    }
+    let mut changes = Vec::new();
+    for row in invitation_rows(old_state)? {
+        let Value::Array(fields) = row else {
+            return Err(Error::Invalid("invitation row not array"));
+        };
+        let id = fixed::<16>(&fields[0])?;
+        if fields[5] == Value::Integer(1)
+            && next_status
+                .get(&id)
+                .is_some_and(|status| **status == Value::Integer(3))
+        {
+            changes.push((id, if kind == 3 { 3 } else { 5 }));
+        }
+    }
+    Ok(changes)
+}
+
+fn invitation_rows(state: &Value) -> Result<&[Value], Error> {
+    let Value::Map(fields) = state else {
+        return Err(Error::Invalid("public state not map"));
+    };
+    let Value::Array(rows) = &fields[6].1 else {
+        return Err(Error::Invalid("invitations not array"));
+    };
+    Ok(rows)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -661,6 +717,53 @@ mod tests {
                             .1,
                         4
                     );
+                    let mut invalidated = current.state.clone();
+                    let Value::Map(fields) = &mut invalidated else {
+                        panic!()
+                    };
+                    let Value::Array(rows) = &mut fields[6].1 else {
+                        panic!()
+                    };
+                    let Value::Array(row) = &mut rows[0] else {
+                        panic!()
+                    };
+                    row[5] = Value::Integer(3);
+                    assert_eq!(
+                        invitation_terminal_changes(&current.state, &invalidated, 3).unwrap(),
+                        vec![(invitation_id, 3)]
+                    );
+                    for kind in [7, 8] {
+                        assert_eq!(
+                            invitation_terminal_changes(&current.state, &invalidated, kind)
+                                .unwrap(),
+                            vec![(invitation_id, 5)]
+                        );
+                    }
+                    let original = std::mem::replace(&mut current.state, invalidated);
+                    current
+                        .terminal_invitations
+                        .insert(invitation_id, (5, verified.committed_ms + 1));
+                    assert_eq!(
+                        current
+                            .invitation_status(invitation_id, verified.committed_ms + 2)
+                            .unwrap()
+                            .unwrap()
+                            .1,
+                        5
+                    );
+                    current
+                        .terminal_invitations
+                        .insert(invitation_id, (5, verified.committed_ms + 604_800_000));
+                    assert_eq!(
+                        current
+                            .invitation_status(invitation_id, verified.committed_ms + 604_800_000)
+                            .unwrap()
+                            .unwrap()
+                            .1,
+                        4
+                    );
+                    current.state = original;
+                    current.terminal_invitations.remove(&invitation_id);
                     let Value::Map(state) = &mut current.state else {
                         panic!()
                     };
@@ -679,6 +782,7 @@ mod tests {
                             .1,
                         5
                     );
+                    assert!(current.reader(invitation_id).unwrap().is_none());
                     let Value::Map(state) = &mut current.state else {
                         panic!()
                     };

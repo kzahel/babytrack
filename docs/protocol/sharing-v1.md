@@ -539,7 +539,11 @@ current_global_cursor_u64, current_control_head32, observed_relay_ms_i64,
 issue_signed_hash32])`. The relay signs the body bytes with
 `H("invitation-status", body_bytes)`. Reasons are `1=unused`, `2=claimed`,
 `3=canceled`, `4=expired`, `5=issuer lost manager authority`. The expiry reason
-uses relay-observed time, at least the last signed commit time. The client
+uses relay-observed time, at least the last signed commit time. For an unused
+invitation invalidated by a later control, the relay derives the first cause
+from verified transition history: explicit cancellation yields `3`, issuer
+demotion or removal yields `5`, and expiry at or before that control's signed
+commit time yields `4`. Re-promotion never revives the link. The client
 checks the relay key and every link-bound field before showing a terminal
 reason; unsigned HTTP errors, timeouts, or malformed status remain unknown.
 An active status is advisory freshness, not a guarantee that a future claim

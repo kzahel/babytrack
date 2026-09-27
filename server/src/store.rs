@@ -4009,6 +4009,14 @@ mod tests {
         };
         assert_eq!(status_parts[4], Value::Integer(3));
         assert_eq!(status_parts[5], Value::Integer(4));
+        assert_eq!(
+            after_cancel
+                .invitation_status(invitation_id, genesis_ms + 1_000 + 604_800_000)
+                .unwrap()
+                .unwrap()
+                .1,
+            3
+        );
         assert!(
             store
                 .control_page_authenticated(
@@ -4061,6 +4069,32 @@ mod tests {
         );
         drop(store);
         let mut store = RelayStore::open(&path, seed).unwrap();
+        let resumed_status = store
+            .invitation_status_authenticated(
+                family,
+                invitation_id,
+                &status_path,
+                &signed_get(
+                    family,
+                    after_cancel.relay_id(),
+                    invitation_id,
+                    invitation_seed,
+                    &status_path,
+                    [0xd3; 16],
+                ),
+                genesis_ms + 3_000,
+            )
+            .unwrap();
+        let Value::Map(resumed_fields) = cbor::decode(&resumed_status).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(resumed_body) = &resumed_fields[1].1 else {
+            panic!()
+        };
+        let Value::Array(resumed_parts) = cbor::decode(resumed_body).unwrap() else {
+            panic!()
+        };
+        assert_eq!(resumed_parts[4], Value::Integer(3));
         assert_eq!(
             store
                 .commit_manager_change_with_clock(family, &candidate, || panic!(

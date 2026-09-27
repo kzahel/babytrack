@@ -350,6 +350,7 @@ async fn later_issue_keeps_exact_candidate_and_commits_after_first_issue() {
     )
     .unwrap();
     assert_eq!(prepared.pending_control_cursor(&recipient).unwrap(), 4);
+    assert_eq!(prepared.first_join_action(&recipient).unwrap(), 2);
     let Value::Map(claim_candidate) = cbor::decode(prepared.claim_candidate()).unwrap() else {
         panic!()
     };
@@ -391,6 +392,7 @@ async fn later_issue_keeps_exact_candidate_and_commits_after_first_issue() {
     let resumed_stale =
         EnrollmentAttempt::resume(&mut recipient, family.family_id, &recipient_wrap).unwrap();
     assert_eq!(resumed_stale.claim_candidate(), stale_claim);
+    assert_eq!(resumed_stale.first_join_action(&recipient).unwrap(), 2);
     let auth = link.sign_get(&path).unwrap();
     let updated_page = ControlPage::decode(
         &http_bytes(&app, Method::GET, &path, auth.bytes).await,
@@ -437,12 +439,14 @@ async fn later_issue_keeps_exact_candidate_and_commits_after_first_issue() {
     assert_ne!(stale_delta[6].1, fresh_delta[6].1);
     assert_ne!(stale_unsigned[4].1, fresh_unsigned[4].1);
     assert_eq!(refreshed.pending_control_cursor(&recipient).unwrap(), 5);
+    assert_eq!(refreshed.first_join_action(&recipient).unwrap(), 2);
     let saved_claim = refreshed.claim_candidate().to_vec();
     drop(recipient);
     let mut recipient = SqliteStore::open(&recipient_path).unwrap();
     let resumed =
         EnrollmentAttempt::resume(&mut recipient, family.family_id, &recipient_wrap).unwrap();
     assert_eq!(resumed.claim_candidate(), saved_claim);
+    assert_eq!(resumed.first_join_action(&recipient).unwrap(), 2);
     let claim_response = commit_control(&app, family.family_id, &saved_claim).await;
     assert_eq!(
         commit_control(&app, family.family_id, &saved_claim).await,
@@ -469,6 +473,7 @@ async fn later_issue_keeps_exact_candidate_and_commits_after_first_issue() {
     )
     .unwrap();
     assert_eq!(after_retry.claim_candidate(), saved_claim);
+    assert_eq!(after_retry.first_join_action(&recipient).unwrap(), 0);
     let Value::Map(claim_result) = cbor::decode(&claim_response).unwrap() else {
         panic!()
     };

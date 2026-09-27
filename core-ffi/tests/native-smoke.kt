@@ -7,7 +7,9 @@ import uniffi.babytrack_core_ffi.NativeLocalStore
 import uniffi.babytrack_core_ffi.NativeSharedStore
 import uniffi.babytrack_core_ffi.ActivityWhen
 import uniffi.babytrack_core_ffi.ed25519PublicKey
+import uniffi.babytrack_core_ffi.invitationStatusRead
 import uniffi.babytrack_core_ffi.sealOne
+import uniffi.babytrack_core_ffi.verifyInvitationStatus
 
 private fun bytes(hex: String): ByteArray = hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
 private fun ByteArray.hex(): String = joinToString("") { "%02x".format(it.toInt() and 255) }
@@ -17,6 +19,17 @@ fun main(args: Array<String>) {
     val root = Path.of(args[0])
     val negative = JsonParser.parseString(Files.readString(root.resolve("tests/vectors/negative-batch-v1.json"))).asJsonObject
     val full = JsonParser.parseString(Files.readString(root.resolve("tests/vectors/full-wire-v1.json"))).asJsonObject
+    val invitationStatus = JsonParser.parseString(Files.readString(root.resolve("tests/vectors/invitation-status-v1.json"))).asJsonObject
+    val statusInput = invitationStatus.getAsJsonObject("test_only_inputs")
+    val statusExpected = invitationStatus.getAsJsonObject("expected")
+    val statusFragment = statusExpected.text("invitation_fragment")
+    val statusRead = invitationStatusRead(statusFragment)
+    check(statusRead.path == "/v1/families/${statusInput.text("family_id_hex")}/invitation-status/${statusInput.text("invitation_id_hex")}")
+    val verifiedStatus = verifyInvitationStatus(statusFragment, bytes(statusExpected.text("response_hex")))
+    check(verifiedStatus.reason == 2u.toUByte() && verifiedStatus.cursor == 3uL)
+    val forgedStatus = bytes(statusExpected.text("response_hex"))
+    forgedStatus[forgedStatus.lastIndex] = (forgedStatus.last().toInt() xor 1).toByte()
+    check(runCatching { verifyInvitationStatus(statusFragment, forgedStatus) }.isFailure)
     val base = negative.getAsJsonObject("base")
     fun envelope(id: String): ByteArray = bytes(negative.getAsJsonArray("cases")
         .first { it.asJsonObject.text("id") == id }.asJsonObject.getAsJsonObject("input").text("envelope_cbor_hex"))

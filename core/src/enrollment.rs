@@ -676,16 +676,43 @@ impl EnrollmentAttempt {
                 .to_owned(),
         )
     }
-    /// A recipient may retry its exact proof after a committed challenge;
-    /// later admission is handled by full-history hydration.
+    /// Select automatic join work from verified invitation and pending
+    /// state. Absolute control counts vary for later invitations.
     pub fn first_join_action(&self, store: &SqliteStore) -> Result<u8, Error> {
-        shared_history::sparse_enrollment_chain(store, self.family, self.relay_public_key()?)?;
-        let controls = store.enrollment_controls(self.family)?.len();
-        Ok(match controls {
-            1 => 2, // saved issue and exact claim; POST may not have committed
-            3 => 1, // issue, claim, challenge
-            _ => 0,
-        })
+        let chain =
+            shared_history::sparse_enrollment_chain(store, self.family, self.relay_public_key()?)?;
+        let Value::Map(state) = cbor::decode(&chain.state_bytes()?)? else {
+            return Err(Error::Invalid("verified authority state not map"));
+        };
+        let Value::Array(pending) = &state[5].1 else {
+            return Err(Error::Invalid("verified pending state not array"));
+        };
+        for row in pending {
+            let Value::Array(fields) = row else {
+                return Err(Error::Invalid("verified pending row not array"));
+            };
+            if fields[0] == Value::Bytes(self.invitation_id.to_vec())
+                && fields[1] == Value::Bytes(self.family.device_id.to_vec())
+            {
+                return Ok(u8::from(
+                    fields[7] != Value::Null && fields[8] == Value::Null,
+                ));
+            }
+        }
+        let Value::Array(invitations) = &state[6].1 else {
+            return Err(Error::Invalid("verified invitation state not array"));
+        };
+        for row in invitations {
+            let Value::Array(fields) = row else {
+                return Err(Error::Invalid("verified invitation row not array"));
+            };
+            if fields[0] == Value::Bytes(self.invitation_id.to_vec()) {
+                return Ok(if fields[5] == Value::Integer(1) { 2 } else { 0 });
+            }
+        }
+        Err(Error::Invalid(
+            "linked invitation absent from verified state",
+        ))
     }
 }
 

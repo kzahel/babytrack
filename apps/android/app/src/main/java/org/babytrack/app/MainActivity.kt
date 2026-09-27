@@ -528,9 +528,15 @@ private fun TrackerScreen(
                                     version++
                                     joinStage = context.getString(R.string.join_pending)
                                     message = null
-                                }.onFailure {
-                                    joinStage = context.getString(R.string.join_retry)
-                                    message = errorText
+                                }.onFailure { failure ->
+                                    joinStage = when ((failure as? InvitationTerminal)?.reason) {
+                                        InvitationTerminalReason.CLAIMED -> context.getString(R.string.join_claimed)
+                                        InvitationTerminalReason.CANCELED -> context.getString(R.string.join_canceled)
+                                        InvitationTerminalReason.EXPIRED -> context.getString(R.string.join_expired)
+                                        InvitationTerminalReason.ISSUER_INVALID -> context.getString(R.string.join_issuer_invalid)
+                                        null -> context.getString(R.string.join_retry)
+                                    }
+                                    message = if (failure is InvitationTerminal) null else errorText
                                 }
                             }
                         }) { Text(stringResource(R.string.join_or_retry)) }

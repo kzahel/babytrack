@@ -19,6 +19,9 @@ import uniffi.babytrack_core_ffi.controlPageProgress
 import uniffi.babytrack_core_ffi.validateRelayOrigin
 
 internal class SharedUploadBlocked : IllegalStateException("Signed relay rejection retained the saved batch")
+internal enum class InvitationTerminalReason { CLAIMED, CANCELED, EXPIRED, ISSUER_INVALID }
+internal class InvitationTerminal(val reason: InvitationTerminalReason) :
+    IllegalStateException("Verified invitation terminal status: $reason")
 
 /** Platform transport for the Rust sharing preparation and confirmation API. */
 internal class ShareCoordinator(context: Context, databasePath: String) : AutoCloseable {
@@ -73,7 +76,7 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
                 return prepared
             } catch (failure: Exception) {
                 val terminal = verifiedTerminalInvitationMessage(relay, fragment, saved?.family, wrapping)
-                if (terminal != null) throw IllegalStateException(terminal, failure)
+                if (terminal != null) throw InvitationTerminal(terminal)
                 throw failure
             }
         } finally {
@@ -92,7 +95,7 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
                 prepared
             } catch (failure: Exception) {
                 val terminal = verifiedTerminalInvitationMessage(relay, null, family, wrapping)
-                if (terminal != null) throw IllegalStateException(terminal, failure)
+                if (terminal != null) throw InvitationTerminal(terminal)
                 throw failure
             }
         }
@@ -103,7 +106,7 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         fragment: String?,
         saved: FamilyRef?,
         wrapping: ByteArray,
-    ): String? {
+    ): InvitationTerminalReason? {
         val status = try {
             val read = if (fragment != null) invitationStatusRead(fragment)
                 else core.savedInvitationStatusRead(saved ?: return null, wrapping)
@@ -114,10 +117,10 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
             return null
         }
         return when (status.reason) {
-            2u.toUByte() -> "Invitation already claimed"
-            3u.toUByte() -> "Invitation canceled"
-            4u.toUByte() -> "Invitation expired"
-            5u.toUByte() -> "Invitation issuer is no longer a manager"
+            2u.toUByte() -> InvitationTerminalReason.CLAIMED
+            3u.toUByte() -> InvitationTerminalReason.CANCELED
+            4u.toUByte() -> InvitationTerminalReason.EXPIRED
+            5u.toUByte() -> InvitationTerminalReason.ISSUER_INVALID
             else -> null
         }
     }
@@ -145,7 +148,7 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
                     relay.get(pending.path, pending.auth)
                 } catch (pendingFailure: IllegalStateException) {
                     val terminal = verifiedTerminalInvitationMessage(relay, fragment, saved, wrapping)
-                    if (terminal != null) throw IllegalStateException(terminal)
+                    if (terminal != null) throw InvitationTerminal(terminal)
                     throw IllegalStateException("Invitation status cannot be verified yet", pendingFailure)
                 }
             }

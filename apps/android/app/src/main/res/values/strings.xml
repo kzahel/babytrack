@@ -142,6 +142,10 @@
     <string name="join_preparing">Checking invitation and submitting a keyless claim…</string>
     <string name="join_pending">Claim committed. Waiting for a Family key holder; shared data is not available yet.</string>
     <string name="join_retry">Could not confirm this claim. Keep the fragment and retry; the saved identity and claim stay the same.</string>
+    <string name="join_claimed">This invitation was already claimed. Ask a Family manager for a new link.</string>
+    <string name="join_canceled">This invitation was canceled. Ask a Family manager for a new link.</string>
+    <string name="join_expired">This invitation expired. Ask a Family manager for a new link.</string>
+    <string name="join_issuer_invalid">The invitation issuer lost manager access. Ask another Family manager for a new link.</string>
     <string name="join_or_retry">Join or retry claim</string>
     <string name="respond_to_claim">Respond to pending device</string>
     <string name="challenge_preparing">Checking the claim and preparing the key challenge…</string>

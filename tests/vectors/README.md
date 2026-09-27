@@ -33,7 +33,8 @@ to one or more of those cases. The contiguous chain supplies complete
 genesis, issue, claim, challenge, proof, admission, repair, batch, and removal
 transcripts. The object-free cancellation, role-change, and pending-removal
 bytes are checked by the Rust control-chain test; other platform runners
-have not consumed them yet. Negative state-machine cases remain in the
-smaller JSON files.
+have not consumed them yet. `INVSTAT01` runs through the shared Rust core
+and the Kotlin and Swift production bindings, including signature tampering.
+Negative state-machine cases remain in the smaller JSON files.
 Cryptographic test keys
 must never be production keys.

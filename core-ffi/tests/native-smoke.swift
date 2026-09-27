@@ -25,6 +25,25 @@ struct Smoke {
         let full = object(try JSONSerialization.jsonObject(
             with: Data(contentsOf: URL(fileURLWithPath: root + "/tests/vectors/full-wire-v1.json"))
         ))
+        let statusVector = object(try JSONSerialization.jsonObject(
+            with: Data(contentsOf: URL(fileURLWithPath: root + "/tests/vectors/invitation-status-v1.json"))
+        ))
+        let statusInput = object(statusVector["test_only_inputs"]!)
+        let statusExpected = object(statusVector["expected"]!)
+        let statusFragment = string(statusExpected["invitation_fragment"]!)
+        let statusRead = try invitationStatusRead(fragment: statusFragment)
+        try expect(statusRead.path == "/v1/families/\(string(statusInput["family_id_hex"]!))/invitation-status/\(string(statusInput["invitation_id_hex"]!))")
+        let verifiedStatus = try verifyInvitationStatus(
+            fragment: statusFragment,
+            response: bytes(string(statusExpected["response_hex"]!))
+        )
+        try expect(verifiedStatus.reason == 2 && verifiedStatus.cursor == 3)
+        var forgedStatus = bytes(string(statusExpected["response_hex"]!))
+        forgedStatus[forgedStatus.count - 1] ^= 1
+        do {
+            _ = try verifyInvitationStatus(fragment: statusFragment, response: forgedStatus)
+            fatalError("forged status accepted")
+        } catch {}
         let base = object(negative["base"]!)
         let cases = negative["cases"] as! [Any]
         func envelope(_ id: String) -> Data {

@@ -1483,6 +1483,27 @@ observations do not close the open findings or the broader M0 gate.
 The signed-status repair also passed the two-emulator first-cohort relay
 flow; that flow does not force the terminal-status UI branch.
 
+## Advisory later-invitation recheck at 137e1b1
+
+Daybreak Blue at high thinking reviewed clean fixed commit
+`137e1b1e3b502bffbd1f3a2481bb0d7cf202156d` in a detached read-only
+checkout through Yep Anywhere session
+`01a0e332-11eb-78d1-8321-9f7285245e9d`. It reached verified idle, with
+an empty queue and no checkout edits. Result: **focused advisory FAIL**.
+The reviewer ran full core (72 tests), server (23 tests), CLI (5 integration
+tests), FFI check, and focused cases; it did not run Android. It accepted
+the sparse-prefix verification, stable device keys and nonce, archived exact
+candidate reconciliation, and status route's narrow read ACL. It found no
+forged authority or Family-data disclosure. A malicious relay's withholding,
+fork, signed-time lies, and coherent rollback remain documented limits.
+
+| Finding | Disposition |
+|---|---|
+| High: automatic recipient progress inferred claim/proof from the absolute count of sparse controls. A later issue with preceding controls could leave a saved uncommitted claim waiting forever after restart. | FS76's real-relay CLI case now asserts the next action before and after later controls, restart, rebase, and accepted claim. Rust derives the action from verified invitation and pending state. Android still needs a later-device coordinator regression. Fixed-revision review due. |
+| Medium: the Android join screen discarded verified terminal errors, and expiry could be discovered only at claim POST rather than the earlier read. | The coordinator now queries signed status after any claim failure and returns a typed terminal reason. The screen has distinct claimed, canceled, expired, and issuer-invalid text; unsigned denial and unavailable status remain retryable unknown. Android terminal UI fault cases remain to execute. Fixed-revision review due. |
+| Medium: issuer demotion/removal and explicit cancel all wrote invitation state `3`, so status reason `5` was unreachable; a later control could overwrite earlier expiry. | The relay now reconstructs the first terminal cause from verified transition kind and signed commit time, with expiry winning at or before that control. FS77's cause tests cover cancel versus issuer demotion/removal, expiry, and no revival in the reducer. A full end-to-end demotion/removal status test remains due. Fixed-revision review due. |
+| Known hardening: 64-page/16-MiB Android join history ceiling. | Still open for durable streaming and resume; excluded from this focused verdict but required before the unbounded history claim closes. |
+
 ## Completion condition
 
 All slice gates pass in CI and on the designated local testbeds, the

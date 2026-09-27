@@ -33,15 +33,33 @@ fn local_tracking_targets_explicit_family_and_survives_restart() {
         },
     )
     .unwrap();
+    assert!(
+        app.log_sleep(first, child, time, time.start_utc_ms - 1, 120)
+            .is_err()
+    );
+    app.log_sleep(
+        first,
+        child,
+        ActivityTime {
+            start_utc_ms: 1_790_000_000_000 - 3_600_000,
+            saved_at_ms: 1_790_000_000_005,
+            ..time
+        },
+        1_790_000_000_000,
+        60,
+    )
+    .unwrap();
     let timeline = app.timeline(first, child).unwrap();
-    assert_eq!(timeline.len(), 2);
+    assert_eq!(timeline.len(), 3);
     assert_eq!(timeline[0].bottle_ml, Some(85));
     assert_eq!(timeline[1].diaper_kind, Some(3));
+    assert_eq!(timeline[2].kind, "sleep");
+    assert_eq!(timeline[2].end_utc_ms, Some(1_790_000_000_000));
     let revision = app.revision(first).unwrap();
     let file = app.backup_file(first, 1_790_000_000_006, None, 0).unwrap();
     assert_eq!(file.revision, revision);
     assert_eq!(file.info.snapshot_utc_ms, 1_790_000_000_006);
-    assert_eq!(file.info.record_count, 4);
+    assert_eq!(file.info.record_count, 5);
     assert!(!file.info.known_gap);
     let backup = app.backup(first, 1_790_000_000_006).unwrap();
     assert_eq!(
@@ -60,7 +78,7 @@ fn local_tracking_targets_explicit_family_and_survives_restart() {
             .snapshot_utc_ms,
         1_790_000_000_006
     );
-    assert_eq!(app.timeline(restored, child).unwrap().len(), 2);
+    assert_eq!(app.timeline(restored, child).unwrap().len(), 3);
     assert_eq!(app.children(second).unwrap().len(), 0);
 
     let protected = app
@@ -83,5 +101,5 @@ fn local_tracking_targets_explicit_family_and_survives_restart() {
         .restore_protected(&protected, "correct", 512 * 1024 * 1024, 1_790_000_000_010)
         .unwrap();
     assert_ne!(copy.family_id, first.family_id);
-    assert_eq!(app.timeline(copy, child).unwrap().len(), 2);
+    assert_eq!(app.timeline(copy, child).unwrap().len(), 3);
 }

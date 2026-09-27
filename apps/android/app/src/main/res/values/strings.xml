@@ -18,6 +18,10 @@
     <string name="dirty">Dirty</string>
     <string name="both">Both</string>
     <string name="log_bottle">Log bottle</string>
+    <string name="log_sleep">Log completed sleep</string>
+    <string name="sleep_minutes">Minutes slept</string>
+    <string name="save_sleep">Save sleep</string>
+    <string name="sleep_duration">Sleep · %1$d min</string>
     <string name="amount_ml">Amount (mL)</string>
     <string name="bottle">Bottle · %1$d mL</string>
     <string name="diaper">Diaper · %1$s</string>

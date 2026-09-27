@@ -228,6 +228,9 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     fun logBottleMl(family: FamilyRef, childId: ByteArray, amountMl: Long, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedBottleMl(family, wrapping, childId, amountMl, 2u.toUByte(), time) }
 
+    fun logSleep(family: FamilyRef, childId: ByteArray, time: ActivityWhen, endUtcMs: Long, endOffsetMinutes: Short): ByteArray =
+        withWrapping { wrapping -> core.logSharedSleep(family, wrapping, childId, time, endUtcMs, endOffsetMinutes) }
+
     fun syncAndUpload(family: FamilyRef, origin: String): SharedSyncRow {
         validateRelayOrigin(origin)
         val relay = RelayTransport(origin)

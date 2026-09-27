@@ -48,6 +48,7 @@ pub struct Activity {
     pub kind: String,
     pub start_utc_ms: i64,
     pub offset_minutes: i16,
+    pub end_utc_ms: Option<i64>,
     pub diaper_kind: Option<u8>,
     pub bottle_ml: Option<i64>,
 }
@@ -163,6 +164,20 @@ impl LocalRepository {
     ) -> Result<[u8; 16], Error> {
         let (activity_id, operation) =
             bottle_operation(family, child_id, amount_ml, content, time)?;
+        self.append_activity(family, child_id, operation, time.saved_at_ms)?;
+        Ok(activity_id)
+    }
+
+    pub fn log_sleep(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        time: ActivityTime,
+        end_utc_ms: i64,
+        end_offset_minutes: i16,
+    ) -> Result<[u8; 16], Error> {
+        let (activity_id, operation) =
+            sleep_operation(family, child_id, time, end_utc_ms, end_offset_minutes)?;
         self.append_activity(family, child_id, operation, time.saved_at_ms)?;
         Ok(activity_id)
     }
@@ -383,6 +398,34 @@ pub fn bottle_operation(
     )
 }
 
+pub fn sleep_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    time: ActivityTime,
+    end_utc_ms: i64,
+    end_offset_minutes: i16,
+) -> Result<([u8; 16], NewOperation), Error> {
+    if end_utc_ms < time.start_utc_ms || end_utc_ms > time.saved_at_ms {
+        return Err(Error::Invalid("sleep end outside completed interval"));
+    }
+    if !(-840..=840).contains(&end_offset_minutes) {
+        return Err(Error::Invalid("sleep end offset outside v1 range"));
+    }
+    activity_operation(
+        family,
+        child_id,
+        "sleep",
+        vec![(
+            2,
+            Value::Array(vec![
+                Value::Integer(end_utc_ms.into()),
+                Value::Integer(end_offset_minutes.into()),
+            ]),
+        )],
+        time,
+    )
+}
+
 fn activity_operation(
     family: FamilyHandle,
     child_id: [u8; 16],
@@ -478,6 +521,15 @@ fn activity_summary(record: &Record) -> Option<Activity> {
         kind: record.record_type.clone(),
         start_utc_ms: i64::try_from(*start).ok()?,
         offset_minutes: i16::try_from(*offset).ok()?,
+        end_utc_ms: record.field(2).and_then(|field| {
+            let Value::Array(parts) = &field.value else {
+                return None;
+            };
+            let [Value::Integer(end), Value::Integer(_)] = parts.as_slice() else {
+                return None;
+            };
+            i64::try_from(*end).ok()
+        }),
         diaper_kind,
         bottle_ml,
     })

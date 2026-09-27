@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.babytrack_core_ffi.FamilyRef
+import uniffi.babytrack_core_ffi.ActivityWhen
 import uniffi.babytrack_core_ffi.NativeLocalStore
 import uniffi.babytrack_core_ffi.NativeSharedStore
 
@@ -76,6 +77,9 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.syncRecipient(family).ready)
             assertTrue(sharing.snapshot(family).children.any { it.name == "Shared child" })
             sharing.addChild(family, "Recipient child", System.currentTimeMillis())
+            val end = System.currentTimeMillis()
+            sharing.logSleep(family, sharing.snapshot(family).children.first().id,
+                ActivityWhen(end - 30 * 60_000L, 0, end), end, 0)
             assertTrue(sharing.syncRecipientAndUpload(family).ready)
             assertEquals(0uL, sharing.snapshot(family).unsentCount)
         }
@@ -86,6 +90,7 @@ class TwoDeviceRelayTest {
             val family = family()
             assertTrue(sharing.syncAndUpload(family, origin).ready)
             assertTrue(sharing.snapshot(family).children.any { it.name == "Recipient child" })
+            assertTrue(sharing.snapshot(family).activities.any { it.kind == "sleep" && it.endUtcMs != null })
             sharing.addChild(family, "Manager child", System.currentTimeMillis())
             assertTrue(sharing.syncAndUpload(family, origin).ready)
         }

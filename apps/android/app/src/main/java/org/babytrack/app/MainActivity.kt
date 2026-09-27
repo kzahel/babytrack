@@ -172,6 +172,7 @@ private fun TrackerScreen(
     var selectedChild by remember { mutableStateOf<String?>(null) }
     var childName by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
+    var sleepMinutes by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var automaticSyncDelayed by remember { mutableStateOf(false) }
     var automaticSyncBlocked by remember { mutableStateOf(false) }
@@ -792,11 +793,37 @@ private fun TrackerScreen(
                             amount = ""
                         }) { Text(stringResource(R.string.log_bottle)) }
                     }
+                    Text(stringResource(R.string.log_sleep), style = MaterialTheme.typography.titleLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = sleepMinutes,
+                            onValueChange = { sleepMinutes = it.filter(Char::isDigit) },
+                            label = { Text(stringResource(R.string.sleep_minutes)) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        Button(enabled = (sleepMinutes.toLongOrNull() ?: 0L) in 1L..1440L, onClick = {
+                            val duration = sleepMinutes.toLongOrNull() ?: return@Button
+                            val end = System.currentTimeMillis()
+                            val start = end - duration * 60_000
+                            val zone = TimeZone.getDefault()
+                            val whenStarted = ActivityWhen(start, (zone.getOffset(start) / 60_000).toShort(), end)
+                            val endOffset = (zone.getOffset(end) / 60_000).toShort()
+                            change {
+                                if (activeShared) sharing.logSleep(family, child.id, whenStarted, end, endOffset)
+                                else store.logSleep(family, child.id, whenStarted, end, endOffset)
+                            }
+                            sleepMinutes = ""
+                        }) { Text(stringResource(R.string.save_sleep)) }
+                    }
                     Text(stringResource(R.string.timeline), style = MaterialTheme.typography.titleLarge)
                     if (entries.isEmpty()) Text(stringResource(R.string.no_entries))
                     entries.forEach { entry ->
                         val label = when {
                             entry.bottleMl != null -> stringResource(R.string.bottle, entry.bottleMl!!)
+                            entry.kind == "sleep" && entry.endUtcMs != null ->
+                                stringResource(R.string.sleep_duration, (entry.endUtcMs!! - entry.startUtcMs) / 60_000)
                             entry.diaperKind != null -> stringResource(R.string.diaper, when (entry.diaperKind!!.toInt()) {
                                 1 -> stringResource(R.string.wet)
                                 2 -> stringResource(R.string.dirty)

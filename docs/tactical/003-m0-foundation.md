@@ -67,6 +67,11 @@ restores into another local Family. Rust, Kotlin, and Swift round trips pass.
 The Android UI offers the password option and uses the device's current
 available-memory estimate rather than weakening the KDF on a low-memory
 device.
+Completed sleep now uses the published start/end instants through the Rust
+local and shared APIs. Android records a duration with the start and end
+zone offsets and shows it in the timeline. The local backup/restore test
+preserves the end instant; the two-emulator relay test checks that the
+recipient's sleep entry reaches the manager.
 The production native binding now exposes durable local-Family promotion
 preparation and first invitation issue through the shared Rust state machine.
 It returns exact staged object and candidate bytes to a platform transport,

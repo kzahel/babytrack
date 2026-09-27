@@ -1,5 +1,5 @@
 # Enable ecosystems only when their manifests and workflows exist.
-# Add Android, iOS, web, and container entries with their later milestones.
+# Add iOS, web, and container entries with their later milestones.
 
 version: 2
 
@@ -19,3 +19,8 @@ updates:
     groups:
       cargo-minor-patch:
         update-types: [minor, patch]
+
+  - package-ecosystem: gradle
+    directory: /apps/android
+    schedule:
+      interval: weekly

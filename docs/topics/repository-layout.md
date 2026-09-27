@@ -47,13 +47,16 @@ operation decoding, HPKE primitives, signed
 batch bytes, in-memory projection, HLC, and vector tests. `core-wasm/` now
 calls the shared batch/projection path from JavaScript against fixed vectors.
 `core-ffi/` exposes that path through UniFFI and passes selected Swift and
-Kotlin encrypted vectors; `server/` and `cli/` remain scaffold boundaries.
+Kotlin encrypted vectors. The relay and CLI now run initial-cohort dynamic
+sharing tests; general membership and later epochs remain open.
 The native core has a local-only SQLite journal. `core-wasm/web/` contains
 an IndexedDB local-only journal adapter that calls Rust wasm validation and
 projection; accepted shared history and outboxes remain future work.
-The documentation, test, and platform paths marked for later milestones are future paths, not
-links to existing files. Scaffold targets compile without implementing their
-responsibilities. The CBOR vector tests cover only the first byte subset;
+`apps/android/` now contains the first phone UI and source-built Rust
+binding integration. It creates local Families and children, records diaper
+and bottle entries, reads timelines, and saves/restores a readable file. The
+sharing interface and service adapters remain later work. The web and iOS
+product paths are still future paths. The CBOR vector tests cover only the first byte subset;
 other targets reporting zero cases are not evidence of protocol or product
 correctness. A separate real Chromium harness tests wasm with IndexedDB
 reload, rollback, and Family key separation using fixture data. UniFFI's

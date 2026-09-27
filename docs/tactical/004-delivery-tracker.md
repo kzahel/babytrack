@@ -26,17 +26,17 @@ vectors, an in-memory projection, four-runtime encrypted-event smokes,
 browser IndexedDB fixture smoke, native signed-history replay, and the
 genesis, invitation, claim, challenge, proof, and admission development relay routes run locally. The full vector
 suite, complete local storage, shared control and batch sync, recovery,
-and product UI remain open; the current passing checks do not close an M0
-slice.
+and sharing UI remain open; the first Android local tracking screen now runs
+on an emulator. The current passing checks do not close an M0 slice.
 
 | Field | Current answer |
 |---|---|
 | Active implementation owner | [003 M0 foundation](003-m0-foundation.md), slices 2 and 3; slice 1 cross-language gate is still open. |
-| Next demonstrable proof | Fresh manager and recipient stores complete encrypted promotion, join, interleaved data, cross-device edits, and exact rejection recovery through relay routes. The native binding also runs offline Family, child, feed/diaper, timeline, and backup flows. Next: broader membership/removal, transport loss and polling, then the Android UI. |
+| Next demonstrable proof | The Android local UI now creates Families and children, records bottle and diaper entries, shows a timeline, and saves/restores a readable file through Rust. An emulator walk-through passed. Next: broader membership/removal and transport loss/polling, then the sharing UI over the reviewed protocol. |
 | Next dependent slice | Shared current-state export and explicit idempotent private copy now work for native verified Families; the existing protection wrapper accepts that readable file. Automatic copy on removal, browser outbox, and crash campaigns remain before the M0 exit gate. |
 | Next independent review | The required early M0 authority review follows implemented invite, grant, and rotation. |
 | Open advisory | Both findings from the [first-cohort review](003-m0-foundation.md#advisory-first-cohort-sync-review) now have real-relay regressions: ancestor batches survive join interleaving, and sequence conflicts have durable signed rejection and verified resealing. Earlier byte/crypto findings remain tracked in 003. Full membership authority, later epochs, and browser outbox remain before shared sync. |
-| CI signal today | Read-only Rust, native-binding, and browser jobs are required on every push/PR. Local checks passed; a remote Actions result has not been verified here. |
+| CI signal today | Read-only Rust, native-binding, browser, and Android APK jobs are required on every push/PR. Local checks passed; a remote Actions result has not been verified here. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.

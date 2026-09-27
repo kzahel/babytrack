@@ -13,11 +13,10 @@ native SQLite and browser IndexedDB local-only journals, and a per-Family
 HLC. The development relay can commit a signed Family genesis, its first
 manager-issued invitation, recipient claim, holder challenge, pending
 key proof, and admission grant, then serve role-limited authenticated
-control/object reads. It has no repair, removal,
-or batch sync routes yet. No complete application or sharing flow
-exists yet.
-Scenario files
-still describe expected behavior; they are not passing product tests.
+control/object reads and accept encrypted epoch-one batches for the first
+two devices. General membership, removal, rotation, and transport recovery
+remain open. The Android app handles local tracking and file backup, but
+has no sharing UI yet. Scenario files still include symbolic expectations.
 
 ## Product and architecture
 
@@ -70,9 +69,9 @@ Then follow the task-specific links; do not load all documentation by default.
 `docs/scenarios/` holds symbolic acceptance cases. The workspace has byte
 decoding, crypto, projection, local SQLite journal, and clock behavior in
 `core/`. `core-wasm/` includes the browser local journal adapter;
-and `core-ffi/` expose initial JavaScript, Swift, and Kotlin bindings;
-`server/` has narrow genesis and first-invitation development routes; `cli/` remains a
-scaffold target. `wire/` holds CBOR and public cryptographic primitives
+`core-ffi/` exposes Kotlin and Swift bindings; `apps/android/` contains the
+first local tracking UI. `server/` accepts the initial two-device encrypted
+cohort, and `cli/` drives relay integration flows. `wire/` holds CBOR and public cryptographic primitives
 shared between core and relay.
 Only the client-facing targets depend on `core/`. The
 [layout topic](docs/topics/repository-layout.md) maps future components;
@@ -95,6 +94,7 @@ bash scripts/check_native_smoke.sh
 bash scripts/check_browser_smoke.sh
 python3 scripts/check_workspace.py
 cargo deny check advisories bans licenses sources
+apps/android/gradlew :app:assembleDebug --no-daemon
 ```
 
 Install `wasm-bindgen-cli` 0.2.127 and Node.js for the wasm smoke,
@@ -109,9 +109,14 @@ failures. `core/tests/crypto_vectors.rs` checks hash, Ed25519, and XChaCha
 known answers and tampering. `core/tests/hpke_vectors.rs` opens the fixed HPKE
 ciphertext and tests sender round trips. `core/tests/batch_vectors.rs` matches
 every byte of `BATCHBYTE01` and opens the result. Run them with
-`cargo test -p babytrack-core`. The other vectors, bindings, and product
-flows are not executable yet; compilation does not establish protocol
-correctness.
+`cargo test -p babytrack-core`. Many remaining vector and product flows
+are not executable yet; compilation does not establish protocol correctness.
+
+The Android build needs SDK platform/build tools 35, NDK 27,
+`cargo-ndk` 4.1.2, and Rust's `aarch64-linux-android` and
+`x86_64-linux-android` targets. Gradle builds the Rust core from source
+and generates Kotlin UniFFI bindings. The debug APK is at
+`apps/android/app/build/outputs/apk/debug/app-debug.apk`.
 
 Reference repositories are listed in [references.yaml](references.yaml).
 Run `scripts/sync_references.py [name ...]` to populate gitignored

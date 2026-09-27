@@ -1312,10 +1312,11 @@ only as a pending reader. Its signed pre-admission data upload gets a revoked
 receipt. Challenge, grant, and Android later-device flow are still open.
 
 The relay page selector now stops before the four-MiB encoded response cap
-instead of blindly taking 256 entries and failing the entire read. FS75's
-canonical large-entry regression pages through the full and filtered feeds;
-the two-emulator sync flow still passes. A real signed-large-batch HTTP
-variant remains for the M0 mixed-client gate.
+instead of blindly taking 256 entries and failing the entire read. FS75
+pages through both canonical large entries and 25 signed near-limit batches
+via authenticated full and filtered reads; the two-emulator sync flow still
+passes. A bounded transport HTTP variant remains for the M0 mixed-client
+gate.
 
 ## Advisory public-ledger restart review at bdbed9e
 

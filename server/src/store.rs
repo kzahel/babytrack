@@ -3363,6 +3363,149 @@ mod tests {
     }
 
     #[test]
+    fn signed_large_batches_page_through_authenticated_reads() {
+        let genesis: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/api-genesis-v1.json").unwrap(),
+        )
+        .unwrap();
+        let chain: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/contiguous-chain-v1.json").unwrap(),
+        )
+        .unwrap();
+        let seed: [u8; 32] = hex(chain["test_only_inputs"]["relay_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let manager_seed: [u8; 32] = hex(chain["test_only_inputs"]["manager_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let family: [u8; 16] = hex(genesis["inputs"]["family_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let promotion: [u8; 16] = hex(genesis["inputs"]["promotion_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let candidate = hex(genesis["inputs"]["commit_candidate_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let response = hex(genesis["expect"]["commit_response_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(genesis_committed) = &fields[1].1 else {
+            panic!()
+        };
+        let parsed =
+            authority::verify_genesis_candidate(&candidate, &crypto::signing_public_key(&seed))
+                .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = RelayStore::open(dir.path().join("relay.sqlite"), seed).unwrap();
+        store
+            .stage_genesis_object(
+                family,
+                promotion,
+                &hex(genesis["inputs"]["stage_body_cbor_hex"].as_str().unwrap()),
+            )
+            .unwrap();
+        store
+            .commit_genesis(
+                family,
+                &candidate,
+                control_commit_time(genesis_committed).unwrap(),
+            )
+            .unwrap();
+        let base = signed_manager_batch(genesis_committed, &parsed, manager_seed);
+        let (base_id, _) = batch_authority::claimed_identity(&base).unwrap();
+        let Value::Map(mut outer) = cbor::decode(&base).unwrap() else {
+            panic!()
+        };
+        let Value::Map(header) = &mut outer[0].1 else {
+            panic!()
+        };
+        header[9].1 = Value::Integer(200 * 1024);
+        outer[1].1 = Value::Bytes(vec![0x7a; 200 * 1024 + 16]);
+        let padded = cbor::encode(&Value::Map(outer)).unwrap();
+        for sequence in 1..=25 {
+            let mut batch_id = base_id;
+            batch_id[15] = batch_id[15].wrapping_add(sequence as u8);
+            let envelope = resign_batch_author(
+                &padded,
+                parsed.manager_id,
+                sequence,
+                Some(batch_id),
+                manager_seed,
+            );
+            assert_eq!(
+                batch_rejection_reason(&store.commit_batch(family, &envelope).unwrap()),
+                None
+            );
+        }
+        for filtered in [false, true] {
+            let mut after = 0;
+            let mut count = 0;
+            let mut finished = false;
+            for page_number in 0..10 {
+                let path = format!(
+                    "/v1/families/{}/{}?after={after}",
+                    lower_hex(&family),
+                    if filtered { "batches" } else { "log" },
+                );
+                let mut request_id = parsed.transition_id;
+                request_id[15] ^= page_number + if filtered { 0x40 } else { 0x20 };
+                let auth = signed_get(
+                    family,
+                    parsed.relay_id,
+                    parsed.manager_id,
+                    manager_seed,
+                    &path,
+                    request_id,
+                );
+                let page = if filtered {
+                    store.batch_page_authenticated(family, after, &path, &auth)
+                } else {
+                    store.log_page_authenticated(family, after, &path, &auth)
+                }
+                .unwrap();
+                assert!(page.len() <= 4 * 1024 * 1024);
+                let Value::Map(fields) = cbor::decode_with_limits(
+                    &page,
+                    cbor::Limits {
+                        max_bytes: 4 * 1024 * 1024,
+                        max_depth: 16,
+                    },
+                )
+                .unwrap() else {
+                    panic!()
+                };
+                let Value::Array(entries) = &fields[3].1 else {
+                    panic!()
+                };
+                assert!(!entries.is_empty());
+                count += entries.len();
+                let Value::Integer(next) = fields[4].1 else {
+                    panic!()
+                };
+                after = next.try_into().unwrap();
+                let Value::Bool(more) = fields[5].1 else {
+                    panic!()
+                };
+                if !more {
+                    finished = true;
+                    break;
+                }
+            }
+            assert!(finished);
+            assert_eq!(count, if filtered { 25 } else { 26 });
+            assert_eq!(after, 26);
+        }
+    }
+
+    #[test]
     fn legacy_private_checkpoint_requires_explicit_rebaseline() {
         let genesis: Json = serde_json::from_str(
             &std::fs::read_to_string("../tests/vectors/api-genesis-v1.json").unwrap(),

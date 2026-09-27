@@ -49,17 +49,58 @@ fn local_tracking_targets_explicit_family_and_survives_restart() {
         60,
     )
     .unwrap();
+    assert!(app.log_note(first, child, "   ", time).is_err());
+    app.log_note(
+        first,
+        child,
+        "  A family note  ",
+        ActivityTime {
+            start_utc_ms: 1_790_000_000_004,
+            saved_at_ms: 1_790_000_000_005,
+            ..time
+        },
+    )
+    .unwrap();
     let timeline = app.timeline(first, child).unwrap();
-    assert_eq!(timeline.len(), 3);
-    assert_eq!(timeline[0].bottle_ml, Some(85));
-    assert_eq!(timeline[1].diaper_kind, Some(3));
-    assert_eq!(timeline[2].kind, "sleep");
-    assert_eq!(timeline[2].end_utc_ms, Some(1_790_000_000_000));
+    assert_eq!(timeline.len(), 4);
+    assert_eq!(
+        timeline
+            .iter()
+            .find(|row| row.kind == "feed.bottle")
+            .unwrap()
+            .bottle_ml,
+        Some(85)
+    );
+    assert_eq!(
+        timeline
+            .iter()
+            .find(|row| row.kind == "diaper")
+            .unwrap()
+            .diaper_kind,
+        Some(3)
+    );
+    assert_eq!(
+        timeline
+            .iter()
+            .find(|row| row.kind == "sleep")
+            .unwrap()
+            .end_utc_ms,
+        Some(1_790_000_000_000)
+    );
+    assert_eq!(
+        timeline
+            .iter()
+            .find(|row| row.kind == "note")
+            .unwrap()
+            .note
+            .as_deref(),
+        Some("A family note")
+    );
     let revision = app.revision(first).unwrap();
     let file = app.backup_file(first, 1_790_000_000_006, None, 0).unwrap();
     assert_eq!(file.revision, revision);
     assert_eq!(file.info.snapshot_utc_ms, 1_790_000_000_006);
-    assert_eq!(file.info.record_count, 5);
+    assert_eq!(file.info.record_count, 6);
     assert!(!file.info.known_gap);
     let backup = app.backup(first, 1_790_000_000_006).unwrap();
     assert_eq!(
@@ -78,7 +119,7 @@ fn local_tracking_targets_explicit_family_and_survives_restart() {
             .snapshot_utc_ms,
         1_790_000_000_006
     );
-    assert_eq!(app.timeline(restored, child).unwrap().len(), 3);
+    assert_eq!(app.timeline(restored, child).unwrap().len(), 4);
     assert_eq!(app.children(second).unwrap().len(), 0);
 
     let protected = app
@@ -101,5 +142,5 @@ fn local_tracking_targets_explicit_family_and_survives_restart() {
         .restore_protected(&protected, "correct", 512 * 1024 * 1024, 1_790_000_000_010)
         .unwrap();
     assert_ne!(copy.family_id, first.family_id);
-    assert_eq!(app.timeline(copy, child).unwrap().len(), 3);
+    assert_eq!(app.timeline(copy, child).unwrap().len(), 4);
 }

@@ -90,6 +90,7 @@ pub struct ActivityRow {
     pub start_utc_ms: i64,
     pub offset_minutes: i16,
     pub end_utc_ms: Option<i64>,
+    pub note: Option<String>,
     pub diaper_kind: Option<u8>,
     pub bottle_ml: Option<i64>,
 }
@@ -1067,6 +1068,7 @@ impl NativeSharedStore {
                 start_utc_ms: row.start_utc_ms,
                 offset_minutes: row.offset_minutes,
                 end_utc_ms: row.end_utc_ms,
+                note: row.note,
                 diaper_kind: row.diaper_kind,
                 bottle_ml: row.bottle_ml,
             })
@@ -1285,6 +1287,27 @@ impl NativeSharedStore {
             end_offset_minutes,
         )
         .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map_err(rejected)?;
+        Ok(id.to_vec())
+    }
+
+    pub fn log_shared_note(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        note: String,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let saved_at_ms = time.saved_at_ms;
+        let (id, operation) =
+            local_api::note_operation(handle, fixed(&child_id)?, &note, time.into())
+                .map_err(rejected)?;
         ready
             .append_local(&mut store, operation, saved_at_ms)
             .map_err(rejected)?;
@@ -1702,6 +1725,22 @@ impl NativeLocalStore {
             .to_vec())
     }
 
+    pub fn log_note(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        note: String,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .log_note(family.handle()?, fixed(&child_id)?, &note, time.into())
+            .map_err(rejected)?
+            .to_vec())
+    }
+
     pub fn timeline(
         &self,
         family: FamilyRef,
@@ -1721,6 +1760,7 @@ impl NativeLocalStore {
                 start_utc_ms: row.start_utc_ms,
                 offset_minutes: row.offset_minutes,
                 end_utc_ms: row.end_utc_ms,
+                note: row.note,
                 diaper_kind: row.diaper_kind,
                 bottle_ml: row.bottle_ml,
             })

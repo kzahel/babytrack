@@ -22,6 +22,10 @@
     <string name="sleep_minutes">Minutes slept</string>
     <string name="save_sleep">Save sleep</string>
     <string name="sleep_duration">Sleep · %1$d min</string>
+    <string name="log_note">Add note</string>
+    <string name="note_text">What happened?</string>
+    <string name="save_note">Save note</string>
+    <string name="note_entry">Note · %1$s</string>
     <string name="amount_ml">Amount (mL)</string>
     <string name="bottle">Bottle · %1$d mL</string>
     <string name="diaper">Diaper · %1$s</string>

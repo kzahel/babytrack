@@ -173,6 +173,7 @@ private fun TrackerScreen(
     var childName by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var sleepMinutes by remember { mutableStateOf("") }
+    var noteText by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var automaticSyncDelayed by remember { mutableStateOf(false) }
     var automaticSyncBlocked by remember { mutableStateOf(false) }
@@ -817,6 +818,26 @@ private fun TrackerScreen(
                             sleepMinutes = ""
                         }) { Text(stringResource(R.string.save_sleep)) }
                     }
+                    Text(stringResource(R.string.log_note), style = MaterialTheme.typography.titleLarge)
+                    OutlinedTextField(
+                        value = noteText,
+                        onValueChange = { noteText = it.take(4096) },
+                        label = { Text(stringResource(R.string.note_text)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(enabled = noteText.isNotBlank(), onClick = {
+                        val note = noteText.trim()
+                        scope.launch {
+                            runCatching { withContext(Dispatchers.IO) {
+                                if (activeShared) sharing.logNote(family, child.id, note, nowTime())
+                                else store.logNote(family, child.id, note, nowTime())
+                            } }.onSuccess {
+                                if (noteText.trim() == note) noteText = ""
+                                version++
+                                message = null
+                            }.onFailure { message = errorText }
+                        }
+                    }) { Text(stringResource(R.string.save_note)) }
                     Text(stringResource(R.string.timeline), style = MaterialTheme.typography.titleLarge)
                     if (entries.isEmpty()) Text(stringResource(R.string.no_entries))
                     entries.forEach { entry ->
@@ -824,6 +845,7 @@ private fun TrackerScreen(
                             entry.bottleMl != null -> stringResource(R.string.bottle, entry.bottleMl!!)
                             entry.kind == "sleep" && entry.endUtcMs != null ->
                                 stringResource(R.string.sleep_duration, (entry.endUtcMs!! - entry.startUtcMs) / 60_000)
+                            entry.note != null -> stringResource(R.string.note_entry, entry.note!!)
                             entry.diaperKind != null -> stringResource(R.string.diaper, when (entry.diaperKind!!.toInt()) {
                                 1 -> stringResource(R.string.wet)
                                 2 -> stringResource(R.string.dirty)

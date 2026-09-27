@@ -72,6 +72,11 @@ local and shared APIs. Android records a duration with the start and end
 zone offsets and shows it in the timeline. The local backup/restore test
 preserves the end instant; the two-emulator relay test checks that the
 recipient's sleep entry reaches the manager.
+Notes now use the published text field in the Rust local and shared APIs.
+Android retains typed note text until the write succeeds. The local
+backup/restore test preserves the note, and the two-emulator relay test
+checks its delivery to the manager and checks that a distinctive plaintext
+marker is absent from relay storage and logs.
 The production native binding now exposes durable local-Family promotion
 preparation and first invitation issue through the shared Rust state machine.
 It returns exact staged object and candidate bytes to a platform transport,

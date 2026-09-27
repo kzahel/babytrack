@@ -49,6 +49,7 @@ pub struct Activity {
     pub start_utc_ms: i64,
     pub offset_minutes: i16,
     pub end_utc_ms: Option<i64>,
+    pub note: Option<String>,
     pub diaper_kind: Option<u8>,
     pub bottle_ml: Option<i64>,
 }
@@ -178,6 +179,18 @@ impl LocalRepository {
     ) -> Result<[u8; 16], Error> {
         let (activity_id, operation) =
             sleep_operation(family, child_id, time, end_utc_ms, end_offset_minutes)?;
+        self.append_activity(family, child_id, operation, time.saved_at_ms)?;
+        Ok(activity_id)
+    }
+
+    pub fn log_note(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        note: &str,
+        time: ActivityTime,
+    ) -> Result<[u8; 16], Error> {
+        let (activity_id, operation) = note_operation(family, child_id, note, time)?;
         self.append_activity(family, child_id, operation, time.saved_at_ms)?;
         Ok(activity_id)
     }
@@ -426,6 +439,25 @@ pub fn sleep_operation(
     )
 }
 
+pub fn note_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    note: &str,
+    time: ActivityTime,
+) -> Result<([u8; 16], NewOperation), Error> {
+    let note = note.trim();
+    if note.is_empty() || note.len() > 4096 {
+        return Err(Error::Invalid("note must contain 1 to 4096 bytes"));
+    }
+    activity_operation(
+        family,
+        child_id,
+        "note",
+        vec![(4, Value::Text(note.to_owned()))],
+        time,
+    )
+}
+
 fn activity_operation(
     family: FamilyHandle,
     child_id: [u8; 16],
@@ -530,6 +562,14 @@ fn activity_summary(record: &Record) -> Option<Activity> {
             };
             i64::try_from(*end).ok()
         }),
+        note: if record.record_type == "note" {
+            let Value::Text(note) = &record.field(4)?.value else {
+                return None;
+            };
+            Some(note.clone())
+        } else {
+            None
+        },
         diaper_kind,
         bottle_ml,
     })

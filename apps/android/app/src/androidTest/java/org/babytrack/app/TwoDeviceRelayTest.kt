@@ -80,6 +80,8 @@ class TwoDeviceRelayTest {
             val end = System.currentTimeMillis()
             sharing.logSleep(family, sharing.snapshot(family).children.first().id,
                 ActivityWhen(end - 30 * 60_000L, 0, end), end, 0)
+            sharing.logNote(family, sharing.snapshot(family).children.first().id,
+                "Care note marker 67", ActivityWhen(end, 0, end))
             assertTrue(sharing.syncRecipientAndUpload(family).ready)
             assertEquals(0uL, sharing.snapshot(family).unsentCount)
         }
@@ -91,6 +93,7 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.syncAndUpload(family, origin).ready)
             assertTrue(sharing.snapshot(family).children.any { it.name == "Recipient child" })
             assertTrue(sharing.snapshot(family).activities.any { it.kind == "sleep" && it.endUtcMs != null })
+            assertTrue(sharing.snapshot(family).activities.any { it.note == "Care note marker 67" })
             sharing.addChild(family, "Manager child", System.currentTimeMillis())
             assertTrue(sharing.syncAndUpload(family, origin).ready)
         }

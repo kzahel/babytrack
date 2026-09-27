@@ -88,3 +88,7 @@ run_step "$manager" managerVerifyAndUpload
 run_step "$recipient" recipientVerifyAndSaveOffline
 run_step "$manager" managerRemove
 run_step "$recipient" recipientRemovedAndCopied
+if rg --text -q 'Care note marker 67' "$scratch/relay.db" "$scratch/relay.log"; then
+  echo "Plaintext note reached relay storage or logs" >&2
+  exit 1
+fi

@@ -1144,6 +1144,15 @@ key or relay clock input. This is a first extraction only: historical IDs,
 all other transition kinds, the rebuildable public ledger, and general
 later-device routes remain to be factored and tested.
 
+The same verifier now prepares two-signature invitation claims from verified
+public state. Both the client and relay use it for the invitation/device
+signatures, claim transcript, and pending state effect. Historical device and
+transition IDs, relay receipt, and commit-time expiry remain at the callers.
+The first-cohort relay now rejects invitation and claim IDs colliding with
+genesis or issue IDs across categories, matching the client history check.
+The control-chain and relay fixtures pass; later-device claims still need the
+general public ledger and route.
+
 The corrected [topic proposal](../topics/sync-and-encryption.md#proposed-implementation-seam-for-general-relay-authority)
 uses a public candidate verifier, a relay commit wrapper, and a client
 committed verifier. It needs no v1 wire change if the ledger remains internal;

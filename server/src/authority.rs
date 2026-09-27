@@ -196,12 +196,17 @@ pub(crate) fn verify_first_invite_issue(
         (7, Value::Array(vec![])),
     ]);
     let prepared = public_authority::prepare_issue(candidate_bytes, &state, current_head)?;
-    if prepared.transition_id == genesis.transition_id
-        || genesis
-            .manifest
-            .iter()
-            .any(|prior| prior.object_id == prepared.manifest.object_id)
-    {
+    if [
+        prepared.transition_id,
+        prepared.invitation_id,
+        prepared.manifest.object_id,
+    ]
+    .iter()
+    .any(|id| {
+        *id == genesis.transition_id
+            || *id == genesis.manager_id
+            || genesis.manifest.iter().any(|prior| prior.object_id == *id)
+    }) {
         return Err(Error::Invalid("issue ID reused from genesis"));
     }
     Ok(IssueCandidate {
@@ -240,138 +245,49 @@ pub(crate) fn verify_first_claim(
     issue: &IssueCandidate,
     issue_head: [u8; 32],
 ) -> Result<ClaimCandidate, Error> {
-    let value = cbor::decode_with_limits(
-        candidate_bytes,
-        cbor::Limits {
-            max_bytes: 1024 * 1024,
-            max_depth: 16,
-        },
-    )?;
-    let root = exact_map(&value, 2)?;
-    let unsigned = exact_map(&root[0].1, 11)?;
-    if number(&unsigned[0].1)? != 1
-        || fixed::<16>(&unsigned[1].1)? != genesis.family_id
-        || fixed::<32>(&unsigned[2].1)? != genesis.relay_id
-        || fixed::<32>(&unsigned[3].1)? != issue_head
-        || number(&unsigned[5].1)? != 4
-        || number(&unsigned[8].1)? != 1
-    {
-        return Err(Error::Invalid(
-            "claim version, Family, relay, parent, kind, or epoch",
-        ));
-    }
-    let transition_id = fixed::<16>(&unsigned[4].1)?;
-    if transition_id == genesis.transition_id || transition_id == issue.transition_id {
-        return Err(Error::Invalid("claim transition ID reused"));
-    }
-    let delta = exact_map(&unsigned[6].1, 7)?;
-    let invitation_id = fixed::<16>(&delta[0].1)?;
-    let device_id = fixed::<16>(&delta[1].1)?;
-    let signing_public = fixed::<32>(&delta[2].1)?;
-    let agreement_public = fixed::<32>(&delta[3].1)?;
-    let key_version = number(&delta[4].1)?;
-    let enrollment_nonce = fixed::<32>(&delta[5].1)?;
-    let claim_hash = fixed::<32>(&delta[6].1)?;
-    if invitation_id != issue.invitation_id
-        || device_id == genesis.manager_id
-        || key_version == 0
-        || key_version > u32::MAX as u64
-    {
-        return Err(Error::Invalid(
-            "claim invitation, device, or key version invalid",
-        ));
-    }
-    let claim_input = Value::Array(vec![
-        Value::Bytes(genesis.family_id.to_vec()),
-        Value::Bytes(genesis.relay_id.to_vec()),
-        Value::Bytes(invitation_id.to_vec()),
-        Value::Integer(issue.role.into()),
-        Value::Bytes(device_id.to_vec()),
-        Value::Bytes(signing_public.to_vec()),
-        Value::Bytes(agreement_public.to_vec()),
-        Value::Integer(key_version.into()),
-        Value::Bytes(enrollment_nonce.to_vec()),
-        Value::Bytes(issue_head.to_vec()),
-    ]);
-    if claim_hash != crypto::hash("claim", &cbor::encode(&claim_input)?)? {
-        return Err(Error::Invalid("claim transcript hash mismatch"));
-    }
-    let pending = Value::Array(vec![
-        Value::Bytes(invitation_id.to_vec()),
-        Value::Bytes(device_id.to_vec()),
-        Value::Bytes(signing_public.to_vec()),
-        Value::Bytes(agreement_public.to_vec()),
-        Value::Integer(key_version.into()),
-        Value::Integer(issue.role.into()),
-        Value::Bytes(claim_hash.to_vec()),
-        Value::Null,
-        Value::Null,
-    ]);
-    let invitation = Value::Array(vec![
-        Value::Bytes(invitation_id.to_vec()),
-        Value::Bytes(genesis.manager_id.to_vec()),
-        Value::Bytes(issue.invite_public.to_vec()),
-        Value::Integer(issue.role.into()),
-        Value::Bytes(issue.transition_id.to_vec()),
-        Value::Integer(2),
-    ]);
-    let resulting = Value::Map(vec![
+    let state = Value::Map(vec![
         (1, Value::Integer(1)),
         (2, Value::Bytes(genesis.family_id.to_vec())),
         (3, Value::Bytes(genesis.relay_id.to_vec())),
         (4, Value::Integer(1)),
         (5, Value::Array(vec![genesis.manager_row.clone()])),
-        (6, Value::Array(vec![pending])),
-        (7, Value::Array(vec![invitation])),
+        (6, Value::Array(vec![])),
+        (
+            7,
+            Value::Array(vec![Value::Array(vec![
+                Value::Bytes(issue.invitation_id.to_vec()),
+                Value::Bytes(genesis.manager_id.to_vec()),
+                Value::Bytes(issue.invite_public.to_vec()),
+                Value::Integer(issue.role.into()),
+                Value::Bytes(issue.transition_id.to_vec()),
+                Value::Integer(1),
+            ])]),
+        ),
     ]);
-    if fixed::<32>(&unsigned[7].1)? != crypto::hash("auth-state", &cbor::encode(&resulting)?)? {
-        return Err(Error::Invalid("claim state hash mismatch"));
-    }
-    let core = Value::Array(unsigned[..9].iter().map(|(_, v)| v.clone()).collect());
-    if fixed::<32>(&unsigned[10].1)? != crypto::hash("transition-core", &cbor::encode(&core)?)? {
-        return Err(Error::Invalid("claim core hash mismatch"));
-    }
-    let _ = array(&unsigned[9].1, 0)?;
-    let signatures = array(&root[1].1, 2)?;
-    let mut seen_invite = false;
-    let mut seen_device = false;
-    let mut prior = None;
-    for signature in signatures {
-        let pair = array(signature, 2)?;
-        let signer = fixed::<16>(&pair[0])?;
-        if prior.is_some_and(|p| signer <= p) {
-            return Err(Error::Invalid("claim signature order"));
-        }
-        prior = Some(signer);
-        let key = if signer == invitation_id {
-            seen_invite = true;
-            issue.invite_public
-        } else if signer == device_id {
-            seen_device = true;
-            signing_public
-        } else {
-            return Err(Error::Invalid("claim signer unknown"));
-        };
-        crypto::verify_cbor(
-            "control-transition",
-            &cbor::encode(&root[0].1)?,
-            &key,
-            &fixed::<64>(&pair[1])?,
-        )?;
-    }
-    if !seen_invite || !seen_device {
-        return Err(Error::Invalid("claim missing signer"));
+    let prepared = public_authority::prepare_claim(candidate_bytes, &state, issue_head)?;
+    if [prepared.transition_id, prepared.device_id]
+        .iter()
+        .any(|id| {
+            *id == genesis.transition_id
+                || *id == genesis.manager_id
+                || *id == issue.transition_id
+                || *id == issue.invitation_id
+                || *id == issue.manifest.object_id
+                || genesis.manifest.iter().any(|prior| prior.object_id == *id)
+        })
+    {
+        return Err(Error::Invalid("claim historical ID reused"));
     }
     Ok(ClaimCandidate {
-        family_id: genesis.family_id,
-        transition_id,
-        invitation_id,
-        device_id,
-        signing_public,
-        agreement_public,
-        key_version,
-        claim_hash,
-        role: issue.role,
+        family_id: prepared.family_id,
+        transition_id: prepared.transition_id,
+        invitation_id: prepared.invitation_id,
+        device_id: prepared.device_id,
+        signing_public: prepared.signing_public,
+        agreement_public: prepared.agreement_public,
+        key_version: prepared.key_version,
+        claim_hash: prepared.claim_hash,
+        role: prepared.role,
     })
 }
 
@@ -998,6 +914,9 @@ mod tests {
         let issue = verify_first_invite_issue(&issue_bytes, &genesis, head).unwrap();
         assert_eq!(issue.manifest.kind, 1);
         assert!(verify_first_invite_issue(&issue_bytes, &genesis, [0; 32]).is_err());
+        let mut colliding_genesis = genesis.clone();
+        colliding_genesis.manifest[0].object_id = issue.invitation_id;
+        assert!(verify_first_invite_issue(&issue_bytes, &colliding_genesis, head).is_err());
         let mut changed = issue_bytes.clone();
         *changed.last_mut().unwrap() ^= 1;
         assert!(verify_first_invite_issue(&changed, &genesis, head).is_err());
@@ -1017,6 +936,8 @@ mod tests {
         let claim = verify_first_claim(&claim_bytes, &genesis, &issue, issue_head).unwrap();
         assert_eq!(claim.invitation_id, issue.invitation_id);
         assert!(verify_first_claim(&claim_bytes, &genesis, &issue, [0; 32]).is_err());
+        colliding_genesis.manifest[0].object_id = claim.device_id;
+        assert!(verify_first_claim(&claim_bytes, &colliding_genesis, &issue, issue_head).is_err());
         let claim_committed = hex(chain["transitions"][2]["committed_cbor_hex"]
             .as_str()
             .unwrap());

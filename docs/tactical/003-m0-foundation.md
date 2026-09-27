@@ -467,6 +467,12 @@ continue across both restarts in all three first-cohort flow variants.
 This exercises durable relay state, not an OS power cut or all transaction
 boundaries. Browser shared outbox, more clients, and the bounded fault
 matrix remain open.
+The core now runs eight deterministic seeded encrypted logs with 64 child
+edits each, including deletes, restores, and skewed HLC values. At every
+eighth cursor, a fresh replay matches incremental projection byte-for-byte;
+duplicate application fails without changing state. This is a bounded
+rebuild/convergence property check, not a randomized multi-client relay
+campaign.
 
 - [ ] Promote all local history atomically. Connect two CLI clients and the
   real-browser harness through the relay. Inject offline writes, duplicate

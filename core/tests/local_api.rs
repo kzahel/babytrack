@@ -191,14 +191,27 @@ fn completed_sleep_duration_correction_survives_restore() {
     );
     app.edit_sleep_end(family, child, id, start + 45 * 60_000, 60, saved + 1)
         .unwrap();
+    assert!(
+        app.edit_sleep_place(family, other, id, Some(2), saved + 1)
+            .is_err()
+    );
+    assert!(
+        app.edit_sleep_place(family, child, id, Some(6), saved + 1)
+            .is_err()
+    );
+    app.edit_sleep_place(family, child, id, None, saved + 1)
+        .unwrap();
+    assert_eq!(app.timeline(family, child).unwrap()[0].sleep_place, None);
+    app.edit_sleep_place(family, child, id, Some(2), saved + 1)
+        .unwrap();
     let before = app.timeline(family, child).unwrap();
     assert_eq!(before[0].id, id);
     assert_eq!(before[0].start_utc_ms, start);
     assert_eq!(before[0].end_utc_ms, Some(start + 45 * 60_000));
-    assert_eq!(before[0].sleep_place, Some(1));
+    assert_eq!(before[0].sleep_place, Some(2));
     let csv = String::from_utf8(app.analysis_csv(family).unwrap()).unwrap();
     assert!(csv.contains(",sleep_place\r\n"));
-    assert!(csv.contains("\"1\"\r\n"));
+    assert!(csv.contains("\"2\"\r\n"));
     let backup = app.backup(family, saved + 2).unwrap();
     drop(app);
     let mut app = LocalRepository::open(&path).unwrap();

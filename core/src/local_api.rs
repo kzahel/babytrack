@@ -439,6 +439,24 @@ impl LocalRepository {
         Ok(())
     }
 
+    pub fn edit_sleep_place(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        place: Option<u8>,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("sleep activity unavailable"))?;
+        let operation = edit_sleep_place_operation(family, child_id, activity, place, saved_at_ms)?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn delete_activity(
         &mut self,
         family: FamilyHandle,
@@ -1445,6 +1463,40 @@ fn sleep_place_field(place: Option<u8>) -> Result<Vec<(u64, Value)>, Error> {
         Some(_) => Err(Error::Invalid("sleep place outside v1 range")),
         None => Ok(Vec::new()),
     }
+}
+
+pub fn edit_sleep_place_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    place: Option<u8>,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    if activity.scope != Scope::Activity
+        || activity.record_type != "sleep"
+        || activity.child_id != Some(child_id)
+        || activity.deleted
+    {
+        return Err(Error::Invalid("sleep activity unavailable"));
+    }
+    check_time(saved_at_ms)?;
+    let value = match place {
+        Some(code @ 1..=5) => Value::Integer(code.into()),
+        Some(_) => return Err(Error::Invalid("sleep place outside v1 range")),
+        None => Value::Null,
+    };
+    Ok(NewOperation {
+        family_id: family.family_id,
+        operation_id: ids::random_v7(saved_at_ms)?,
+        record_id: activity.id,
+        scope: Scope::Activity,
+        kind: Kind::Set,
+        author_device_id: family.device_id,
+        hlc: placeholder_hlc(family),
+        record_type: None,
+        child_id: None,
+        fields: Some(vec![(100, value)]),
+    })
 }
 
 pub fn stop_sleep_operation(

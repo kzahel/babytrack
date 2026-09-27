@@ -179,9 +179,11 @@ class TwoDeviceRelayTest {
             val correctedEnd = completedSleep.startUtcMs + 20 * 60_000L
             sharing.editSleepEnd(family, completedSleep.childId, completedSleep.id,
                 correctedEnd, 0, System.currentTimeMillis())
+            sharing.editSleepPlace(family, completedSleep.childId, completedSleep.id,
+                2u.toUByte(), System.currentTimeMillis())
             assertTrue(sharing.snapshot(family).activities.any {
                 it.id.contentEquals(completedSleep.id) && it.startUtcMs == completedSleep.startUtcMs &&
-                    it.endUtcMs == correctedEnd
+                    it.endUtcMs == correctedEnd && it.sleepPlace == 2u.toUByte()
             })
             assertTrue(sharing.snapshot(family).activities.any { it.note == "Care note marker 67" })
             assertTrue(String(sharing.analysisCsv(family)).contains("Care note marker 67"))
@@ -344,6 +346,9 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).activities.any { it.note == "After sync correction" })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "feed.bottle" && it.bottleMl == 120L && it.bottleContent == 3u.toUByte()
+            })
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.kind == "sleep" && it.endUtcMs != null && it.sleepPlace == 2u.toUByte()
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "feed.solids" && it.solidsFoods == listOf("Apple", "Rice") &&

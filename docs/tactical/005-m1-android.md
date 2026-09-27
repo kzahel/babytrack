@@ -60,6 +60,9 @@ Running and completed sleep logs can now include the published optional
 place. Android shows it in the timeline; the Rust core carries it through
 file restore and analysis CSV, and the two-device relay case checks delivery
 for both running and completed sleep.
+The same saved sleep event can now change or clear its place without moving
+its start or end. The local restore case checks clearing and correction; the
+Android UI and two-device relay checks cover the corrected place.
 That relay case exposed the foreground uploader's former sixteen-operation
 pass limit: the last queued child remained local after one tap. The pass now
 drains up to 64 single-operation batches, then leaves any larger backlog
@@ -258,7 +261,9 @@ delivered, and removed access cannot obtain new Family data.
   same check saves a password-protected file through the picker, reinstalls,
   rejects a wrong password without creating a Family, then restores with the
   correct password. Physical phones, corrupt files, and provider failures
-  remain open.
+  remain open. Remote run `36356278973` reached the protected-file preview
+  but its UI script did not scroll to the confirmation button; a scroll-aware
+  local rerun passes, with remote confirmation pending.
 - [ ] Add the planned analysis export and Nara import through shared Rust
   import/export, with real sanitized samples and target preview. The
   current-state analysis CSV now exports local and shared Families through

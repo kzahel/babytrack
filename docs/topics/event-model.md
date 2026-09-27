@@ -81,7 +81,9 @@ offsets, including across a daylight-saving transition. Local files and
 encrypted shared sync preserve the segment sequence.
 Android can optionally mark a running or completed sleep as crib, pram,
 contact, car, or other. The shared core stores the published place code on
-the sleep event; stopping or correcting its duration retains that field.
+the sleep event. A caregiver can correct or clear the place on that same
+event, including while its timer runs; stopping or correcting its duration
+retains the place field.
 The timeline and analysis CSV show a recorded place, while older sleep
 entries without it remain valid.
 Correcting a completed breast feed replaces its segment list and derived end

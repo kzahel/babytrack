@@ -2140,6 +2140,36 @@ impl NativeSharedStore {
             .map_err(rejected)
     }
 
+    pub fn edit_shared_sleep_place(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        place: Option<u8>,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let projection = ready.projection_with_pending(&store).map_err(rejected)?;
+        let activity = projection
+            .record(&fixed(&activity_id)?)
+            .ok_or(BindingError::InvalidBytes)?;
+        let operation = local_api::edit_sleep_place_operation(
+            handle,
+            fixed(&child_id)?,
+            activity,
+            place,
+            saved_at_ms,
+        )
+        .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map(|_| ())
+            .map_err(rejected)
+    }
+
     pub fn delete_shared_activity(
         &self,
         family: FamilyRef,
@@ -3423,6 +3453,27 @@ impl NativeLocalStore {
                 fixed(&activity_id)?,
                 end_utc_ms,
                 end_offset_minutes,
+                saved_at_ms,
+            )
+            .map_err(rejected)
+    }
+
+    pub fn edit_sleep_place(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        place: Option<u8>,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        self.repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .edit_sleep_place(
+                family.handle()?,
+                fixed(&child_id)?,
+                fixed(&activity_id)?,
+                place,
                 saved_at_ms,
             )
             .map_err(rejected)

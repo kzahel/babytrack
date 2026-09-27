@@ -260,6 +260,13 @@ private data class PendingSleepEdit(
     val startUtcMs: Long,
     val minutes: String,
 )
+private data class PendingSleepPlaceEdit(
+    val family: FamilyRef,
+    val childId: ByteArray,
+    val activityId: ByteArray,
+    val shared: Boolean,
+    val place: UByte?,
+)
 private data class PendingTemperatureEdit(
     val family: FamilyRef,
     val childId: ByteArray,
@@ -462,6 +469,7 @@ private fun TrackerScreen(
     var pendingPumpEdit by remember { mutableStateOf<PendingPumpEdit?>(null) }
     var pendingMedicationEdit by remember { mutableStateOf<PendingMedicationEdit?>(null) }
     var pendingSleepEdit by remember { mutableStateOf<PendingSleepEdit?>(null) }
+    var pendingSleepPlaceEdit by remember { mutableStateOf<PendingSleepPlaceEdit?>(null) }
     var pendingTemperatureEdit by remember { mutableStateOf<PendingTemperatureEdit?>(null) }
     var relayOrigin by remember { mutableStateOf("") }
     var relayPublicKey by remember { mutableStateOf("") }
@@ -532,6 +540,7 @@ private fun TrackerScreen(
         pendingPumpEdit = null
         pendingMedicationEdit = null
         pendingSleepEdit = null
+        pendingSleepPlaceEdit = null
         pendingTemperatureEdit = null
         logAtMs = null
         timelineFilter = TimelineFilter.ALL
@@ -1859,6 +1868,14 @@ private fun TrackerScreen(
                                         )
                                     }) { Text(stringResource(R.string.edit_sleep)) }
                                 }
+                                if (entry.kind == "sleep") {
+                                    OutlinedButton(onClick = {
+                                        pendingSleepPlaceEdit = PendingSleepPlaceEdit(
+                                            family, entry.childId.copyOf(), entry.id.copyOf(),
+                                            activeShared, entry.sleepPlace,
+                                        )
+                                    }) { Text(stringResource(R.string.edit_sleep_place)) }
+                                }
                                 if (entry.kind == "note" && entry.note != null) {
                                     OutlinedButton(onClick = {
                                         pendingNoteEdit = PendingNoteEdit(
@@ -2566,6 +2583,52 @@ private fun TrackerScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { pendingSleepEdit = null }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+    pendingSleepPlaceEdit?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingSleepPlaceEdit = null },
+            title = { Text(stringResource(R.string.edit_sleep_place)) },
+            text = {
+                Column {
+                    listOf(
+                        null to R.string.sleep_place_unspecified,
+                        1u.toUByte() to R.string.sleep_place_crib,
+                        2u.toUByte() to R.string.sleep_place_pram,
+                        3u.toUByte() to R.string.sleep_place_contact,
+                        4u.toUByte() to R.string.sleep_place_car,
+                        5u.toUByte() to R.string.sleep_place_other,
+                    ).chunked(2).forEach { options ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            options.forEach { (place, label) ->
+                                FilterChip(
+                                    selected = target.place == place,
+                                    onClick = { pendingSleepPlaceEdit = target.copy(place = place) },
+                                    label = { Text(stringResource(label)) },
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    pendingSleepPlaceEdit = null
+                    val savedAtMs = System.currentTimeMillis()
+                    change {
+                        if (target.shared) sharing.editSleepPlace(
+                            target.family, target.childId, target.activityId, target.place, savedAtMs,
+                        ) else store.editSleepPlace(
+                            target.family, target.childId, target.activityId, target.place, savedAtMs,
+                        )
+                    }
+                }) { Text(stringResource(R.string.save_changes)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingSleepPlaceEdit = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
             },
         )
     }

@@ -365,6 +365,11 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         withWrapping { wrapping -> core.editSharedSleepEnd(family, wrapping, childId, activityId,
             ActivityWhen(endUtcMs, endOffsetMinutes, savedAtMs)) }
 
+    fun editSleepPlace(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+                       place: UByte?, savedAtMs: Long): Unit =
+        withWrapping { wrapping -> core.editSharedSleepPlace(family, wrapping, childId, activityId,
+            place, savedAtMs) }
+
     fun deleteActivity(family: FamilyRef, childId: ByteArray, activityId: ByteArray, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.deleteSharedActivity(family, wrapping, childId, activityId, savedAtMs) }
 

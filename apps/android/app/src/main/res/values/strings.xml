@@ -109,6 +109,7 @@
     <string name="edit_solids">Edit solids</string>
     <string name="edit_growth">Edit growth</string>
     <string name="edit_sleep">Edit sleep duration</string>
+    <string name="edit_sleep_place">Edit sleep place</string>
     <string name="edit_temperature">Edit temperature</string>
     <string name="growth_edit_hint">Leave a measurement blank to keep its saved value. Delete the entry to remove it.</string>
     <string name="note_entry">Note · %1$s</string>

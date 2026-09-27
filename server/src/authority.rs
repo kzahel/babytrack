@@ -451,51 +451,13 @@ pub(crate) fn verify_first_proof(
     challenge: &ChallengeCandidate,
     challenge_head: [u8; 32],
 ) -> Result<ProofCandidate, Error> {
-    let value = cbor::decode_with_limits(
+    let state = state_with_pending(genesis, issue, claim, Some(challenge.challenge_id), None);
+    let prepared = public_authority::prepare_proof(
         candidate_bytes,
-        cbor::Limits {
-            max_bytes: 1024 * 1024,
-            max_depth: 16,
-        },
-    )?;
-    let root = exact_map(&value, 2)?;
-    let unsigned = exact_map(&root[0].1, 11)?;
-    let delta = exact_map(&unsigned[6].1, 4)?;
-    let invitation_id = fixed::<16>(&delta[0].1)?;
-    let device_id = fixed::<16>(&delta[1].1)?;
-    let challenge_hash = fixed::<32>(&delta[2].1)?;
-    let proof_signature = fixed::<64>(&delta[3].1)?;
-    if invitation_id != issue.invitation_id
-        || device_id != claim.device_id
-        || challenge_hash != challenge.challenge_hash
-    {
-        return Err(Error::Invalid("proof target or challenge mismatch"));
-    }
-    let proof_hash = crypto::hash(
-        "proof",
-        &cbor::encode(&Value::Array(vec![
-            Value::Bytes(challenge.challenge_id.to_vec()),
-            Value::Bytes(proof_signature.to_vec()),
-        ]))?,
-    )?;
-    let resulting = state_with_pending(
-        genesis,
-        issue,
-        claim,
-        Some(challenge.challenge_id),
-        Some(proof_hash),
-    );
-    let header = verify_following(
-        candidate_bytes,
-        genesis,
-        FollowingPlan {
-            parent: challenge_head,
-            kind: 5,
-            epoch: 1,
-            resulting: &resulting,
-            expected_signers: &[(claim.device_id, claim.signing_public)],
-            manifest_kinds: &[],
-        },
+        &state,
+        challenge_head,
+        challenge.challenge_id,
+        challenge.challenge_hash,
     )?;
     if [
         genesis.transition_id,
@@ -503,13 +465,13 @@ pub(crate) fn verify_first_proof(
         claim.transition_id,
         challenge.transition_id,
     ]
-    .contains(&header.transition_id)
+    .contains(&prepared.transition_id)
     {
         return Err(Error::Invalid("proof transition ID reused"));
     }
     Ok(ProofCandidate {
-        transition_id: header.transition_id,
-        proof_hash,
+        transition_id: prepared.transition_id,
+        proof_hash: prepared.proof_hash,
     })
 }
 

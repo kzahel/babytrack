@@ -763,58 +763,31 @@ impl ControlChain {
         let root = exact_map(&object, 4)?;
         let unsigned = exact_map(&root[0].1, 11)?;
         self.check_unsigned(unsigned, 5, self.current_epoch()?)?;
+        self.check_new_control_ids(unsigned)?;
         let delta = exact_map(&unsigned[6].1, 4)?;
         let invitation_id = fixed::<16>(&delta[0].1)?;
-        let device_id = fixed::<16>(&delta[1].1)?;
-        let challenge_hash = fixed::<32>(&delta[2].1)?;
-        let proof_signature = fixed::<64>(&delta[3].1)?;
-        let state = exact_map(&self.state, 7)?;
-        let pending = find_row(&state[5].1, 9, 0, invitation_id)?
-            .ok_or(Error::Invalid("proof invitation not pending"))?;
         let challenge = self
             .challenges
             .get(&invitation_id)
             .ok_or(Error::Invalid("proof has no verified challenge transition"))?;
-        if fixed::<16>(&pending[1])? != device_id
-            || challenge.device_id != device_id
-            || pending[7] != Value::Bytes(challenge.challenge_id.to_vec())
-            || challenge.challenge_hash != challenge_hash
-        {
-            return Err(Error::Invalid(
-                "proof does not match latest pending challenge",
-            ));
-        }
-        let signer_key = fixed::<32>(&pending[2])?;
-        let proof = Value::Array(vec![
-            Value::Bytes(challenge.challenge_id.to_vec()),
-            Value::Bytes(proof_signature.to_vec()),
-        ]);
-        let proof_hash = crypto::hash("proof", &cbor::encode(&proof)?)?;
-        let mut next_state = self.state.clone();
-        let Value::Map(map) = &mut next_state else {
-            unreachable!()
-        };
-        let Value::Array(rows) = &mut map[5].1 else {
-            unreachable!()
-        };
-        let row = rows
-            .iter_mut()
-            .find(|row| {
-                array(row, 9)
-                    .is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(invitation_id))
-            })
-            .unwrap();
-        let Value::Array(row) = row else {
-            unreachable!()
-        };
-        row[8] = Value::Bytes(proof_hash.to_vec());
+        let signed_candidate = cbor::encode(&Value::Map(vec![
+            (1, root[0].1.clone()),
+            (2, root[1].1.clone()),
+        ]))?;
+        let prepared = babytrack_wire::authority::prepare_proof(
+            &signed_candidate,
+            &self.state,
+            self.head_hash,
+            challenge.challenge_id,
+            challenge.challenge_hash,
+        )?;
         self.finalize(
             bytes,
             root,
             unsigned,
             FinalizePlan {
-                next_state,
-                expected_signers: &[(device_id, signer_key)],
+                next_state: prepared.next_state,
+                expected_signers: &[(prepared.device_id, prepared.signing_public)],
                 manifest_kinds: &[],
                 before_ms: None,
             },

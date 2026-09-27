@@ -1167,6 +1167,12 @@ client and relay derive its next public state in `wire`. The client still
 checks historical IDs before candidate preparation and retains receipt and
 object verification. Other transition state effects remain to be extracted.
 
+Pending key proof now uses shared state preparation as well: its signed
+device claim must match the latest verified challenge ID and hash, and both
+sides compute the same proof hash and pending-state effect. The separate
+private challenge-object opening remains a client concern. Admission and
+later controls still need shared state reducers.
+
 The corrected [topic proposal](../topics/sync-and-encryption.md#proposed-implementation-seam-for-general-relay-authority)
 uses a public candidate verifier, a relay commit wrapper, and a client
 committed verifier. It needs no v1 wire change if the ledger remains internal;

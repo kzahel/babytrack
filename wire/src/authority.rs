@@ -81,6 +81,108 @@ pub struct PreparedChallenge {
     pub next_state: Value,
 }
 
+#[derive(Debug, Clone)]
+pub struct PreparedProof {
+    pub transition_id: [u8; 16],
+    pub invitation_id: [u8; 16],
+    pub device_id: [u8; 16],
+    pub signing_public: [u8; 32],
+    pub proof_hash: [u8; 32],
+    pub next_state: Value,
+}
+
+/// Bind a device-signed proof transition to the latest verified challenge.
+/// The challenge object's private proof is checked when opened by a client.
+pub fn prepare_proof(
+    candidate_bytes: &[u8],
+    state: &Value,
+    head: [u8; 32],
+    expected_challenge_id: [u8; 16],
+    expected_challenge_hash: [u8; 32],
+) -> Result<PreparedProof, Error> {
+    let candidate = cbor::decode_with_limits(
+        candidate_bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?;
+    let root = exact_map(&candidate, 2)?;
+    let unsigned = exact_map(&root[0].1, 11)?;
+    let delta = exact_map(&unsigned[6].1, 4)?;
+    let invitation_id = fixed::<16>(&delta[0].1)?;
+    let device_id = fixed::<16>(&delta[1].1)?;
+    let challenge_hash = fixed::<32>(&delta[2].1)?;
+    let proof_signature = fixed::<64>(&delta[3].1)?;
+    let old = exact_map(state, 7)?;
+    if number(&old[0].1)? != 1 {
+        return Err(Error::Invalid("proof state version"));
+    }
+    let family_id = fixed::<16>(&old[1].1)?;
+    let relay_id = fixed::<32>(&old[2].1)?;
+    let epoch = number(&old[3].1)?;
+    let Value::Array(pending) = &old[5].1 else {
+        return Err(Error::Invalid("proof pending state not array"));
+    };
+    let row = pending
+        .iter()
+        .find_map(|row| {
+            let fields = array(row, 9).ok()?;
+            (fixed::<16>(&fields[0]).ok()? == invitation_id).then_some(fields)
+        })
+        .ok_or(Error::Invalid("proof invitation not pending"))?;
+    if fixed::<16>(&row[1])? != device_id
+        || row[7] != Value::Bytes(expected_challenge_id.to_vec())
+        || challenge_hash != expected_challenge_hash
+    {
+        return Err(Error::Invalid("proof does not match latest challenge"));
+    }
+    let signer_key = fixed::<32>(&row[2])?;
+    let proof_hash = crypto::hash(
+        "proof",
+        &cbor::encode(&Value::Array(vec![
+            Value::Bytes(expected_challenge_id.to_vec()),
+            Value::Bytes(proof_signature.to_vec()),
+        ]))?,
+    )?;
+    let mut next_state = state.clone();
+    let Value::Map(next) = &mut next_state else {
+        unreachable!()
+    };
+    let Value::Array(next_pending) = &mut next[5].1 else {
+        unreachable!()
+    };
+    let updated = next_pending
+        .iter_mut()
+        .find(|row| {
+            array(row, 9).is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(invitation_id))
+        })
+        .ok_or(Error::Invalid("proof pending row disappeared"))?;
+    let Value::Array(fields) = updated else {
+        unreachable!()
+    };
+    fields[8] = Value::Bytes(proof_hash.to_vec());
+    let header = prepare_following(
+        candidate_bytes,
+        family_id,
+        relay_id,
+        head,
+        5,
+        epoch,
+        &next_state,
+        &[(device_id, signer_key)],
+        &[],
+    )?;
+    Ok(PreparedProof {
+        transition_id: header.transition_id,
+        invitation_id,
+        device_id,
+        signing_public: signer_key,
+        proof_hash,
+        next_state,
+    })
+}
+
 /// Prepare a holder challenge from the current pending row. The referenced
 /// challenge objects and historical ID registry are checked by the caller.
 pub fn prepare_challenge(

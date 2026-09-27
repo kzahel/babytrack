@@ -869,7 +869,7 @@ impl NativeSharedStore {
                 let auth = attempt.sign_get(&path).map_err(rejected)?.bytes;
                 match transport.get(path, auth) {
                     Ok(bytes) => public
-                        .inspect_removed_pending_result(&store, &bytes)
+                        .inspect_removed_pending_result(&store, &saved, &bytes)
                         .unwrap_or(1),
                     Err(_) => 1,
                 }

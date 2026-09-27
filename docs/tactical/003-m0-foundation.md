@@ -963,6 +963,39 @@ exact committed bytes or unknown; the first-cohort invitation route returns
 the committed issue to its invitation signer or an active device. The
 real-relay CLI covers these paths and removed batch-page denial.
 
+## Early M0 authority recheck at fd4aca4
+
+Daybreak Blue high thinking reviewed fixed commit
+`fd4aca4a2053c9705bbcf21941d4e46d31134534` in a detached checkout,
+session `01a0e11f-8d82-76b3-87bc-18dc15800975`. The checkout stayed
+clean. The reviewer ran 56 core, 10 relay, 4 CLI integration, and 2 Android
+JVM tests offline; no emulator or fault campaign. Verdict: **FAIL** for one
+medium malicious-relay cutover blocker. The earlier honest-relay removed
+author result ACL blocker passed. The fixed SHA preceded the ID registry
+and three GET-route commits, which have since received local regressions.
+
+The reviewer showed that a relay-signed acceptance for the exact pending
+envelope at or after verified removal could be displayed as accepted
+before removal. A contradictory rejected receipt could also be trusted.
+Classification now requires a persisted verified removal, checks the exact
+signed pending envelope and receipt fields, bounds acceptance strictly
+between the old pin and removal cursor, and requires a post-cutover revoked
+rejection with the verified removal head. Contradictions remain unknown;
+the source outbox and private copy persist. FS63/BATCH08 and a real-relay
+CLI test inject signed inconsistent cursors and heads, including after
+SQLite reopen. A fixed-revision independent recheck is still needed.
+
+A new `scripts/check_android_two_emulators.sh` drives a disposable relay
+and ten instrumentation invocations across two separately stored emulator
+installations. It passed local manager promotion and invitation, recipient
+claim, holder challenge, recipient proof, admission, reciprocal child
+uploads, offline staged edit, manager removal, recipient signed proof,
+unknown result after restart, read-only source, and idempotent private
+copy. This exercises separate
+Android Keystores. It is emulator evidence; the M1 two-physical-phone gate
+remains open. The required CI emulator job still runs the focused
+single-emulator `SharingRelayTest` suite.
+
 ## Advisory byte/crypto preflight
 
 The independent Daybreak Blue high-thinking read-only session

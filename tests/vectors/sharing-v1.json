@@ -481,8 +481,8 @@
       "id": "BATCH08",
       "scenario": "FS63",
       "initial": {"recipient_state": "active", "pending_batch": "exact-signed-envelope"},
-      "actions": ["lose recipient POST response", "commit manager removal and key rotation", "query batch result with removed recipient signer", "query manager batch result with removed signer", "query unknown batch ID", "try new log and object reads"],
-      "expect": {"own_accepted_before_removal": "signed-result", "own_rejected_after_removal": "signed-result", "known_other": "deny", "unknown": "null-not-noninclusion", "new_log_and_objects": "deny", "local_copy": "preserves-pending-work"}
+      "actions": ["lose recipient POST response", "commit manager removal and key rotation", "query batch result with removed recipient signer", "query manager batch result with removed signer", "query unknown batch ID", "try new log and object reads", "verify saved removal and classify signed contradictory cursor or head after restart"],
+      "expect": {"own_accepted_before_removal": "signed-result-only-before-removal-cursor", "own_rejected_after_removal": "signed-revoked-result-with-removal-head", "contradictory_receipt": "unknown-and-preserve-outbox", "known_other": "deny", "unknown": "null-not-noninclusion", "new_log_and_objects": "deny", "local_copy": "preserves-pending-work"}
     },
     {
       "id": "IDCOLL01",

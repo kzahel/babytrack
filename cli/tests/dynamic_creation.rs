@@ -90,6 +90,53 @@ fn v7(tag: u8) -> [u8; 16] {
     id
 }
 
+/// Hostile-relay fixture: issue an internally signed but history-inconsistent
+/// receipt so the client must classify it as unknown.
+fn resign_batch_result(
+    result_bytes: &[u8],
+    relay_seed: &[u8; 32],
+    accepted: bool,
+    cursor: u64,
+    head: [u8; 32],
+) -> Vec<u8> {
+    let Value::Map(result) = cbor::decode(result_bytes).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(receipt_bytes) = &result[1].1 else {
+        panic!()
+    };
+    let Value::Map(mut receipt) = cbor::decode(receipt_bytes).unwrap() else {
+        panic!()
+    };
+    let Value::Map(body) = &mut receipt[0].1 else {
+        panic!()
+    };
+    body[5].1 = Value::Bool(accepted);
+    body[6].1 = Value::Integer(cursor.into());
+    body[7].1 = Value::Bytes(head.to_vec());
+    if accepted {
+        body[9].1 = Value::Null;
+        let Value::Integer(sequence) = body[8].1 else {
+            panic!()
+        };
+        body[10].1 = Value::Integer(sequence + 1);
+    }
+    receipt[1].1 = Value::Bytes(
+        crypto::sign_cbor(
+            "batch-receipt",
+            &cbor::encode(&receipt[0].1).unwrap(),
+            relay_seed,
+        )
+        .unwrap()
+        .to_vec(),
+    );
+    cbor::encode(&Value::Map(vec![
+        (1, Value::Integer(1)),
+        (2, Value::Bytes(cbor::encode(&Value::Map(receipt)).unwrap())),
+    ]))
+    .unwrap()
+}
+
 #[tokio::test]
 async fn existing_local_family_promotes_and_shares_with_durable_keys() {
     dynamic_flow(false, false).await;
@@ -1441,6 +1488,18 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
             .0,
         StatusCode::OK
     );
+    let new_object_path = format!(
+        "/v1/families/{}/objects/{}",
+        lower_hex(&family.family_id),
+        lower_hex(&removal_stage[0].0),
+    );
+    let auth = resumed_enrollment.sign_get(&new_object_path).unwrap();
+    assert_ne!(
+        http_response(&app, Method::GET, &new_object_path, auth.bytes)
+            .await
+            .0,
+        StatusCode::OK
+    );
 
     let proof_path = format!(
         "/v1/families/{}/control?after={}",
@@ -1451,12 +1510,6 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
     let proof_bytes = http_bytes(&app, Method::GET, &proof_path, read.bytes).await;
     let recipient_public =
         PublicHistorySession::resume(&recipient_store, enrollment.family()).unwrap();
-    assert_eq!(
-        recipient_public
-            .inspect_removed_pending_result(&recipient_store, &rejected)
-            .unwrap(),
-        if accepted_before_removal { 2 } else { 3 },
-    );
     let proof = recipient_public
         .verify_removed_control_page(&proof_bytes)
         .unwrap()
@@ -1464,11 +1517,41 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
     assert_eq!(proof.cursor, manager_after.observed_cursor());
     assert_eq!(proof.source_cursor, recipient_ready.observed_cursor());
     assert_eq!(proof.known_gap, early_batch || accepted_before_removal);
+    let unsaved = proof.clone().into();
+    assert!(
+        recipient_public
+            .inspect_removed_pending_result(&recipient_store, &unsaved, &rejected)
+            .is_err()
+    );
     let saved = recipient_public
         .save_removed_control_page(&mut recipient_store, &proof_bytes)
         .unwrap()
         .unwrap();
     assert_eq!(saved.transition_id, proof.transition_id);
+    assert_eq!(
+        recipient_public
+            .inspect_removed_pending_result(&recipient_store, &saved, &rejected)
+            .unwrap(),
+        if accepted_before_removal { 2 } else { 3 },
+    );
+    for (accepted, cursor, head) in [
+        (true, saved.cursor, recipient_public.head_hash()),
+        (true, saved.cursor + 1, recipient_public.head_hash()),
+        (true, saved.cursor - 1, [0x99; 32]),
+        (
+            false,
+            saved.cursor - 1,
+            crypto::hash("control-head", &saved.committed_bytes).unwrap(),
+        ),
+        (false, saved.cursor, [0x99; 32]),
+    ] {
+        let forged = resign_batch_result(&rejected, &relay_seed, accepted, cursor, head);
+        assert!(
+            recipient_public
+                .inspect_removed_pending_result(&recipient_store, &saved, &forged)
+                .is_err()
+        );
+    }
     assert_eq!(
         recipient_store.saved_removal(enrollment.family()).unwrap(),
         Some(saved.clone())
@@ -1529,6 +1612,14 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
     assert_eq!(
         recipient_store.saved_removal(enrollment.family()).unwrap(),
         Some(saved.clone())
+    );
+    let reopened_public =
+        PublicHistorySession::resume(&recipient_store, enrollment.family()).unwrap();
+    assert_eq!(
+        reopened_public
+            .inspect_removed_pending_result(&recipient_store, &saved, &rejected)
+            .unwrap(),
+        if accepted_before_removal { 2 } else { 3 }
     );
     assert_eq!(
         private_copy_after_removal(

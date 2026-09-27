@@ -48,6 +48,6 @@ adb reverse tcp:8787 tcp:8787
 adb install -r apps/android/app/build/outputs/apk/debug/app-debug.apk
 adb install -r apps/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell pm clear org.babytrack.app >/dev/null
-adb shell am instrument -w -e relayPublicKey "$public_key" \
+adb shell am instrument -w -e class org.babytrack.app.SharingRelayTest -e relayPublicKey "$public_key" \
   org.babytrack.app.test/androidx.test.runner.AndroidJUnitRunner | tee "$scratch/instrument.txt"
 rg -q '^OK \([1-9][0-9]* tests\)$' "$scratch/instrument.txt"

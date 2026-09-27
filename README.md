@@ -20,10 +20,12 @@ keyless claim/challenge/proof/admission, and converge both devices through
 the relay. It resumes enrollment after restart, polls while open, schedules
 background sync work, and offers readable or protected backup plus an
 explicit private copy. The real-relay emulator suite covers those flows.
-The manager can remove the first recipient from the Android sharing view;
-the removed device still needs a verified-removal notice and automatic
-private copy when it has pending edits. Scenario files still include
-symbolic expectations.
+The manager can remove the first recipient from the Android sharing view.
+The removed device verifies a signed removal notice, stops shared writes,
+and automatically copies pending edits into a private Family. A disposable
+relay and two separate emulator installations exercise the full first-cohort
+join, reciprocal edits, offline pending work, removal, and private copy.
+Scenario files still include symbolic expectations.
 
 ## Product and architecture
 

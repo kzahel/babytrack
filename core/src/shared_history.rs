@@ -107,11 +107,33 @@ impl PublicHistorySession {
     pub fn inspect_removed_pending_result(
         &self,
         store: &SqliteStore,
+        removal: &SavedRemoval,
         result_bytes: &[u8],
     ) -> Result<u8, Error> {
+        if store.saved_removal(self.family)?.as_ref() != Some(removal)
+            || removal.source_cursor != self.cursor()
+            || removal.cursor <= removal.source_cursor
+        {
+            return Err(Error::Invalid("removed result needs saved cutover proof"));
+        }
         let Some(pending) = store.pending_batch(self.family)? else {
             return Ok(0);
         };
+        let signer = self.chain.active_signing_public(self.family.device_id)?;
+        let signed = batch::verify_signed_envelope(
+            &pending.envelope_bytes,
+            &self.family.family_id,
+            &self.chain.relay_id(),
+            &signer,
+        )?;
+        let header = signed.header();
+        if header.batch_id != pending.batch_id
+            || header.device_sequence != pending.sequence
+            || signed.object_hash() != pending.object_hash
+            || header.author_device_id != self.family.device_id
+        {
+            return Err(Error::Invalid("saved pending envelope identity differs"));
+        }
         let result = sync_wire::BatchResult::decode(result_bytes)?;
         let Some(receipt_bytes) = result.receipt_bytes else {
             return Ok(1);
@@ -127,7 +149,14 @@ impl PublicHistorySession {
                 && accepted.batch_id == pending.batch_id
                 && accepted.object_hash == pending.object_hash
                 && accepted.device_sequence == pending.sequence
+                && accepted.control_head == header.control_head
+                && accepted.next_expected_sequence
+                    == pending
+                        .sequence
+                        .checked_add(1)
+                        .ok_or(Error::Invalid("pending sequence overflow"))?
                 && accepted.cursor > self.cursor()
+                && accepted.cursor < removal.cursor
             {
                 return Ok(2);
             }
@@ -141,6 +170,9 @@ impl PublicHistorySession {
             || rejected.batch_id != pending.batch_id
             || rejected.object_hash != pending.object_hash
             || rejected.device_sequence != pending.sequence
+            || rejected.reason != 2
+            || rejected.cursor < removal.cursor
+            || rejected.control_head != crypto::hash("control-head", &removal.committed_bytes)?
         {
             return Err(Error::Invalid(
                 "rejected removal result differs from saved batch",

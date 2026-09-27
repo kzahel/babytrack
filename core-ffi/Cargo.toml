@@ -22,3 +22,4 @@ fixture-api = []
 [dependencies]
 babytrack-core.workspace = true
 uniffi = "=0.32.2"
+futures = { version = "0.3", default-features = false, features = ["executor"] }

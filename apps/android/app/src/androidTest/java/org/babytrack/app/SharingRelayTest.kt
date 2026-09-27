@@ -64,8 +64,21 @@ class SharingRelayTest {
         ShareCoordinator(context, recipient.absolutePath).use { sharing ->
             sharing.proveChallenge(fragment)
         }
+        ShareCoordinator(context, recipient.absolutePath).use { sharing ->
+            val pending = sharing.syncRecipient(fragment)
+            assertTrue(pending.awaitingGrant)
+            assertTrue(!pending.ready)
+        }
         ShareCoordinator(context, database.absolutePath).use { sharing ->
             sharing.admitProvedDevice(family, origin)
+        }
+        ShareCoordinator(context, recipient.absolutePath).use { sharing ->
+            val synced = sharing.syncRecipient(fragment)
+            assertTrue(synced.ready)
+            assertEquals(1uL, synced.childCount)
+        }
+        ShareCoordinator(context, recipient.absolutePath).use { sharing ->
+            assertTrue(sharing.syncRecipient(fragment).ready)
         }
         ShareCoordinator(context, database.absolutePath).use { sharing ->
             sharing.admitProvedDevice(family, origin)

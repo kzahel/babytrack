@@ -111,6 +111,15 @@ membership and epoch-key grant and confirms the admission. The emulator test
 retries admission, proof, and challenge after later controls commit; all
 rebuild from verified historical prefixes. The recipient still has no usable
 shared view until it fetches the full log, required objects, and grant.
+The Android recipient now has a manual bounded history pass. Rust signs each
+exact read path, verifies the contiguous log and referenced objects, and
+opens the committed grant only when the complete visible prefix is ready.
+Before admission it reports a pending control stage without claiming data
+readiness. The real-relay emulator test then downloads the manager's child,
+reopens the store, and verifies readiness again. Retrying the exact saved
+proof after a later admission now recognizes its already verified sparse
+control even when it is no longer the last control. This does not yet expose
+a shared tracking view or schedule automatic sync.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

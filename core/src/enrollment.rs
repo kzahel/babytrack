@@ -375,6 +375,13 @@ impl EnrollmentAttempt {
                 .last_global_cursor(),
         )
     }
+    pub fn has_committed_admission(&self, store: &SqliteStore) -> Result<bool, Error> {
+        Ok(
+            shared_history::sparse_enrollment_chain(store, self.family, self.relay_public_key()?)?
+                .initial_admission_grant(&self.family.device_id)
+                .is_some(),
+        )
+    }
     /// Confirm only the exact claim saved before the first POST. A relay
     /// response for a competing redemption must not advance local progress.
     pub fn confirm_sparse_claim(

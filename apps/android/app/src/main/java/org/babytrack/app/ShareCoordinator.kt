@@ -4,6 +4,8 @@ import android.content.Context
 import uniffi.babytrack_core_ffi.FamilyRef
 import uniffi.babytrack_core_ffi.NativeSharedStore
 import uniffi.babytrack_core_ffi.PreparedJoinRow
+import uniffi.babytrack_core_ffi.RecipientSyncRow
+import uniffi.babytrack_core_ffi.RelayReadTransport
 import uniffi.babytrack_core_ffi.previewInvitation
 import uniffi.babytrack_core_ffi.validateRelayOrigin
 
@@ -117,6 +119,21 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
             }
             val response = relay.post("$prefix/control", prepared.candidateBytes)
             core.confirmFirstAdmission(family, wrapping, response)
+        } finally {
+            wrapping.fill(0)
+        }
+    }
+
+    fun syncRecipient(fragment: String): RecipientSyncRow {
+        val preview = previewInvitation(fragment)
+        val relay = RelayTransport(preview.relayOrigin)
+        val wrapping = keys.loadOrCreate()
+        try {
+            val family = core.resumeJoin(fragment, wrapping)?.family
+                ?: error("No durable recipient claim")
+            return core.syncRecipient(family, wrapping, object : RelayReadTransport {
+                override fun get(path: String, auth: ByteArray): ByteArray = relay.get(path, auth)
+            })
         } finally {
             wrapping.fill(0)
         }

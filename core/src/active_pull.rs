@@ -68,8 +68,9 @@ struct ManifestObject {
 }
 
 /// Fetch at most `max_pages` full-log pages. The caller signs each exact
-/// path, sends its signature as the GET body, and returns the bounded CBOR
-/// response. Transport errors leave the already verified prefix durable.
+/// path, carries its signature in the GET body or read header, and returns
+/// the bounded CBOR response. Transport errors leave the verified prefix
+/// durable.
 /// Data readiness additionally requires all signed manifest objects and
 /// keys; this pull alone makes no readiness claim.
 pub async fn pull_active_log<F, Fut, E>(

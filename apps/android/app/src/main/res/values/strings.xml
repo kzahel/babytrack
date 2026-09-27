@@ -73,4 +73,9 @@
     <string name="admit_device">Grant device access</string>
     <string name="admission_preparing">Verifying proof and preparing the encrypted grant…</string>
     <string name="admission_confirmed">Grant committed. The recipient still needs to load and verify the Family history.</string>
+    <string name="load_shared_history">Load shared history</string>
+    <string name="history_loading">Fetching and verifying the full Family history…</string>
+    <string name="history_awaiting_grant">Waiting for the holder to grant access. Public control stage %1$d; Family data is not ready.</string>
+    <string name="history_pending">Verified through cursor %1$d. Waiting for more history or objects; retry on the next sync opportunity.</string>
+    <string name="history_ready">Shared history verified. %1$d children loaded; the shared tracking screen is still in progress.</string>
 </resources>

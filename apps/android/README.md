@@ -1,10 +1,9 @@
 # Android development build
 
-The debug app tracks local Families and can prepare a Family for sharing on a
-development relay. It currently commits encrypted promotion history and a
-one-device invitation and a recipient's keyless claim. Completing key handoff,
-automatic sync, and removal are still being implemented; the screen states
-this explicitly. The release
+The debug app tracks local Families and runs the first two-device sharing
+handoff on a development relay: promotion, invitation, claim, challenge,
+proof, grant, and recipient history verification. The shared tracking view,
+automatic sync, and removal are still being implemented. The release
 manifest does not allow cleartext HTTP.
 
 To exercise the current relay slice on an emulator:
@@ -35,6 +34,11 @@ To exercise the current relay slice on an emulator:
 7. On the holder's debug screen, use **Grant device access**. Rust verifies
    the proof against the saved challenge and commits the encrypted grant.
    The recipient remains pending until it loads and verifies the full history.
+8. On the recipient's debug screen, use **Load shared history**. A bounded
+   sync pass verifies signed control and batch history, fetches required
+   encrypted objects, and opens the grant. It reports the verified cursor or
+   readiness; repeat after a pending result. The local-only tracker does not
+   yet show this shared Family.
 
 The on-device integration test calls the same Keystore and transport adapter
 through a real relay. With the emulator and `adb reverse` running, build it
@@ -51,7 +55,9 @@ reopens its store, and retries both requests. A separate recipient store then
 claims the invitation and retries after restart with the same device identity
 and candidate bytes. The holder then commits and retries the challenge; the
 recipient fetches its addressed object and commits and retries its proof. The
-holder commits and retries admission, then all three handoff steps are retried
-again after later controls have committed. The
+holder commits and retries admission. The recipient loads the full history,
+including the manager's child, then reopens the store and verifies readiness
+again. All three handoff steps are retried after later controls have
+committed. The
 default Android CI compiles this test, while
 execution currently uses the local emulator and relay.

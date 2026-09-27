@@ -535,7 +535,9 @@ pub fn accept_sparse_enrollment_control(
 ) -> Result<(), Error> {
     let mut chain = sparse_enrollment_chain(store, family, relay_public)?;
     let prior = store.enrollment_controls(family)?;
-    if prior.last().is_some_and(|(_, saved)| saved == bytes) {
+    // An exact earlier control remains an idempotent retry after subsequent
+    // controls have been verified and stored.
+    if prior.iter().any(|(_, saved)| saved == bytes) {
         return Ok(());
     }
     chain.apply_sparse_control(bytes)?;

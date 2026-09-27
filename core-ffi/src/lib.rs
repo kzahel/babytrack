@@ -5,6 +5,7 @@
 use std::sync::{Arc, Mutex};
 
 use babytrack_core::{
+    active_pull,
     bootstrap::InvitationBootstrap,
     cbor::{self, Value},
     creation::ManagerCreation,
@@ -15,6 +16,7 @@ use babytrack_core::{
     issue::FirstInviteIssue,
     local_api::{ActivityTime, LocalRepository},
     shared_history::{self, PublicHistorySession},
+    shared_ready::ReadyFamilySession,
     sqlite_store::{FamilyHandle, SqliteStore},
     sync_wire::{ControlPage, OpaqueObject},
 };
@@ -182,6 +184,22 @@ pub struct ChallengeReadRow {
 pub struct PreparedAdmissionRow {
     pub candidate_bytes: Vec<u8>,
     pub objects: Vec<StagedObjectRow>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct RecipientSyncRow {
+    pub verified_cursor: u64,
+    pub pending_control_cursor: u64,
+    pub awaiting_grant: bool,
+    pub no_more_visible: bool,
+    pub remaining_objects: bool,
+    pub ready: bool,
+    pub child_count: u64,
+}
+
+#[uniffi::export(callback_interface)]
+pub trait RelayReadTransport: Send + Sync {
+    fn get(&self, path: String, auth: Vec<u8>) -> Result<Vec<u8>, BindingError>;
 }
 
 #[derive(uniffi::Object)]
@@ -676,6 +694,112 @@ impl NativeSharedStore {
             .map_err(rejected)?
             .confirm(&mut store, &manager, &committed_control(&commit_response)?)
             .map_err(rejected)
+    }
+
+    /// One bounded sync pass. The platform fetches bytes; Rust signs every
+    /// exact path, verifies the full log and manifests, and decides readiness.
+    pub fn sync_recipient(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        transport: Box<dyn RelayReadTransport>,
+    ) -> Result<RecipientSyncRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let attempt = EnrollmentAttempt::resume(
+            &mut store,
+            family.handle()?.family_id,
+            &fixed(&wrapping_key)?,
+        )
+        .map_err(rejected)?;
+        if attempt.family() != family.handle()? {
+            return Err(BindingError::InvalidBytes);
+        }
+        let attempt = Arc::new(attempt);
+        let transport: Arc<dyn RelayReadTransport> = Arc::from(transport);
+        let after = attempt.pending_control_cursor(&store).map_err(rejected)?;
+        let path = format!(
+            "/v1/families/{}/control?after={after}",
+            lower_hex(&family.family_id)
+        );
+        let auth = attempt.sign_get(&path).map_err(rejected)?.bytes;
+        let page_bytes = transport.get(path, auth)?;
+        let page = ControlPage::decode(&page_bytes, family.handle()?.family_id, after)
+            .map_err(rejected)?;
+        for entry in page.entries {
+            attempt
+                .accept_sparse_control(&mut store, &entry.committed_bytes)
+                .map_err(rejected)?;
+        }
+        let pending_control_cursor = attempt.pending_control_cursor(&store).map_err(rejected)?;
+        if !attempt.has_committed_admission(&store).map_err(rejected)? {
+            return Ok(RecipientSyncRow {
+                verified_cursor: PublicHistorySession::resume(&store, family.handle()?)
+                    .map_err(rejected)?
+                    .cursor(),
+                pending_control_cursor,
+                awaiting_grant: true,
+                no_more_visible: false,
+                remaining_objects: true,
+                ready: false,
+                child_count: 0,
+            });
+        }
+        let pull = futures::executor::block_on(active_pull::pull_active_log(
+            &mut store,
+            family.handle()?,
+            4,
+            |path| {
+                let attempt = Arc::clone(&attempt);
+                let transport = Arc::clone(&transport);
+                async move {
+                    let auth = attempt.sign_get(&path).map_err(rejected)?.bytes;
+                    transport.get(path, auth)
+                }
+            },
+        ))
+        .map_err(rejected)?;
+        let hydration = futures::executor::block_on(active_pull::hydrate_manifest_objects(
+            &mut store,
+            family.handle()?,
+            16,
+            |path| {
+                let attempt = Arc::clone(&attempt);
+                let transport = Arc::clone(&transport);
+                async move {
+                    let auth = attempt.sign_get(&path).map_err(rejected)?.bytes;
+                    transport.get(path, auth)
+                }
+            },
+        ))
+        .map_err(rejected)?;
+        if !pull.no_more_visible || hydration.remaining {
+            return Ok(RecipientSyncRow {
+                verified_cursor: pull.verified_cursor,
+                pending_control_cursor,
+                awaiting_grant: false,
+                no_more_visible: pull.no_more_visible,
+                remaining_objects: hydration.remaining,
+                ready: false,
+                child_count: 0,
+            });
+        }
+        let ready = ReadyFamilySession::from_enrollment(&store, &attempt).map_err(rejected)?;
+        let children = ready
+            .projection()
+            .records()
+            .filter(|record| {
+                record.scope == babytrack_core::operation::Scope::Child && !record.deleted
+            })
+            .count();
+        Ok(RecipientSyncRow {
+            verified_cursor: pull.verified_cursor,
+            pending_control_cursor,
+            awaiting_grant: false,
+            no_more_visible: true,
+            remaining_objects: false,
+            ready: true,
+            child_count: children as u64,
+        })
     }
 }
 

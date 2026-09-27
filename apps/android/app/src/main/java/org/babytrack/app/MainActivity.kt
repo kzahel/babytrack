@@ -295,6 +295,26 @@ private fun TrackerScreen(
                                 }
                             }
                         }) { Text(stringResource(R.string.prove_challenge)) }
+                        OutlinedButton(enabled = receivedFragment.isNotBlank(), onClick = {
+                            joinStage = context.getString(R.string.history_loading)
+                            scope.launch {
+                                runCatching {
+                                    withContext(Dispatchers.IO) { sharing.syncRecipient(receivedFragment.trim()) }
+                                }.onSuccess { progress ->
+                                    joinStage = if (progress.ready) {
+                                        context.getString(R.string.history_ready, progress.childCount.toLong())
+                                    } else if (progress.awaitingGrant) {
+                                        context.getString(R.string.history_awaiting_grant, progress.pendingControlCursor.toLong())
+                                    } else {
+                                        context.getString(R.string.history_pending, progress.verifiedCursor.toLong())
+                                    }
+                                    message = null
+                                }.onFailure {
+                                    joinStage = context.getString(R.string.join_retry)
+                                    message = errorText
+                                }
+                            }
+                        }) { Text(stringResource(R.string.load_shared_history)) }
                         joinStage?.let { Text(it) }
                     }
                 }

@@ -190,6 +190,14 @@ private data class PendingGrowthEdit(
     val weight: String,
     val length: String,
 )
+private data class PendingSleepEdit(
+    val family: FamilyRef,
+    val childId: ByteArray,
+    val activityId: ByteArray,
+    val shared: Boolean,
+    val startUtcMs: Long,
+    val minutes: String,
+)
 private data class ScreenData(
     val families: List<FamilyRef>,
     val activeFamilyKey: String?,
@@ -304,6 +312,7 @@ private fun TrackerScreen(
     var pendingDiaperEdit by remember { mutableStateOf<PendingDiaperEdit?>(null) }
     var pendingSolidsEdit by remember { mutableStateOf<PendingSolidsEdit?>(null) }
     var pendingGrowthEdit by remember { mutableStateOf<PendingGrowthEdit?>(null) }
+    var pendingSleepEdit by remember { mutableStateOf<PendingSleepEdit?>(null) }
     var relayOrigin by remember { mutableStateOf("") }
     var relayPublicKey by remember { mutableStateOf("") }
     var shareStage by remember { mutableStateOf<String?>(null) }
@@ -929,7 +938,7 @@ private fun TrackerScreen(
                         OutlinedTextField(
                             value = childRename.orEmpty(),
                             onValueChange = { childRename = it.take(16 * 1024) },
-                            label = { Text(stringResource(R.string.child_name)) },
+                            label = { Text(stringResource(R.string.new_child_name)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                         )
@@ -1415,6 +1424,15 @@ private fun TrackerScreen(
                                         }
                                     }) { Text(stringResource(R.string.stop_sleep)) }
                                 }
+                                if (entry.kind == "sleep" && entry.endUtcMs != null) {
+                                    OutlinedButton(onClick = {
+                                        pendingSleepEdit = PendingSleepEdit(
+                                            family, entry.childId.copyOf(), entry.id.copyOf(), activeShared,
+                                            entry.startUtcMs,
+                                            ((entry.endUtcMs!! - entry.startUtcMs) / 60_000L).toString(),
+                                        )
+                                    }) { Text(stringResource(R.string.edit_sleep)) }
+                                }
                                 if (entry.kind == "note" && entry.note != null) {
                                     OutlinedButton(onClick = {
                                         pendingNoteEdit = PendingNoteEdit(
@@ -1796,6 +1814,42 @@ private fun TrackerScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { pendingGrowthEdit = null }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+    pendingSleepEdit?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingSleepEdit = null },
+            title = { Text(stringResource(R.string.edit_sleep)) },
+            text = {
+                OutlinedTextField(
+                    value = target.minutes,
+                    onValueChange = { pendingSleepEdit = target.copy(minutes = it.filter(Char::isDigit).take(4)) },
+                    label = { Text(stringResource(R.string.sleep_minutes)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                val minutes = target.minutes.toLongOrNull()
+                val end = minutes?.let { target.startUtcMs + it * 60_000L }
+                Button(enabled = minutes != null && minutes in 1L..1440L &&
+                    end != null && end <= System.currentTimeMillis(), onClick = {
+                    pendingSleepEdit = null
+                    val savedAtMs = System.currentTimeMillis()
+                    val newEnd = end ?: error("Sleep end missing")
+                    val offset = (TimeZone.getDefault().getOffset(newEnd) / 60_000).toShort()
+                    change {
+                        if (target.shared) sharing.editSleepEnd(
+                            target.family, target.childId, target.activityId, newEnd, offset, savedAtMs,
+                        ) else store.editSleepEnd(
+                            target.family, target.childId, target.activityId, newEnd, offset, savedAtMs,
+                        )
+                    }
+                }) { Text(stringResource(R.string.save_changes)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingSleepEdit = null }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }

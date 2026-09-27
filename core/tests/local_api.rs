@@ -99,6 +99,55 @@ fn growth_correction_keeps_activity_and_survives_restore() {
 }
 
 #[test]
+fn completed_sleep_duration_correction_survives_restore() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("sleep-edit.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    let child = app.add_child(family, "Baby", 1_790_000_000_001).unwrap();
+    let other = app.add_child(family, "Other", 1_790_000_000_002).unwrap();
+    let start = 1_790_000_000_003;
+    let saved = start + 60 * 60_000;
+    let id = app
+        .log_sleep(
+            family,
+            child,
+            ActivityTime {
+                start_utc_ms: start,
+                offset_minutes: 60,
+                saved_at_ms: saved,
+            },
+            saved,
+            60,
+        )
+        .unwrap();
+    assert!(
+        app.edit_sleep_end(family, other, id, start + 20 * 60_000, 60, saved + 1)
+            .is_err()
+    );
+    assert!(
+        app.edit_sleep_end(family, child, id, start, 60, saved + 1)
+            .is_err()
+    );
+    assert!(
+        app.edit_sleep_end(family, child, id, saved + 2, 60, saved + 1)
+            .is_err()
+    );
+    app.edit_sleep_end(family, child, id, start + 45 * 60_000, 60, saved + 1)
+        .unwrap();
+    let before = app.timeline(family, child).unwrap();
+    assert_eq!(before[0].id, id);
+    assert_eq!(before[0].start_utc_ms, start);
+    assert_eq!(before[0].end_utc_ms, Some(start + 45 * 60_000));
+    let backup = app.backup(family, saved + 2).unwrap();
+    drop(app);
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.timeline(family, child).unwrap(), before);
+    let restored = app.restore(&backup, saved + 3).unwrap();
+    assert_eq!(app.timeline(restored, child).unwrap(), before);
+}
+
+#[test]
 fn analysis_csv_exports_current_activity_and_neutralizes_formula_text() {
     let dir = tempfile::tempdir().unwrap();
     let mut app = LocalRepository::open(dir.path().join("analysis.db")).unwrap();

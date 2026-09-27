@@ -125,6 +125,16 @@ class TwoDeviceRelayTest {
                 it.name == "Renamed shared child" && it.birthDay == 20_000L && it.sex == 1u.toUByte()
             })
             assertTrue(sharing.snapshot(family).activities.any { it.kind == "sleep" && it.endUtcMs != null })
+            val completedSleep = sharing.snapshot(family).activities.single {
+                it.kind == "sleep" && it.endUtcMs != null
+            }
+            val correctedEnd = completedSleep.startUtcMs + 20 * 60_000L
+            sharing.editSleepEnd(family, completedSleep.childId, completedSleep.id,
+                correctedEnd, 0, System.currentTimeMillis())
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.id.contentEquals(completedSleep.id) && it.startUtcMs == completedSleep.startUtcMs &&
+                    it.endUtcMs == correctedEnd
+            })
             assertTrue(sharing.snapshot(family).activities.any { it.note == "Care note marker 67" })
             assertTrue(String(sharing.analysisCsv(family)).contains("Care note marker 67"))
             assertTrue(sharing.snapshot(family).activities.any {
@@ -245,6 +255,10 @@ class TwoDeviceRelayTest {
                 it.kind == "diaper" && it.diaperKind == 2u.toUByte()
             })
             assertTrue(sharing.snapshot(family).activities.count { it.kind == "sleep" && it.endUtcMs != null } == 2)
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.kind == "sleep" && it.endUtcMs != null &&
+                    it.endUtcMs!! - it.startUtcMs == 20 * 60_000L
+            })
             sharing.addChild(family, "Pending at removal", System.currentTimeMillis())
             assertEquals(1uL, sharing.snapshot(family).unsentCount)
             family

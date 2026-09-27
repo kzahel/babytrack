@@ -11,6 +11,7 @@
     <string name="family_number">Family %1$d</string>
     <string name="children">Children</string>
     <string name="child_name">Child’s name</string>
+    <string name="new_child_name">New child name</string>
     <string name="birth_date">Birth date (YYYY-MM-DD, optional)</string>
     <string name="birth_date_invalid">Enter a birth date as YYYY-MM-DD.</string>
     <string name="growth_chart_sex">Sex for growth charts</string>
@@ -73,6 +74,7 @@
     <string name="edit_diaper">Edit diaper type</string>
     <string name="edit_solids">Edit solids</string>
     <string name="edit_growth">Edit growth</string>
+    <string name="edit_sleep">Edit sleep duration</string>
     <string name="growth_edit_hint">Leave a measurement blank to keep its saved value. Delete the entry to remove it.</string>
     <string name="note_entry">Note · %1$s</string>
     <string name="log_growth">Log growth</string>

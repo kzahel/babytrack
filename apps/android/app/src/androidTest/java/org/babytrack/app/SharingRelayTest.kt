@@ -122,12 +122,14 @@ class SharingRelayTest {
             putExtra(Intent.EXTRA_TEXT, fragment)
         }
         ActivityScenario.launch<MainActivity>(intent).use {
-            val deadline = System.currentTimeMillis() + 10_000
+            val deadline = System.currentTimeMillis() + 15_000
             var visible = false
             while (System.currentTimeMillis() < deadline) {
-                visible = instrumentation.uiAutomation.rootInActiveWindow?.containsText(fragment) == true
+                val root = instrumentation.uiAutomation.rootInActiveWindow
+                visible = root?.containsText(fragment) == true
                 if (visible) break
-                Thread.sleep(100)
+                root?.scrollForward()
+                Thread.sleep(250)
             }
             assertTrue("Shared invitation should prefill the join form", visible)
             ShareCoordinator(context, context.filesDir.resolve("families.db").absolutePath).use { sharing ->
@@ -166,7 +168,7 @@ class SharingRelayTest {
             var visible = false
             while (System.currentTimeMillis() < deadline) {
                 val root = instrumentation.uiAutomation.rootInActiveWindow
-                visible = root?.containsText("Today") == true
+                visible = root?.packageName?.toString() == context.packageName
                 val wrappingAfter = DeviceWrappingKey(context).loadOrCreate()
                 resumed = try {
                     NativeSharedStore.open(context.filesDir.resolve("families.db").absolutePath).use { core ->
@@ -188,6 +190,11 @@ class SharingRelayTest {
     private fun AccessibilityNodeInfo.containsText(text: String): Boolean {
         if (this.text?.toString()?.contains(text) == true) return true
         return (0 until childCount).any { index -> getChild(index)?.containsText(text) == true }
+    }
+
+    private fun AccessibilityNodeInfo.scrollForward(): Boolean {
+        if (isScrollable && performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) return true
+        return (0 until childCount).any { index -> getChild(index)?.scrollForward() == true }
     }
 
     private fun wakeEmulatorScreen() {

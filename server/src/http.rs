@@ -65,8 +65,19 @@ fn router_with_clock(
             "/v1/families/{family}/control",
             post(commit_control).get(read_control),
         )
-        .route("/v1/families/{family}/batches", post(commit_batch))
+        .route(
+            "/v1/families/{family}/batches",
+            post(commit_batch).get(read_batches),
+        )
         .route("/v1/families/{family}/log", get(read_log))
+        .route(
+            "/v1/families/{family}/control-results/{transition}",
+            get(read_control_result),
+        )
+        .route(
+            "/v1/families/{family}/invites/{invitation}",
+            get(read_invite),
+        )
         .route(
             "/v1/families/{family}/batch-results/{batch}",
             get(read_batch_result),
@@ -283,6 +294,86 @@ async fn read_log(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let response = store
         .log_page_authenticated(family_id, after, exact, &auth)
+        .map_err(|_| StatusCode::FORBIDDEN)?;
+    Ok(cbor_response(response))
+}
+
+async fn read_batches(
+    State(store): State<Shared>,
+    RoutePath(family): RoutePath<String>,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<impl axum::response::IntoResponse, StatusCode> {
+    let family_id = canonical_id(&family)?;
+    let auth = read_auth(&headers, &body)?;
+    let query = uri.query().ok_or(StatusCode::BAD_REQUEST)?;
+    let digits = query
+        .strip_prefix("after=")
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    if digits.is_empty()
+        || (digits.len() > 1 && digits.starts_with('0'))
+        || !digits.bytes().all(|b| b.is_ascii_digit())
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let after: u64 = digits.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
+    let exact = uri
+        .path_and_query()
+        .ok_or(StatusCode::BAD_REQUEST)?
+        .as_str();
+    let mut store = store
+        .store
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let response = store
+        .batch_page_authenticated(family_id, after, exact, &auth)
+        .map_err(|_| StatusCode::FORBIDDEN)?;
+    Ok(cbor_response(response))
+}
+
+async fn read_control_result(
+    State(store): State<Shared>,
+    RoutePath((family, transition)): RoutePath<(String, String)>,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<impl axum::response::IntoResponse, StatusCode> {
+    let family_id = canonical_id(&family)?;
+    let transition_id = canonical_id(&transition)?;
+    if uri.query().is_some() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let auth = read_auth(&headers, &body)?;
+    let mut store = store
+        .store
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let response = store
+        .control_result_authenticated(family_id, transition_id, uri.path(), &auth)
+        .map_err(|_| StatusCode::FORBIDDEN)?;
+    Ok(cbor_response(response))
+}
+
+async fn read_invite(
+    State(store): State<Shared>,
+    RoutePath((family, invitation)): RoutePath<(String, String)>,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<impl axum::response::IntoResponse, StatusCode> {
+    let family_id = canonical_id(&family)?;
+    let invitation_id = canonical_id(&invitation)?;
+    if uri.query().is_some() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let auth = read_auth(&headers, &body)?;
+    let mut store = store
+        .store
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let response = store
+        .invite_authenticated(family_id, invitation_id, uri.path(), &auth)
         .map_err(|_| StatusCode::FORBIDDEN)?;
     Ok(cbor_response(response))
 }

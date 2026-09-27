@@ -110,14 +110,33 @@ pub fn encode_control_page(
     entries: &[RelayEntry],
     has_more: bool,
 ) -> Result<Vec<u8>, Error> {
+    encode_filtered_page(family_id, after, entries, has_more, 1)
+}
+
+pub(crate) fn encode_batch_page(
+    family_id: [u8; 16],
+    after: u64,
+    entries: &[RelayEntry],
+    has_more: bool,
+) -> Result<Vec<u8>, Error> {
+    encode_filtered_page(family_id, after, entries, has_more, 2)
+}
+
+fn encode_filtered_page(
+    family_id: [u8; 16],
+    after: u64,
+    entries: &[RelayEntry],
+    has_more: bool,
+    kind: u8,
+) -> Result<Vec<u8>, Error> {
     if entries.len() > 256 {
         return Err(Error::Invalid("page too large"));
     }
     let mut last = after;
     let mut encoded = Vec::with_capacity(entries.len());
     for entry in entries {
-        if entry.kind != 1 || entry.cursor <= last {
-            return Err(Error::Invalid("control entries out of order"));
+        if entry.kind != kind || entry.cursor <= last {
+            return Err(Error::Invalid("filtered entries out of order"));
         }
         cbor::decode(&entry.committed_bytes)?;
         encoded.push(Value::Array(vec![

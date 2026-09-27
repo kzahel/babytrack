@@ -1572,6 +1572,127 @@ impl RelayStore {
         )?)
     }
 
+    pub fn batch_page_authenticated(
+        &mut self,
+        family_id: [u8; 16],
+        after: u64,
+        exact_path: &str,
+        auth_bytes: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        let expected = format!(
+            "/v1/families/{}/batches?after={after}",
+            lower_hex(&family_id)
+        );
+        if exact_path != expected {
+            return Err(Error::Invalid("batch page path not canonical"));
+        }
+        if !matches!(
+            self.verify_control_reader(family_id, exact_path, auth_bytes)?,
+            ControlReader::Manager | ControlReader::Active
+        ) {
+            return Err(Error::Invalid("reader cannot fetch batch page"));
+        }
+        let mut stmt = self.db.prepare(
+            "SELECT cursor,committed_bytes FROM entries WHERE family_id=?1 AND kind=2 AND cursor>?2 ORDER BY cursor LIMIT 257"
+        )?;
+        let rows = stmt.query_map(
+            params![
+                &family_id[..],
+                i64::try_from(after).map_err(|_| Error::Invalid("cursor range"))?
+            ],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        )?;
+        let mut entries = Vec::new();
+        for row in rows {
+            let (cursor, bytes) = row?;
+            entries.push(receipt::RelayEntry {
+                cursor: cursor
+                    .try_into()
+                    .map_err(|_| Error::Invalid("cursor range"))?,
+                kind: 2,
+                committed_bytes: bytes,
+            });
+        }
+        let has_more = entries.len() > 256;
+        entries.truncate(256);
+        Ok(receipt::encode_batch_page(
+            family_id, after, &entries, has_more,
+        )?)
+    }
+
+    pub fn control_result_authenticated(
+        &mut self,
+        family_id: [u8; 16],
+        transition_id: [u8; 16],
+        exact_path: &str,
+        auth_bytes: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        let expected = format!(
+            "/v1/families/{}/control-results/{}",
+            lower_hex(&family_id),
+            lower_hex(&transition_id)
+        );
+        if exact_path != expected {
+            return Err(Error::Invalid("control result path not canonical"));
+        }
+        self.verify_control_reader(family_id, exact_path, auth_bytes)?;
+        let mut stmt = self.db.prepare(
+            "SELECT committed_bytes FROM entries WHERE family_id=?1 AND kind=1 ORDER BY cursor",
+        )?;
+        let rows = stmt.query_map([&family_id[..]], |row| row.get::<_, Vec<u8>>(0))?;
+        let mut found = None;
+        for row in rows {
+            let bytes = row?;
+            let ids = control_birth_ids(&bytes)?;
+            if ids.first() == Some(&transition_id) {
+                found = Some(bytes);
+                break;
+            }
+        }
+        Ok(cbor::encode(&Value::Map(vec![
+            (1, Value::Integer(1)),
+            (2, found.map_or(Value::Null, Value::Bytes)),
+        ]))?)
+    }
+
+    pub fn invite_authenticated(
+        &mut self,
+        family_id: [u8; 16],
+        invitation_id: [u8; 16],
+        exact_path: &str,
+        auth_bytes: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        let expected = format!(
+            "/v1/families/{}/invites/{}",
+            lower_hex(&family_id),
+            lower_hex(&invitation_id)
+        );
+        if exact_path != expected {
+            return Err(Error::Invalid("invite path not canonical"));
+        }
+        let reader = self.verify_control_reader(family_id, exact_path, auth_bytes)?;
+        let issue = control_at(&self.db, family_id, 1)?;
+        let ids = control_birth_ids(&issue)?;
+        if ids.last() != Some(&invitation_id) {
+            return Err(Error::Invalid("invitation not committed"));
+        }
+        if matches!(reader, ControlReader::Invitation { .. })
+            && read_auth::claimed_signer(auth_bytes)? != invitation_id
+        {
+            return Err(Error::Invalid("invitation signer differs"));
+        }
+        if !matches!(
+            reader,
+            ControlReader::Manager | ControlReader::Active | ControlReader::Invitation { .. }
+        ) {
+            return Err(Error::Invalid("reader cannot fetch invitation"));
+        }
+        Ok(cbor::encode(&Value::Map(vec![
+            (1, Value::Integer(1)),
+            (2, Value::Bytes(issue)),
+        ]))?)
+    }
+
     pub fn log_page_authenticated(
         &mut self,
         family_id: [u8; 16],

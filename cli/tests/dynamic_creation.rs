@@ -317,6 +317,42 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
     );
 
     let received_link = InvitationBootstrap::from_fragment(&fragment).unwrap();
+    let invite_path = format!(
+        "/v1/families/{}/invites/{}",
+        lower_hex(&family.family_id),
+        lower_hex(&issue.invitation_id()),
+    );
+    let auth = received_link.sign_get(&invite_path).unwrap();
+    let Value::Map(invite_result) =
+        cbor::decode(&http_bytes(&app, Method::GET, &invite_path, auth.bytes).await).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(invite_result[1].1, Value::Bytes(committed_issue.clone()));
+    let result_path = format!(
+        "/v1/families/{}/control-results/{}",
+        lower_hex(&family.family_id),
+        lower_hex(&issue.transition_id()),
+    );
+    let auth = received_link.sign_get(&result_path).unwrap();
+    let Value::Map(control_result) =
+        cbor::decode(&http_bytes(&app, Method::GET, &result_path, auth.bytes).await).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(control_result[1].1, Value::Bytes(committed_issue.clone()));
+    let unknown_path = format!(
+        "/v1/families/{}/control-results/{}",
+        lower_hex(&family.family_id),
+        lower_hex(&v4(0x79)),
+    );
+    let auth = received_link.sign_get(&unknown_path).unwrap();
+    let Value::Map(unknown_result) =
+        cbor::decode(&http_bytes(&app, Method::GET, &unknown_path, auth.bytes).await).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(unknown_result[1].1, Value::Null);
     let path = format!(
         "/v1/families/{}/control?after=0",
         lower_hex(&family.family_id)
@@ -771,6 +807,20 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
     let recipient_ready =
         ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).unwrap();
     assert_eq!(recipient_ready.observed_cursor(), 7 + shift);
+    let batches_path = format!(
+        "/v1/families/{}/batches?after={}",
+        lower_hex(&family.family_id),
+        6 + shift,
+    );
+    let auth = resumed_enrollment.sign_get(&batches_path).unwrap();
+    let batch_page = LogPage::decode(
+        &http_bytes(&app, Method::GET, &batches_path, auth.bytes).await,
+        family.family_id,
+        6 + shift,
+    )
+    .unwrap();
+    assert_eq!(batch_page.entries.len(), 1);
+    assert_eq!(batch_page.entries[0].committed_bytes, batch.envelope_bytes);
     let log_path = format!(
         "/v1/families/{}/log?after={}",
         lower_hex(&family.family_id),
@@ -1545,6 +1595,18 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
             .await
             .0,
         StatusCode::OK
+    );
+    let denied_batches = format!(
+        "/v1/families/{}/batches?after={}",
+        lower_hex(&family.family_id),
+        recipient_ready.observed_cursor(),
+    );
+    let auth = resumed_enrollment.sign_get(&denied_batches).unwrap();
+    assert_eq!(
+        http_response(&app, Method::GET, &denied_batches, auth.bytes)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
     );
 
     let stale_result = http_bytes(

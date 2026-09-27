@@ -490,6 +490,13 @@
       "initial": {"family": "genesis-plus-first-cohort-history", "id_scope": "one-Family-all-protocol-categories"},
       "actions": ["reuse a historical transition ID as a new invitation ID", "reuse a device ID as a new transition ID", "reuse an accepted or rejected batch ID as a new object or transition ID", "replay exact committed bytes"],
       "expect": {"new_cross_category_ids": "reject-without-cursor-or-head-change", "rejected_batch_id": "reserved", "exact_committed_retry": "same-result"}
+    },
+    {
+      "id": "APIROUTES01",
+      "scenario": "FS49",
+      "initial": {"family": "committed-issue-and-batch", "reader": "authenticated"},
+      "actions": ["GET batches after a global cursor", "GET the issue by transition ID", "GET the first invitation by invitation ID", "GET unknown control result", "repeat batch page as a removed reader"],
+      "expect": {"batch_page": "ordered-batch-entries-only", "control_result": "exact-committed-control", "invitation": "exact-committed-issue", "unknown_control_result": "null-not-noninclusion", "removed_batch_page": "deny"}
     }
   ]
 }

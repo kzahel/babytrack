@@ -35,5 +35,12 @@
     <string name="backup_too_large">This backup is too large to open safely on this device.</string>
     <string name="saved">Backup saved</string>
     <string name="restored">Backup restored as a new Family</string>
+    <string name="last_saved_at">Last completed file save: %1$s</string>
+    <string name="changes_after_save">Changes since that save are not in that file.</string>
+    <string name="restored_from">Restored from a file saved at %1$s</string>
+    <string name="file_saved_at">File saved at %1$s · %2$d records</string>
+    <string name="file_known_gap">This file reports a known gap in its source history.</string>
+    <string name="inspect_protected">Check protected backup</string>
+    <string name="confirm_restore">Restore as new Family</string>
     <string name="error">Could not complete the action. Try again.</string>
 </resources>

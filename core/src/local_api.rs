@@ -59,6 +59,20 @@ pub struct ActivityTime {
     pub saved_at_ms: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackupInfo {
+    pub source_family_id: [u8; 16],
+    pub snapshot_utc_ms: i64,
+    pub known_gap: bool,
+    pub record_count: u64,
+}
+
+pub struct BackupFile {
+    pub bytes: Vec<u8>,
+    pub revision: u64,
+    pub info: BackupInfo,
+}
+
 pub struct LocalRepository {
     store: SqliteStore,
 }
@@ -263,6 +277,59 @@ impl LocalRepository {
             family,
             now_ms,
         )?)
+    }
+
+    pub fn revision(&self, family: FamilyHandle) -> Result<u64, Error> {
+        Ok(self.store.local_revision(family)?)
+    }
+
+    pub fn restored_origin(
+        &self,
+        family: FamilyHandle,
+    ) -> Result<Option<sqlite_store::RestoredOrigin>, Error> {
+        Ok(self.store.restored_origin(family)?)
+    }
+
+    pub fn backup_file(
+        &self,
+        family: FamilyHandle,
+        now_ms: i64,
+        password: Option<&str>,
+        available_memory_bytes: u64,
+    ) -> Result<BackupFile, Error> {
+        let revision = self.revision(family)?;
+        let readable = self.backup(family, now_ms)?;
+        let info = Self::inspect_readable(&readable)?;
+        let bytes = match password {
+            Some(password) => {
+                portable_file::protect_readable(&readable, password, available_memory_bytes)?
+            }
+            None => readable,
+        };
+        Ok(BackupFile {
+            bytes,
+            revision,
+            info,
+        })
+    }
+
+    pub fn inspect_readable(bytes: &[u8]) -> Result<BackupInfo, Error> {
+        let parsed = portable_file::parse_readable(bytes)?;
+        Ok(BackupInfo {
+            source_family_id: parsed.source_family_id,
+            snapshot_utc_ms: parsed.snapshot_utc_ms,
+            known_gap: parsed.known_gap,
+            record_count: parsed.rows.len() as u64,
+        })
+    }
+
+    pub fn inspect_protected(
+        bytes: &[u8],
+        password: &str,
+        available_memory_bytes: u64,
+    ) -> Result<BackupInfo, Error> {
+        let readable = portable_file::open_protected(bytes, password, available_memory_bytes)?;
+        Self::inspect_readable(&readable)
     }
 
     pub fn protected_backup(

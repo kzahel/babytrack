@@ -612,6 +612,11 @@ impl SqliteStore {
             .transpose()
     }
 
+    pub fn local_revision(&self, family: FamilyHandle) -> Result<u64, Error> {
+        let (last_index, _) = checked_family(&self.connection, family)?;
+        u64::try_from(last_index).map_err(|_| Error::CorruptState)
+    }
+
     pub fn load_local(&self, family: FamilyHandle) -> Result<LocalProjection, Error> {
         let (last_index, _) = checked_family(&self.connection, family)?;
         let projection = load_projection(&self.connection, family)?;

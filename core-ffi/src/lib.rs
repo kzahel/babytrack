@@ -80,6 +80,39 @@ pub struct ActivityRow {
     pub bottle_ml: Option<i64>,
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BackupInfoRow {
+    pub source_family_id: Vec<u8>,
+    pub snapshot_utc_ms: i64,
+    pub known_gap: bool,
+    pub record_count: u64,
+}
+
+impl From<babytrack_core::local_api::BackupInfo> for BackupInfoRow {
+    fn from(value: babytrack_core::local_api::BackupInfo) -> Self {
+        Self {
+            source_family_id: value.source_family_id.to_vec(),
+            snapshot_utc_ms: value.snapshot_utc_ms,
+            known_gap: value.known_gap,
+            record_count: value.record_count,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BackupFileRow {
+    pub bytes: Vec<u8>,
+    pub revision: u64,
+    pub info: BackupInfoRow,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct RestoredOriginRow {
+    pub source_family_id: Vec<u8>,
+    pub snapshot_utc_ms: i64,
+    pub known_gap: bool,
+}
+
 #[derive(uniffi::Object)]
 pub struct NativeLocalStore {
     repo: Mutex<LocalRepository>,
@@ -104,6 +137,31 @@ impl NativeLocalStore {
             .into_iter()
             .map(Into::into)
             .collect())
+    }
+
+    pub fn revision(&self, family: FamilyRef) -> Result<u64, BindingError> {
+        self.repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .revision(family.handle()?)
+            .map_err(rejected)
+    }
+
+    pub fn restored_origin(
+        &self,
+        family: FamilyRef,
+    ) -> Result<Option<RestoredOriginRow>, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .restored_origin(family.handle()?)
+            .map_err(rejected)?
+            .map(|value| RestoredOriginRow {
+                source_family_id: value.source_family_id.to_vec(),
+                snapshot_utc_ms: value.snapshot_utc_ms,
+                known_gap: value.known_gap,
+            }))
     }
 
     pub fn create_family(&self, now_ms: i64) -> Result<FamilyRef, BindingError> {
@@ -228,6 +286,50 @@ impl NativeLocalStore {
             .map_err(|_| BindingError::LockPoisoned)?
             .backup(family.handle()?, now_ms)
             .map_err(rejected)
+    }
+
+    pub fn backup_file(
+        &self,
+        family: FamilyRef,
+        now_ms: i64,
+        password: Option<String>,
+        available_memory_bytes: u64,
+    ) -> Result<BackupFileRow, BindingError> {
+        let file = self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .backup_file(
+                family.handle()?,
+                now_ms,
+                password.as_deref(),
+                available_memory_bytes,
+            )
+            .map_err(rejected)?;
+        Ok(BackupFileRow {
+            bytes: file.bytes,
+            revision: file.revision,
+            info: file.info.into(),
+        })
+    }
+
+    pub fn inspect_readable(&self, bytes: Vec<u8>) -> Result<BackupInfoRow, BindingError> {
+        Ok(LocalRepository::inspect_readable(&bytes)
+            .map_err(rejected)?
+            .into())
+    }
+
+    pub fn inspect_protected(
+        &self,
+        bytes: Vec<u8>,
+        password: String,
+        available_memory_bytes: u64,
+    ) -> Result<BackupInfoRow, BindingError> {
+        Ok(
+            LocalRepository::inspect_protected(&bytes, &password, available_memory_bytes)
+                .map_err(rejected)?
+                .into(),
+        )
     }
 
     pub fn protected_backup(

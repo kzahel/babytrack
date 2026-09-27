@@ -1,6 +1,11 @@
 #![cfg(not(target_arch = "wasm32"))]
 
-use std::{fs, path::PathBuf, time::SystemTime};
+use std::{
+    fs,
+    path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
+    time::SystemTime,
+};
 
 use babytrack_core::{
     batch::{self, Header},
@@ -11,6 +16,8 @@ use babytrack_core::{
     shared_ready::{NextUpload, ReadyFamilySession},
     sqlite_store::{FamilyHandle, SqliteStore},
 };
+
+static NEXT_DB_ID: AtomicU64 = AtomicU64::new(0);
 
 fn bytes<const N: usize>(hex: &str) -> [u8; N] {
     hex.as_bytes()
@@ -27,8 +34,9 @@ fn temp_db() -> PathBuf {
         .unwrap()
         .as_nanos();
     std::env::temp_dir().join(format!(
-        "babytrack-shared-history-{}-{nonce}.sqlite",
-        std::process::id()
+        "babytrack-shared-history-{}-{nonce}-{}.sqlite",
+        std::process::id(),
+        NEXT_DB_ID.fetch_add(1, Ordering::Relaxed),
     ))
 }
 

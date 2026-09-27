@@ -460,6 +460,14 @@ has no unresolved access or retention blocker.
 
 ### 4. Mixed-client sync and recovery adversarial pass
 
+The real-relay CLI now recreates the server router after an accepted POST
+whose response the recipient loses, and again halfway through staging a
+multi-object removal. Exact result lookup and idempotent stage/commit
+continue across both restarts in all three first-cohort flow variants.
+This exercises durable relay state, not an OS power cut or all transaction
+boundaries. Browser shared outbox, more clients, and the bounded fault
+matrix remain open.
+
 - [ ] Promote all local history atomically. Connect two CLI clients and the
   real-browser harness through the relay. Inject offline writes, duplicate
   requests, lost WebSocket notices or responses, polling fallback, client

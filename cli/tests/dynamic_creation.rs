@@ -1297,6 +1297,10 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
     } else {
         None
     };
+    // The relay process can restart after an accepted POST whose response
+    // never reached the recipient; its exact result must remain durable.
+    drop(app);
+    let app = test_router(&relay_path, relay_seed).unwrap();
 
     if early_batch {
         let current = resumed.ready_session(&local).unwrap();
@@ -1409,6 +1413,10 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
             .0,
         StatusCode::CONFLICT,
     );
+    // Resume a multi-object rotation after the relay process restarts.
+    drop(app);
+    let app = test_router(&relay_path, relay_seed).unwrap();
+    stage_objects(&app, family.family_id, &removal_stage[..2]).await;
     stage_objects(&app, family.family_id, &removal_stage[2..]).await;
     let response = commit_control(&app, family.family_id, &removal_candidate).await;
     assert_eq!(

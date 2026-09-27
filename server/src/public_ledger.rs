@@ -10,7 +10,11 @@ use babytrack_wire::{
     epoch_bindings::EpochBindings,
 };
 
-use crate::{authority::GenesisCandidate, receipt::VerifiedControlReceipt};
+use crate::{
+    authority::GenesisCandidate,
+    batch_authority,
+    receipt::{StoredAcceptedBatch, VerifiedControlReceipt},
+};
 
 #[derive(Debug)]
 #[allow(dead_code)] // Detailed validation errors are retained by the relay boundary.
@@ -47,6 +51,7 @@ pub(crate) struct PublicLedger {
     issue_times: BTreeMap<[u8; 16], i64>,
     challenges: BTreeMap<[u8; 16], ([u8; 16], [u8; 32])>,
     admissions: BTreeMap<[u8; 16], [u8; 16]>,
+    next_sequences: BTreeMap<[u8; 16], u64>,
     seen_ids: BTreeSet<[u8; 16]>,
 }
 
@@ -94,6 +99,7 @@ impl PublicLedger {
             issue_times: BTreeMap::new(),
             challenges: BTreeMap::new(),
             admissions: BTreeMap::new(),
+            next_sequences: BTreeMap::new(),
             seen_ids,
         })
     }
@@ -240,6 +246,65 @@ impl PublicLedger {
         self.head
     }
 
+    /// Recheck an accepted data entry at its historical authority position.
+    /// A valid relay receipt alone cannot establish author or sequence rights.
+    pub(crate) fn apply_batch(
+        &mut self,
+        envelope: &[u8],
+        saved: &StoredAcceptedBatch,
+    ) -> Result<(), Error> {
+        let Value::Map(state) = &self.state else {
+            return Err(Error::Invalid("public state not map"));
+        };
+        let Value::Array(active) = &state[4].1 else {
+            return Err(Error::Invalid("active devices not array"));
+        };
+        let signer = active
+            .iter()
+            .find_map(|row| {
+                let Value::Array(fields) = row else {
+                    return None;
+                };
+                (fixed::<16>(fields.first()?).ok()? == saved.author_id)
+                    .then(|| fixed::<32>(fields.get(1)?).ok())
+                    .flatten()
+            })
+            .ok_or(Error::Invalid("accepted batch author not active"))?;
+        let batch = batch_authority::verify(envelope, self.family_id, self.relay_id, signer)
+            .map_err(|_| Error::Invalid("accepted batch envelope differs"))?;
+        let epoch: u32 = match state[3].1 {
+            Value::Integer(value) => value
+                .try_into()
+                .map_err(|_| Error::Invalid("public epoch range"))?,
+            _ => return Err(Error::Invalid("public epoch not integer")),
+        };
+        let expected = self
+            .next_sequences
+            .get(&batch.author_id)
+            .copied()
+            .unwrap_or(1);
+        if batch.batch_id != saved.batch_id
+            || batch.author_id != saved.author_id
+            || batch.sequence != saved.sequence
+            || batch.epoch != saved.epoch
+            || batch.control_head != saved.control_head
+            || batch.epoch != epoch
+            || self.epochs.epoch_for_head(&batch.control_head) != Some(epoch)
+            || batch.sequence != expected
+            || !self.seen_ids.insert(batch.batch_id)
+        {
+            return Err(Error::Invalid("accepted batch public authority differs"));
+        }
+        self.next_sequences.insert(
+            batch.author_id,
+            expected
+                .checked_add(1)
+                .ok_or(Error::Invalid("accepted sequence overflow"))?,
+        );
+        Ok(())
+    }
+
+    #[cfg(test)]
     pub(crate) fn epochs(&self) -> &EpochBindings {
         &self.epochs
     }

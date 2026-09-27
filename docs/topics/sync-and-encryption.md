@@ -437,9 +437,10 @@ not trusted as an unchecked database snapshot. Each committed head binds one
 epoch; each epoch binds exactly one commitment from verified transition bytes.
 The shared `EpochBindings` type enforces these immutable associations. Client
 control replay and the first-cohort relay use it; the relay reconstructs the
-bindings on restart and checks accepted batch authoring heads against the
-active epoch. General route commit transactions still need to use the same
-verified history.
+bindings on restart and checks each accepted batch against its historical
+active signing key, exact signature, next per-device sequence, globally new
+batch ID, authoring-head ancestry, and active epoch. General route commit
+transactions still need to use the same verified history.
 Damaged or incomplete reconstruction refuses further commits and reads.
 An offline request or staged object never becomes a
 confirmed authority change. Unknown versions/kinds fail closed.

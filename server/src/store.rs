@@ -373,15 +373,10 @@ impl RelayStore {
                     {
                         return Err(Error::Invalid("stored batch result metadata differs"));
                     }
-                    let bindings = ledger
-                        .as_ref()
+                    ledger
+                        .as_mut()
                         .ok_or(Error::Invalid("batch before genesis"))?
-                        .epochs();
-                    if bindings.epoch_for_head(&verified.control_head) != Some(verified.epoch)
-                        || bindings.latest_epoch() != verified.epoch
-                    {
-                        return Err(Error::Invalid("stored batch head or epoch differs"));
-                    }
+                        .apply_batch(&bytes, &verified)?;
                     batch_count += 1;
                 }
                 _ => return Err(Error::Invalid("stored log kind")),
@@ -3273,6 +3268,40 @@ mod tests {
         .unwrap()
     }
 
+    fn resign_batch_author(
+        envelope: &[u8],
+        author_id: [u8; 16],
+        sequence: u64,
+        author_seed: [u8; 32],
+    ) -> Vec<u8> {
+        let Value::Map(mut outer) = cbor::decode(envelope).unwrap() else {
+            panic!()
+        };
+        let Value::Map(header) = &mut outer[0].1 else {
+            panic!()
+        };
+        header[6].1 = Value::Bytes(author_id.to_vec());
+        header[7].1 = Value::Integer(sequence.into());
+        let Value::Bytes(ciphertext) = &outer[1].1 else {
+            panic!()
+        };
+        let signed = cbor::encode(&Value::Array(vec![
+            outer[0].1.clone(),
+            Value::Bytes(
+                crypto::hash("batch-ciphertext", ciphertext)
+                    .unwrap()
+                    .to_vec(),
+            ),
+        ]))
+        .unwrap();
+        outer[2].1 = Value::Bytes(
+            crypto::sign_cbor("batch-envelope", &signed, &author_seed)
+                .unwrap()
+                .to_vec(),
+        );
+        cbor::encode(&Value::Map(outer)).unwrap()
+    }
+
     #[test]
     fn control_and_batch_writers_share_one_family_cursor() {
         let genesis: Json = serde_json::from_str(
@@ -3375,6 +3404,13 @@ mod tests {
         drop(db);
         assert!(RelayStore::open(&path, seed).is_ok());
         let db = Connection::open(&path).unwrap();
+        let (batch_cursor, original_envelope): (i64, Vec<u8>) = db
+            .query_row(
+                "SELECT cursor,envelope_bytes FROM batch_results WHERE family_id=?1",
+                params![&family[..]],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
         let saved_receipt: Vec<u8> = db
             .query_row(
                 "SELECT receipt_bytes FROM batch_results WHERE family_id=?1",
@@ -3382,6 +3418,80 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
+        let recipient_id: [u8; 16] = hex(chain["test_only_inputs"]["recipient_device_id_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let recipient_seed: [u8; 32] = hex(chain["test_only_inputs"]["recipient_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let forged = resign_batch_author(&original_envelope, recipient_id, 1, recipient_seed);
+        let forged_batch = batch_authority::verify(
+            &forged,
+            family,
+            parsed.relay_id,
+            crypto::signing_public_key(&recipient_seed),
+        )
+        .unwrap();
+        let forged_receipt =
+            receipt::accepted_batch(&forged_batch, batch_cursor as u64, &seed).unwrap();
+        db.execute(
+            "UPDATE entries SET committed_bytes=?3 WHERE family_id=?1 AND cursor=?2",
+            params![&family[..], batch_cursor, &forged],
+        )
+        .unwrap();
+        db.execute(
+            "UPDATE batch_results SET envelope_bytes=?2,receipt_bytes=?3,author_id=?4 WHERE family_id=?1",
+            params![&family[..], &forged, &forged_receipt, &recipient_id[..]],
+        )
+        .unwrap();
+        assert!(RelayStore::open(&path, seed).is_err());
+        db.execute(
+            "UPDATE entries SET committed_bytes=?3 WHERE family_id=?1 AND cursor=?2",
+            params![&family[..], batch_cursor, &original_envelope],
+        )
+        .unwrap();
+        db.execute(
+            "UPDATE batch_results SET envelope_bytes=?2,receipt_bytes=?3,author_id=?4 WHERE family_id=?1",
+            params![&family[..], &original_envelope, &saved_receipt, &parsed.manager_id[..]],
+        )
+        .unwrap();
+        assert!(RelayStore::open(&path, seed).is_ok());
+        let skipped = resign_batch_author(&original_envelope, parsed.manager_id, 2, manager_seed);
+        let skipped_batch = batch_authority::verify(
+            &skipped,
+            family,
+            parsed.relay_id,
+            parsed.manager_signing_key,
+        )
+        .unwrap();
+        let skipped_receipt =
+            receipt::accepted_batch(&skipped_batch, batch_cursor as u64, &seed).unwrap();
+        db.execute(
+            "UPDATE entries SET committed_bytes=?3 WHERE family_id=?1 AND cursor=?2",
+            params![&family[..], batch_cursor, &skipped],
+        )
+        .unwrap();
+        db.execute(
+            "UPDATE batch_results SET envelope_bytes=?2,receipt_bytes=?3,sequence=2 WHERE family_id=?1",
+            params![&family[..], &skipped, &skipped_receipt],
+        )
+        .unwrap();
+        assert!(RelayStore::open(&path, seed).is_err());
+        db.execute(
+            "UPDATE entries SET committed_bytes=?3 WHERE family_id=?1 AND cursor=?2",
+            params![&family[..], batch_cursor, &original_envelope],
+        )
+        .unwrap();
+        db.execute(
+            "UPDATE batch_results SET envelope_bytes=?2,receipt_bytes=?3,sequence=1 WHERE family_id=?1",
+            params![&family[..], &original_envelope, &saved_receipt],
+        )
+        .unwrap();
+        assert!(RelayStore::open(&path, seed).is_ok());
         let mut changed_receipt = saved_receipt.clone();
         *changed_receipt.last_mut().unwrap() ^= 1;
         db.execute(

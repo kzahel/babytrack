@@ -137,6 +137,11 @@ impl RelayStore {
                object_hash BLOB NOT NULL, object_bytes BLOB NOT NULL,
                PRIMARY KEY (family_id, transition_id, object_id)
              );
+             CREATE TABLE IF NOT EXISTS object_reservations (
+               family_id BLOB NOT NULL, object_id BLOB NOT NULL,
+               kind INTEGER NOT NULL, object_hash BLOB NOT NULL,
+               PRIMARY KEY (family_id, object_id)
+             );
              CREATE TABLE IF NOT EXISTS committed_objects (
                family_id BLOB NOT NULL, object_id BLOB NOT NULL, kind INTEGER NOT NULL,
                object_hash BLOB NOT NULL, object_bytes BLOB NOT NULL,
@@ -185,8 +190,31 @@ impl RelayStore {
              DELETE FROM staged_issues;
              DELETE FROM staged_challenges;
              DELETE FROM staged_admissions;
-             DELETE FROM staged_removals;",
+             DELETE FROM staged_removals;
+             INSERT OR IGNORE INTO object_reservations(family_id,object_id,kind,object_hash)
+               SELECT family_id,object_id,kind,object_hash FROM committed_objects;
+             INSERT OR IGNORE INTO object_reservations(family_id,object_id,kind,object_hash)
+               SELECT family_id,object_id,kind,object_hash FROM staged_objects;
+             INSERT OR IGNORE INTO object_reservations(family_id,object_id,kind,object_hash)
+               SELECT family_id,object_id,kind,object_hash FROM staged_control_objects;",
         )?;
+        let inconsistent: i64 = migration.query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM committed_objects o JOIN object_reservations r USING(family_id,object_id)
+                 WHERE o.kind!=r.kind OR o.object_hash!=r.object_hash
+               UNION ALL
+               SELECT 1 FROM staged_objects o JOIN object_reservations r USING(family_id,object_id)
+                 WHERE o.kind!=r.kind OR o.object_hash!=r.object_hash
+               UNION ALL
+               SELECT 1 FROM staged_control_objects o JOIN object_reservations r USING(family_id,object_id)
+                 WHERE o.kind!=r.kind OR o.object_hash!=r.object_hash
+             )",
+            [],
+            |r| r.get(0),
+        )?;
+        if inconsistent != 0 {
+            return Err(Error::Invalid("object reservation conflicts on restart"));
+        }
         migration.commit()?;
         let relay_public = crypto::signing_public_key(&relay_seed);
         db.execute(
@@ -294,6 +322,7 @@ impl RelayStore {
                 params![&candidate.family_id[..], &reservation[..], &candidate_bytes],
             )?;
         }
+        reserve_staged_object(&tx, candidate.family_id, object_id, kind, hash)?;
         let prior: Option<(i64, Vec<u8>, Vec<u8>)> = tx.query_row(
             "SELECT kind,object_hash,object_bytes FROM staged_objects WHERE family_id=?1 AND object_id=?2",
             params![&candidate.family_id[..], &object_id[..]], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
@@ -1946,6 +1975,7 @@ fn stage_control_object(
             params![&family[..], &transition[..], candidate],
         )?;
     }
+    reserve_staged_object(tx, family, entry.object_id, entry.kind, entry.object_hash)?;
     let prior: Option<Vec<u8>> = tx.query_row(
         "SELECT object_bytes FROM staged_control_objects WHERE family_id=?1 AND transition_id=?2 AND object_id=?3",
         params![&family[..], &transition[..], &entry.object_id[..]],
@@ -1961,6 +1991,35 @@ fn stage_control_object(
         tx.execute(
             "INSERT INTO staged_control_objects(family_id,transition_id,object_id,kind,object_hash,object_bytes) VALUES(?1,?2,?3,?4,?5,?6)",
             params![&family[..], &transition[..], &entry.object_id[..], i64::from(entry.kind), &entry.object_hash[..], object_bytes],
+        )?;
+    }
+    Ok(())
+}
+
+fn reserve_staged_object(
+    tx: &Transaction<'_>,
+    family: [u8; 16],
+    object_id: [u8; 16],
+    kind: u16,
+    hash: [u8; 32],
+) -> Result<(), Error> {
+    let existing: Option<(i64, Vec<u8>)> = tx
+        .query_row(
+            "SELECT kind,object_hash FROM object_reservations WHERE family_id=?1 AND object_id=?2",
+            params![&family[..], &object_id[..]],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    if let Some((prior_kind, prior_hash)) = existing {
+        if prior_kind != i64::from(kind) || prior_hash != hash {
+            return Err(Error::Invalid(
+                "object ID reserved with different kind or bytes",
+            ));
+        }
+    } else {
+        tx.execute(
+            "INSERT INTO object_reservations(family_id,object_id,kind,object_hash) VALUES(?1,?2,?3,?4)",
+            params![&family[..], &object_id[..], i64::from(kind), &hash[..]],
         )?;
     }
     Ok(())
@@ -2528,6 +2587,46 @@ mod tests {
         )
     }
 
+    fn issue_stage_with_changed_object(
+        stage_bytes: &[u8],
+        manager_id: [u8; 16],
+        manager_seed: [u8; 32],
+    ) -> Vec<u8> {
+        let Value::Map(mut stage) = cbor::decode(stage_bytes).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(mut object) = stage[5].1.clone() else {
+            panic!()
+        };
+        object.push(0);
+        let Value::Map(mut unsigned) = stage[1].1.clone() else {
+            panic!()
+        };
+        let Value::Array(mut manifest) = unsigned[9].1.clone() else {
+            panic!()
+        };
+        let Value::Array(mut entry) = manifest[0].clone() else {
+            panic!()
+        };
+        entry[2] = Value::Bytes(crypto::hash("object", &object).unwrap().to_vec());
+        entry[3] = Value::Integer(object.len() as i128);
+        manifest[0] = Value::Array(entry);
+        unsigned[9].1 = Value::Array(manifest);
+        let signature = crypto::sign_cbor(
+            "control-transition",
+            &cbor::encode(&Value::Map(unsigned.clone())).unwrap(),
+            &manager_seed,
+        )
+        .unwrap();
+        stage[1].1 = Value::Map(unsigned);
+        stage[2].1 = Value::Array(vec![Value::Array(vec![
+            Value::Bytes(manager_id.to_vec()),
+            Value::Bytes(signature.to_vec()),
+        ])]);
+        stage[5].1 = Value::Bytes(object);
+        cbor::encode(&Value::Map(stage)).unwrap()
+    }
+
     fn signed_manager_batch(
         genesis_committed: &[u8],
         genesis: &authority::GenesisCandidate,
@@ -2814,6 +2913,103 @@ mod tests {
                 .is_err()
         );
     }
+    #[test]
+    fn staged_object_id_keeps_its_hash_across_competitors_cleanup_and_restart() {
+        let genesis: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/api-genesis-v1.json").unwrap(),
+        )
+        .unwrap();
+        let issue: Json =
+            serde_json::from_str(&std::fs::read_to_string("../tests/vectors/api-v1.json").unwrap())
+                .unwrap();
+        let chain: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/contiguous-chain-v1.json").unwrap(),
+        )
+        .unwrap();
+        let seed: [u8; 32] = hex(chain["test_only_inputs"]["relay_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let manager_seed: [u8; 32] = hex(chain["test_only_inputs"]["manager_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let family: [u8; 16] = hex(genesis["inputs"]["family_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let promotion: [u8; 16] = hex(genesis["inputs"]["promotion_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let object_id: [u8; 16] = hex("083e4567e89b42d3a456426614174000").try_into().unwrap();
+        let genesis_stage = hex(genesis["inputs"]["stage_body_cbor_hex"].as_str().unwrap());
+        let genesis_candidate = hex(genesis["inputs"]["commit_candidate_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let issue_stage = hex(issue["inputs"]["stage_body_cbor_hex"].as_str().unwrap());
+        let issue_candidate = hex(issue["inputs"]["commit_body_cbor_hex"].as_str().unwrap());
+        let parsed = authority::verify_genesis_candidate(
+            &genesis_candidate,
+            &crypto::signing_public_key(&seed),
+        )
+        .unwrap();
+        let (_, competitor) =
+            competing_issue(&issue_candidate, &issue_stage, &parsed, manager_seed);
+        let changed = issue_stage_with_changed_object(&competitor, parsed.manager_id, manager_seed);
+        let genesis_commit = hex(genesis["expect"]["commit_response_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let Value::Map(response) = cbor::decode(&genesis_commit).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(committed) = &response[1].1 else {
+            panic!()
+        };
+        let time = control_commit_time(committed).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reservations.sqlite");
+        let mut store = RelayStore::open(&path, seed).unwrap();
+        store
+            .stage_genesis_object(family, promotion, &genesis_stage)
+            .unwrap();
+        store
+            .commit_genesis(family, &genesis_candidate, time)
+            .unwrap();
+        store
+            .stage_first_issue_object(family, object_id, &issue_stage)
+            .unwrap();
+        assert!(
+            store
+                .stage_first_issue_object(family, object_id, &changed)
+                .is_err()
+        );
+        store
+            .db
+            .execute(
+                "DELETE FROM staged_control_objects WHERE family_id=?1",
+                params![&family[..]],
+            )
+            .unwrap();
+        store
+            .db
+            .execute(
+                "DELETE FROM staged_controls WHERE family_id=?1",
+                params![&family[..]],
+            )
+            .unwrap();
+        drop(store);
+        let mut store = RelayStore::open(&path, seed).unwrap();
+        assert!(
+            store
+                .stage_first_issue_object(family, object_id, &changed)
+                .is_err()
+        );
+        store
+            .stage_first_issue_object(family, object_id, &issue_stage)
+            .unwrap();
+    }
+
     #[test]
     fn genesis_reservation_and_commit_are_atomic_and_survive_restart() {
         let api: Json = serde_json::from_str(

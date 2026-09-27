@@ -8,6 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.babytrack_core_ffi.NativeLocalStore
+import uniffi.babytrack_core_ffi.NativeSharedStore
 import uniffi.babytrack_core_ffi.ActivityWhen
 
 @RunWith(AndroidJUnit4::class)
@@ -102,6 +103,18 @@ class SharingRelayTest {
             assertTrue(sharing.syncRecipient(first.family).ready)
             assertEquals(2, sharing.snapshot(first.family).children.size)
             assertEquals(1, sharing.snapshot(first.family).activities.size)
+            val wrapping = DeviceWrappingKey(context).loadOrCreate()
+            try {
+                NativeSharedStore.open(recipient.absolutePath).use { core ->
+                    val candidate = core.prepareSharedUpload(first.family, wrapping)
+                        ?: error("Expected an offline batch")
+                    val familyHex = first.family.familyId.joinToString("") { "%02x".format(it.toInt() and 255) }
+                    RelayTransport(origin).post("/v1/families/$familyHex/batches", candidate)
+                    // Drop the response: the next sync must discover its signed acceptance.
+                }
+            } finally {
+                wrapping.fill(0)
+            }
             assertTrue(sharing.syncAndUpload(first.family, origin).ready)
         }
         ShareCoordinator(context, database.absolutePath).use { sharing ->

@@ -198,8 +198,12 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
             var progress = core.syncShared(family, wrapping, reads)
             repeat(16) {
                 if (!progress.ready) return@withWrapping progress
+                when (core.resolvePendingBatchResult(family, wrapping, reads).toInt()) {
+                    2 -> return@withWrapping progress
+                    4 -> error("The saved batch was rejected; its local operation is retained")
+                }
                 val bytes = core.prepareSharedUpload(family, wrapping) ?: return@withWrapping progress
-                relay.post("/v1/families/${family.familyId.hex()}/batches", bytes)
+                relay.post("/v1/families/${family.familyId.hex()}/batches", bytes, allowBatchConflict = true)
                 progress = core.syncShared(family, wrapping, reads)
             }
             progress

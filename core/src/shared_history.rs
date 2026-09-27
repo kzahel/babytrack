@@ -8,6 +8,7 @@ use crate::{
     control_chain::{self, ControlChain},
     crypto, session,
     sqlite_store::{self, FamilyHandle, SqliteStore, VerifiedSharedEntry},
+    sync_wire,
 };
 
 #[derive(Debug)]
@@ -18,6 +19,7 @@ pub enum Error {
     Crypto(crypto::Error),
     Session(session::Error),
     Store(sqlite_store::Error),
+    Wire(sync_wire::Error),
     Invalid(&'static str),
 }
 impl From<batch::Error> for Error {
@@ -50,6 +52,20 @@ impl From<sqlite_store::Error> for Error {
         Self::Store(value)
     }
 }
+impl From<sync_wire::Error> for Error {
+    fn from(value: sync_wire::Error) -> Self {
+        Self::Wire(value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingBatchResult {
+    NoPending,
+    Unresolved,
+    AcceptedAhead,
+    Rebased,
+    Blocked,
+}
 
 pub struct PublicHistorySession {
     family: FamilyHandle,
@@ -57,6 +73,63 @@ pub struct PublicHistorySession {
 }
 
 impl PublicHistorySession {
+    pub fn pending_batch_id(&self, store: &SqliteStore) -> Result<Option<[u8; 16]>, Error> {
+        Ok(store
+            .pending_batch(self.family)?
+            .map(|batch| batch.batch_id))
+    }
+
+    /// A result read is only a hint until its embedded relay receipt verifies
+    /// against the exact durable envelope. Acceptance still needs the full
+    /// contiguous log; a supported rejection may clear uncertainty only after
+    /// the required new authority prefix is locally verified.
+    pub fn resolve_pending_result(
+        &self,
+        store: &mut SqliteStore,
+        result_bytes: &[u8],
+    ) -> Result<PendingBatchResult, Error> {
+        let Some(pending) = store.pending_batch(self.family)? else {
+            return Ok(PendingBatchResult::NoPending);
+        };
+        let result = sync_wire::BatchResult::decode(result_bytes)?;
+        let Some(receipt_bytes) = result.receipt_bytes else {
+            return Ok(PendingBatchResult::Unresolved);
+        };
+        let history = store
+            .shared_history(self.family)?
+            .ok_or(Error::Invalid("Family has no shared genesis"))?;
+        if let Ok(accepted) =
+            session::verify_accepted_receipt(&receipt_bytes, &history.relay_public_key)
+        {
+            if accepted.family_id != self.family.family_id
+                || accepted.relay_id != self.chain.relay_id()
+                || accepted.batch_id != pending.batch_id
+                || accepted.object_hash != pending.object_hash
+                || accepted.device_sequence != pending.sequence
+                || accepted.cursor <= self.cursor()
+            {
+                return Err(Error::Invalid(
+                    "accepted result differs from pending batch or verified prefix",
+                ));
+            }
+            return Ok(PendingBatchResult::AcceptedAhead);
+        }
+        let rejected = session::verify_rejected_receipt(&receipt_bytes, &history.relay_public_key)?;
+        if rejected.family_id != self.family.family_id
+            || rejected.relay_id != self.chain.relay_id()
+            || rejected.batch_id != pending.batch_id
+            || rejected.object_hash != pending.object_hash
+            || rejected.device_sequence != pending.sequence
+        {
+            return Err(Error::Invalid("rejected result differs from pending batch"));
+        }
+        match rejected.reason {
+            1 => self.reject_stale_pending(store, &receipt_bytes)?,
+            4 => self.reject_conflicting_sequence_pending(store, &receipt_bytes)?,
+            _ => return Ok(PendingBatchResult::Blocked),
+        }
+        Ok(PendingBatchResult::Rebased)
+    }
     /// Pin a signed genesis or reopen the exact existing root. The Family
     /// must already have a local storage handle for this installation.
     pub fn begin(

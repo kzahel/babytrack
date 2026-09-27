@@ -42,7 +42,10 @@ To exercise the current relay slice on an emulator:
    offline in the Rust shared outbox; **Sync shared Family** uploads the next
    signed batches and verifies the relay log. The manager can use the same
    button for its Family. A newly shared manager Family uses the shared Rust
-   view and edit path; the local-only API rejects it.
+   view and edit path; the local-only API rejects it. A lost upload response
+   keeps exact batch bytes for retry. A signed rejection is checked against
+   verified history before the outbox may be resealed; other rejections keep
+   the local operation pending.
 9. After app restart, select the joined Family in the join preview to resume
    proof, history loading, or manual sync without pasting the invitation
    again. The manager's relay origin is saved after sharing is confirmed.
@@ -68,6 +71,7 @@ again. All three handoff steps are retried after later controls have
 committed. The recipient then saves a child and diaper offline, uploads them,
 and the manager pulls them. The manager saves another child, uploads it, and
 the recipient pulls it. The test reopens the recipient store and resumes by
-Family identity without the fragment. The
+Family identity without the fragment. It also drops one accepted upload
+response and recovers through the signed log. The
 default Android CI compiles this test, while
 execution currently uses the local emulator and relay.

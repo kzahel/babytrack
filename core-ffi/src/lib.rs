@@ -15,7 +15,7 @@ use babytrack_core::{
     first_proof::FirstProof,
     issue::FirstInviteIssue,
     local_api::{self, ActivityTime, LocalRepository},
-    shared_history::{self, PublicHistorySession},
+    shared_history::{self, PendingBatchResult, PublicHistorySession},
     shared_ready::ReadyFamilySession,
     sqlite_store::{FamilyHandle, SqliteStore},
     sync_wire::{ControlPage, OpaqueObject},
@@ -1064,6 +1064,58 @@ impl NativeSharedStore {
             remaining_objects: hydration.remaining,
             ready,
         })
+    }
+
+    /// Query the signed outcome of exact uncertain bytes. Code 0 means no
+    /// outbox, 1 no result, 2 accepted ahead of our verified log, 3 verified
+    /// rejection rebased the outbox, and 4 a different rejection blocks it.
+    pub fn resolve_pending_batch_result(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        transport: Box<dyn RelayReadTransport>,
+    ) -> Result<u8, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let public = PublicHistorySession::resume(&store, handle).map_err(rejected)?;
+        let Some(batch_id) = public.pending_batch_id(&store).map_err(rejected)? else {
+            return Ok(0);
+        };
+        let wrapping = fixed(&wrapping_key)?;
+        let signer = if store
+            .has_enrollment_attempt(handle.family_id)
+            .map_err(rejected)?
+        {
+            let attempt = EnrollmentAttempt::resume(&mut store, handle.family_id, &wrapping)
+                .map_err(rejected)?;
+            if attempt.family() != handle {
+                return Err(BindingError::InvalidBytes);
+            }
+            ActiveReadSigner::Recipient(attempt)
+        } else {
+            ActiveReadSigner::Manager(
+                ManagerCreation::resume(&store, handle, &wrapping).map_err(rejected)?,
+            )
+        };
+        let path = format!(
+            "/v1/families/{}/batch-results/{}",
+            lower_hex(&family.family_id),
+            lower_hex(&batch_id),
+        );
+        let auth = signer.sign_get(&path)?.bytes;
+        let result = transport.get(path, auth)?;
+        Ok(
+            match public
+                .resolve_pending_result(&mut store, &result)
+                .map_err(rejected)?
+            {
+                PendingBatchResult::NoPending => 0,
+                PendingBatchResult::Unresolved => 1,
+                PendingBatchResult::AcceptedAhead => 2,
+                PendingBatchResult::Rebased => 3,
+                PendingBatchResult::Blocked => 4,
+            },
+        )
     }
 }
 

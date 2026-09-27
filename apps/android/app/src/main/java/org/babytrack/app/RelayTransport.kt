@@ -17,7 +17,7 @@ internal class RelayTransport(origin: String) {
         base = origin.trimEnd('/')
     }
 
-    fun post(path: String, bytes: ByteArray): ByteArray {
+    fun post(path: String, bytes: ByteArray, allowBatchConflict: Boolean = false): ByteArray {
         require(path.startsWith("/v1/families/") && !path.contains("..") && !path.contains('#'))
         val connection = URL(base + path).openConnection() as HttpURLConnection
         try {
@@ -28,10 +28,14 @@ internal class RelayTransport(origin: String) {
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/cbor")
             connection.outputStream.use { it.write(bytes) }
-            check(connection.responseCode == HttpURLConnection.HTTP_OK) {
-                "Relay rejected request: ${connection.responseCode}"
+            val status = connection.responseCode
+            check(status == HttpURLConnection.HTTP_OK ||
+                (allowBatchConflict && path.endsWith("/batches") && status == HttpURLConnection.HTTP_CONFLICT)) {
+                "Relay rejected request: $status"
             }
-            connection.inputStream.use { input ->
+            val stream = if (status == HttpURLConnection.HTTP_OK) connection.inputStream else connection.errorStream
+            if (stream == null) return ByteArray(0)
+            stream.use { input ->
                 return readBounded(input, 1_048_576)
             }
         } finally {

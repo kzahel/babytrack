@@ -21,7 +21,7 @@ use babytrack_core::{
     portable_file::{
         export_readable_local, export_readable_shared, parse_readable, private_copy_shared,
     },
-    shared_history::{self, PublicHistorySession},
+    shared_history::{self, PendingBatchResult, PublicHistorySession},
     shared_ready::{NextUpload, ReadyFamilySession},
     sqlite_store::{FamilyHandle, SqliteStore},
     sync_wire::{BatchResult, ControlPage, LogPage, OpaqueObject},
@@ -943,17 +943,15 @@ async fn dynamic_flow(early_batch: bool) {
             lower_hex(&clone_batch.batch_id)
         );
         let read = clone_manager.sign_get(&result_path).unwrap();
-        let result = BatchResult::decode(
-            &relay
-                .batch_result_authenticated(
-                    family.family_id,
-                    clone_batch.batch_id,
-                    &result_path,
-                    &read.bytes,
-                )
-                .unwrap(),
-        )
-        .unwrap();
+        let result_bytes = relay
+            .batch_result_authenticated(
+                family.family_id,
+                clone_batch.batch_id,
+                &result_path,
+                &read.bytes,
+            )
+            .unwrap();
+        let result = BatchResult::decode(&result_bytes).unwrap();
         assert_eq!(
             result.receipt_bytes.as_deref(),
             Some(rejected_receipt.as_slice())
@@ -961,22 +959,25 @@ async fn dynamic_flow(early_batch: bool) {
         let mut clone_public = PublicHistorySession::resume(clone_store, family).unwrap();
         assert!(
             clone_public
-                .reject_conflicting_sequence_pending(clone_store, rejected_receipt)
+                .resolve_pending_result(clone_store, &result_bytes)
                 .is_err()
         );
         clone_public
             .accept_batch(clone_store, &manager_batch.envelope_bytes, manager_receipt)
             .unwrap();
-        let mut forged_receipt = rejected_receipt.clone();
-        *forged_receipt.last_mut().unwrap() ^= 1;
+        let mut forged_result = result_bytes.clone();
+        *forged_result.last_mut().unwrap() ^= 1;
         assert!(
             clone_public
-                .reject_conflicting_sequence_pending(clone_store, &forged_receipt)
+                .resolve_pending_result(clone_store, &forged_result)
                 .is_err()
         );
-        clone_public
-            .reject_conflicting_sequence_pending(clone_store, rejected_receipt)
-            .unwrap();
+        assert_eq!(
+            clone_public
+                .resolve_pending_result(clone_store, &result_bytes)
+                .unwrap(),
+            PendingBatchResult::Rebased
+        );
         let clone_ready = clone_manager.confirm(clone_store, committed).unwrap();
         let rebatch = match clone_manager
             .stage_next_local(&clone_ready, clone_store)

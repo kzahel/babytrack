@@ -153,6 +153,16 @@ by selected Family after process restart without retaining the fragment in
 UI state. The manager's nonsecret relay origin is saved in Android settings
 after confirmed promotion; Rust still pins and verifies the relay identity.
 The real-relay emulator test reopens the recipient and resumes by Family ID.
+The Android upload loop now reads each uncertain batch's signed result before
+reposting. Rust binds that result to the exact durable batch. A signed
+acceptance ahead of the visible log keeps the batch pending; signed stale
+epoch or sequence-conflict rejection clears uncertainty only after the
+required verified authority prefix, allowing fresh bytes. Unsupported
+rejections retain local work and block upload. The CLI competing-sequence
+regression checks denial before the competing accepted prefix, a forged
+result, and resealing after verification. The emulator drops one accepted
+upload response and recovers by pulling its signed log entry. Removal/private
+copy UI for unsupported rejections remains open.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

@@ -858,21 +858,20 @@ impl NativeSharedStore {
                 .accept_control(&mut store, &entry.committed_bytes)
                 .map_err(rejected)?;
         }
-        let target = manager
-            .join_target(&store)
-            .map_err(rejected)?
-            .ok_or(BindingError::InvalidBytes)?;
-        if target.action != 1 {
-            return Err(BindingError::InvalidBytes);
-        }
-        let challenge = FirstChallenge::prepare_later_for_initial_manager(
-            &mut store,
-            &manager,
-            target.invitation_id,
-            target.device_id,
-            &fixed(&wrapping_key)?,
-        )
-        .map_err(rejected)?;
+        let challenge = match manager.join_target(&store).map_err(rejected)? {
+            Some(target) if target.action == 1 => {
+                FirstChallenge::prepare_later_for_initial_manager(
+                    &mut store,
+                    &manager,
+                    target.invitation_id,
+                    target.device_id,
+                    &fixed(&wrapping_key)?,
+                )
+                .map_err(rejected)?
+            }
+            _ => FirstChallenge::resume(&store, &manager, &fixed(&wrapping_key)?)
+                .map_err(rejected)?,
+        };
         Ok(PreparedChallengeRow {
             candidate_bytes: challenge.candidate_bytes().to_vec(),
             objects: challenge
@@ -1088,21 +1087,18 @@ impl NativeSharedStore {
                 .accept_control(&mut store, &entry.committed_bytes)
                 .map_err(rejected)?;
         }
-        let target = manager
-            .join_target(&store)
-            .map_err(rejected)?
-            .ok_or(BindingError::InvalidBytes)?;
-        if target.action != 2 {
-            return Err(BindingError::InvalidBytes);
-        }
-        let admission = FirstAdmission::prepare(
-            &mut store,
-            &manager,
-            target.invitation_id,
-            target.device_id,
-            &fixed(&wrapping_key)?,
-        )
-        .map_err(rejected)?;
+        let admission = match manager.join_target(&store).map_err(rejected)? {
+            Some(target) if target.action == 2 => FirstAdmission::prepare(
+                &mut store,
+                &manager,
+                target.invitation_id,
+                target.device_id,
+                &fixed(&wrapping_key)?,
+            )
+            .map_err(rejected)?,
+            _ => FirstAdmission::resume(&store, &manager, &fixed(&wrapping_key)?)
+                .map_err(rejected)?,
+        };
         Ok(PreparedAdmissionRow {
             candidate_bytes: admission.candidate_bytes().to_vec(),
             objects: admission

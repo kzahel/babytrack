@@ -49,6 +49,37 @@ fn historical_control_object_and_device_ids_cannot_be_reused() {
     );
     assert_eq!(chain.last_global_cursor(), 1);
 
+    let mut invitation_equals_transition = cbor::decode(&wire(1)).unwrap();
+    if let Value::Map(root) = &mut invitation_equals_transition
+        && let Value::Map(unsigned) = &mut root[0].1
+        && let Value::Map(delta) = &mut unsigned[6].1
+    {
+        delta[0].1 = Value::Bytes(transition_id(&transitions[0]).to_vec());
+    }
+    assert_eq!(
+        chain.apply_invite_issue(&cbor::encode(&invitation_equals_transition).unwrap()),
+        Err(ControlError::Invalid(
+            "protocol ID reused across categories"
+        ))
+    );
+    let mut transition_equals_device = cbor::decode(&wire(1)).unwrap();
+    if let Value::Map(root) = &mut transition_equals_device
+        && let Value::Map(unsigned) = &mut root[0].1
+    {
+        unsigned[4].1 = Value::Bytes(hex_bytes(
+            fixture["test_only_inputs"]["manager_device_id_hex"]
+                .as_str()
+                .unwrap(),
+        ));
+    }
+    assert_eq!(
+        chain.apply_invite_issue(&cbor::encode(&transition_equals_device).unwrap()),
+        Err(ControlError::Invalid(
+            "protocol ID reused across categories"
+        ))
+    );
+    assert_eq!(chain.last_global_cursor(), 1);
+
     chain.apply_invite_issue(&wire(1)).unwrap();
     let mut reused_device = cbor::decode(&wire(2)).unwrap();
     if let Value::Map(root) = &mut reused_device
@@ -63,7 +94,9 @@ fn historical_control_object_and_device_ids_cannot_be_reused() {
     }
     assert_eq!(
         chain.apply_invite_claim(&cbor::encode(&reused_device).unwrap()),
-        Err(ControlError::Invalid("claim reuses a historical device ID"))
+        Err(ControlError::Invalid(
+            "protocol ID reused across categories"
+        ))
     );
     chain.apply_invite_claim(&wire(2)).unwrap();
 

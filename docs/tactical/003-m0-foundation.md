@@ -938,7 +938,7 @@ UI and the removed-device proof/copy implementation.
 | Finding | Disposition |
 |---|---|
 | Medium blocker: the relay denies a removed author its own accepted or rejected batch result after a lost POST response, so pending-work disposition cannot be verified. | The relay now allows only the removed signer's accepted receipt and verifies authorship of stored rejected envelopes before returning those receipts. FS63/BATCH08 and a real-relay CLI lost-accepted-response variant cover accepted, rejected, unknown, known-other, and denied post-removal data. Android queries the saved batch result after proof and reports accepted, rejected, or unknown while preserving local work. This repair still needs fixed-revision independent recheck. |
-| Medium hardening: protocol IDs can be reused across categories even though the contract says never reused. | Add a durable per-Family cross-category ID registry in relay authority and client replay before later-device authority expands. Add collision regressions. |
+| Medium hardening: protocol IDs can be reused across categories even though the contract says never reused. | The first-cohort relay now scans its durable committed control and accepted/rejected result registry inside each commit transaction; the core replay keeps a global Family ID set. FS64/IDCOLL01, core cross-category cases, and relay registry checks cover selected collisions. Extend exact signed collision tests and the registry as later-device authority is implemented. |
 | Low contract gap: three advertised GET routes are not implemented. | Add authenticated routes and API vectors or narrow the exact v1 contract before other clients rely on them. |
 
 The reviewer found no present two-device privilege escalation from the ID
@@ -947,6 +947,15 @@ revoked data ACL, and epoch-two manager continuation in the reviewed path.
 These positive findings do not close the gate while the receipt blocker
 remains. Android/emulator, fuzzing, and power-loss campaigns were outside
 this review.
+
+First-cohort ID hardening now rejects a new transition, object/grant,
+invitation, claim device, challenge, or accepted batch ID reused across
+categories in Rust replay. The relay scans durable committed controls and
+accepted/rejected batch results inside each commit transaction, including
+after restart. Core collision tests and relay registry assertions pass;
+IDCOLL01/FS64 records the remaining signed stage/commit combinations to
+exercise as later-device authority expands. The disposable-relay Android
+suite still passes six tests after this guard.
 
 ## Advisory byte/crypto preflight
 

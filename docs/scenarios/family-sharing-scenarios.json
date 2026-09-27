@@ -1395,6 +1395,16 @@
       "expect": ["An accepted-before-removal or rejected-after-removal result is returned only to its author and verifies against the exact saved envelope.", "Unknown result is reported as unknown, not noninclusion; another author's result and post-removal data remain denied.", "A private copy preserves locally held work while the interface reports accepted, rejected, or unknown delivery honestly."],
       "variants": ["accepted before removal", "rejected after removal", "lost response", "unknown own batch ID", "known other batch ID", "restart after proof"],
       "decisions": ["D6", "D7"]
+    },
+    {
+      "id": "FS64",
+      "status": "agreed",
+      "requirements": ["U3", "U4"],
+      "given": "A manager or authorized device proposes a correctly signed object whose new protocol ID reuses a historical ID of another category in the same Family.",
+      "actions": ["Try device, invitation, transition, challenge, grant/object, accepted batch, and rejected batch ID collisions at staging and commit.", "Restart relay and client, then replay the same candidate."],
+      "expect": ["Every cross-category new-ID collision fails without advancing the Family cursor, head, authority state, accepted sequence, or committed object set.", "Both relay and client replay reject the same collision; exact retries of an already committed object remain idempotent.", "A rejected batch ID remains unavailable to later control or object proposals."],
+      "variants": ["invitation equals genesis transition", "claim device equals old object", "challenge equals batch", "rotation grant equals admission grant", "removal equals rejected batch"],
+      "decisions": ["D4", "D6"]
     }
   ]
 }

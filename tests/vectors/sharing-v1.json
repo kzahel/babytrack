@@ -483,6 +483,13 @@
       "initial": {"recipient_state": "active", "pending_batch": "exact-signed-envelope"},
       "actions": ["lose recipient POST response", "commit manager removal and key rotation", "query batch result with removed recipient signer", "query manager batch result with removed signer", "query unknown batch ID", "try new log and object reads"],
       "expect": {"own_accepted_before_removal": "signed-result", "own_rejected_after_removal": "signed-result", "known_other": "deny", "unknown": "null-not-noninclusion", "new_log_and_objects": "deny", "local_copy": "preserves-pending-work"}
+    },
+    {
+      "id": "IDCOLL01",
+      "scenario": "FS64",
+      "initial": {"family": "genesis-plus-first-cohort-history", "id_scope": "one-Family-all-protocol-categories"},
+      "actions": ["reuse a historical transition ID as a new invitation ID", "reuse a device ID as a new transition ID", "reuse an accepted or rejected batch ID as a new object or transition ID", "replay exact committed bytes"],
+      "expect": {"new_cross_category_ids": "reject-without-cursor-or-head-change", "rejected_batch_id": "reserved", "exact_committed_retry": "same-result"}
     }
   ]
 }

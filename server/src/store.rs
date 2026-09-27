@@ -305,6 +305,7 @@ impl RelayStore {
                 &committed.ok_or(Error::Invalid("active genesis missing bytes"))?,
             )?);
         }
+        ensure_control_ids(&tx, candidate.family_id, candidate_bytes)?;
         for entry in &candidate.manifest {
             let staged: Option<(i64, Vec<u8>, Vec<u8>)> = tx.query_row(
                 "SELECT kind,object_hash,object_bytes FROM staged_objects WHERE family_id=?1 AND object_id=?2",
@@ -527,6 +528,7 @@ impl RelayStore {
             return Err(Error::Invalid("relay time moved backward"));
         }
         let tx = self.db.transaction()?;
+        ensure_control_ids(&tx, path_family, candidate_bytes)?;
         let staged_candidate: Option<Vec<u8>> = tx
             .query_row(
                 "SELECT candidate_bytes FROM staged_issues WHERE family_id=?1 AND transition_id=?2",
@@ -635,6 +637,7 @@ impl RelayStore {
         )?;
         let next_head = crypto::hash("control-head", &committed)?;
         let tx = self.db.transaction()?;
+        ensure_control_ids(&tx, path_family, candidate_bytes)?;
         tx.execute(
             "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,?2,1,?3)",
             params![&path_family[..], next_cursor, &committed],
@@ -753,6 +756,7 @@ impl RelayStore {
             return Err(Error::Invalid("challenge head or relay time invalid"));
         }
         let tx = self.db.transaction()?;
+        ensure_control_ids(&tx, path_family, candidate_bytes)?;
         let staged:Option<Vec<u8>>=tx.query_row("SELECT candidate_bytes FROM staged_challenges WHERE family_id=?1 AND transition_id=?2",
             params![&path_family[..],&challenge.transition_id[..]],|r|r.get(0)).optional()?;
         if staged.as_deref() != Some(candidate_bytes) {
@@ -862,6 +866,7 @@ impl RelayStore {
         )?;
         let next_head = crypto::hash("control-head", &committed)?;
         let tx = self.db.transaction()?;
+        ensure_control_ids(&tx, path_family, candidate_bytes)?;
         tx.execute(
             "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,?2,1,?3)",
             params![&path_family[..], next_cursor, &committed],
@@ -984,6 +989,7 @@ impl RelayStore {
             return Err(Error::Invalid("admission head or relay time invalid"));
         }
         let tx = self.db.transaction()?;
+        ensure_control_ids(&tx, path_family, candidate_bytes)?;
         let staged:Option<Vec<u8>>=tx.query_row("SELECT candidate_bytes FROM staged_admissions WHERE family_id=?1 AND transition_id=?2",
             params![&path_family[..],&admission.transition_id[..]],|r|r.get(0)).optional()?;
         if staged.as_deref() != Some(candidate_bytes) {
@@ -1172,6 +1178,7 @@ impl RelayStore {
         }
         ensure_first_removal_ids_unused(&self.db, path_family, &removal)?;
         let tx = self.db.transaction()?;
+        ensure_control_ids(&tx, path_family, candidate_bytes)?;
         let saved: Option<Vec<u8>> = tx.query_row(
             "SELECT candidate_bytes FROM staged_removals WHERE family_id=?1 AND transition_id=?2",
             params![&path_family[..], &removal.transition_id[..]], |r| r.get(0),
@@ -1305,6 +1312,7 @@ impl RelayStore {
             }
             return Ok(receipt::batch_commit_response(&old_receipt)?);
         }
+        ensure_new_protocol_ids(&tx, path_family, &[batch.batch_id])?;
         let genesis_head = crypto::hash("control-head", &genesis_committed)?;
         let known_ancestor = if author == genesis.manager_id {
             let mut found = false;
@@ -1982,6 +1990,128 @@ fn control_candidate(committed: &[u8]) -> Result<Vec<u8>, Error> {
     ]))?)
 }
 
+/// New protocol identities in one control. References to an existing
+/// invitation or device are intentionally excluded.
+fn control_birth_ids(bytes: &[u8]) -> Result<Vec<[u8; 16]>, Error> {
+    let Value::Map(root) = cbor::decode_with_limits(
+        bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?
+    else {
+        return Err(Error::Invalid("control ID source not map"));
+    };
+    let Some((1, Value::Map(unsigned))) = root.first() else {
+        return Err(Error::Invalid("control ID unsigned absent"));
+    };
+    let field = |index: usize| -> Result<&Value, Error> {
+        unsigned
+            .get(index)
+            .map(|(_, value)| value)
+            .ok_or(Error::Invalid("control ID field absent"))
+    };
+    let mut ids = vec![fixed::<16>(field(4)?)?];
+    let Value::Array(manifest) = field(9)? else {
+        return Err(Error::Invalid("control ID manifest not array"));
+    };
+    for entry in manifest {
+        let Value::Array(parts) = entry else {
+            return Err(Error::Invalid("control ID manifest entry not array"));
+        };
+        ids.push(fixed::<16>(
+            parts
+                .get(1)
+                .ok_or(Error::Invalid("control ID object absent"))?,
+        )?);
+    }
+    let Value::Map(delta) = field(6)? else {
+        return Err(Error::Invalid("control ID delta not map"));
+    };
+    let extra = match number(field(5)?)? {
+        1 => {
+            let Value::Array(manager) = delta
+                .first()
+                .ok_or(Error::Invalid("genesis manager absent"))?
+                .1
+                .clone()
+            else {
+                return Err(Error::Invalid("genesis manager not array"));
+            };
+            Some(fixed::<16>(
+                manager
+                    .first()
+                    .ok_or(Error::Invalid("manager device ID absent"))?,
+            )?)
+        }
+        2 => Some(fixed::<16>(
+            &delta
+                .first()
+                .ok_or(Error::Invalid("invitation ID absent"))?
+                .1,
+        )?),
+        4 => Some(fixed::<16>(
+            &delta
+                .get(1)
+                .ok_or(Error::Invalid("claim device ID absent"))?
+                .1,
+        )?),
+        11 => Some(fixed::<16>(
+            &delta.get(2).ok_or(Error::Invalid("challenge ID absent"))?.1,
+        )?),
+        _ => None,
+    };
+    if let Some(id) = extra {
+        ids.push(id)
+    }
+    Ok(ids)
+}
+
+/// Existing committed controls and durable batch results form the first
+/// cohort's per-Family ID registry, including rejected uploads.
+fn ensure_new_protocol_ids(
+    db: &Connection,
+    family: [u8; 16],
+    candidate_ids: &[[u8; 16]],
+) -> Result<(), Error> {
+    let mut seen = BTreeSet::new();
+    let mut controls = db.prepare(
+        "SELECT committed_bytes FROM entries WHERE family_id=?1 AND kind=1 ORDER BY cursor",
+    )?;
+    let rows = controls.query_map([&family[..]], |row| row.get::<_, Vec<u8>>(0))?;
+    for row in rows {
+        for id in control_birth_ids(&row?)? {
+            if !seen.insert(id) {
+                return Err(Error::Invalid("stored protocol ID collision"));
+            }
+        }
+    }
+    for table in ["batch_results", "rejected_batch_results"] {
+        let sql = format!("SELECT batch_id FROM {table} WHERE family_id=?1");
+        let mut query = db.prepare(&sql)?;
+        let rows = query.query_map([&family[..]], |row| row.get::<_, Vec<u8>>(0))?;
+        for row in rows {
+            let id: [u8; 16] = row?
+                .try_into()
+                .map_err(|_| Error::Invalid("stored batch ID length"))?;
+            if !seen.insert(id) {
+                return Err(Error::Invalid("stored protocol ID collision"));
+            }
+        }
+    }
+    for id in candidate_ids {
+        if !seen.insert(*id) {
+            return Err(Error::Invalid("protocol ID reused across categories"));
+        }
+    }
+    Ok(())
+}
+
+fn ensure_control_ids(db: &Connection, family: [u8; 16], candidate: &[u8]) -> Result<(), Error> {
+    ensure_new_protocol_ids(db, family, &control_birth_ids(candidate)?)
+}
+
 // Join transitions have a fixed order, but data batches occupy the same global
 // cursor space. Locate a control by its ordinal rather than assuming its cursor.
 fn control_at(db: &Connection, family: [u8; 16], ordinal: i64) -> Result<Vec<u8>, Error> {
@@ -2428,6 +2558,13 @@ mod tests {
         let issue_parsed =
             authority::verify_first_invite_issue(&issue_candidate, &genesis_parsed, genesis_head)
                 .unwrap();
+        assert!(
+            ensure_new_protocol_ids(&store.db, family, &[genesis_parsed.transition_id]).is_err()
+        );
+        assert!(ensure_new_protocol_ids(&store.db, family, &[genesis_parsed.manager_id]).is_err());
+        assert!(ensure_new_protocol_ids(&store.db, family, &[issue_parsed.invitation_id]).is_err());
+        assert!(ensure_new_protocol_ids(&store.db, family, &[issue_object]).is_err());
+        assert!(ensure_new_protocol_ids(&store.db, family, &[[0x9a; 16]]).is_ok());
         let invite_seed: [u8; 32] = hex(chain["test_only_inputs"]["invitation_sign_seed_hex"]
             .as_str()
             .unwrap())

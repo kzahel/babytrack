@@ -398,57 +398,16 @@ pub(crate) fn verify_first_challenge(
     claim: &ClaimCandidate,
     claim_head: [u8; 32],
 ) -> Result<ChallengeCandidate, Error> {
-    let value = cbor::decode_with_limits(
-        candidate_bytes,
-        cbor::Limits {
-            max_bytes: 1024 * 1024,
-            max_depth: 16,
-        },
-    )?;
-    let root = exact_map(&value, 2)?;
-    let unsigned = exact_map(&root[0].1, 11)?;
-    let delta = exact_map(&unsigned[6].1, 4)?;
-    let invitation_id = fixed::<16>(&delta[0].1)?;
-    let device_id = fixed::<16>(&delta[1].1)?;
-    let challenge_id = fixed::<16>(&delta[2].1)?;
-    let challenge_hash = fixed::<32>(&delta[3].1)?;
-    if invitation_id != issue.invitation_id
-        || device_id != claim.device_id
-        || challenge_id == genesis.transition_id
-        || challenge_id == issue.transition_id
-        || challenge_id == claim.transition_id
-    {
-        return Err(Error::Invalid("challenge target or ID invalid"));
-    }
-    let context_bytes = cbor::encode(&Value::Array(vec![
-        Value::Bytes(genesis.family_id.to_vec()),
-        Value::Bytes(genesis.relay_id.to_vec()),
-        Value::Bytes(invitation_id.to_vec()),
-        Value::Bytes(device_id.to_vec()),
-        Value::Bytes(claim.claim_hash.to_vec()),
-        Value::Bytes(challenge_id.to_vec()),
-        Value::Bytes(claim.agreement_public.to_vec()),
-        Value::Integer(claim.key_version.into()),
-        Value::Bytes(claim_head.to_vec()),
-    ]))?;
-    let resulting = state_with_pending(genesis, issue, claim, Some(challenge_id), None);
-    let header = verify_following(
-        candidate_bytes,
-        genesis,
-        FollowingPlan {
-            parent: claim_head,
-            kind: 11,
-            epoch: 1,
-            resulting: &resulting,
-            expected_signers: &[(genesis.manager_id, genesis.manager_signing_key)],
-            manifest_kinds: &[2, 3],
-        },
-    )?;
-    if header.transition_id == genesis.transition_id
-        || header.transition_id == issue.transition_id
-        || header.transition_id == claim.transition_id
-        || header.manifest[0].object_id == header.manifest[1].object_id
-        || header.manifest.iter().any(|entry| {
+    let state = state_with_pending(genesis, issue, claim, None, None);
+    let prepared = public_authority::prepare_challenge(candidate_bytes, &state, claim_head)?;
+    if prepared.challenge_id == genesis.transition_id
+        || prepared.challenge_id == issue.transition_id
+        || prepared.challenge_id == claim.transition_id
+        || prepared.transition_id == genesis.transition_id
+        || prepared.transition_id == issue.transition_id
+        || prepared.transition_id == claim.transition_id
+        || prepared.manifest[0].object_id == prepared.manifest[1].object_id
+        || prepared.manifest.iter().any(|entry| {
             genesis
                 .manifest
                 .iter()
@@ -456,14 +415,23 @@ pub(crate) fn verify_first_challenge(
                 || entry.object_id == issue.manifest.object_id
         })
     {
-        return Err(Error::Invalid("challenge transition or object ID reused"));
+        return Err(Error::Invalid("challenge historical ID reused"));
     }
     Ok(ChallengeCandidate {
-        transition_id: header.transition_id,
-        challenge_id,
-        challenge_hash,
-        context_bytes,
-        manifest: header.manifest,
+        transition_id: prepared.transition_id,
+        challenge_id: prepared.challenge_id,
+        challenge_hash: prepared.challenge_hash,
+        context_bytes: prepared.context_bytes,
+        manifest: prepared
+            .manifest
+            .into_iter()
+            .map(|entry| ManifestEntry {
+                kind: entry.kind,
+                object_id: entry.object_id,
+                object_hash: entry.object_hash,
+                object_len: entry.object_len,
+            })
+            .collect(),
     })
 }
 

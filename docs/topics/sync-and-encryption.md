@@ -430,13 +430,14 @@ history or verified against it after restart, not trusted as an unchecked
 database snapshot. An offline request or staged object never becomes a
 confirmed authority change. Unknown versions/kinds fail closed.
 
-The extracted `wire` verifier prepares invitation-issue and two-signature
-claim candidates for both the client control chain and relay. It checks the
+The extracted `wire` verifier prepares invitation-issue, two-signature
+claim, and holder-challenge candidates for both the client control chain and
+relay. It checks the
 public state effects, hashes, manifests, and applicable signatures without
 time, receipt, or object opening. Historical ID checks still live in the
 callers. The shared verifier also checks the common signed envelope for the
 remaining controls against caller-derived next state and signer sets; their
-transition-specific state rules are still separate. The public ledger and
+other transition-specific state rules are still separate. The public ledger and
 general relay authority are not complete.
 
 This is an implementation proposal, not a new wire contract. Its first

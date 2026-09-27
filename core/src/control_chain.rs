@@ -708,100 +708,47 @@ impl ControlChain {
         )?;
         let root = exact_map(&object, 4)?;
         let unsigned = exact_map(&root[0].1, 11)?;
-        self.check_unsigned(unsigned, 11, self.current_epoch()?)?;
-        let delta = exact_map(&unsigned[6].1, 4)?;
-        let invitation_id = fixed::<16>(&delta[0].1)?;
-        let device_id = fixed::<16>(&delta[1].1)?;
-        let challenge_id = fixed::<16>(&delta[2].1)?;
-        let challenge_hash = fixed::<32>(&delta[3].1)?;
-        if self.seen_challenge_ids.contains(&challenge_id) {
+        self.check_new_control_ids(unsigned)?;
+        let signed_candidate = cbor::encode(&Value::Map(vec![
+            (1, root[0].1.clone()),
+            (2, root[1].1.clone()),
+        ]))?;
+        let prepared = babytrack_wire::authority::prepare_challenge(
+            &signed_candidate,
+            &self.state,
+            self.head_hash,
+        )?;
+        if self.seen_challenge_ids.contains(&prepared.challenge_id) {
             return Err(Error::Invalid("challenge ID reused"));
         }
-        let state = exact_map(&self.state, 7)?;
-        let pending = find_row(&state[5].1, 9, 0, invitation_id)?
-            .ok_or(Error::Invalid("challenge invitation not pending"))?;
-        if fixed::<16>(&pending[1])? != device_id {
-            return Err(Error::Invalid("challenge device mismatch"));
-        }
-        let claim_hash = fixed::<32>(&pending[6])?;
-        let agree_public = fixed::<32>(&pending[3])?;
-        let sign_public = fixed::<32>(&pending[2])?;
-        let key_version: u32 = number(&pending[4])?
-            .try_into()
-            .map_err(|_| Error::Invalid("key version outside u32"))?;
-        let epoch: u32 = self
-            .current_epoch()?
-            .try_into()
-            .map_err(|_| Error::Invalid("epoch outside u32"))?;
-        let context_bytes = cbor::encode(&Value::Array(vec![
-            Value::Bytes(self.genesis.family_id().to_vec()),
-            Value::Bytes(self.genesis.relay_id().to_vec()),
-            Value::Bytes(invitation_id.to_vec()),
-            Value::Bytes(device_id.to_vec()),
-            Value::Bytes(claim_hash.to_vec()),
-            Value::Bytes(challenge_id.to_vec()),
-            Value::Bytes(agree_public.to_vec()),
-            Value::Integer(key_version.into()),
-            Value::Bytes(self.head_hash.to_vec()),
-        ]))?;
-        let manifest = array(&unsigned[9].1, 2)?;
-        let hpke_entry = array(&manifest[0], 4)?;
-        let verifier_entry = array(&manifest[1], 4)?;
-        if number(&hpke_entry[0])? != 2 || number(&verifier_entry[0])? != 3 {
-            return Err(Error::Invalid("challenge object manifest kinds invalid"));
-        }
-        let challenge_record = VerifiedChallenge {
+        let challenge = VerifiedChallenge {
             family_id: self.genesis.family_id(),
-            epoch,
-            device_id,
-            challenge_id,
-            context_bytes,
-            challenge_hash,
-            hpke_object_id: fixed::<16>(&hpke_entry[1])?,
-            hpke_object_hash: fixed::<32>(&hpke_entry[2])?,
-            verifier_object_id: fixed::<16>(&verifier_entry[1])?,
-            verifier_object_hash: fixed::<32>(&verifier_entry[2])?,
-            pending_sign_public: sign_public,
-            pending_agree_public: agree_public,
-            pending_key_version: key_version,
+            epoch: self.epoch()?,
+            device_id: prepared.device_id,
+            challenge_id: prepared.challenge_id,
+            context_bytes: prepared.context_bytes,
+            challenge_hash: prepared.challenge_hash,
+            hpke_object_id: prepared.manifest[0].object_id,
+            hpke_object_hash: prepared.manifest[0].object_hash,
+            verifier_object_id: prepared.manifest[1].object_id,
+            verifier_object_hash: prepared.manifest[1].object_hash,
+            pending_sign_public: prepared.pending_sign_public,
+            pending_agree_public: prepared.pending_agree_public,
+            pending_key_version: prepared.pending_key_version,
         };
-        let signatures = array(&root[1].1, 1)?;
-        let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
-        let active = find_row(&state[4].1, 5, 0, signer_id)?
-            .ok_or(Error::Invalid("challenge signer not active"))?;
-        let signer_key = fixed::<32>(&active[1])?;
-        let mut next_state = self.state.clone();
-        let Value::Map(map) = &mut next_state else {
-            unreachable!()
-        };
-        let Value::Array(rows) = &mut map[5].1 else {
-            unreachable!()
-        };
-        let row = rows
-            .iter_mut()
-            .find(|row| {
-                array(row, 9)
-                    .is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(invitation_id))
-            })
-            .unwrap();
-        let Value::Array(row) = row else {
-            unreachable!()
-        };
-        row[7] = Value::Bytes(challenge_id.to_vec());
-        row[8] = Value::Null;
         self.finalize(
             bytes,
             root,
             unsigned,
             FinalizePlan {
-                next_state,
-                expected_signers: &[(signer_id, signer_key)],
+                next_state: prepared.next_state,
+                expected_signers: &[(prepared.signer_id, prepared.signer_key)],
                 manifest_kinds: &[2, 3],
                 before_ms: None,
             },
         )?;
-        self.challenges.insert(invitation_id, challenge_record);
-        self.seen_challenge_ids.insert(challenge_id);
+        self.challenges.insert(prepared.invitation_id, challenge);
+        self.seen_challenge_ids.insert(prepared.challenge_id);
         Ok(())
     }
 

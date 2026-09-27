@@ -19,6 +19,33 @@ import uniffi.babytrack_core_ffi.previewInvitation
 
 @RunWith(AndroidJUnit4::class)
 class SharingRelayTest {
+
+    @Test
+    fun claimedLinkReturnsVerifiedTerminalReasonToSecondDevice() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
+            ?: error("relayPublicKey instrumentation argument required")
+        val origin = "http://localhost:8787"
+        val managerDb = context.filesDir.resolve("claimed-manager-${System.nanoTime()}.db")
+        val firstDb = context.filesDir.resolve("claimed-first-${System.nanoTime()}.db")
+        val secondDb = context.filesDir.resolve("claimed-second-${System.nanoTime()}.db")
+        val family = NativeLocalStore.open(managerDb.absolutePath).use {
+            it.createFamily(System.currentTimeMillis())
+        }
+        val fragment = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            sharing.promote(family, origin, publicKey)
+            sharing.invite(family, origin, 1u.toUByte())
+        }
+        ShareCoordinator(context, firstDb.absolutePath).use { sharing ->
+            sharing.claim(fragment)
+        }
+        ShareCoordinator(context, secondDb.absolutePath).use { sharing ->
+            val result = runCatching { sharing.claim(fragment) }
+            val terminal = result.exceptionOrNull() as? InvitationTerminal
+            assertEquals(InvitationTerminalReason.CLAIMED, terminal?.reason)
+            assertTrue(sharing.recipientFamilies().isEmpty())
+        }
+    }
     @Test
     fun sharedInvitationOpensJoinFormWithoutRedeemingIt() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()

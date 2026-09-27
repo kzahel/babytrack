@@ -16,6 +16,7 @@ internal object SleepTimerNotifications {
     private const val notificationId = 4101
 
     fun update(context: Context, activeCount: Int) {
+        SleepTimerWidget.update(context, activeCount)
         val manager = context.getSystemService(NotificationManager::class.java)
         if (activeCount == 0) {
             manager.cancel(notificationId)

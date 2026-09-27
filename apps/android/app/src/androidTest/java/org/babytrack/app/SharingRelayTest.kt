@@ -9,6 +9,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import android.app.job.JobScheduler
 import android.os.ParcelFileDescriptor
+import android.widget.FrameLayout
+import android.widget.TextView
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -39,6 +41,11 @@ class SharingRelayTest {
                 val activity = local.startSleep(family, child, ActivityWhen(now, 0, now))
                 val running = runningSleepCount(local, sharing, listOf(family), emptyList())
                 assertEquals(1, running)
+                assertEquals(
+                    context.getString(R.string.sleep_widget_one),
+                    SleepTimerWidget.views(context, running).apply(context, FrameLayout(context))
+                        .findViewById<TextView>(R.id.widget_status).text.toString(),
+                )
                 SleepTimerNotifications.update(context, running)
                 assertTrue("Running timer notification should appear", waitForSleepNotification(manager, context, true))
                 SleepTimerNotifications.update(context, 0)
@@ -48,6 +55,11 @@ class SharingRelayTest {
                 local.stopSleep(family, child, activity, now + 60_000, 0, now + 60_000)
                 val stopped = runningSleepCount(local, sharing, listOf(family), emptyList())
                 assertEquals(0, stopped)
+                assertEquals(
+                    context.getString(R.string.sleep_widget_none),
+                    SleepTimerWidget.views(context, stopped).apply(context, FrameLayout(context))
+                        .findViewById<TextView>(R.id.widget_status).text.toString(),
+                )
                 SleepTimerNotifications.update(context, stopped)
                 assertTrue("Stopped timer notification should clear", waitForSleepNotification(manager, context, false))
             }

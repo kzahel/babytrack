@@ -177,8 +177,12 @@ delivered, and removed access cannot obtain new Family data.
   local journal start/stop notification case passes on an emulator. A boot
   receiver now rereads saved timers and restores the notification without
   waiting for network sync; the emulator test clears and restores that
-  notification from the journal. An actual device reboot, widgets, and
-  physical-phone checks remain.
+  notification from the journal. A basic home-screen widget shows the number
+  of saved running sleep timers and opens the tracker when tapped. It updates
+  after tracker changes, scheduled sync, boot refresh, and launcher widget
+  refresh; the emulator test checks its running and stopped renderings.
+  An actual device reboot, widget placement on a launcher, and physical-phone
+  checks remain.
 
 Gate: caregivers can move a saved point to another phone and understand
 what it contains; daily logging and recovery require no relay account.

@@ -1222,6 +1222,32 @@ implemented-authority gate and end-of-M0 gate remain open. The fixture-only
 boundary removes one exposure but does not resolve the durable session and
 outbox findings.
 
+## Advisory shared authority verifier at 7566262
+
+Daybreak Blue at high thinking reviewed fixed clean commit
+`7566262f2996e8b3c718cc20b42c851e0997d4a2` in read-only Yep Anywhere
+session `01a0e1f0-a10c-7611-a36d-ef3613b80ec1`. The process reached
+verified idle with an empty queue. The static review ran no tests and returned
+**focused advisory PASS** for public state agreement on the currently exposed
+first-cohort issue, claim, challenge, proof, admission, and removal routes,
+assuming an honest ordered relay and intact storage. This is not the end-M0
+gate or a pass for later-device authority.
+
+| Finding | Disposition and required regression |
+|---|---|
+| G1 high: the common signed envelope checks caller-supplied state and signer policy; cancellation, role change, pending removal, and grant repair still lack shared specialized reducers. | Blocker before general routes. Derive each effect and signer set in the shared verifier; differential client/relay cases must reject stale or member signers, last-manager loss, wrong issuer/pending target, and wrong repair admission (FS71). |
+| G2 high: the public ledger proposal did not explicitly bind every epoch to its verified commitment. | Blocker before general routes. Persist and reconstruct head-to-epoch and epoch-to-commitment maps from committed bytes. Rotate, restart, admit a later device, and reject stale or substituted commitments (FS72). |
+| H1 medium: staging reserves object IDs only within a candidate; cleanup can allow reuse of an uncommitted ID with different bytes. | Add a durable Family-wide object-ID-to-hash reservation independent of candidate cleanup, and test competing stages and restart (FS73). |
+| H2 medium: first-cohort restart reconstruction does not authenticate every mutable stored authority link and receipt. | Rebuild from authenticated committed history or fail closed before commits and reads when bytes or derived rows are corrupted (FS74). |
+| H3 medium: admission staging checks grant hash and size but not all public grant-envelope bindings. | Before general routes, validate recipient, purpose, key version, and control-core hash; keep ciphertext opening a client readiness check (FS71). |
+
+The reviewer found no accepted first-cohort candidate that makes an honest
+client and relay derive different public state. It accepted the documented
+limits of authorized hostile holders, withheld/forked history, relay-controlled
+time, and no global fork detection. The [owning topic](../topics/sync-and-encryption.md#proposed-implementation-seam-for-general-relay-authority)
+now states the additional ledger invariants. The general relay and formal
+M0 exit review remain open.
+
 ## Completion condition
 
 All slice gates pass in CI and on the designated local testbeds, the

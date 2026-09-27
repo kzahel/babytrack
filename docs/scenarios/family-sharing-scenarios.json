@@ -1465,6 +1465,46 @@
       "expect": ["One transaction owns each global cursor and all matching state, ID, sequence, object, log, and result updates.", "A cursor-only loser may retry with a new receipt; a changed head requires authority revalidation; restart returns the exact committed outcome."],
       "variants": ["separate SQLite connections", "synchronization barrier", "derived-table corruption after restart"],
       "decisions": ["D6"]
+    },
+    {
+      "id": "FS71",
+      "status": "agreed",
+      "requirements": ["U3", "U4"],
+      "given": "Later-device cancellation, role change, pending removal, and grant repair candidates are submitted to both client and relay public-authority reducers.",
+      "actions": ["Replay identical signed bytes and prior verified state on each side, including a third-device enrollment and a publicly malformed grant envelope."],
+      "expect": ["Both sides return the same accept or reject decision and identical next public state bytes; the relay never supplies a divergent signer policy or state effect to a generic envelope check.", "A stale or member signer, last-manager demotion/removal, non-issuer cancellation, wrong pending target, wrong repair admission, and wrong public grant recipient/purpose/version/core binding are rejected."],
+      "variants": ["valid control bytes", "stale manager", "member signer", "last manager", "wrong issuer", "wrong pending device", "repair for another admission", "valid public envelope with undecryptable ciphertext"],
+      "decisions": ["D2", "D4"]
+    },
+    {
+      "id": "FS72",
+      "status": "agreed",
+      "requirements": ["U1", "U4"],
+      "given": "Epoch two was committed with a verified commitment after recipient removal and the relay restarts before a later-device admission.",
+      "actions": ["Rebuild the head-to-epoch and epoch-to-commitment maps from committed bytes, admit a later device, and repair its grant; separately corrupt, delete, or substitute the derived commitment row."],
+      "expect": ["The valid epoch-two candidate succeeds after restart; a stale or substituted commitment is rejected identically by client and relay.", "Damaged derived state is rebuilt from authenticated history or the relay fails closed before signing another result."],
+      "variants": ["restart", "missing derived row", "stale C1", "substituted C2", "grant repair"],
+      "decisions": ["D4"]
+    },
+    {
+      "id": "FS73",
+      "status": "agreed",
+      "requirements": ["U3", "U4"],
+      "given": "Two candidate-scoped stages use the same previously uncommitted object ID with different bytes.",
+      "actions": ["Stage the first binding, try the competing bytes under another transition kind, clean up one candidate, restart, and try the reused ID again."],
+      "expect": ["The Family-wide ID-to-hash binding remains durable despite candidate cleanup; different bytes are rejected without changing committed authority or visibility.", "An exact retry with the original bytes remains possible according to the staging contract."],
+      "variants": ["same head competitors", "cross-category ID", "cleanup", "restart"],
+      "decisions": ["D4"]
+    },
+    {
+      "id": "FS74",
+      "status": "agreed",
+      "requirements": ["U1", "U3", "U4"],
+      "given": "A first-cohort Family has a committed signed control and data prefix before relay restart.",
+      "actions": ["Independently corrupt stored candidate, head linkage, signed receipt, cursor, object association, or a derived authority row, then restart and authenticate reads and commits."],
+      "expect": ["The relay reconstructs authority from authenticated committed bytes or refuses further commits and protected reads; no mutable derived row alone grants a credential authority."],
+      "variants": ["candidate substitution", "receipt mutation", "cursor rollback", "object mismatch", "derived-row substitution"],
+      "decisions": ["D4", "D6"]
     }
   ]
 }

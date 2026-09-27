@@ -406,8 +406,10 @@ state hash, manifest requirements, epoch, ID reuse, and transition-specific
 invariants. It returns a prepared next state and object requirements, with
 no receipt, cursor, time, or data-readiness conclusion. The ledger retains
 historical device credentials and lifecycle status, issue commit times,
-head-to-epoch mappings, accepted per-device sequences, public IDs, and
-admission/grant associations. The canonical seven-field authorization state
+head-to-epoch mappings, exactly one verified commitment per epoch, accepted
+per-device sequences, public IDs, permanent Family-wide staged object
+ID-to-hash reservations, and admission/grant associations. The canonical
+seven-field authorization state
 alone cannot answer historical reads or batch ancestry. The shared verifier
 never accepts an epoch key, decrypts an object, or interprets event data.
 
@@ -425,9 +427,12 @@ head-only CAS is insufficient when a batch advances the cursor. Path-specific
 GET access uses historical credentials/status from the ledger: a removed
 device may prove removal and query its own earlier result but cannot read
 new data, grants, or another author's result. Rejected-only batch IDs remain
-a separate durable relay reservation. The ledger is rebuilt from signed
-history or verified against it after restart, not trusted as an unchecked
-database snapshot. An offline request or staged object never becomes a
+a separate durable relay reservation. The ledger is rebuilt from authenticated
+signed controls and receipts or verified against that chain after restart,
+not trusted as an unchecked database snapshot. Each committed head binds one
+epoch; each epoch binds exactly one commitment from verified transition bytes.
+Damaged or incomplete reconstruction refuses further commits and reads.
+An offline request or staged object never becomes a
 confirmed authority change. Unknown versions/kinds fail closed.
 
 The extracted `wire` verifier prepares invitation-issue, two-signature
@@ -438,8 +443,13 @@ public state effects, hashes, manifests, and applicable signatures without
 time, receipt, or object opening. Historical ID checks still live in the
 callers. The shared verifier also checks the common signed envelope for the
 remaining controls against caller-derived next state and signer sets; their
-other transition-specific state rules are still separate. The public ledger and
-general relay authority are not complete.
+other transition-specific state rules are still separate. Before general
+relay routes open, shared reducers must derive cancellation, role change,
+pending removal, and grant repair effects and signer policies from verified
+state and ledger facts. The common envelope verifier alone cannot authorize
+these controls. The public ledger and general relay authority are not
+complete. The [focused verifier advisory](../tactical/003-m0-foundation.md#advisory-shared-authority-verifier-at-7566262)
+records this requirement and staging/restart hardening findings.
 
 This is an implementation proposal, not a new wire contract. Its first
 regression is byte-identical replay of the reviewed first cohort on both

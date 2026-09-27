@@ -33,7 +33,12 @@ use tower::ServiceExt;
 
 async fn http_bytes(app: &Router, method: Method, path: &str, body: Vec<u8>) -> Vec<u8> {
     let (status, bytes) = http_response(app, method, path, body).await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "{path}: {}",
+        String::from_utf8_lossy(&bytes)
+    );
     bytes
 }
 
@@ -578,6 +583,60 @@ async fn later_issue_keeps_exact_candidate_and_commits_after_first_issue() {
         .accept_control(&mut local, committed_proof)
         .unwrap();
     assert_eq!(enrollment.pending_control_cursor(&recipient).unwrap(), 8);
+    let admission = FirstAdmission::prepare(
+        &mut local,
+        &creation,
+        later.invitation_id(),
+        enrollment.family().device_id,
+        &wrapping,
+    )
+    .unwrap();
+    let admission_candidate = admission.candidate_bytes().to_vec();
+    let staged = admission.stage_bodies().unwrap();
+    drop(local);
+    let mut local = SqliteStore::open(&local_path).unwrap();
+    let admission = FirstAdmission::resume(&local, &creation, &wrapping).unwrap();
+    assert_eq!(admission.candidate_bytes(), admission_candidate);
+    assert_eq!(admission.stage_bodies().unwrap(), staged);
+    stage_objects(&app, family.family_id, &staged).await;
+    let response = commit_control(&app, family.family_id, &admission_candidate).await;
+    let Value::Map(result) = cbor::decode(&response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(committed_admission) = &result[1].1 else {
+        panic!()
+    };
+    admission
+        .confirm(&mut local, &creation, committed_admission)
+        .unwrap();
+    assert!(
+        PublicHistorySession::resume(&local, family)
+            .unwrap()
+            .chain()
+            .initial_admission_grant(&enrollment.family().device_id)
+            .is_some()
+    );
+    enrollment
+        .accept_sparse_control(&mut recipient, committed_admission)
+        .unwrap();
+    assert!(ReadyFamilySession::from_enrollment(&recipient, &enrollment).is_err());
+    let progress = active_pull::pull_active_log(&mut recipient, enrollment.family(), 16, |path| {
+        let app = app.clone();
+        let read = enrollment.sign_get(&path).unwrap();
+        async move { Ok::<_, ()>(http_bytes(&app, Method::GET, &path, read.bytes).await) }
+    })
+    .await
+    .unwrap();
+    assert!(progress.no_more_visible);
+    active_pull::hydrate_manifest_objects(&mut recipient, enrollment.family(), 32, |path| {
+        let app = app.clone();
+        let read = enrollment.sign_get(&path).unwrap();
+        async move { Ok::<_, ()>(http_bytes(&app, Method::GET, &path, read.bytes).await) }
+    })
+    .await
+    .unwrap();
+    let ready = ReadyFamilySession::from_enrollment(&recipient, &enrollment).unwrap();
+    assert_eq!(ready.active_epoch(), 1);
 }
 
 async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
@@ -2462,6 +2521,52 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
             .unwrap()
             .accept_control(&mut local, committed_proof)
             .unwrap();
+        let admission = FirstAdmission::prepare(
+            &mut local,
+            &resumed,
+            later.invitation_id(),
+            later_attempt.family().device_id,
+            &wrapping_key,
+        )
+        .unwrap();
+        stage_objects(&app, family.family_id, &admission.stage_bodies().unwrap()).await;
+        let response = commit_control(&app, family.family_id, admission.candidate_bytes()).await;
+        let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(committed_admission) = &fields[1].1 else {
+            panic!()
+        };
+        admission
+            .confirm(&mut local, &resumed, committed_admission)
+            .unwrap();
+        later_attempt
+            .accept_sparse_control(&mut later_store, committed_admission)
+            .unwrap();
+        assert!(ReadyFamilySession::from_enrollment(&later_store, &later_attempt).is_err());
+        let progress =
+            active_pull::pull_active_log(&mut later_store, later_attempt.family(), 16, |path| {
+                let app = app.clone();
+                let read = later_attempt.sign_get(&path).unwrap();
+                async move { Ok::<_, ()>(http_bytes(&app, Method::GET, &path, read.bytes).await) }
+            })
+            .await
+            .unwrap();
+        assert!(progress.no_more_visible);
+        active_pull::hydrate_manifest_objects(
+            &mut later_store,
+            later_attempt.family(),
+            32,
+            |path| {
+                let app = app.clone();
+                let read = later_attempt.sign_get(&path).unwrap();
+                async move { Ok::<_, ()>(http_bytes(&app, Method::GET, &path, read.bytes).await) }
+            },
+        )
+        .await
+        .unwrap();
+        let ready = ReadyFamilySession::from_enrollment(&later_store, &later_attempt).unwrap();
+        assert_eq!(ready.active_epoch(), 2);
         assert_eq!(
             PublicHistorySession::resume(&local, family)
                 .unwrap()

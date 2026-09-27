@@ -1,4 +1,4 @@
-//! First verified admission and HPKE epoch-one grant.
+//! Verified admission and HPKE current-epoch grant.
 
 use rand_chacha::{ChaCha20Rng, rand_core::SeedableRng};
 
@@ -8,6 +8,7 @@ use crate::{
     control_chain::{self, ControlChain},
     creation::ManagerCreation,
     crypto, hpke,
+    projection::VerifiedEpochKey,
     shared_history::{self, PublicHistorySession},
     sqlite_store::{self, FamilyHandle, PreparedControlRow, SqliteStore},
 };
@@ -86,9 +87,6 @@ impl FirstAdmission {
         manager: &ManagerCreation,
         local_wrapping_key: &[u8; 32],
     ) -> Result<Self, Error> {
-        if store.prepared_control(manager.family(), 6)?.is_some() {
-            return Self::resume(store, manager, local_wrapping_key);
-        }
         let challenge =
             crate::first_challenge::FirstChallenge::resume(store, manager, local_wrapping_key)
                 .map_err(|_| Error::Invalid("verified first challenge absent"))?;
@@ -110,23 +108,60 @@ impl FirstAdmission {
         local_wrapping_key: &[u8; 32],
     ) -> Result<Self, Error> {
         let family = manager.family();
-        if store.prepared_control(family, 6)?.is_some() {
-            let existing = Self::resume(store, manager, local_wrapping_key)?;
-            if existing.invitation_id != invitation_id || existing.recipient_id != recipient_id {
-                return Err(Error::Invalid("another first admission already prepared"));
+        if let Some(row) = store.prepared_control(family, 6)? {
+            let history = store
+                .shared_history(family)?
+                .ok_or(Error::Invalid("shared history absent"))?;
+            let committed = history.entries.iter().any(|entry| {
+                entry.kind == 1
+                    && candidate_from_committed(&entry.committed_bytes)
+                        .is_ok_and(|candidate| candidate == row.candidate_bytes)
+            });
+            if committed {
+                store.delete_prepared_control(family, 6, row.transition_id)?;
+            } else {
+                let existing = Self::resume(store, manager, local_wrapping_key)?;
+                if existing.invitation_id != invitation_id || existing.recipient_id != recipient_id
+                {
+                    return Err(Error::Invalid("another admission already prepared"));
+                }
+                return Ok(existing);
             }
-            return Ok(existing);
         }
-        let public =
-            shared_history::first_join_chain(store, family, manager.relay_public_key(), 5)?;
-        verify_committed_proof(store, manager, invitation_id)?;
-        let pending = pending_row(&public, invitation_id, recipient_id)?;
+        let ready = manager
+            .ready_session(store)
+            .map_err(|_| Error::Invalid("manager not data-ready"))?;
+        let public_session = PublicHistorySession::resume(store, family)?;
+        if ready.observed_cursor() != public_session.cursor()
+            || ready.observed_head() != public_session.head_hash()
+        {
+            return Err(Error::Invalid("holder view behind public authority"));
+        }
+        let public = public_session.chain();
+        let epoch = public.epoch()?;
+        let epoch_key = ready.current_key().bytes;
+        verify_committed_proof(
+            store,
+            family,
+            public,
+            ready.current_key(),
+            invitation_id,
+            recipient_id,
+        )?;
+        let pending = pending_row(public, invitation_id, recipient_id)?;
         let transition_id = random_v4()?;
         let membership_id = random_v4()?;
         let grant_id = random_v4()?;
         let membership_nonce = random::<24>()?;
-        let (delta, next_state, commitment) =
-            admission_state(&public, manager, invitation_id, recipient_id, &pending)?;
+        let (delta, next_state, commitment) = admission_state(
+            public,
+            family,
+            epoch,
+            &epoch_key,
+            invitation_id,
+            recipient_id,
+            &pending,
+        )?;
         let core_hash = control_build::core_hash(
             family,
             public.relay_id(),
@@ -135,7 +170,7 @@ impl FirstAdmission {
             6,
             &delta,
             &next_state,
-            1,
+            epoch,
         )?;
         let membership_plain = cbor::encode(&Value::Map(vec![
             (1, Value::Bytes(transition_id.to_vec())),
@@ -144,12 +179,12 @@ impl FirstAdmission {
                 3,
                 Value::Bytes(crypto::hash("auth-state", &cbor::encode(&next_state)?)?.to_vec()),
             ),
-            (4, Value::Integer(1)),
+            (4, Value::Integer(epoch.into())),
             (5, delta.clone()),
         ]))?;
         let membership_aad = crypto::hash("membership-aad", &core_hash)?;
         let membership_ciphertext = crypto::seal_with_nonce(
-            &manager.epoch_key(),
+            &epoch_key,
             &membership_nonce,
             &membership_aad,
             &membership_plain,
@@ -166,14 +201,14 @@ impl FirstAdmission {
             Value::Integer(pending.role.into()),
             Value::Bytes(pending.agree_public.to_vec()),
             Value::Integer(pending.key_version.into()),
-            Value::Integer(1),
+            Value::Integer(epoch.into()),
             Value::Bytes(commitment.to_vec()),
         ]))?;
         let grant_info = crypto::hash("grant-info", &grant_context)?;
         let grant_plain = cbor::encode(&Value::Array(vec![
             Value::Integer(1),
-            Value::Integer(1),
-            Value::Bytes(manager.epoch_key().to_vec()),
+            Value::Integer(epoch.into()),
+            Value::Bytes(epoch_key.to_vec()),
         ]))?;
         let mut rng = ChaCha20Rng::from_seed(random::<32>()?);
         let sealed = hpke::seal_with_rng(
@@ -213,7 +248,7 @@ impl FirstAdmission {
             6,
             delta,
             next_state,
-            1,
+            epoch,
             &objects,
             &manager.signing_seed(),
         )?;
@@ -248,7 +283,7 @@ impl FirstAdmission {
         let family = manager.family();
         let row = store
             .prepared_control(family, 6)?
-            .ok_or(Error::Invalid("no durable first admission"))?;
+            .ok_or(Error::Invalid("no durable admission"))?;
         let Value::Map(candidate) = cbor::decode(&row.candidate_bytes)? else {
             return Err(Error::Invalid("admission candidate not map"));
         };
@@ -278,10 +313,24 @@ impl FirstAdmission {
         {
             return Err(Error::Invalid("admission objects invalid"));
         }
-        let chain = chain_through_proof(store, family, manager.relay_public_key())?;
+        let prior_head = fixed::<32>(&unsigned[3].1)?;
+        let chain = shared_history::chain_at_head(store, family, prior_head)?;
+        let ready = manager
+            .ready_session(store)
+            .map_err(|_| Error::Invalid("manager not data-ready"))?;
+        if ready.active_epoch() != chain.epoch()? {
+            return Err(Error::Invalid("prepared admission epoch changed"));
+        }
         let pending = pending_row(&chain, invitation_id, recipient_id)?;
-        let (expected_delta, next_state, _) =
-            admission_state(&chain, manager, invitation_id, recipient_id, &pending)?;
+        let (expected_delta, next_state, _) = admission_state(
+            &chain,
+            family,
+            chain.epoch()?,
+            &ready.current_key().bytes,
+            invitation_id,
+            recipient_id,
+            &pending,
+        )?;
         let rebuilt = control_build::candidate(
             family,
             chain.relay_id(),
@@ -290,7 +339,7 @@ impl FirstAdmission {
             6,
             expected_delta,
             next_state,
-            1,
+            chain.epoch()?,
             &objects,
             &manager.signing_seed(),
         )?;
@@ -330,13 +379,7 @@ impl FirstAdmission {
         manager: &ManagerCreation,
         committed: &[u8],
     ) -> Result<(), Error> {
-        let Value::Map(root) = cbor::decode(committed)? else {
-            return Err(Error::Invalid("committed admission not map"));
-        };
-        let candidate = cbor::encode(&Value::Map(vec![
-            (1, root[0].1.clone()),
-            (2, root[1].1.clone()),
-        ]))?;
+        let candidate = candidate_from_committed(committed)?;
         if candidate != self.candidate_bytes {
             return Err(Error::Invalid("admission candidate mismatch"));
         }
@@ -347,12 +390,9 @@ impl FirstAdmission {
         let committed_prior = history
             .entries
             .iter()
-            .filter(|entry| entry.kind == 1)
-            .nth(4);
+            .find(|entry| entry.kind == 1 && entry.committed_bytes == committed);
         if committed_prior.is_none() {
             public.accept_control(store, committed)?;
-        } else if committed_prior.is_some_and(|entry| entry.committed_bytes != committed) {
-            return Err(Error::Invalid("admission differs from pinned history"));
         }
         for (_, id, bytes) in &self.objects {
             public.accept_object(store, *id, bytes)?;
@@ -379,10 +419,18 @@ fn pending_row(
     let Value::Array(rows) = &state[5].1 else {
         return Err(Error::Invalid("pending not array"));
     };
-    if rows.len() != 1 {
-        return Err(Error::Invalid("first admission expects one pending device"));
-    }
-    let Value::Array(row) = &rows[0] else {
+    let row = rows
+        .iter()
+        .find(|item| {
+            let Value::Array(fields) = item else {
+                return false;
+            };
+            fields.len() == 9
+                && fixed::<16>(&fields[0]).ok() == Some(invitation_id)
+                && fixed::<16>(&fields[1]).ok() == Some(recipient_id)
+        })
+        .ok_or(Error::Invalid("admission pending target absent"))?;
+    let Value::Array(row) = row else {
         return Err(Error::Invalid("pending row not array"));
     };
     if row.len() != 9
@@ -405,18 +453,19 @@ fn pending_row(
 }
 fn admission_state(
     chain: &ControlChain,
-    manager: &ManagerCreation,
+    family: FamilyHandle,
+    epoch: u32,
+    epoch_key: &[u8; 32],
     invitation_id: [u8; 16],
     recipient_id: [u8; 16],
     pending: &Pending,
 ) -> Result<(Value, Value, [u8; 32]), Error> {
-    let family = manager.family();
     let commitment = crypto::hash(
         "epoch-key",
         &cbor::encode(&Value::Array(vec![
             Value::Bytes(family.family_id.to_vec()),
-            Value::Integer(1),
-            Value::Bytes(manager.epoch_key().to_vec()),
+            Value::Integer(epoch.into()),
+            Value::Bytes(epoch_key.to_vec()),
         ]))?,
     )?;
     let delta = Value::Map(vec![
@@ -431,7 +480,18 @@ fn admission_state(
     let Value::Array(pending_rows) = &mut state[5].1 else {
         return Err(Error::Invalid("pending not array"));
     };
-    pending_rows.clear();
+    let target = pending_rows
+        .iter()
+        .position(|item| {
+            let Value::Array(row) = item else {
+                return false;
+            };
+            row.len() == 9
+                && fixed::<16>(&row[0]).ok() == Some(invitation_id)
+                && fixed::<16>(&row[1]).ok() == Some(recipient_id)
+        })
+        .ok_or(Error::Invalid("admission pending target absent"))?;
+    pending_rows.remove(target);
     let Value::Array(active_rows) = &mut state[4].1 else {
         return Err(Error::Invalid("active not array"));
     };
@@ -454,55 +514,57 @@ fn admission_state(
 }
 fn verify_committed_proof(
     store: &SqliteStore,
-    manager: &ManagerCreation,
+    family: FamilyHandle,
+    chain: &ControlChain,
+    key: &VerifiedEpochKey,
     invitation_id: [u8; 16],
+    recipient_id: [u8; 16],
 ) -> Result<(), Error> {
     let history = store
-        .shared_history(manager.family())?
+        .shared_history(family)?
         .ok_or(Error::Invalid("shared history absent"))?;
-    let proof = history
-        .entries
-        .iter()
-        .filter(|entry| entry.kind == 1)
-        .nth(3)
-        .ok_or(Error::Invalid("proof not committed"))?;
-    if proof.kind != 1 {
-        return Err(Error::Invalid("proof entry not control"));
+    let mut proof_signature = None;
+    for entry in history.entries.iter().rev().filter(|entry| entry.kind == 1) {
+        let Value::Map(root) = cbor::decode(&entry.committed_bytes)? else {
+            return Err(Error::Invalid("proof search control not map"));
+        };
+        let Value::Map(unsigned) = &root[0].1 else {
+            return Err(Error::Invalid("proof search unsigned not map"));
+        };
+        if unsigned[5].1 != Value::Integer(5) {
+            continue;
+        }
+        let Value::Map(delta) = &unsigned[6].1 else {
+            return Err(Error::Invalid("proof delta not map"));
+        };
+        if fixed::<16>(&delta[0].1)? == invitation_id && fixed::<16>(&delta[1].1)? == recipient_id {
+            proof_signature = Some(fixed::<64>(&delta[3].1)?);
+            break;
+        }
     }
-    let Value::Map(root) = cbor::decode(&proof.committed_bytes)? else {
-        return Err(Error::Invalid("proof not map"));
-    };
-    let Value::Map(unsigned) = &root[0].1 else {
-        return Err(Error::Invalid("proof unsigned not map"));
-    };
-    let Value::Map(delta) = &unsigned[6].1 else {
-        return Err(Error::Invalid("proof delta not map"));
-    };
-    let proof_signature = fixed::<64>(&delta[3].1)?;
-    let chain = PublicHistorySession::resume(store, manager.family())?;
+    let proof_signature = proof_signature.ok_or(Error::Invalid("proof not committed"))?;
     let challenge = chain
-        .chain()
         .latest_challenge(&invitation_id)
         .ok_or(Error::Invalid("challenge missing"))?;
     let verifier = store
-        .shared_objects(manager.family())?
+        .shared_objects(family)?
         .into_iter()
         .find(|(id, _)| *id == challenge.verifier_object_id())
         .ok_or(Error::Invalid("verifier object missing"))?;
-    manager.verify_pending_proof(store, invitation_id, &verifier.1, proof_signature)?;
+    chain.verify_latest_holder_proof(&invitation_id, &verifier.1, key, &proof_signature)?;
     Ok(())
 }
-fn chain_through_proof(
-    store: &SqliteStore,
-    family: FamilyHandle,
-    relay_public: [u8; 32],
-) -> Result<ControlChain, Error> {
-    Ok(shared_history::first_join_prefix_chain(
-        store,
-        family,
-        relay_public,
-        5,
-    )?)
+fn candidate_from_committed(committed: &[u8]) -> Result<Vec<u8>, Error> {
+    let Value::Map(root) = cbor::decode(committed)? else {
+        return Err(Error::Invalid("committed admission not map"));
+    };
+    if root.len() != 4 {
+        return Err(Error::Invalid("committed admission shape"));
+    }
+    Ok(cbor::encode(&Value::Map(vec![
+        (1, root[0].1.clone()),
+        (2, root[1].1.clone()),
+    ]))?)
 }
 fn objects_bytes(objects: &[AdmissionObject]) -> Result<Vec<u8>, Error> {
     Ok(cbor::encode(&Value::Array(

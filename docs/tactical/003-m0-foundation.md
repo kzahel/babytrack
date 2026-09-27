@@ -1354,9 +1354,13 @@ commit both challenge objects after unrelated issues, and again after the
 first recipient's removal and epoch rotation to admit a new candidate.
 The later recipient now verifies that challenge and its HPKE object, prepares
 an exact signed proof, resumes it after restart, and commits it through relay
-HTTP. A second test proves this after removal and epoch rotation. Grant,
-hydration, admitted-manager challenge, and Android exposure remain open; this
-is not yet a completed third-device join.
+HTTP. The manager selects the proved pending row, encrypts the admission
+membership with the current epoch key, and grants that key to the recipient.
+The recipient verifies its admission, replays the contiguous Family log,
+downloads authenticated objects, and becomes data-ready. Real-relay tests
+cover both epoch one and admission after removal and rotation to epoch two.
+The Android later-device flow and challenge by an admitted manager remain
+open.
 Ready replay can now start from a later recipient's admission grant at a
 rotated epoch: it verifies that epoch's committed keyring and membership,
 recovers earlier keys, then applies subsequent addressed rotations. A fixed

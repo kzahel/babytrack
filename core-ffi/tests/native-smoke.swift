@@ -142,6 +142,34 @@ struct Smoke {
             cursor: 2
         ))
         try expect(try afterControl.fieldCbor(recordId: familyId, fieldId: 1) == bytes("a0"))
+        let phonePath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("babytrack-native-swift-\(UUID().uuidString).db").path
+        let phone = try NativeLocalStore.open(path: phonePath)
+        let first = try phone.createFamily(nowMs: 1_790_000_000_000)
+        let other = try phone.createFamily(nowMs: 1_790_000_000_001)
+        let child = try phone.addChild(family: first, name: "Baby", nowMs: 1_790_000_000_002)
+        try expect(try phone.children(family: first).first?.name == "Baby")
+        let whenRecorded = ActivityWhen(
+            startUtcMs: 1_790_000_000_003, offsetMinutes: 120,
+            savedAtMs: 1_790_000_000_004)
+        do {
+            _ = try phone.logDiaper(family: other, childId: child, kind: 1, time: whenRecorded)
+            fatalError("cross-Family child accepted")
+        } catch {}
+        _ = try phone.logDiaper(family: first, childId: child, kind: 3, time: whenRecorded)
+        _ = try phone.logBottleMl(
+            family: first, childId: child, amountMl: 85,
+            content: 2, time: whenRecorded)
+        let entries = try phone.timeline(family: first, childId: child)
+        try expect(entries.count == 2)
+        try expect(entries.contains { $0.diaperKind == 3 })
+        try expect(entries.contains { $0.bottleMl == 85 })
+        let backup = try phone.backup(family: first, nowMs: 1_790_000_000_005)
+        let restored = try phone.restore(bytes: backup, nowMs: 1_790_000_000_006)
+        try expect(restored.familyId != first.familyId)
+        try expect(try phone.timeline(family: restored, childId: child).count == 2)
+        let reopened = try NativeLocalStore.open(path: phonePath)
+        try expect(try reopened.families().count == 3)
         print("Swift fixed encrypted batch, minor field, inertness, and authentication: OK")
     }
 }

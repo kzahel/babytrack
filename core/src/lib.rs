@@ -26,6 +26,8 @@ pub mod hlc;
 pub mod hpke;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod issue;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod local_api;
 pub mod membership;
 pub mod operation;
 pub mod portable_file;

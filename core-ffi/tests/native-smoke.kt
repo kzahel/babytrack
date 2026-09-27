@@ -3,6 +3,8 @@ import com.google.gson.JsonParser
 import java.nio.file.Files
 import java.nio.file.Path
 import uniffi.babytrack_core_ffi.NativeFamily
+import uniffi.babytrack_core_ffi.NativeLocalStore
+import uniffi.babytrack_core_ffi.ActivityWhen
 import uniffi.babytrack_core_ffi.ed25519PublicKey
 import uniffi.babytrack_core_ffi.sealOne
 
@@ -92,6 +94,28 @@ fun main(args: Array<String>) {
             2uL,
         ))
         check(afterControl.fieldCbor(familyId, 1uL).hex() == "a0")
+    }
+    val phonePath = Files.createTempDirectory("babytrack-native-kotlin").resolve("phone.db")
+    NativeLocalStore.open(phonePath.toString()).use { phone ->
+        val first = phone.createFamily(1_790_000_000_000)
+        val other = phone.createFamily(1_790_000_000_001)
+        val child = phone.addChild(first, "Baby", 1_790_000_000_002)
+        check(phone.children(first).single().name == "Baby")
+        val whenRecorded = ActivityWhen(1_790_000_000_003, 120, 1_790_000_000_004)
+        check(runCatching { phone.logDiaper(other, child, 1u.toUByte(), whenRecorded) }.isFailure)
+        phone.logDiaper(first, child, 3u.toUByte(), whenRecorded)
+        phone.logBottleMl(first, child, 85, 2u.toUByte(), whenRecorded)
+        val entries = phone.timeline(first, child)
+        check(entries.size == 2)
+        check(entries.any { it.diaperKind == 3.toUByte() })
+        check(entries.any { it.bottleMl == 85L })
+        val backup = phone.backup(first, 1_790_000_000_005)
+        val restored = phone.restore(backup, 1_790_000_000_006)
+        check(!restored.familyId.contentEquals(first.familyId))
+        check(phone.timeline(restored, child).size == 2)
+    }
+    NativeLocalStore.open(phonePath.toString()).use { phone ->
+        check(phone.families().size == 3)
     }
     println("Kotlin fixed encrypted batch, minor field, inertness, and authentication: OK")
 }

@@ -2,8 +2,12 @@
 
 #![forbid(unsafe_code)]
 
-#[cfg(feature = "fixture-api")]
 use std::sync::{Arc, Mutex};
+
+use babytrack_core::{
+    local_api::{ActivityTime, LocalRepository},
+    sqlite_store::FamilyHandle,
+};
 
 #[cfg(feature = "fixture-api")]
 use babytrack_core::{
@@ -13,7 +17,6 @@ use babytrack_core::{
 
 uniffi::setup_scaffolding!();
 
-#[cfg(feature = "fixture-api")]
 #[derive(Debug, uniffi::Error)]
 pub enum BindingError {
     InvalidBytes,
@@ -21,15 +24,222 @@ pub enum BindingError {
     LockPoisoned,
 }
 
-#[cfg(feature = "fixture-api")]
 impl std::fmt::Display for BindingError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "{self:?}")
     }
 }
 
-#[cfg(feature = "fixture-api")]
 impl std::error::Error for BindingError {}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FamilyRef {
+    pub family_id: Vec<u8>,
+    pub device_id: Vec<u8>,
+}
+
+impl FamilyRef {
+    fn handle(&self) -> Result<FamilyHandle, BindingError> {
+        Ok(FamilyHandle {
+            family_id: fixed(&self.family_id)?,
+            device_id: fixed(&self.device_id)?,
+        })
+    }
+}
+
+impl From<FamilyHandle> for FamilyRef {
+    fn from(value: FamilyHandle) -> Self {
+        Self {
+            family_id: value.family_id.to_vec(),
+            device_id: value.device_id.to_vec(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ChildRow {
+    pub id: Vec<u8>,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ActivityWhen {
+    pub start_utc_ms: i64,
+    pub offset_minutes: i16,
+    pub saved_at_ms: i64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ActivityRow {
+    pub id: Vec<u8>,
+    pub child_id: Vec<u8>,
+    pub kind: String,
+    pub start_utc_ms: i64,
+    pub offset_minutes: i16,
+    pub diaper_kind: Option<u8>,
+    pub bottle_ml: Option<i64>,
+}
+
+#[derive(uniffi::Object)]
+pub struct NativeLocalStore {
+    repo: Mutex<LocalRepository>,
+}
+
+#[uniffi::export]
+impl NativeLocalStore {
+    #[uniffi::constructor]
+    pub fn open(path: String) -> Result<Arc<Self>, BindingError> {
+        Ok(Arc::new(Self {
+            repo: Mutex::new(LocalRepository::open(path).map_err(rejected)?),
+        }))
+    }
+
+    pub fn families(&self) -> Result<Vec<FamilyRef>, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .families()
+            .map_err(rejected)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn create_family(&self, now_ms: i64) -> Result<FamilyRef, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .create_family(now_ms)
+            .map_err(rejected)?
+            .into())
+    }
+
+    pub fn children(&self, family: FamilyRef) -> Result<Vec<ChildRow>, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .children(family.handle()?)
+            .map_err(rejected)?
+            .into_iter()
+            .map(|child| ChildRow {
+                id: child.id.to_vec(),
+                name: child.name,
+            })
+            .collect())
+    }
+
+    pub fn add_child(
+        &self,
+        family: FamilyRef,
+        name: String,
+        now_ms: i64,
+    ) -> Result<Vec<u8>, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .add_child(family.handle()?, &name, now_ms)
+            .map_err(rejected)?
+            .to_vec())
+    }
+
+    pub fn log_diaper(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        kind: u8,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .log_diaper(
+                family.handle()?,
+                fixed(&child_id)?,
+                kind,
+                ActivityTime {
+                    start_utc_ms: time.start_utc_ms,
+                    offset_minutes: time.offset_minutes,
+                    saved_at_ms: time.saved_at_ms,
+                },
+            )
+            .map_err(rejected)?
+            .to_vec())
+    }
+
+    pub fn log_bottle_ml(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        amount_ml: i64,
+        content: u8,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .log_bottle_ml(
+                family.handle()?,
+                fixed(&child_id)?,
+                amount_ml,
+                content,
+                ActivityTime {
+                    start_utc_ms: time.start_utc_ms,
+                    offset_minutes: time.offset_minutes,
+                    saved_at_ms: time.saved_at_ms,
+                },
+            )
+            .map_err(rejected)?
+            .to_vec())
+    }
+
+    pub fn timeline(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+    ) -> Result<Vec<ActivityRow>, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .timeline(family.handle()?, fixed(&child_id)?)
+            .map_err(rejected)?
+            .into_iter()
+            .map(|row| ActivityRow {
+                id: row.id.to_vec(),
+                child_id: row.child_id.to_vec(),
+                kind: row.kind,
+                start_utc_ms: row.start_utc_ms,
+                offset_minutes: row.offset_minutes,
+                diaper_kind: row.diaper_kind,
+                bottle_ml: row.bottle_ml,
+            })
+            .collect())
+    }
+
+    pub fn backup(&self, family: FamilyRef, now_ms: i64) -> Result<Vec<u8>, BindingError> {
+        self.repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .backup(family.handle()?, now_ms)
+            .map_err(rejected)
+    }
+
+    pub fn restore(&self, bytes: Vec<u8>, now_ms: i64) -> Result<FamilyRef, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .restore(&bytes, now_ms)
+            .map_err(rejected)?
+            .into())
+    }
+}
 
 #[cfg(feature = "fixture-api")]
 #[derive(uniffi::Object)]
@@ -142,12 +352,10 @@ pub fn seal_one(
     .envelope_bytes)
 }
 
-#[cfg(feature = "fixture-api")]
 fn fixed<const N: usize>(bytes: &[u8]) -> Result<[u8; N], BindingError> {
     bytes.try_into().map_err(|_| BindingError::InvalidBytes)
 }
 
-#[cfg(feature = "fixture-api")]
 fn rejected(error: impl std::fmt::Debug) -> BindingError {
     BindingError::Rejected(format!("{error:?}"))
 }

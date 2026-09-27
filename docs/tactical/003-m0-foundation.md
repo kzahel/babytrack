@@ -54,6 +54,13 @@ records the source-to-copy mapping in the restore transaction, so repeated
 requests after restart reuse one destination. The dynamic two-device relay
 test exercises these paths. Automatic copy on verified removal, timer
 targeting, browser parity, and adversarial crash coverage remain open.
+The native production binding now exposes offline Family creation, explicit
+Family/child targeting, child lists, bottle and diaper entries, timelines,
+and readable backup/restore through the shared Rust core. The Family
+metadata create and its local row commit atomically. Rust, Kotlin, and
+Swift smoke paths create two Families, reject a cross-Family child target,
+reopen the database, and restore a backup. The Android UI and broader
+activity set remain M1 work.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

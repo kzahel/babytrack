@@ -323,3 +323,43 @@ fn entered_celsius_round_trips_through_core_and_file() {
     let restored = app.restore(&backup, 1_790_000_000_004).unwrap();
     assert_eq!(app.timeline(restored, child).unwrap(), before);
 }
+
+#[test]
+fn medication_record_preserves_entered_name_and_dose_after_restore() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("medication.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    let child = app.add_child(family, "Baby", 1_790_000_000_001).unwrap();
+    let time = ActivityTime {
+        start_utc_ms: 1_790_000_000_002,
+        offset_minutes: 120,
+        saved_at_ms: 1_790_000_000_002,
+    };
+    assert!(
+        app.log_medication(family, child, " ", "2.5", "mL", time)
+            .is_err()
+    );
+    assert!(
+        app.log_medication(family, child, "Test medicine", "", "mL", time)
+            .is_err()
+    );
+    assert!(
+        app.log_medication(family, child, "Test medicine", "2.5", "", time)
+            .is_err()
+    );
+    let id = app
+        .log_medication(family, child, " Test medicine ", " 2.5 ", " mL ", time)
+        .unwrap();
+    let before = app.timeline(family, child).unwrap();
+    let row = before.iter().find(|row| row.id == id).unwrap();
+    assert_eq!(row.medication_name.as_deref(), Some("Test medicine"));
+    assert_eq!(row.medication_dose_amount.as_deref(), Some("2.5"));
+    assert_eq!(row.medication_dose_unit.as_deref(), Some("mL"));
+    let backup = app.backup(family, 1_790_000_000_003).unwrap();
+    drop(app);
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.timeline(family, child).unwrap(), before);
+    let restored = app.restore(&backup, 1_790_000_000_004).unwrap();
+    assert_eq!(app.timeline(restored, child).unwrap(), before);
+}

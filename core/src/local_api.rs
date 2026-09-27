@@ -55,6 +55,9 @@ pub struct Activity {
     pub growth_weight_g: Option<i64>,
     pub growth_length_mm: Option<i64>,
     pub temperature_c: Option<String>,
+    pub medication_name: Option<String>,
+    pub medication_dose_amount: Option<String>,
+    pub medication_dose_unit: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -257,6 +260,21 @@ impl LocalRepository {
         time: ActivityTime,
     ) -> Result<[u8; 16], Error> {
         let (activity_id, operation) = temperature_c_operation(family, child_id, entered_c, time)?;
+        self.append_activity(family, child_id, operation, time.saved_at_ms)?;
+        Ok(activity_id)
+    }
+
+    pub fn log_medication(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        name: &str,
+        dose_amount: &str,
+        dose_unit: &str,
+        time: ActivityTime,
+    ) -> Result<[u8; 16], Error> {
+        let (activity_id, operation) =
+            medication_operation(family, child_id, name, dose_amount, dose_unit, time)?;
         self.append_activity(family, child_id, operation, time.saved_at_ms)?;
         Ok(activity_id)
     }
@@ -648,6 +666,44 @@ pub fn temperature_c_operation(
     )
 }
 
+pub fn medication_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    name: &str,
+    dose_amount: &str,
+    dose_unit: &str,
+    time: ActivityTime,
+) -> Result<([u8; 16], NewOperation), Error> {
+    let name = name.trim();
+    let dose_amount = dose_amount.trim();
+    let dose_unit = dose_unit.trim();
+    if name.is_empty()
+        || dose_amount.is_empty()
+        || dose_unit.is_empty()
+        || name.len() > 256
+        || dose_amount.len() > 64
+        || dose_unit.len() > 64
+    {
+        return Err(Error::Invalid("medication name or dose empty or too long"));
+    }
+    activity_operation(
+        family,
+        child_id,
+        "medication",
+        vec![
+            (100, Value::Text(name.to_owned())),
+            (
+                101,
+                Value::Array(vec![
+                    Value::Text(dose_amount.to_owned()),
+                    Value::Text(dose_unit.to_owned()),
+                ]),
+            ),
+        ],
+        time,
+    )
+}
+
 fn whole_measure(value: i64, unit: i128) -> Value {
     Value::Map(vec![
         (1, Value::Integer(value.into())),
@@ -765,6 +821,21 @@ fn activity_summary(record: &Record) -> Option<Activity> {
     } else {
         None
     };
+    let (medication_name, medication_dose_amount, medication_dose_unit) =
+        if record.record_type == "medication" {
+            let Value::Text(name) = &record.field(100)?.value else {
+                return None;
+            };
+            let Value::Array(dose) = &record.field(101)?.value else {
+                return None;
+            };
+            let [Value::Text(amount), Value::Text(unit)] = dose.as_slice() else {
+                return None;
+            };
+            (Some(name.clone()), Some(amount.clone()), Some(unit.clone()))
+        } else {
+            (None, None, None)
+        };
     Some(Activity {
         id: record.id,
         child_id: record.child_id?,
@@ -801,6 +872,9 @@ fn activity_summary(record: &Record) -> Option<Activity> {
             None
         },
         temperature_c,
+        medication_name,
+        medication_dose_amount,
+        medication_dose_unit,
     })
 }
 

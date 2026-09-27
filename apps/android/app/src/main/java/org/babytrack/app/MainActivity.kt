@@ -60,6 +60,7 @@ import uniffi.babytrack_core_ffi.BackupInfoRow
 import uniffi.babytrack_core_ffi.ChildRow
 import uniffi.babytrack_core_ffi.FamilyRef
 import uniffi.babytrack_core_ffi.NativeLocalStore
+import uniffi.babytrack_core_ffi.MedicationInput
 import uniffi.babytrack_core_ffi.RestoredOriginRow
 import uniffi.babytrack_core_ffi.SharedSnapshotRow
 import uniffi.babytrack_core_ffi.SharedSyncRow
@@ -177,6 +178,9 @@ private fun TrackerScreen(
     var growthWeight by remember { mutableStateOf("") }
     var growthLength by remember { mutableStateOf("") }
     var temperatureC by remember { mutableStateOf("") }
+    var medicationName by remember { mutableStateOf("") }
+    var doseAmount by remember { mutableStateOf("") }
+    var doseUnit by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var automaticSyncDelayed by remember { mutableStateOf(false) }
     var automaticSyncBlocked by remember { mutableStateOf(false) }
@@ -898,6 +902,51 @@ private fun TrackerScreen(
                             }
                         }) { Text(stringResource(R.string.save_temperature)) }
                     }
+                    Text(stringResource(R.string.log_medication), style = MaterialTheme.typography.titleLarge)
+                    OutlinedTextField(
+                        value = medicationName,
+                        onValueChange = { medicationName = it.take(256) },
+                        label = { Text(stringResource(R.string.medication_name)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = doseAmount,
+                            onValueChange = { doseAmount = it.take(64) },
+                            label = { Text(stringResource(R.string.dose_amount)) },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            value = doseUnit,
+                            onValueChange = { doseUnit = it.take(64) },
+                            label = { Text(stringResource(R.string.dose_unit)) },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                    }
+                    Button(
+                        enabled = medicationName.isNotBlank() && doseAmount.isNotBlank() && doseUnit.isNotBlank(),
+                        onClick = {
+                            val name = medicationName.trim()
+                            val amount = doseAmount.trim()
+                            val unit = doseUnit.trim()
+                            val input = MedicationInput(name, amount, unit)
+                            scope.launch {
+                                runCatching { withContext(Dispatchers.IO) {
+                                    if (activeShared) sharing.logMedication(family, child.id, input, nowTime())
+                                    else store.logMedication(family, child.id, input, nowTime())
+                                } }.onSuccess {
+                                    if (medicationName.trim() == name) medicationName = ""
+                                    if (doseAmount.trim() == amount) doseAmount = ""
+                                    if (doseUnit.trim() == unit) doseUnit = ""
+                                    version++
+                                    message = null
+                                }.onFailure { message = errorText }
+                            }
+                        },
+                    ) { Text(stringResource(R.string.save_medication)) }
                     Text(stringResource(R.string.log_note), style = MaterialTheme.typography.titleLarge)
                     OutlinedTextField(
                         value = noteText,
@@ -935,6 +984,12 @@ private fun TrackerScreen(
                                 stringResource(R.string.growth_length, entry.growthLengthMm!!)
                             entry.kind == "temperature" && entry.temperatureC != null ->
                                 stringResource(R.string.temperature_entry, entry.temperatureC!!)
+                            entry.kind == "medication" && entry.medicationName != null &&
+                                entry.medicationDoseAmount != null && entry.medicationDoseUnit != null ->
+                                stringResource(
+                                    R.string.medication_entry, entry.medicationName!!,
+                                    entry.medicationDoseAmount!!, entry.medicationDoseUnit!!,
+                                )
                             entry.diaperKind != null -> stringResource(R.string.diaper, when (entry.diaperKind!!.toInt()) {
                                 1 -> stringResource(R.string.wet)
                                 2 -> stringResource(R.string.dirty)

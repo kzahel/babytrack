@@ -66,7 +66,10 @@ measure map with the entered unit and rejects empty or out-of-range values.
 The first Celsius entry path parses decimal text in the core, rounds to
 hundredths using the published rule, and retains the entered text. Local
 restart/file restore and cross-device encrypted sync preserve these
-measurements. Other published event types and entered units remain M1 work.
+measurements. Medication entry records a name and entered dose amount/unit
+as text without a dosing recommendation; local file restore and encrypted
+cross-device sync preserve the fields. Other published event types and
+entered units remain M1 work.
 
 Growth percentiles are computed from WHO tables when shown, never stored.
 Wake-window hints are computed from sleep events on the device.

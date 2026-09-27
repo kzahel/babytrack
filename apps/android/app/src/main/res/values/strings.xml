@@ -42,6 +42,12 @@
     <string name="temperature_c">Temperature (°C)</string>
     <string name="save_temperature">Save temperature</string>
     <string name="temperature_entry">Temperature · %1$s °C</string>
+    <string name="log_medication">Log medication</string>
+    <string name="medication_name">Medication name</string>
+    <string name="dose_amount">Dose amount</string>
+    <string name="dose_unit">Dose unit</string>
+    <string name="save_medication">Save medication</string>
+    <string name="medication_entry">Medication · %1$s · %2$s %3$s</string>
     <string name="amount_ml">Amount (mL)</string>
     <string name="bottle">Bottle · %1$d mL</string>
     <string name="diaper">Diaper · %1$s</string>

@@ -10,6 +10,7 @@ import uniffi.babytrack_core_ffi.FamilyRef
 import uniffi.babytrack_core_ffi.ActivityWhen
 import uniffi.babytrack_core_ffi.NativeLocalStore
 import uniffi.babytrack_core_ffi.NativeSharedStore
+import uniffi.babytrack_core_ffi.MedicationInput
 
 /** Each method runs in a separate instrumentation invocation on one of two
  * emulators. The host transfers only the invitation fragment between them. */
@@ -86,6 +87,8 @@ class TwoDeviceRelayTest {
                 4_200, 540, ActivityWhen(end, 0, end))
             sharing.logTemperatureC(family, sharing.snapshot(family).children.first().id,
                 "37.50", ActivityWhen(end, 0, end))
+            sharing.logMedication(family, sharing.snapshot(family).children.first().id,
+                MedicationInput("Test medicine marker 68", "2.5", "mL"), ActivityWhen(end, 0, end))
             sharing.startSleep(family, sharing.snapshot(family).children.first().id,
                 ActivityWhen(end, 0, end))
             assertTrue(sharing.syncRecipientAndUpload(family).ready)
@@ -105,6 +108,10 @@ class TwoDeviceRelayTest {
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "temperature" && it.temperatureC == "37.50"
+            })
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.kind == "medication" && it.medicationName == "Test medicine marker 68" &&
+                    it.medicationDoseAmount == "2.5" && it.medicationDoseUnit == "mL"
             })
             val running = sharing.snapshot(family).activities.single {
                 it.kind == "sleep" && it.endUtcMs == null

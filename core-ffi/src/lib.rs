@@ -83,6 +83,13 @@ pub struct ActivityWhen {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct MedicationInput {
+    pub name: String,
+    pub dose_amount: String,
+    pub dose_unit: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct ActivityRow {
     pub id: Vec<u8>,
     pub child_id: Vec<u8>,
@@ -96,6 +103,9 @@ pub struct ActivityRow {
     pub growth_weight_g: Option<i64>,
     pub growth_length_mm: Option<i64>,
     pub temperature_c: Option<String>,
+    pub medication_name: Option<String>,
+    pub medication_dose_amount: Option<String>,
+    pub medication_dose_unit: Option<String>,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -1077,6 +1087,9 @@ impl NativeSharedStore {
                 growth_weight_g: row.growth_weight_g,
                 growth_length_mm: row.growth_length_mm,
                 temperature_c: row.temperature_c,
+                medication_name: row.medication_name,
+                medication_dose_amount: row.medication_dose_amount,
+                medication_dose_unit: row.medication_dose_unit,
             })
             .collect();
         Ok(SharedSnapshotRow {
@@ -1413,6 +1426,33 @@ impl NativeSharedStore {
         let (id, operation) =
             local_api::temperature_c_operation(handle, fixed(&child_id)?, &entered_c, time.into())
                 .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map_err(rejected)?;
+        Ok(id.to_vec())
+    }
+
+    pub fn log_shared_medication(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        input: MedicationInput,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let saved_at_ms = time.saved_at_ms;
+        let (id, operation) = local_api::medication_operation(
+            handle,
+            fixed(&child_id)?,
+            &input.name,
+            &input.dose_amount,
+            &input.dose_unit,
+            time.into(),
+        )
+        .map_err(rejected)?;
         ready
             .append_local(&mut store, operation, saved_at_ms)
             .map_err(rejected)?;
@@ -1923,6 +1963,29 @@ impl NativeLocalStore {
             .to_vec())
     }
 
+    pub fn log_medication(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        input: MedicationInput,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .log_medication(
+                family.handle()?,
+                fixed(&child_id)?,
+                &input.name,
+                &input.dose_amount,
+                &input.dose_unit,
+                time.into(),
+            )
+            .map_err(rejected)?
+            .to_vec())
+    }
+
     pub fn timeline(
         &self,
         family: FamilyRef,
@@ -1948,6 +2011,9 @@ impl NativeLocalStore {
                 growth_weight_g: row.growth_weight_g,
                 growth_length_mm: row.growth_length_mm,
                 temperature_c: row.temperature_c,
+                medication_name: row.medication_name,
+                medication_dose_amount: row.medication_dose_amount,
+                medication_dose_unit: row.medication_dose_unit,
             })
             .collect())
     }

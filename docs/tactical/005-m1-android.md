@@ -19,16 +19,18 @@ or production Family data precedes the M0 exit gate.
 
 The debug app has local Family and child creation, Family switching,
 timeline, bottle, diaper, sleep timer/completed sleep, note, whole-unit
-growth, and Celsius logging. Readable and password-protected full files
-restore into a fresh local Family. A command-driven headed emulator check
-creates a Family and child, logs a diaper, and verifies both after restart.
+growth, Celsius, and medication logging. Readable and password-protected
+full files restore into a fresh local Family. A command-driven headed
+emulator check creates a Family and child, logs a diaper, and verifies both
+after restart.
 
 Two separate emulator installations and a disposable relay pass first-cohort
 join without simultaneous foreground use, reciprocal encrypted edits,
 recipient timer stopped by the manager, growth and temperature delivery,
-offline pending work, manager removal, recipient proof, and automatic
-private copy. Foreground polling runs every 30 seconds and a scheduled job
-requests sync when Android allows it; push remains a later latency option.
+medication name/dose delivery, offline pending work, manager removal,
+recipient proof, and automatic private copy. Foreground polling runs every
+30 seconds; a scheduled job requests sync when Android allows it. Push
+remains a later latency option.
 The early independent authority recheck passed for that implemented cohort
 at `82c0f4c`; [003](003-m0-foundation.md#early-m0-authority-recheck-at-82c0f4c)
 records its limits. No physical two-phone or full M0 exit gate has passed.
@@ -46,7 +48,7 @@ flow.
 - [x] Log sleep timers/completed sleep, notes, growth in whole grams and
   millimetres, and entered Celsius decimals through the local/shared core.
 - [ ] Complete the MVP logging set: breast and solids feeds, pumping,
-  medication, growth percentile display, and practical edits/deletes.
+  growth percentile display, and practical edits/deletes.
   Preserve unknown fields and exact Family/child targets. Keep clinical
   recommendations out of the UI.
 - [ ] Run local logging, Family switching, and restart on a physical Android

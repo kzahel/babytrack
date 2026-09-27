@@ -61,8 +61,9 @@ To exercise the current relay slice on an emulator:
    advances the next verified protocol step. A failed pass leaves local work
    saved and shows delayed or blocked status until resolved.
 10. The tracking screen can save a growth entry with whole grams and
-    millimetres and a Celsius decimal entry. The same Rust operation path
-    is used for local and shared Families; the two-emulator test verifies
+    millimetres, a Celsius decimal entry, and a medication name with entered
+    dose amount/unit. The same Rust operation path is used for local and
+    shared Families; the two-emulator test verifies
     the recipient's entries on the manager's device. The manager can remove
     that first recipient; pending edits on the removed device become an
     independent private Family copy.

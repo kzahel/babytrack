@@ -247,6 +247,9 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     fun logTemperatureC(family: FamilyRef, childId: ByteArray, enteredC: String, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedTemperatureC(family, wrapping, childId, enteredC, time) }
 
+    fun logMedication(family: FamilyRef, childId: ByteArray, input: uniffi.babytrack_core_ffi.MedicationInput, time: ActivityWhen): ByteArray =
+        withWrapping { wrapping -> core.logSharedMedication(family, wrapping, childId, input, time) }
+
     fun syncAndUpload(family: FamilyRef, origin: String): SharedSyncRow {
         validateRelayOrigin(origin)
         val relay = RelayTransport(origin)

@@ -25,6 +25,9 @@ the shared core checks its Family and child. Readable and password-protected ful
 fresh local Family. A command-driven headed
 emulator check creates a Family and child, logs and deletes a diaper, records
 an alternating breast feed, and verifies both states after restart.
+Child creation can also record a birth date and the sex code needed for
+eventual growth charts. The shared core persists these as child metadata in
+local and shared history; growth percentiles are still pending.
 
 Two separate emulator installations and a disposable relay pass first-cohort
 join without simultaneous foreground use, reciprocal encrypted edits,

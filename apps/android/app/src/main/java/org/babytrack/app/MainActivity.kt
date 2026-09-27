@@ -68,6 +68,7 @@ import uniffi.babytrack_core_ffi.RestoredOriginRow
 import uniffi.babytrack_core_ffi.SharedSnapshotRow
 import uniffi.babytrack_core_ffi.SharedSyncRow
 import java.text.DateFormat
+import java.time.LocalDate
 import java.util.Date
 import java.util.TimeZone
 
@@ -198,6 +199,8 @@ private fun TrackerScreen(
     var selectedFamily by remember { mutableStateOf<String?>(null) }
     var selectedChild by remember { mutableStateOf<String?>(null) }
     var childName by remember { mutableStateOf("") }
+    var childBirthDate by remember { mutableStateOf("") }
+    var childSex by remember { mutableStateOf(3u.toUByte()) }
     var amount by remember { mutableStateOf("") }
     var breastMinutes by remember { mutableStateOf("") }
     var breastSide by remember { mutableStateOf(1u.toUByte()) }
@@ -820,19 +823,44 @@ private fun TrackerScreen(
                     )
                     Button(enabled = childName.isNotBlank(), onClick = {
                         val name = childName.trim()
+                        val birthDay = runCatching { childBirthDate.takeIf { it.isNotBlank() }?.let { LocalDate.parse(it).toEpochDay() } }
+                            .getOrElse { message = context.getString(R.string.birth_date_invalid); return@Button }
                         scope.launch {
                             runCatching { withContext(Dispatchers.IO) {
-                                if (activeShared) sharing.addChild(family, name, System.currentTimeMillis())
-                                else store.addChild(family, name, System.currentTimeMillis())
+                                if (activeShared) sharing.addChildWithMetadata(family, name, birthDay, childSex, System.currentTimeMillis())
+                                else store.addChildWithMetadata(family, name, birthDay, childSex, System.currentTimeMillis())
                             } }
                                 .onSuccess { created ->
                                     selectedChild = created.key()
                                     childName = ""
+                                    childBirthDate = ""
+                                    childSex = 3u.toUByte()
                                     version++
                                     message = null
                                 }.onFailure { message = errorText }
                         }
                     }) { Text(stringResource(R.string.add_child)) }
+                }
+                OutlinedTextField(
+                    value = childBirthDate,
+                    onValueChange = { childBirthDate = it },
+                    label = { Text(stringResource(R.string.birth_date)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+                Text(stringResource(R.string.growth_chart_sex))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        1u.toUByte() to R.string.sex_female,
+                        2u.toUByte() to R.string.sex_male,
+                        3u.toUByte() to R.string.sex_unspecified,
+                    ).forEach { (code, label) ->
+                        FilterChip(
+                            selected = childSex == code,
+                            onClick = { childSex = code },
+                            label = { Text(stringResource(label)) },
+                        )
+                    }
                 }
 
                 if (child != null) {

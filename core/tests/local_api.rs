@@ -8,6 +8,33 @@ use babytrack_core::{
 };
 
 #[test]
+fn child_birth_day_and_sex_survive_restart_and_file_restore() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("child-metadata.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    assert!(
+        app.add_child_with_metadata(family, "Invalid", Some(20_000), Some(4), 1_790_000_000_001)
+            .is_err()
+    );
+    assert!(app.children(family).unwrap().is_empty());
+    let child = app
+        .add_child_with_metadata(family, "Baby", Some(20_000), Some(1), 1_790_000_000_002)
+        .unwrap();
+    assert_eq!(app.children(family).unwrap()[0].id, child);
+    assert_eq!(app.children(family).unwrap()[0].birth_day, Some(20_000));
+    assert_eq!(app.children(family).unwrap()[0].sex, Some(1));
+    let backup = app.backup(family, 1_790_000_000_003).unwrap();
+    drop(app);
+
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.children(family).unwrap()[0].birth_day, Some(20_000));
+    let restored = app.restore(&backup, 1_790_000_000_004).unwrap();
+    assert_eq!(app.children(restored).unwrap()[0].birth_day, Some(20_000));
+    assert_eq!(app.children(restored).unwrap()[0].sex, Some(1));
+}
+
+#[test]
 fn activity_delete_targets_one_child_and_survives_restart() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("delete.db");

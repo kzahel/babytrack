@@ -11,6 +11,12 @@
     <string name="family_number">Family %1$d</string>
     <string name="children">Children</string>
     <string name="child_name">Child’s name</string>
+    <string name="birth_date">Birth date (YYYY-MM-DD, optional)</string>
+    <string name="birth_date_invalid">Enter a birth date as YYYY-MM-DD.</string>
+    <string name="growth_chart_sex">Sex for growth charts</string>
+    <string name="sex_female">Female</string>
+    <string name="sex_male">Male</string>
+    <string name="sex_unspecified">Unspecified</string>
     <string name="add_child">Add child</string>
     <string name="no_children">Add a child to start tracking.</string>
     <string name="timeline">Timeline</string>

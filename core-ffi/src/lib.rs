@@ -74,6 +74,8 @@ impl From<FamilyHandle> for FamilyRef {
 pub struct ChildRow {
     pub id: Vec<u8>,
     pub name: String,
+    pub birth_day: Option<i64>,
+    pub sex: Option<u8>,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -1126,6 +1128,8 @@ impl NativeSharedStore {
             .map(|child| ChildRow {
                 id: child.id.to_vec(),
                 name: child.name,
+                birth_day: child.birth_day,
+                sex: child.sex,
             })
             .collect();
         let activities = local_api::activities_from_records(projection.records())
@@ -1296,11 +1300,24 @@ impl NativeSharedStore {
         name: String,
         now_ms: i64,
     ) -> Result<Vec<u8>, BindingError> {
+        self.add_shared_child_with_metadata(family, wrapping_key, name, None, None, now_ms)
+    }
+
+    pub fn add_shared_child_with_metadata(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        name: String,
+        birth_day: Option<i64>,
+        sex: Option<u8>,
+        now_ms: i64,
+    ) -> Result<Vec<u8>, BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
         let handle = family.handle()?;
         let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
         let (id, operation) =
-            local_api::child_operation(handle, &name, now_ms).map_err(rejected)?;
+            local_api::child_operation_with_metadata(handle, &name, birth_day, sex, now_ms)
+                .map_err(rejected)?;
         ready
             .append_local(&mut store, operation, now_ms)
             .map_err(rejected)?;
@@ -1975,6 +1992,8 @@ impl NativeLocalStore {
             .map(|child| ChildRow {
                 id: child.id.to_vec(),
                 name: child.name,
+                birth_day: child.birth_day,
+                sex: child.sex,
             })
             .collect())
     }
@@ -1985,11 +2004,22 @@ impl NativeLocalStore {
         name: String,
         now_ms: i64,
     ) -> Result<Vec<u8>, BindingError> {
+        self.add_child_with_metadata(family, name, None, None, now_ms)
+    }
+
+    pub fn add_child_with_metadata(
+        &self,
+        family: FamilyRef,
+        name: String,
+        birth_day: Option<i64>,
+        sex: Option<u8>,
+        now_ms: i64,
+    ) -> Result<Vec<u8>, BindingError> {
         Ok(self
             .repo
             .lock()
             .map_err(|_| BindingError::LockPoisoned)?
-            .add_child(family.handle()?, &name, now_ms)
+            .add_child_with_metadata(family.handle()?, &name, birth_day, sex, now_ms)
             .map_err(rejected)?
             .to_vec())
     }

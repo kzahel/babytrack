@@ -32,7 +32,7 @@ class TwoDeviceRelayTest {
             ?: error("relayPublicKey required")
         val family = NativeLocalStore.open(db.absolutePath).use { local ->
             local.createFamily(System.currentTimeMillis()).also {
-                local.addChild(it, "Shared child", System.currentTimeMillis())
+                local.addChildWithMetadata(it, "Shared child", 20_000L, 1u.toUByte(), System.currentTimeMillis())
             }
         }
         context.filesDir.resolve("two-device-family.txt").writeText(
@@ -78,7 +78,9 @@ class TwoDeviceRelayTest {
         ShareCoordinator(context, db.absolutePath).use { sharing ->
             val family = sharing.recipientFamilies().single()
             assertTrue(sharing.syncRecipient(family).ready)
-            assertTrue(sharing.snapshot(family).children.any { it.name == "Shared child" })
+            assertTrue(sharing.snapshot(family).children.any {
+                it.name == "Shared child" && it.birthDay == 20_000L && it.sex == 1u.toUByte()
+            })
             sharing.addChild(family, "Recipient child", System.currentTimeMillis())
             val end = System.currentTimeMillis()
             sharing.logSleep(family, sharing.snapshot(family).children.first().id,

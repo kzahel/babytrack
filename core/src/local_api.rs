@@ -39,6 +39,8 @@ impl From<getrandom::Error> for Error {
 pub struct Child {
     pub id: [u8; 16],
     pub name: String,
+    pub birth_day: Option<i64>,
+    pub sex: Option<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -166,8 +168,20 @@ impl LocalRepository {
         name: &str,
         now_ms: i64,
     ) -> Result<[u8; 16], Error> {
+        self.add_child_with_metadata(family, name, None, None, now_ms)
+    }
+
+    pub fn add_child_with_metadata(
+        &mut self,
+        family: FamilyHandle,
+        name: &str,
+        birth_day: Option<i64>,
+        sex: Option<u8>,
+        now_ms: i64,
+    ) -> Result<[u8; 16], Error> {
         self.ensure_local_surface(family)?;
-        let (child_id, operation) = child_operation(family, name, now_ms)?;
+        let (child_id, operation) =
+            child_operation_with_metadata(family, name, birth_day, sex, now_ms)?;
         self.store.append_local(family, operation, now_ms)?;
         Ok(child_id)
     }
@@ -525,9 +539,29 @@ pub fn child_operation(
     name: &str,
     now_ms: i64,
 ) -> Result<([u8; 16], NewOperation), Error> {
+    child_operation_with_metadata(family, name, None, None, now_ms)
+}
+
+pub fn child_operation_with_metadata(
+    family: FamilyHandle,
+    name: &str,
+    birth_day: Option<i64>,
+    sex: Option<u8>,
+    now_ms: i64,
+) -> Result<([u8; 16], NewOperation), Error> {
     check_time(now_ms)?;
     if name.trim().is_empty() || name.len() > 16 * 1024 {
         return Err(Error::Invalid("child name empty or too long"));
+    }
+    if sex.is_some_and(|code| !(1..=3).contains(&code)) {
+        return Err(Error::Invalid("child sex code outside published range"));
+    }
+    let mut fields = vec![(1, Value::Text(name.trim().to_owned()))];
+    if let Some(day) = birth_day {
+        fields.push((2, Value::Integer(day.into())));
+    }
+    if let Some(code) = sex {
+        fields.push((3, Value::Integer(code.into())));
     }
     let id = ids::random_v7(now_ms)?;
     Ok((
@@ -542,7 +576,7 @@ pub fn child_operation(
             hlc: placeholder_hlc(family),
             record_type: Some("child".to_owned()),
             child_id: None,
-            fields: Some(vec![(1, Value::Text(name.trim().to_owned()))]),
+            fields: Some(fields),
         },
     ))
 }
@@ -1040,6 +1074,14 @@ pub fn children_from_records<'a>(records: impl Iterator<Item = &'a Record>) -> V
             Some(Child {
                 id: record.id,
                 name: name.clone(),
+                birth_day: record.field(2).and_then(|field| match field.value {
+                    Value::Integer(value) => i64::try_from(value).ok(),
+                    _ => None,
+                }),
+                sex: record.field(3).and_then(|field| match field.value {
+                    Value::Integer(value) => u8::try_from(value).ok(),
+                    _ => None,
+                }),
             })
         })
         .collect::<Vec<_>>();

@@ -222,6 +222,12 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         core.addSharedChild(family, wrapping, name, nowMs)
     }
 
+    fun addChildWithMetadata(
+        family: FamilyRef, name: String, birthDay: Long?, sex: UByte?, nowMs: Long,
+    ): ByteArray = withWrapping { wrapping ->
+        core.addSharedChildWithMetadata(family, wrapping, name, birthDay, sex, nowMs)
+    }
+
     fun logDiaper(family: FamilyRef, childId: ByteArray, kind: UByte, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedDiaper(family, wrapping, childId, kind, time) }
 

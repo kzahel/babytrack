@@ -339,6 +339,30 @@ impl LocalRepository {
         Ok(())
     }
 
+    pub fn edit_note(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        note: &str,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        if child.scope != Scope::Child || child.deleted {
+            return Err(Error::Invalid("target child unavailable"));
+        }
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("activity unavailable"))?;
+        let operation = edit_note_operation(family, child_id, activity, note, saved_at_ms)?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn log_note(
         &mut self,
         family: FamilyHandle,
@@ -929,6 +953,39 @@ pub fn note_operation(
         vec![(4, Value::Text(note.to_owned()))],
         time,
     )
+}
+
+pub fn edit_note_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    note: &str,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    if activity.scope != Scope::Activity
+        || activity.child_id != Some(child_id)
+        || activity.record_type != "note"
+        || activity.deleted
+    {
+        return Err(Error::Invalid("note target unavailable"));
+    }
+    check_time(saved_at_ms)?;
+    let note = note.trim();
+    if note.is_empty() || note.len() > 4096 {
+        return Err(Error::Invalid("note must contain 1 to 4096 bytes"));
+    }
+    Ok(NewOperation {
+        family_id: family.family_id,
+        operation_id: ids::random_v7(saved_at_ms)?,
+        record_id: activity.id,
+        scope: Scope::Activity,
+        kind: Kind::Set,
+        author_device_id: family.device_id,
+        hlc: placeholder_hlc(family),
+        record_type: None,
+        child_id: None,
+        fields: Some(vec![(4, Value::Text(note.to_owned()))]),
+    })
 }
 
 pub fn growth_operation(

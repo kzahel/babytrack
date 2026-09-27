@@ -147,6 +147,13 @@ private data class PendingActivityDelete(
     val activityId: ByteArray,
     val shared: Boolean,
 )
+private data class PendingNoteEdit(
+    val family: FamilyRef,
+    val childId: ByteArray,
+    val activityId: ByteArray,
+    val shared: Boolean,
+    val text: String,
+)
 private data class ScreenData(
     val families: List<FamilyRef>,
     val activeFamilyKey: String?,
@@ -224,6 +231,7 @@ private fun TrackerScreen(
     var automaticSyncBlocked by remember { mutableStateOf(false) }
     var removalTarget by remember { mutableStateOf<ByteArray?>(null) }
     var pendingDelete by remember { mutableStateOf<PendingActivityDelete?>(null) }
+    var pendingNoteEdit by remember { mutableStateOf<PendingNoteEdit?>(null) }
     var relayOrigin by remember { mutableStateOf("") }
     var relayPublicKey by remember { mutableStateOf("") }
     var shareStage by remember { mutableStateOf<String?>(null) }
@@ -1285,6 +1293,17 @@ private fun TrackerScreen(
                                         }
                                     }) { Text(stringResource(R.string.stop_sleep)) }
                                 }
+                                if (entry.kind == "note" && entry.note != null) {
+                                    OutlinedButton(onClick = {
+                                        pendingNoteEdit = PendingNoteEdit(
+                                            family,
+                                            entry.childId.copyOf(),
+                                            entry.id.copyOf(),
+                                            activeShared,
+                                            entry.note!!,
+                                        )
+                                    }) { Text(stringResource(R.string.edit_note)) }
+                                }
                                 OutlinedButton(onClick = {
                                     pendingDelete = PendingActivityDelete(
                                         family,
@@ -1421,6 +1440,37 @@ private fun TrackerScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { pendingDelete = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+    pendingNoteEdit?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingNoteEdit = null },
+            title = { Text(stringResource(R.string.edit_note)) },
+            text = {
+                OutlinedTextField(
+                    value = target.text,
+                    onValueChange = { pendingNoteEdit = target.copy(text = it) },
+                    label = { Text(stringResource(R.string.note_text)) },
+                )
+            },
+            confirmButton = {
+                Button(enabled = target.text.trim().isNotEmpty(), onClick = {
+                    pendingNoteEdit = null
+                    val savedAtMs = System.currentTimeMillis()
+                    change {
+                        if (target.shared) sharing.editNote(
+                            target.family, target.childId, target.activityId, target.text, savedAtMs,
+                        ) else store.editNote(
+                            target.family, target.childId, target.activityId, target.text, savedAtMs,
+                        )
+                    }
+                }) { Text(stringResource(R.string.save_changes)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingNoteEdit = null }) {
                     Text(stringResource(R.string.cancel))
                 }
             },

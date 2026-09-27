@@ -1593,6 +1593,38 @@ impl NativeSharedStore {
             .map_err(rejected)
     }
 
+    pub fn edit_shared_note(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        note: String,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let projection = ready.projection_with_pending(&store).map_err(rejected)?;
+        let child_id = fixed(&child_id)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(BindingError::InvalidBytes)?;
+        if child.scope != operation::Scope::Child || child.deleted {
+            return Err(BindingError::InvalidBytes);
+        }
+        let activity = projection
+            .record(&fixed(&activity_id)?)
+            .ok_or(BindingError::InvalidBytes)?;
+        let operation =
+            local_api::edit_note_operation(handle, child_id, activity, &note, saved_at_ms)
+                .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map(|_| ())
+            .map_err(rejected)
+    }
+
     pub fn log_shared_note(
         &self,
         family: FamilyRef,
@@ -2255,6 +2287,27 @@ impl NativeLocalStore {
                 family.handle()?,
                 fixed(&child_id)?,
                 fixed(&activity_id)?,
+                saved_at_ms,
+            )
+            .map_err(rejected)
+    }
+
+    pub fn edit_note(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        note: String,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        self.repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .edit_note(
+                family.handle()?,
+                fixed(&child_id)?,
+                fixed(&activity_id)?,
+                &note,
                 saved_at_ms,
             )
             .map_err(rejected)

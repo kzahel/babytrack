@@ -24,7 +24,9 @@ and pumping logs. A confirmed timeline action tombstones one activity after
 the shared core checks its Family and child. Readable and password-protected full files restore into a
 fresh local Family. A command-driven headed
 emulator check creates a Family and child, logs and deletes a diaper, records
-an alternating breast feed, and verifies both states after restart.
+an alternating breast feed, and verifies both states after restart. The
+timeline can correct a note's text through the shared Rust edit path while
+retaining its Family, child, activity ID, original time, and other fields.
 Child creation can also record a birth date and the sex code needed for
 eventual growth charts. The shared core persists these as child metadata in
 local and shared history; growth percentiles are still pending.
@@ -59,7 +61,8 @@ handoff. This is still a development flow, not a released product flow.
 - [x] Log sleep timers/completed sleep, notes, growth in whole grams and
   millimetres, and entered Celsius decimals through the local/shared core.
 - [ ] Complete the MVP logging set: growth percentile display and practical
-  edits. Multi-segment breast feeds and single-activity deletion now pass
+  edits beyond note text. Multi-segment breast feeds, note correction, and
+  single-activity deletion now pass
   local restart/file restore, two-emulator encrypted sync, and UI tap flows.
   Preserve unknown fields and exact Family/child targets. Keep clinical
   recommendations out of the UI.

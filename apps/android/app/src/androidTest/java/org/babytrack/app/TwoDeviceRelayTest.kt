@@ -154,8 +154,22 @@ class TwoDeviceRelayTest {
             assertTrue(runCatching {
                 sharing.deleteActivity(family, otherChild.id, note.id, System.currentTimeMillis())
             }.isFailure)
+            assertTrue(runCatching {
+                sharing.editNote(family, otherChild.id, note.id, "Wrong child", System.currentTimeMillis())
+            }.isFailure)
+            sharing.editNote(family, note.childId, note.id, "Corrected care note", System.currentTimeMillis())
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.id.contentEquals(note.id) && it.note == "Corrected care note"
+            })
             sharing.deleteActivity(family, note.childId, note.id, System.currentTimeMillis())
             assertTrue(sharing.snapshot(family).activities.none { it.id.contentEquals(note.id) })
+            val editTime = System.currentTimeMillis()
+            val retainedNote = sharing.logNote(
+                family, note.childId, "Before sync correction", ActivityWhen(editTime, 0, editTime)
+            )
+            sharing.editNote(
+                family, note.childId, retainedNote, "After sync correction", System.currentTimeMillis()
+            )
             val running = sharing.snapshot(family).activities.single {
                 it.kind == "sleep" && it.endUtcMs == null
             }
@@ -172,6 +186,7 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.syncRecipientAndUpload(family).ready)
             assertTrue(sharing.snapshot(family).children.any { it.name == "Manager child" })
             assertTrue(sharing.snapshot(family).activities.none { it.note == "Care note marker 67" })
+            assertTrue(sharing.snapshot(family).activities.any { it.note == "After sync correction" })
             assertTrue(sharing.snapshot(family).activities.count { it.kind == "sleep" && it.endUtcMs != null } == 2)
             sharing.addChild(family, "Pending at removal", System.currentTimeMillis())
             assertEquals(1uL, sharing.snapshot(family).unsentCount)

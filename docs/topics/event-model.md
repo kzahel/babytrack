@@ -82,6 +82,10 @@ The Android timeline can delete one activity. The shared core checks its
 Family and child target and records a tombstone operation; the entry leaves
 the current timeline locally and on devices that later sync. Deletion does
 not erase an already received copy or rewrite the historical operation log.
+The timeline can also edit a note's text. The shared core checks the exact
+Family, child, live note type, and text length, then writes a field-set
+operation on the same activity ID. Its original time and unknown fields
+remain intact; the corrected value survives offline replay and file restore.
 Pumping records a completed interval with either separate left/right
 millilitres or one total, never both forms in one entry. It does not create a
 freezer inventory balance.

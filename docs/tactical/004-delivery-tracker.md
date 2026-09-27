@@ -128,6 +128,13 @@ Remote run `36308749163` at `c640b15` then passed all required jobs,
 including Android real-relay instrumentation, scheduled sync, and UI smoke.
 The later restart-integrity commits have local server and two-emulator proof.
 
+Remote run `36312981789` at `9a82ba7` passed all non-emulator jobs but one
+scheduled Android instrumentation case opened the app database repeatedly
+while the background job was still using it, producing `DatabaseBusy`. The
+test now waits for the job's completion marker before inspecting its saved
+claim. The seven-case real-relay instrumentation suite passes locally with
+that ordering; the next remote run must confirm it on CI.
+
 Remote runs `36309186029` at `88380d8`, `36309474621` at `148d53b`,
 `36309921404` at `26227ca`, `36310142071` at `654f553`, and
 `36310529356` at `bdbed9e`, `36311536009` at `6fc1928`, and

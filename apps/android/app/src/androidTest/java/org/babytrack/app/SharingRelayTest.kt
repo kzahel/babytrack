@@ -173,13 +173,15 @@ class SharingRelayTest {
         while (System.currentTimeMillis() < deadline) {
             val newAttempt = context.getSharedPreferences("shared_background_sync", android.content.Context.MODE_PRIVATE)
                 .getLong("last_attempt_ms", 0) > before
-            val key = DeviceWrappingKey(context).loadOrCreate()
-            resumed = try {
-                NativeSharedStore.open(context.filesDir.resolve("families.db").absolutePath).use { core ->
-                    core.recipientFirstJoinAction(recipient, key) == 0u.toUByte()
+            if (newAttempt) {
+                val key = DeviceWrappingKey(context).loadOrCreate()
+                resumed = try {
+                    NativeSharedStore.open(context.filesDir.resolve("families.db").absolutePath).use { core ->
+                        core.recipientFirstJoinAction(recipient, key) == 0u.toUByte()
+                    }
+                } finally {
+                    key.fill(0)
                 }
-            } finally {
-                key.fill(0)
             }
             if (newAttempt && resumed) break
             Thread.sleep(100)

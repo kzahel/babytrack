@@ -19,3 +19,6 @@ tactical with its current status.
   coordination; tracks the next M0 proof, security-review handoffs, CI
   growth, and progress toward a usable M1 Android UI. Detailed completion
   status stays with each implementation tactical.
+- [005: M1 Android caregiver app](005-m1-android.md) — in progress on
+  emulators alongside M0; owns local and two-caregiver Android flow, physical
+  phone gates, and remaining UI, logging, and recovery work.

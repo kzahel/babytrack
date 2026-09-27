@@ -1,7 +1,8 @@
 # 004: Autonomous delivery tracker
 
 Status: active coordination; [003 M0 foundation](003-m0-foundation.md) owns
-the current implementation work. This tracker records the next proof, gate
+protocol work and [005 M1 Android](005-m1-android.md) owns the caregiver app.
+This tracker records the next proof, gate
 handoffs, and review evidence. The [MVP plan](../mvp-plan.md) owns scope and
 milestone order; each implementation tactical owns its detailed checkboxes.
 
@@ -21,22 +22,21 @@ Hosting, app-store work, and public release remain M5 work.
 
 ## Current work card
 
-M0 remains in progress. Canonical bytes, selected crypto and operation
-vectors, an in-memory projection, four-runtime encrypted-event smokes,
-browser IndexedDB fixture smoke, native signed-history replay, and the
-genesis, invitation, claim, challenge, proof, and admission development relay routes run locally. The full vector
-suite, complete local storage, shared control and batch sync, recovery,
-and sharing UI remain open; the first Android local tracking screen now runs
-on an emulator. The current passing checks do not close an M0 slice.
+M0 remains in progress. The implemented first cohort passes the early
+authority recheck and two separate emulators exercise join, encrypted sync,
+removal, and private-copy recovery. General membership, browser shared
+outbox, complete vector coverage, and the M0 exit review remain open.
+Android local and first-cohort UI work runs alongside M0 on emulators; its
+physical phone gates remain open.
 
 | Field | Current answer |
 |---|---|
-| Active implementation owner | [003 M0 foundation](003-m0-foundation.md), slices 2 and 3; slice 1 cross-language gate is still open. |
+| Active implementation owner | [003 M0 foundation](003-m0-foundation.md) for protocol and [005 M1 Android](005-m1-android.md) for the caregiver app. |
 | Next demonstrable proof | The Android local UI creates Families and children, records bottle, diaper, sleep timer, completed sleep, note, growth, and Celsius entries, shows a timeline, and saves/restores readable or password-protected files through Rust. A disposable relay and two separate emulators pass first-cohort join, a recipient timer stopped by the manager, recipient growth and temperature read by the manager, reciprocal edits, offline work, removal, and automatic private copy; a note marker is absent from relay storage and logs. Foreground polling and a scheduled job advance sharing; normal job timing is OS controlled. |
 | Next dependent slice | The early first-cohort authority recheck passed. Expand later-device authority, browser outbox, signed ID-collision coverage, and crash campaigns before M0 exit. |
 | Next independent review | The [early M0 authority recheck at `82c0f4c`](003-m0-foundation.md#early-m0-authority-recheck-at-82c0f4c) returned PASS for the implemented first cohort. The broader end-of-M0 recovery and mixed-client gate remains. |
 | Open advisory | The [Android sync recheck](003-m0-foundation.md#advisory-android-sync-recheck-at-00e827b) passed its two prior high findings at fixed revision `00e827b`. Activity recreation and forced recipient job retry pass on the real-relay emulator. Injected hostile-batch display proof and full M0 authority review remain. |
-| CI signal today | Rust, native-binding, browser, Android APK, and real-relay emulator jobs are now required on every push/PR. The emulator runner passed locally against a relay, and `actionlint` passed. A remote Actions result has not been verified here. |
+| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. The emulator runners and `actionlint` passed locally. A remote Actions result has not been verified here. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.
@@ -54,9 +54,9 @@ UI, and verifies them after restart. CI runs this after relay instrumentation.
 | M0 durable local core | [003 slice 2](003-m0-foundation.md#2-durable-local-core): crash/replay, outbox, Family isolation, private copy, and backup/restore scenario results. | Local logging works offline; a saved copy names its Family and saved point. |
 | M0 authority | [003 slice 3](003-m0-foundation.md#3-relay-authority-and-early-security-review): relay control tests and the early implemented security gate. | Invite, pending join, grant, removal, and key handoff have honest status and one committed outcome. |
 | M0 mixed clients and exit | [003 slice 4](003-m0-foundation.md#4-mixed-client-sync-and-recovery-adversarial-pass): two CLI clients plus browser through a real relay, bounded fault suite, and end-of-M0 review. | Offline edits converge; rejected or unknown work stays visible; removal leads to a private copy when needed. |
-| M1 first usable UI | Create an M1 tactical when M0 is near exit. Prove Android local Family, child, feed/diaper logging, timeline, switcher, and backup on a phone. | A caregiver can log and inspect entries without an account or network. |
-| M1 two-caregiver use | M1 tactical and [two-caregiver gate](../mvp-plan.md#testing-and-validation): two phones, delayed join, offline edits, removal, private copy, and recovery. | The interface explains waiting, accepted, lost-access, and saved-copy states. |
-| M1 refinements | M1 tactical: timers, widget, import, accessibility, and daily developer-build use. | Common logging remains quick and correctly targeted to Family and child. |
+| M1 first usable UI | [005 slice 1](005-m1-android.md#1-local-caregiver-flow-on-one-phone): Android local Family, child, feed/diaper logging, timeline, switcher, and backup on a phone. | A caregiver can log and inspect entries without an account or network. |
+| M1 two-caregiver use | [005 slice 2](005-m1-android.md#2-two-caregiver-sharing-and-background-progress) and [two-caregiver gate](../mvp-plan.md#testing-and-validation): two phones, delayed join, offline edits, removal, private copy, and recovery. | The interface explains waiting, accepted, lost-access, and saved-copy states. |
+| M1 refinements | [005 slice 3](005-m1-android.md#3-file-recovery-import-and-daily-use): timers, widget, import, accessibility, and daily developer-build use. | Common logging remains quick and correctly targeted to Family and child. |
 | M2 web, M3 iOS, M4 watches | Open a tactical for each when approaching it; use the [milestone plan](../mvp-plan.md#milestones) and later-surface gates. | Reuse Family semantics; inspect each new platform trust and targeting boundary. |
 | M5 distribution | Separate M5 tactical and release gate. | Public-use, hosting, legal, and store readiness are reviewed before release. |
 

@@ -21,9 +21,11 @@ cryptography, durable local/shared journals, signed sync, and a first
 rotating removal. The development relay admits an initial two-device cohort,
 syncs encrypted batches, and atomically removes that first recipient with
 epoch rotation. A real-relay CLI test covers the cutover. The Android debug
-app logs and syncs the first cohort, includes manager removal and scheduled
-background attempts; automatic private copy on removal, later-device admission,
-and the required security gates remain open.
+app logs and syncs the first cohort, includes manager removal, verified
+recipient cutover, an automatic private copy for pending work, and scheduled
+background attempts. The first-cohort authority security recheck passed at
+`82c0f4c`; later-device admission, mixed-client browser sync, the end-of-M0
+security gate, and physical-phone validation remain open.
 `babytrack` is a code name.
 
 The working tree may contain concurrent human or agent changes. Do not revert,
@@ -126,6 +128,9 @@ bash scripts/check_native_smoke.sh
 bash scripts/check_browser_smoke.sh
 python3 scripts/check_workspace.py
 cargo deny check advisories bans licenses sources
+apps/android/gradlew :app:assembleDebug :app:assembleDebugAndroidTest --offline --no-daemon
+bash scripts/check_android_relay_emulator.sh
+bash scripts/check_android_two_emulators.sh # needs two running emulators
 ```
 
 The M0 byte, operation, crypto, and in-memory replay components run

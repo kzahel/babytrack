@@ -156,6 +156,11 @@ invitation canceled by authority loss. A device, invitation, transition, grant, 
 batch ID once seen in this Family's verified chain is never reused for a
 different object, even after removal. The relay indexes these forever and
 clients verify against their history. Unknown kinds reject before mutation.
+Rejected batch IDs are relay-private durable reservations because rejection
+receipts do not enter the public chain. The relay enforces their uniqueness
+at commit; object staging may succeed before that commit rejects. Clients
+cannot independently detect a collision with a rejected-only ID from the
+committed chain.
 
 The public delta contains only the keys specified for its kind:
 

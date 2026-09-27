@@ -98,6 +98,7 @@ fn resign_batch_result(
     accepted: bool,
     cursor: u64,
     head: [u8; 32],
+    next_expected: Option<u64>,
 ) -> Vec<u8> {
     let Value::Map(result) = cbor::decode(result_bytes).unwrap() else {
         panic!()
@@ -120,6 +121,9 @@ fn resign_batch_result(
             panic!()
         };
         body[10].1 = Value::Integer(sequence + 1);
+    }
+    if let Some(next) = next_expected {
+        body[10].1 = Value::Integer(next.into());
     }
     receipt[1].1 = Value::Bytes(
         crypto::sign_cbor(
@@ -1545,13 +1549,32 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
         ),
         (false, saved.cursor, [0x99; 32]),
     ] {
-        let forged = resign_batch_result(&rejected, &relay_seed, accepted, cursor, head);
+        let forged = resign_batch_result(&rejected, &relay_seed, accepted, cursor, head, None);
         assert!(
             recipient_public
                 .inspect_removed_pending_result(&recipient_store, &saved, &forged)
                 .is_err()
         );
     }
+    let wrong_next = if !accepted_before_removal {
+        let removal_head = crypto::hash("control-head", &saved.committed_bytes).unwrap();
+        let forged = resign_batch_result(
+            &rejected,
+            &relay_seed,
+            false,
+            saved.cursor,
+            removal_head,
+            Some(stale.sequence + 1),
+        );
+        assert!(
+            recipient_public
+                .inspect_removed_pending_result(&recipient_store, &saved, &forged)
+                .is_err()
+        );
+        Some(forged)
+    } else {
+        None
+    };
     assert_eq!(
         recipient_store.saved_removal(enrollment.family()).unwrap(),
         Some(saved.clone())
@@ -1615,6 +1638,13 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
     );
     let reopened_public =
         PublicHistorySession::resume(&recipient_store, enrollment.family()).unwrap();
+    if let Some(forged) = &wrong_next {
+        assert!(
+            reopened_public
+                .inspect_removed_pending_result(&recipient_store, &saved, forged)
+                .is_err()
+        );
+    }
     assert_eq!(
         reopened_public
             .inspect_removed_pending_result(&recipient_store, &saved, &rejected)

@@ -441,7 +441,7 @@ unknown delivery when showing the new private Family.
   handling, signed removal proof, and one private-copy transaction. Exercise
   manager-removal orders, third caregiver, pending work, forged denial,
   cloned credential, and malicious fork (FS04-FS12, FS34, FS52-FS58).
-- [ ] Run the early M0 implemented-protocol review from the
+- [x] Run the early M0 implemented-protocol review from the
   [MVP plan](../mvp-plan.md#security-review-gates) using the
   [review runbook](../security-review-runbook.md). Review authorization,
   invitation, encryption, and rotation at a fixed revision. Fix access and
@@ -947,7 +947,7 @@ UI and the removed-device proof/copy implementation.
 
 | Finding | Disposition |
 |---|---|
-| Medium blocker: the relay denies a removed author its own accepted or rejected batch result after a lost POST response, so pending-work disposition cannot be verified. | The relay now allows only the removed signer's accepted receipt and verifies authorship of stored rejected envelopes before returning those receipts. FS63/BATCH08 and a real-relay CLI lost-accepted-response variant cover accepted, rejected, unknown, known-other, and denied post-removal data. Android queries the saved batch result after proof and reports accepted, rejected, or unknown while preserving local work. This repair still needs fixed-revision independent recheck. |
+| Medium blocker: the relay denies a removed author its own accepted or rejected batch result after a lost POST response, so pending-work disposition cannot be verified. | The relay now allows only the removed signer's accepted receipt and verifies authorship of stored rejected envelopes before returning those receipts. FS63/BATCH08 and a real-relay CLI lost-accepted-response variant cover accepted, rejected, unknown, known-other, and denied post-removal data. Android queries the saved batch result after proof and reports accepted, rejected, or unknown while preserving local work. The fixed-revision recheck at `82c0f4c` passed this repair. |
 | Medium hardening: protocol IDs can be reused across categories even though the contract says never reused. | The first-cohort relay now scans its durable committed control and accepted/rejected result registry inside each commit transaction; the core replay keeps a global Family ID set. FS64/IDCOLL01, core cross-category cases, and relay registry checks cover selected collisions. Extend exact signed collision tests and the registry as later-device authority is implemented. |
 | Low contract gap: three advertised GET routes are not implemented. | The relay now implements authenticated `batches?after`, `control-results/{id}`, and first-cohort `invites/{id}`. APIROUTES01 and the real-relay CLI exercise committed, unknown, and removed batch-page cases. Broader unauthorized and mixed-client route coverage remains. |
 
@@ -993,7 +993,8 @@ between the old pin and removal cursor, and requires a post-cutover revoked
 rejection with the verified removal head. Contradictions remain unknown;
 the source outbox and private copy persist. FS63/BATCH08 and a real-relay
 CLI test inject signed inconsistent cursors and heads, including after
-SQLite reopen. A fixed-revision independent recheck is still needed.
+SQLite reopen. The fixed-revision independent recheck at `82c0f4c`
+passed this repair.
 
 A new `scripts/check_android_two_emulators.sh` drives a disposable relay
 and ten instrumentation invocations across two separately stored emulator
@@ -1005,6 +1006,34 @@ copy. This exercises separate
 Android Keystores. It is emulator evidence; the M1 two-physical-phone gate
 remains open. The required CI emulator job still runs the focused
 single-emulator `SharingRelayTest` suite.
+
+## Early M0 authority recheck at 82c0f4c
+
+Daybreak Blue high thinking reviewed fixed commit
+`82c0f4ca4950937947d00e44d60ab76cd9472fc3` in a detached clean
+checkout, session `01a0e13f-1942-74a2-8b67-c9eae7036f7e`. It returned
+**PASS for the implemented first cohort**: one initial manager, one
+admitted recipient, and first recipient removal. The reviewer found no
+remaining access or pending-work blocker. It ran focused core (52), relay
+(10), CLI (4 integration), and Android JVM (2) tests. It inspected but did
+not run the two-emulator suite, physical phones, full workspace, Clippy,
+fuzzing, or power-cut campaign.
+
+The reviewer verified that the saved removal proof and exact pending
+envelope bound accepted and rejected status to the cutover. Cross-category
+IDs cannot commit twice in the first cohort, and the three authenticated
+GET routes have no identified first-cohort ACL bypass. A malicious relay
+can still withhold or fork a branch-consistent history, as documented in
+the trust model; a receipt is not globally witnessed inclusion.
+
+| Low finding | Disposition |
+|---|---|
+| A revoked rejection with arbitrary `next_expected_sequence` could still be labeled rejected. | The classifier now requires the pending sequence for the implemented first cohort. FS63/BATCH08 and the signed real-relay CLI receipt variant cover a changed value before and after SQLite reopen; inconsistent evidence remains unknown. |
+| FS64 overpromised staging and client detection for IDs only present in private rejected-batch results. | The protocol and FS64/IDCOLL01 now state the commit-time guarantee, that staging can temporarily accept, and that client replay detects only public-chain collisions. The relay keeps rejected IDs reserved durably. Signed full collision-matrix route coverage remains M0 work. |
+
+This focused PASS clears the first-cohort early authority review, not the
+M0 exit review or later-device authority. The M1 two-physical-phone and
+power-loss gates remain open.
 
 ## Advisory byte/crypto preflight
 

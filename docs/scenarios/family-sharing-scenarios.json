@@ -1393,7 +1393,7 @@
       "given": "A recipient has an exact signed upload in flight while its manager removes its device and rotates the key.",
       "actions": ["Lose the upload response; verify signed removal through the public control route; query the earlier upload result with the removed credential.", "Try the same credential against another device's result, the data log, and a new object."],
       "expect": ["An accepted-before-removal or rejected-after-removal result is returned only to its author and verifies against the exact saved envelope and verified removal cutover.", "Unknown result is reported as unknown, not noninclusion; another author's result and post-removal data remain denied.", "A signed receipt with a contradictory cursor or head never produces accepted or rejected wording; the source outbox and private copy retain locally held work."],
-      "variants": ["accepted before removal", "rejected after removal", "lost response", "unknown own batch ID", "known other batch ID", "restart after proof", "signed acceptance at or after removal", "signed acceptance with wrong head", "pre-removal revoked rejection", "rejection with wrong removal head"],
+      "variants": ["accepted before removal", "rejected after removal", "lost response", "unknown own batch ID", "known other batch ID", "restart after proof", "signed acceptance at or after removal", "signed acceptance with wrong head", "pre-removal revoked rejection", "rejection with wrong removal head", "rejection with changed next expected sequence"],
       "decisions": ["D6", "D7"]
     },
     {
@@ -1401,8 +1401,8 @@
       "status": "agreed",
       "requirements": ["U3", "U4"],
       "given": "A manager or authorized device proposes a correctly signed object whose new protocol ID reuses a historical ID of another category in the same Family.",
-      "actions": ["Try device, invitation, transition, challenge, grant/object, accepted batch, and rejected batch ID collisions at staging and commit.", "Restart relay and client, then replay the same candidate."],
-      "expect": ["Every cross-category new-ID collision fails without advancing the Family cursor, head, authority state, accepted sequence, or committed object set.", "Both relay and client replay reject the same collision; exact retries of an already committed object remain idempotent.", "A rejected batch ID remains unavailable to later control or object proposals."],
+      "actions": ["Try device, invitation, transition, challenge, grant/object, accepted batch, and rejected batch ID collisions at commit.", "Restart relay and client, then replay the same candidate."],
+      "expect": ["Every cross-category new-ID collision fails at commit without advancing the Family cursor, head, authority state, accepted sequence, or committed object set; staging may temporarily accept the candidate.", "Clients reject collisions visible in their committed chain; exact retries of an already committed object remain idempotent.", "The relay's durable rejected-result registry prevents a rejected batch ID from committing as a later control or object ID; rejected-only IDs are not independently visible to clients."],
       "variants": ["invitation equals genesis transition", "claim device equals old object", "challenge equals batch", "rotation grant equals admission grant", "removal equals rejected batch"],
       "decisions": ["D4", "D6"]
     }

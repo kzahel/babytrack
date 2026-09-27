@@ -170,6 +170,7 @@ impl PublicHistorySession {
             || rejected.batch_id != pending.batch_id
             || rejected.object_hash != pending.object_hash
             || rejected.device_sequence != pending.sequence
+            || rejected.next_expected_sequence != pending.sequence
             || rejected.reason != 2
             || rejected.cursor < removal.cursor
             || rejected.control_head != crypto::hash("control-head", &removal.committed_bytes)?

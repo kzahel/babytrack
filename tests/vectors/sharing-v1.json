@@ -481,15 +481,15 @@
       "id": "BATCH08",
       "scenario": "FS63",
       "initial": {"recipient_state": "active", "pending_batch": "exact-signed-envelope"},
-      "actions": ["lose recipient POST response", "commit manager removal and key rotation", "query batch result with removed recipient signer", "query manager batch result with removed signer", "query unknown batch ID", "try new log and object reads", "verify saved removal and classify signed contradictory cursor or head after restart"],
-      "expect": {"own_accepted_before_removal": "signed-result-only-before-removal-cursor", "own_rejected_after_removal": "signed-revoked-result-with-removal-head", "contradictory_receipt": "unknown-and-preserve-outbox", "known_other": "deny", "unknown": "null-not-noninclusion", "new_log_and_objects": "deny", "local_copy": "preserves-pending-work"}
+      "actions": ["lose recipient POST response", "commit manager removal and key rotation", "query batch result with removed recipient signer", "query manager batch result with removed signer", "query unknown batch ID", "try new log and object reads", "verify saved removal and classify signed contradictory cursor, head, or next expected sequence after restart"],
+      "expect": {"own_accepted_before_removal": "signed-result-only-before-removal-cursor", "own_rejected_after_removal": "signed-revoked-result-with-removal-head-and-unchanged-next-sequence", "contradictory_receipt": "unknown-and-preserve-outbox", "known_other": "deny", "unknown": "null-not-noninclusion", "new_log_and_objects": "deny", "local_copy": "preserves-pending-work"}
     },
     {
       "id": "IDCOLL01",
       "scenario": "FS64",
       "initial": {"family": "genesis-plus-first-cohort-history", "id_scope": "one-Family-all-protocol-categories"},
       "actions": ["reuse a historical transition ID as a new invitation ID", "reuse a device ID as a new transition ID", "reuse an accepted or rejected batch ID as a new object or transition ID", "replay exact committed bytes"],
-      "expect": {"new_cross_category_ids": "reject-without-cursor-or-head-change", "rejected_batch_id": "reserved", "exact_committed_retry": "same-result"}
+      "expect": {"new_cross_category_ids": "commit-rejects-without-cursor-or-head-change", "staging": "may-accept-before-commit-rejection", "client_replay": "rejects-collisions-in-committed-chain", "rejected_batch_id": "relay-private-durable-reservation", "exact_committed_retry": "same-result"}
     },
     {
       "id": "APIROUTES01",

@@ -5,9 +5,23 @@ use std::{env, fs, net::SocketAddr};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut args = env::args().skip(1);
-    let db = args
+    let first = args
         .next()
-        .ok_or("usage: babytrack-server DB_PATH SEED_FILE BIND_ADDR")?;
+        .ok_or("usage: babytrack-server DB_PATH SEED_FILE BIND_ADDR | migrate-private-checkpoint DB_PATH SEED_FILE")?;
+    if first == "migrate-private-checkpoint" {
+        let db = args.next().ok_or("missing database path")?;
+        let seed_file = args.next().ok_or("missing 32-byte seed file")?;
+        if args.next().is_some() {
+            return Err("extra migration arguments".into());
+        }
+        let seed: [u8; 32] = fs::read(seed_file)?
+            .try_into()
+            .map_err(|_| "seed file must contain exactly 32 bytes")?;
+        babytrack_server::migrate_legacy_private_checkpoint(db, seed)?;
+        eprintln!("Private integrity checkpoint established");
+        return Ok(());
+    }
+    let db = first;
     let seed_file = args.next().ok_or("missing 32-byte seed file")?;
     let bind: SocketAddr = args.next().ok_or("missing bind address")?.parse()?;
     if args.next().is_some() {

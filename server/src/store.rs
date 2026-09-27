@@ -10,7 +10,9 @@ use babytrack_wire::{
     cbor::{self, Value},
     crypto,
 };
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{
+    Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params,
+};
 
 use crate::{authority, batch_authority, public_ledger, read_auth, receipt};
 
@@ -101,10 +103,23 @@ enum ControlReader {
 impl RelayStore {
     pub fn open(path: impl AsRef<Path>, relay_seed: [u8; 32]) -> Result<Self, Error> {
         let db = Connection::open(path)?;
-        Self::initialize(db, relay_seed)
+        Self::initialize(db, relay_seed, false)
     }
 
-    fn initialize(mut db: Connection, relay_seed: [u8; 32]) -> Result<Self, Error> {
+    pub fn migrate_legacy_private_checkpoint(
+        path: impl AsRef<Path>,
+        relay_seed: [u8; 32],
+    ) -> Result<(), Error> {
+        let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        Self::initialize(db, relay_seed, true)?;
+        Ok(())
+    }
+
+    fn initialize(
+        mut db: Connection,
+        relay_seed: [u8; 32],
+        allow_legacy_checkpoint: bool,
+    ) -> Result<Self, Error> {
         db.execute_batch(
             "PRAGMA foreign_keys=ON;
              PRAGMA synchronous=FULL;
@@ -180,6 +195,10 @@ impl RelayStore {
                family_id BLOB NOT NULL, batch_id BLOB NOT NULL,
                envelope_bytes BLOB NOT NULL, receipt_bytes BLOB NOT NULL,
                PRIMARY KEY (family_id, batch_id)
+             );
+             CREATE TABLE IF NOT EXISTS private_integrity (
+               singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+               digest BLOB NOT NULL, signature BLOB NOT NULL
              );",
         )?;
         // Existing development relays used one staging slot per Family. Move
@@ -246,6 +265,12 @@ impl RelayStore {
             relay_public,
         };
         store.verify_saved_families()?;
+        initialize_private_integrity(
+            &store.db,
+            &store.relay_seed,
+            store.relay_public,
+            allow_legacy_checkpoint,
+        )?;
         Ok(store)
     }
 
@@ -499,6 +524,7 @@ impl RelayStore {
         }
         let reservation = crypto::hash("genesis-reservation", &candidate_bytes)?;
         let tx = self.db.transaction()?;
+        verify_private_integrity(&tx, self.relay_public)?;
         let existing: Option<(Vec<u8>, Vec<u8>, i64)> = tx
             .query_row(
                 "SELECT reservation_hash, candidate_bytes, active FROM families WHERE family_id=?1",
@@ -541,6 +567,7 @@ impl RelayStore {
                 params![&candidate.family_id[..], &object_id[..], i64::from(kind), &hash[..], object_bytes],
             )?;
         }
+        refresh_private_integrity(&tx, &self.relay_seed)?;
         tx.commit()?;
         Ok(receipt::object_stage_response(object_bytes)?)
     }
@@ -741,6 +768,7 @@ impl RelayStore {
             return Err(Error::Invalid("first issue only"));
         }
         let tx = self.db.transaction()?;
+        verify_private_integrity(&tx, self.relay_public)?;
         stage_control_object(
             &tx,
             path_family,
@@ -749,6 +777,7 @@ impl RelayStore {
             &issue.manifest,
             object_bytes,
         )?;
+        refresh_private_integrity(&tx, &self.relay_seed)?;
         tx.commit()?;
         Ok(receipt::object_stage_response(object_bytes)?)
     }
@@ -1050,6 +1079,7 @@ impl RelayStore {
             return Err(Error::Invalid("challenge head stale"));
         }
         let tx = self.db.transaction()?;
+        verify_private_integrity(&tx, self.relay_public)?;
         stage_control_object(
             &tx,
             path_family,
@@ -1058,6 +1088,7 @@ impl RelayStore {
             listed,
             &object_bytes,
         )?;
+        refresh_private_integrity(&tx, &self.relay_seed)?;
         tx.commit()?;
         Ok(receipt::object_stage_response(&object_bytes)?)
     }
@@ -1264,6 +1295,7 @@ impl RelayStore {
             authority::validate_first_admission_grant(&admission, object_id, &object_bytes)?;
         }
         let tx = self.db.transaction()?;
+        verify_private_integrity(&tx, self.relay_public)?;
         stage_control_object(
             &tx,
             path_family,
@@ -1272,6 +1304,7 @@ impl RelayStore {
             listed,
             &object_bytes,
         )?;
+        refresh_private_integrity(&tx, &self.relay_seed)?;
         tx.commit()?;
         Ok(receipt::object_stage_response(&object_bytes)?)
     }
@@ -1420,6 +1453,7 @@ impl RelayStore {
         }
         ensure_first_removal_ids_unused(&self.db, path_family, &removal)?;
         let tx = self.db.transaction()?;
+        verify_private_integrity(&tx, self.relay_public)?;
         stage_control_object(
             &tx,
             path_family,
@@ -1428,6 +1462,7 @@ impl RelayStore {
             listed,
             &object_bytes,
         )?;
+        refresh_private_integrity(&tx, &self.relay_seed)?;
         tx.commit()?;
         Ok(receipt::object_stage_response(&object_bytes)?)
     }
@@ -1565,6 +1600,7 @@ impl RelayStore {
             |r| Ok((r.get(0)?, r.get(1)?)),
         ).optional()?;
         if let Some((old_envelope, old_receipt)) = prior_rejection {
+            verify_private_integrity(&tx, self.relay_public)?;
             if old_envelope != envelope_bytes {
                 return Err(Error::Invalid("batch ID reused with different bytes"));
             }
@@ -1646,6 +1682,7 @@ impl RelayStore {
             None
         };
         if let Some(reason) = reason {
+            verify_private_integrity(&tx, self.relay_public)?;
             let rejected = receipt::rejected_batch(
                 &batch,
                 u64::try_from(cursor).map_err(|_| Error::Invalid("cursor negative"))?,
@@ -1658,6 +1695,7 @@ impl RelayStore {
                 "INSERT INTO rejected_batch_results(family_id,batch_id,envelope_bytes,receipt_bytes) VALUES(?1,?2,?3,?4)",
                 params![&path_family[..], &batch.batch_id[..], envelope_bytes, &rejected],
             )?;
+            refresh_private_integrity(&tx, &self.relay_seed)?;
             tx.commit()?;
             return Ok(receipt::batch_commit_response(&rejected)?);
         }
@@ -1745,6 +1783,7 @@ impl RelayStore {
             ).optional()?;
             match rejected {
                 Some((envelope, receipt)) => {
+                    verify_private_integrity(&self.db, self.relay_public)?;
                     if let ControlReader::Removed {
                         device_id,
                         signing_public,
@@ -2337,6 +2376,179 @@ fn reserve_staged_object(
     Ok(())
 }
 
+/// Signed private checkpoint for facts that are intentionally absent from the
+/// public log. It detects selective row loss or substitution on reopen; a
+/// coherent rollback of the whole SQLite file remains the v1 trust limit.
+fn private_state_digest(db: &Connection) -> Result<[u8; 32], Error> {
+    let mut reservations = Vec::new();
+    let mut query = db.prepare(
+        "SELECT family_id,object_id,kind,object_hash FROM object_reservations ORDER BY family_id,object_id",
+    )?;
+    let rows = query.query_map([], |row| {
+        Ok((
+            row.get::<_, Vec<u8>>(0)?,
+            row.get::<_, Vec<u8>>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, Vec<u8>>(3)?,
+        ))
+    })?;
+    for row in rows {
+        let (family, id, kind, hash) = row?;
+        let family: [u8; 16] = family
+            .try_into()
+            .map_err(|_| Error::Invalid("private reservation Family length"))?;
+        let id: [u8; 16] = id
+            .try_into()
+            .map_err(|_| Error::Invalid("private reservation ID length"))?;
+        let hash: [u8; 32] = hash
+            .try_into()
+            .map_err(|_| Error::Invalid("private reservation hash length"))?;
+        let kind: u16 = kind
+            .try_into()
+            .map_err(|_| Error::Invalid("private reservation kind range"))?;
+        reservations.push(Value::Array(vec![
+            Value::Bytes(family.to_vec()),
+            Value::Bytes(id.to_vec()),
+            Value::Integer(kind.into()),
+            Value::Bytes(hash.to_vec()),
+        ]));
+    }
+    let mut rejections = Vec::new();
+    let mut query = db.prepare(
+        "SELECT family_id,batch_id,envelope_bytes,receipt_bytes FROM rejected_batch_results ORDER BY family_id,batch_id",
+    )?;
+    let rows = query.query_map([], |row| {
+        Ok((
+            row.get::<_, Vec<u8>>(0)?,
+            row.get::<_, Vec<u8>>(1)?,
+            row.get::<_, Vec<u8>>(2)?,
+            row.get::<_, Vec<u8>>(3)?,
+        ))
+    })?;
+    for row in rows {
+        let (family, id, envelope, receipt) = row?;
+        let family: [u8; 16] = family
+            .try_into()
+            .map_err(|_| Error::Invalid("private rejection Family length"))?;
+        let id: [u8; 16] = id
+            .try_into()
+            .map_err(|_| Error::Invalid("private rejection ID length"))?;
+        rejections.push(Value::Array(vec![
+            Value::Bytes(family.to_vec()),
+            Value::Bytes(id.to_vec()),
+            Value::Bytes(crypto::hash("private-envelope", &envelope)?.to_vec()),
+            Value::Bytes(crypto::hash("private-receipt", &receipt)?.to_vec()),
+        ]));
+    }
+    Ok(crypto::hash(
+        "relay-private-state",
+        &cbor::encode(&Value::Array(vec![
+            Value::Integer(1),
+            Value::Array(reservations),
+            Value::Array(rejections),
+        ]))?,
+    )?)
+}
+
+fn private_checkpoint_body(digest: [u8; 32]) -> Result<Vec<u8>, Error> {
+    Ok(cbor::encode(&Value::Array(vec![
+        Value::Integer(1),
+        Value::Bytes(digest.to_vec()),
+    ]))?)
+}
+
+fn verify_private_integrity(db: &Connection, relay_public: [u8; 32]) -> Result<(), Error> {
+    let (saved_digest, signature): (Vec<u8>, Vec<u8>) = db.query_row(
+        "SELECT digest,signature FROM private_integrity WHERE singleton=1",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    let saved_digest: [u8; 32] = saved_digest
+        .try_into()
+        .map_err(|_| Error::Invalid("private checkpoint digest length"))?;
+    let signature: [u8; 64] = signature
+        .try_into()
+        .map_err(|_| Error::Invalid("private checkpoint signature length"))?;
+    crypto::verify_cbor(
+        "relay-private-checkpoint",
+        &private_checkpoint_body(saved_digest)?,
+        &relay_public,
+        &signature,
+    )?;
+    if private_state_digest(db)? != saved_digest {
+        return Err(Error::Invalid("private checkpoint differs from saved rows"));
+    }
+    Ok(())
+}
+
+fn refresh_private_integrity(db: &Connection, relay_seed: &[u8; 32]) -> Result<(), Error> {
+    let digest = private_state_digest(db)?;
+    let signature = crypto::sign_cbor(
+        "relay-private-checkpoint",
+        &private_checkpoint_body(digest)?,
+        relay_seed,
+    )?;
+    let updated = db.execute(
+        "UPDATE private_integrity SET digest=?1,signature=?2 WHERE singleton=1",
+        params![&digest[..], &signature[..]],
+    )?;
+    if updated != 1 {
+        return Err(Error::Invalid("private checkpoint missing"));
+    }
+    Ok(())
+}
+
+fn initialize_private_integrity(
+    db: &Connection,
+    relay_seed: &[u8; 32],
+    relay_public: [u8; 32],
+    allow_legacy_checkpoint: bool,
+) -> Result<(), Error> {
+    let exists: Option<i64> = db
+        .query_row(
+            "SELECT 1 FROM private_integrity WHERE singleton=1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if exists.is_none() {
+        // A pre-checkpoint development database must be upgraded deliberately,
+        // rather than silently trusting its potentially incomplete private
+        // reservation history.
+        let prior: i64 = db.query_row(
+            "SELECT
+              (SELECT COUNT(*) FROM families)
+              +(SELECT COUNT(*) FROM entries)
+              +(SELECT COUNT(*) FROM staged_objects)
+              +(SELECT COUNT(*) FROM staged_controls)
+              +(SELECT COUNT(*) FROM staged_control_objects)
+              +(SELECT COUNT(*) FROM committed_objects)
+              +(SELECT COUNT(*) FROM batch_results)
+              +(SELECT COUNT(*) FROM object_reservations)
+              +(SELECT COUNT(*) FROM rejected_batch_results)
+              +(SELECT COUNT(*) FROM read_requests)",
+            [],
+            |row| row.get(0),
+        )?;
+        if prior != 0 && !allow_legacy_checkpoint {
+            return Err(Error::Invalid(
+                "legacy relay needs private checkpoint migration",
+            ));
+        }
+        let digest = private_state_digest(db)?;
+        let signature = crypto::sign_cbor(
+            "relay-private-checkpoint",
+            &private_checkpoint_body(digest)?,
+            relay_seed,
+        )?;
+        db.execute(
+            "INSERT INTO private_integrity(singleton,digest,signature) VALUES(1,?1,?2)",
+            params![&digest[..], &signature[..]],
+        )?;
+    }
+    verify_private_integrity(db, relay_public)
+}
+
 fn validate_first_removal_object(
     kind: u16,
     object_id: [u8; 16],
@@ -2573,6 +2785,17 @@ fn ensure_new_protocol_ids(
     family: [u8; 16],
     candidate_ids: &[[u8; 16]],
 ) -> Result<(), Error> {
+    let relay_public: Vec<u8> = db.query_row(
+        "SELECT public_key FROM relay_identity WHERE singleton=1",
+        [],
+        |row| row.get(0),
+    )?;
+    verify_private_integrity(
+        db,
+        relay_public
+            .try_into()
+            .map_err(|_| Error::Invalid("relay public key length"))?,
+    )?;
     let mut seen = BTreeSet::new();
     let mut controls = db.prepare(
         "SELECT committed_bytes FROM entries WHERE family_id=?1 AND kind=1 ORDER BY cursor",
@@ -2844,6 +3067,60 @@ mod tests {
             .step_by(2)
             .map(|i| u8::from_str_radix(&value[i..i + 2], 16).unwrap())
             .collect()
+    }
+
+    #[test]
+    fn legacy_private_checkpoint_requires_explicit_rebaseline() {
+        let genesis: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/api-genesis-v1.json").unwrap(),
+        )
+        .unwrap();
+        let chain: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/contiguous-chain-v1.json").unwrap(),
+        )
+        .unwrap();
+        let seed: [u8; 32] = hex(chain["test_only_inputs"]["relay_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let family: [u8; 16] = hex(genesis["inputs"]["family_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let promotion: [u8; 16] = hex(genesis["inputs"]["promotion_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let stage = hex(genesis["inputs"]["stage_body_cbor_hex"].as_str().unwrap());
+        let candidate = hex(genesis["inputs"]["commit_candidate_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let expected = hex(genesis["expect"]["commit_response_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let Value::Map(response) = cbor::decode(&expected).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(committed) = &response[1].1 else {
+            panic!()
+        };
+        let time = control_commit_time(committed).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("legacy.sqlite");
+        let absent = dir.path().join("missing.sqlite");
+        assert!(RelayStore::migrate_legacy_private_checkpoint(&absent, seed).is_err());
+        assert!(!absent.exists());
+        let mut store = RelayStore::open(&path, seed).unwrap();
+        store
+            .stage_genesis_object(family, promotion, &stage)
+            .unwrap();
+        store.commit_genesis(family, &candidate, time).unwrap();
+        drop(store);
+        let db = Connection::open(&path).unwrap();
+        db.execute("DELETE FROM private_integrity", []).unwrap();
+        drop(db);
+        assert!(RelayStore::open(&path, seed).is_err());
+        RelayStore::migrate_legacy_private_checkpoint(&path, seed).unwrap();
+        assert!(RelayStore::open(&path, seed).is_ok());
     }
 
     fn cancel_candidate(
@@ -3564,6 +3841,18 @@ mod tests {
         )
         .unwrap();
         assert!(RelayStore::open(&path, seed).is_ok());
+        db.execute(
+            "DELETE FROM rejected_batch_results WHERE family_id=?1 AND batch_id=?2",
+            params![&family[..], &rejected_id[..]],
+        )
+        .unwrap();
+        assert!(RelayStore::open(&path, seed).is_err());
+        db.execute(
+            "INSERT INTO rejected_batch_results(family_id,batch_id,envelope_bytes,receipt_bytes) VALUES(?1,?2,?3,?4)",
+            params![&family[..], &rejected_id[..], &rejected_envelope, rejected_receipt],
+        )
+        .unwrap();
+        assert!(RelayStore::open(&path, seed).is_ok());
         let mut changed_receipt = saved_receipt.clone();
         *changed_receipt.last_mut().unwrap() ^= 1;
         db.execute(
@@ -3842,6 +4131,29 @@ mod tests {
         store
             .stage_first_issue_object(family, object_id, &issue_stage)
             .unwrap();
+        store
+            .db
+            .execute(
+                "DELETE FROM staged_control_objects WHERE family_id=?1",
+                params![&family[..]],
+            )
+            .unwrap();
+        store
+            .db
+            .execute(
+                "DELETE FROM staged_controls WHERE family_id=?1",
+                params![&family[..]],
+            )
+            .unwrap();
+        store
+            .db
+            .execute(
+                "DELETE FROM object_reservations WHERE family_id=?1 AND object_id=?2",
+                params![&family[..], &object_id[..]],
+            )
+            .unwrap();
+        drop(store);
+        assert!(RelayStore::open(&path, seed).is_err());
     }
 
     #[test]

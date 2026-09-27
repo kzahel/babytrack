@@ -442,11 +442,23 @@ active signing key, exact signature, next per-device sequence, globally new
 batch ID, authoring-head ancestry, and active epoch. General route commit
 transactions still need to use the same verified history.
 Damaged or incomplete reconstruction refuses further commits and reads.
-On reopen, each extant rejected-result row now requires a valid relay
-signature, exact envelope hash/ID/sequence/Family/relay binding, and a signed
-cursor/head present in the authenticated historical log. This detects row
-substitution; deleting a rejected-only row or a reservation-only object row
-still requires an authenticated private checkpoint to detect.
+On reopen, each extant rejected-result row requires a valid relay signature,
+exact envelope hash/ID/sequence/Family/relay binding, and a signed cursor/head
+present in the authenticated historical log. A relay-private signed checkpoint
+also binds the complete sorted sets of permanent staged-object reservations
+and rejected results. Staging and rejection update it in the same SQLite
+transaction. Missing or modified rows fail startup; a saved older matching
+checkpoint and rows can still be replayed by a storage attacker because v1
+has no external monotonic witness.
+
+Nonempty development relay databases created before this checkpoint cannot
+start normally. The operator may explicitly rebaseline one after checking its
+existing data with
+`babytrack-server migrate-private-checkpoint DB_PATH SEED_FILE`. This
+migration verifies extant public history and rejected rows, then signs the
+private set it finds. It cannot establish that a rejected-only row or
+reservation was not lost before migration. No Family data or relay seed is
+sent elsewhere by this command.
 An offline request or staged object never becomes a
 confirmed authority change. Unknown versions/kinds fail closed.
 

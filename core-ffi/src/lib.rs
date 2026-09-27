@@ -5,8 +5,10 @@
 use std::sync::{Arc, Mutex};
 
 use babytrack_core::{
+    creation::ManagerCreation,
+    issue::FirstInviteIssue,
     local_api::{ActivityTime, LocalRepository},
-    sqlite_store::FamilyHandle,
+    sqlite_store::{FamilyHandle, SqliteStore},
 };
 
 #[cfg(feature = "fixture-api")]
@@ -111,6 +113,130 @@ pub struct RestoredOriginRow {
     pub source_family_id: Vec<u8>,
     pub snapshot_utc_ms: i64,
     pub known_gap: bool,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct StagedObjectRow {
+    pub object_id: Vec<u8>,
+    pub body: Vec<u8>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PreparedShareRow {
+    pub promotion_id: Vec<u8>,
+    pub candidate_bytes: Vec<u8>,
+    pub objects: Vec<StagedObjectRow>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PreparedInviteRow {
+    pub invitation_id: Vec<u8>,
+    pub candidate_bytes: Vec<u8>,
+    pub object: StagedObjectRow,
+}
+
+#[derive(uniffi::Object)]
+pub struct NativeSharedStore {
+    store: Mutex<SqliteStore>,
+}
+
+#[uniffi::export]
+impl NativeSharedStore {
+    #[uniffi::constructor]
+    pub fn open(path: String) -> Result<Arc<Self>, BindingError> {
+        Ok(Arc::new(Self {
+            store: Mutex::new(SqliteStore::open(path).map_err(rejected)?),
+        }))
+    }
+
+    /// Persists the exact candidate, encrypted keys, and promotion chunks
+    /// before the platform makes its first network request.
+    pub fn prepare_share(
+        &self,
+        family: FamilyRef,
+        relay_public_key: Vec<u8>,
+        wrapping_key: Vec<u8>,
+    ) -> Result<PreparedShareRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let prepared = ManagerCreation::prepare(
+            &mut store,
+            family.handle()?,
+            fixed(&relay_public_key)?,
+            &fixed(&wrapping_key)?,
+        )
+        .map_err(rejected)?;
+        Ok(PreparedShareRow {
+            promotion_id: prepared.promotion_id().to_vec(),
+            candidate_bytes: prepared.candidate_bytes().to_vec(),
+            objects: prepared
+                .stage_bodies()
+                .map_err(rejected)?
+                .into_iter()
+                .map(|(object_id, body)| StagedObjectRow {
+                    object_id: object_id.to_vec(),
+                    body,
+                })
+                .collect(),
+        })
+    }
+
+    /// A POST response alone cannot mark sharing complete: the core checks
+    /// the committed relay signature and exact prepared candidate first.
+    pub fn confirm_share(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        committed_genesis: Vec<u8>,
+    ) -> Result<u64, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let prepared = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+            .map_err(rejected)?;
+        Ok(prepared
+            .confirm(&mut store, &committed_genesis)
+            .map_err(rejected)?
+            .observed_cursor())
+    }
+
+    pub fn prepare_invite(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        role: u8,
+    ) -> Result<PreparedInviteRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let creation = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+            .map_err(rejected)?;
+        let issue = FirstInviteIssue::prepare(&mut store, &creation, &fixed(&wrapping_key)?, role)
+            .map_err(rejected)?;
+        Ok(PreparedInviteRow {
+            invitation_id: issue.invitation_id().to_vec(),
+            candidate_bytes: issue.candidate_bytes().to_vec(),
+            object: StagedObjectRow {
+                object_id: issue.object_id().to_vec(),
+                body: issue.stage_body().map_err(rejected)?,
+            },
+        })
+    }
+
+    /// The one-use link is available only after the signed issue commits.
+    pub fn confirm_invite(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        committed_issue: Vec<u8>,
+        relay_origin: String,
+    ) -> Result<String, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let creation = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+            .map_err(rejected)?;
+        let issue = FirstInviteIssue::resume(&store, &creation, &fixed(&wrapping_key)?)
+            .map_err(rejected)?;
+        issue
+            .confirm(&mut store, &creation, &committed_issue, &relay_origin)
+            .map_err(rejected)?
+            .to_fragment()
+            .map_err(rejected)
+    }
 }
 
 #[derive(uniffi::Object)]

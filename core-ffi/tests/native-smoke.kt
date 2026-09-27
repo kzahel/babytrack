@@ -4,6 +4,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import uniffi.babytrack_core_ffi.NativeFamily
 import uniffi.babytrack_core_ffi.NativeLocalStore
+import uniffi.babytrack_core_ffi.NativeSharedStore
 import uniffi.babytrack_core_ffi.ActivityWhen
 import uniffi.babytrack_core_ffi.ed25519PublicKey
 import uniffi.babytrack_core_ffi.sealOne
@@ -100,6 +101,17 @@ fun main(args: Array<String>) {
         val first = phone.createFamily(1_790_000_000_000)
         val other = phone.createFamily(1_790_000_000_001)
         val child = phone.addChild(first, "Baby", 1_790_000_000_002)
+        val relayPublic = ed25519PublicKey(ByteArray(32) { 0x71 })
+        val wrapping = ByteArray(32) { 0x42 }
+        NativeSharedStore.open(phonePath.toString()).use { sharing ->
+            val prepared = sharing.prepareShare(first, relayPublic, wrapping)
+            check(prepared.objects.isNotEmpty())
+            check(prepared.candidateBytes.contentEquals(
+                sharing.prepareShare(first, relayPublic, wrapping).candidateBytes))
+            check(runCatching {
+                sharing.prepareShare(first, relayPublic, ByteArray(32) { 0x43 })
+            }.isFailure)
+        }
         check(phone.children(first).single().name == "Baby")
         val whenRecorded = ActivityWhen(1_790_000_000_003, 120, 1_790_000_000_004)
         check(runCatching { phone.logDiaper(other, child, 1u.toUByte(), whenRecorded) }.isFailure)

@@ -148,6 +148,21 @@ struct Smoke {
         let first = try phone.createFamily(nowMs: 1_790_000_000_000)
         let other = try phone.createFamily(nowMs: 1_790_000_000_001)
         let child = try phone.addChild(family: first, name: "Baby", nowMs: 1_790_000_000_002)
+        let relayPublic = try ed25519PublicKey(signingSeed: Data(repeating: 0x71, count: 32))
+        let wrapping = Data(repeating: 0x42, count: 32)
+        let sharing = try NativeSharedStore.open(path: phonePath)
+        let prepared = try sharing.prepareShare(
+            family: first, relayPublicKey: relayPublic, wrappingKey: wrapping)
+        try expect(!prepared.objects.isEmpty)
+        try expect(try sharing.prepareShare(
+            family: first, relayPublicKey: relayPublic, wrappingKey: wrapping
+        ).candidateBytes == prepared.candidateBytes)
+        do {
+            _ = try sharing.prepareShare(
+                family: first, relayPublicKey: relayPublic,
+                wrappingKey: Data(repeating: 0x43, count: 32))
+            fatalError("wrong local wrapping key accepted")
+        } catch {}
         try expect(try phone.children(family: first).first?.name == "Baby")
         let whenRecorded = ActivityWhen(
             startUtcMs: 1_790_000_000_003, offsetMinutes: 120,

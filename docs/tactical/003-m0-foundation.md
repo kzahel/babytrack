@@ -67,6 +67,14 @@ restores into another local Family. Rust, Kotlin, and Swift round trips pass.
 The Android UI offers the password option and uses the device's current
 available-memory estimate rather than weakening the KDF on a low-memory
 device.
+The production native binding now exposes durable local-Family promotion
+preparation and first invitation issue through the shared Rust state machine.
+It returns exact staged object and candidate bytes to a platform transport,
+and confirms sharing or emits the one-use link only after the core verifies
+the committed relay entry. Kotlin and Swift smokes check that preparation
+survives an exact retry and a wrong local wrapping key cannot reopen it.
+Android Keystore, network transport, pending-join UI, and background delivery
+still need to consume this binding.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

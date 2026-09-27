@@ -527,55 +527,83 @@ impl NativeSharedStore {
         wrapping_key: Vec<u8>,
     ) -> Result<PreparedJoinRow, BindingError> {
         let bootstrap = InvitationBootstrap::from_fragment(&fragment).map_err(rejected)?;
-        let mut after = 0;
-        let mut controls = Vec::new();
-        let page_count = control_pages.len();
-        if page_count == 0
-            || page_count > 64
-            || control_pages.iter().map(Vec::len).sum::<usize>() > 16 * 1024 * 1024
-        {
-            return Err(BindingError::InvalidBytes);
-        }
-        for (index, bytes) in control_pages.iter().enumerate() {
-            let page =
-                ControlPage::decode(bytes, bootstrap.family_id(), after).map_err(rejected)?;
-            if page.has_more && page.entries.is_empty() {
-                return Err(BindingError::InvalidBytes);
-            }
-            if page.has_more != (index + 1 < page_count) {
-                return Err(BindingError::InvalidBytes);
-            }
-            after = page.next_after;
-            controls.extend(
-                page.entries
-                    .into_iter()
-                    .map(|entry| (entry.cursor, entry.committed_bytes)),
-            );
-        }
-        if controls.len() < 2 || controls[0].0 != 1 {
-            return Err(BindingError::InvalidBytes);
-        }
-        let issue_index = (1..controls.len()).find(|index| {
-            let prior: Vec<&[u8]> = controls[1..*index]
-                .iter()
-                .map(|(_, bytes)| bytes.as_slice())
-                .collect();
-            bootstrap
-                .verify_issue_sparse_with_controls(&controls[0].1, &controls[*index].1, &prior)
-                .is_ok()
-        });
-        let issue_index = issue_index.ok_or(BindingError::InvalidBytes)?;
+        let controls = decode_join_control_pages(bootstrap.family_id(), &control_pages)?;
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
         let attempt = EnrollmentAttempt::prepare_sparse_prefix(
             &mut store,
             &bootstrap,
-            &controls[..=issue_index],
+            &controls,
             &fixed(&wrapping_key)?,
         )
         .map_err(rejected)?;
         Ok(PreparedJoinRow {
             family: attempt.family().into(),
             candidate_bytes: attempt.claim_candidate().to_vec(),
+        })
+    }
+
+    pub fn saved_join_control_read(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        after: u64,
+        pending_credential: bool,
+    ) -> Result<SignedReadRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let attempt = EnrollmentAttempt::resume(
+            &mut store,
+            family.handle()?.family_id,
+            &fixed(&wrapping_key)?,
+        )
+        .map_err(rejected)?;
+        if attempt.family() != family.handle()? {
+            return Err(BindingError::InvalidBytes);
+        }
+        let path = format!(
+            "/v1/families/{}/control?after={after}",
+            lower_hex(&family.family_id)
+        );
+        let auth = if pending_credential {
+            attempt.sign_get(&path).map_err(rejected)?.bytes
+        } else {
+            InvitationBootstrap::from_fragment(attempt.invitation_fragment())
+                .map_err(rejected)?
+                .sign_get(&path)
+                .map_err(rejected)?
+                .bytes
+        };
+        Ok(SignedReadRow { path, auth, after })
+    }
+
+    pub fn refresh_join_pages(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        control_pages: Vec<Vec<u8>>,
+    ) -> Result<PreparedJoinRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let attempt = EnrollmentAttempt::resume(
+            &mut store,
+            family.handle()?.family_id,
+            &fixed(&wrapping_key)?,
+        )
+        .map_err(rejected)?;
+        if attempt.family() != family.handle()? {
+            return Err(BindingError::InvalidBytes);
+        }
+        let bootstrap =
+            InvitationBootstrap::from_fragment(attempt.invitation_fragment()).map_err(rejected)?;
+        let controls = decode_join_control_pages(bootstrap.family_id(), &control_pages)?;
+        let refreshed = EnrollmentAttempt::refresh_sparse_prefix(
+            &mut store,
+            &bootstrap,
+            &controls,
+            &fixed(&wrapping_key)?,
+        )
+        .map_err(rejected)?;
+        Ok(PreparedJoinRow {
+            family,
+            candidate_bytes: refreshed.claim_candidate().to_vec(),
         })
     }
 
@@ -2120,6 +2148,40 @@ fn ready_session_for(
     }
 }
 
+fn decode_join_control_pages(
+    family_id: [u8; 16],
+    control_pages: &[Vec<u8>],
+) -> Result<Vec<(u64, Vec<u8>)>, BindingError> {
+    let mut after = 0;
+    let mut controls = Vec::new();
+    let page_count = control_pages.len();
+    if page_count == 0
+        || page_count > 64
+        || control_pages.iter().map(Vec::len).sum::<usize>() > 16 * 1024 * 1024
+    {
+        return Err(BindingError::InvalidBytes);
+    }
+    for (index, bytes) in control_pages.iter().enumerate() {
+        let page = ControlPage::decode(bytes, family_id, after).map_err(rejected)?;
+        if page.has_more && page.entries.is_empty() {
+            return Err(BindingError::InvalidBytes);
+        }
+        if page.has_more != (index + 1 < page_count) {
+            return Err(BindingError::InvalidBytes);
+        }
+        after = page.next_after;
+        controls.extend(
+            page.entries
+                .into_iter()
+                .map(|entry| (entry.cursor, entry.committed_bytes)),
+        );
+    }
+    if controls.len() < 2 || controls[0].0 != 1 {
+        return Err(BindingError::InvalidBytes);
+    }
+    Ok(controls)
+}
+
 #[uniffi::export]
 pub fn preview_invitation(fragment: String) -> Result<InvitationPreviewRow, BindingError> {
     let bootstrap = InvitationBootstrap::from_fragment(&fragment).map_err(rejected)?;
@@ -2158,8 +2220,16 @@ pub fn invitation_control_page_progress(
     after: u64,
 ) -> Result<ControlPageProgressRow, BindingError> {
     let bootstrap = InvitationBootstrap::from_fragment(&fragment).map_err(rejected)?;
-    let page =
-        ControlPage::decode(&control_page, bootstrap.family_id(), after).map_err(rejected)?;
+    control_page_progress(bootstrap.family_id().to_vec(), control_page, after)
+}
+
+#[uniffi::export]
+pub fn control_page_progress(
+    family_id: Vec<u8>,
+    control_page: Vec<u8>,
+    after: u64,
+) -> Result<ControlPageProgressRow, BindingError> {
+    let page = ControlPage::decode(&control_page, fixed(&family_id)?, after).map_err(rejected)?;
     if page.has_more && page.entries.is_empty() {
         return Err(BindingError::InvalidBytes);
     }

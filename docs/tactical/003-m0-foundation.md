@@ -1458,6 +1458,29 @@ rollback, malicious relay withholding/forks, and signed-time lies remain
 the documented trust limits. This scoped PASS does not close the end-of-M0
 recovery, mixed-client, or physical-device gates.
 
+## Advisory later-invitation and paged-claim review at a6ef118
+
+Daybreak Blue at high thinking reviewed clean fixed commit
+`a6ef1189c439dbfbbf117db21ad36ea3cde32fcf` in a disposable detached
+checkout, read only, through Yep Anywhere session
+`01a0e30d-8869-7542-954c-ff5d976496f1`. The process reached verified
+idle with an empty queue and did not edit the checkout. Result: **focused
+advisory FAIL**, not the M0 exit verdict. The reviewer assumed an honest
+ordered relay for availability and also checked hostile authorized input,
+withholding, signed history, and the agreed malicious-relay limits. It ran
+four dynamic CLI tests, core enrollment/control-chain tests, focused server
+tests, and an FFI build; it did not run Android.
+
+| Finding | Disposition |
+|---|---|
+| High: an unrelated control after a later invitation issue made sparse recipient preparation require the issue as the final control. A control after saved claim preparation left Android retrying stale exact bytes forever. | FS76 and the dynamic real-relay test now cover controls both before and after saved preparation, page splitting, restart, rebase with stable keys and nonce, and reconciliation of an accepted claim after a lost response. Rust verifies the complete sparse prefix, archives superseded exact candidates, and Android refreshes before retry. A fixed-revision independent recheck remains due. |
+| Medium: cancel, expiry, or consumption closes the invitation read credential with unsigned HTTP 403, so a recipient cannot verify a terminal reason against a malicious relay. | FS77 records the required signed terminal status. Protocol, relay, client verification, and regression remain open; an unsigned denial must remain an unknown result. |
+| Medium hardening: Android/FFI stop after 64 control pages or 16 MiB, leaving sufficiently long valid control history unjoinable. | Streaming, resumable verification and a large-history regression remain open. The current bound is reported as an implementation limit, not a protocol limit. |
+
+The reviewer also confirmed link binding, control signatures and cursors,
+relay writer compare-and-swap, and keyless recipient isolation. Those
+observations do not close the open findings or the broader M0 gate.
+
 ## Completion condition
 
 All slice gates pass in CI and on the designated local testbeds, the

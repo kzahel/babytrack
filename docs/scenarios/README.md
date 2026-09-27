@@ -15,7 +15,7 @@ Read the relevant cases and their owning decisions, not the whole catalog.
 | Offline start and first sharing | FS01-FS03, FS49 | [Family sharing](../topics/family-sharing-and-trust.md) U1-U4; [sharing protocol](../protocol/sharing-v1.md#promotion-isolation-and-trust-limits) |
 | Roles, device grants, and competing access changes | FS04-FS12, FS52, FS64, FS66-FS70 | Family sharing U3-U4, D1, D4-D5; [sync authority seam](../topics/sync-and-encryption.md#proposed-implementation-seam-for-general-relay-authority) |
 | Pending work and independent copies | FS13-FS18, FS34, FS48, FS53-FS54, FS57, FS63 | Family sharing U1, U5, D7; [sharing protocol](../protocol/sharing-v1.md#verified-removal-and-private-copy) |
-| Invitations, redemption, and automatic handoff | FS19-FS21, FS35-FS39, FS47, FS51, FS55, FS59, FS65 | Family sharing D2, D8; [sharing protocol](../protocol/sharing-v1.md#invitation-proof-and-admission) |
+| Invitations, redemption, and automatic handoff | FS19-FS21, FS35-FS39, FS47, FS51, FS55, FS59, FS65, FS76-FS77 | Family sharing D2, D8; [sharing protocol](../protocol/sharing-v1.md#invitation-proof-and-admission) |
 | Family/child targeting | FS22-FS25, FS54 | Family sharing U6, D7 |
 | Recovery and file restore | FS26-FS30, FS40-FS45, FS61 | Family sharing U7, D3-D5; [portable file](../protocol/portable-file-v1.md) |
 | Malicious relay limits | FS31-FS32, FS46, FS56 | Family sharing trust limits; [sync threat model](../topics/sync-and-encryption.md#threat-model) |

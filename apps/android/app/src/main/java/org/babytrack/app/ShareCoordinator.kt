@@ -13,7 +13,7 @@ import uniffi.babytrack_core_ffi.SharedSnapshotRow
 import uniffi.babytrack_core_ffi.SharedSyncRow
 import uniffi.babytrack_core_ffi.previewInvitation
 import uniffi.babytrack_core_ffi.invitationControlRead
-import uniffi.babytrack_core_ffi.invitationControlPageProgress
+import uniffi.babytrack_core_ffi.controlPageProgress
 import uniffi.babytrack_core_ffi.validateRelayOrigin
 
 internal class SharedUploadBlocked : IllegalStateException("Signed relay rejection retained the saved batch")
@@ -61,23 +61,9 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         val relay = RelayTransport(preview.relayOrigin)
         val wrapping = keys.loadOrCreate()
         try {
-            val prepared = core.resumeJoin(fragment, wrapping) ?: run {
-                val pages = mutableListOf<ByteArray>()
-                var after = 0uL
-                var totalBytes = 0L
-                while (true) {
-                    check(pages.size < 64) { "Invitation control history exceeds the current page limit" }
-                    val read = invitationControlRead(fragment, after)
-                    val page = relay.get(read.path, read.auth)
-                    totalBytes += page.size
-                    check(totalBytes <= 16L * 1024 * 1024) { "Invitation control history exceeds the current size limit" }
-                    val progress = invitationControlPageProgress(fragment, page, after)
-                    pages.add(page)
-                    if (!progress.hasMore) break
-                    after = progress.nextAfter
-                }
-                core.prepareJoinPages(fragment, pages, wrapping)
-            }
+            val saved = core.resumeJoin(fragment, wrapping)
+            val pages = joinControlPages(relay, preview.familyId, wrapping, fragment, saved?.family)
+            val prepared = core.prepareJoinPages(fragment, pages, wrapping)
             val path = "/v1/families/${prepared.family.familyId.hex()}/control"
             val response = relay.post(path, prepared.candidateBytes)
             core.confirmJoinClaim(prepared.family, wrapping, response)
@@ -90,11 +76,43 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     fun retryClaim(family: FamilyRef): PreparedJoinRow {
         val relay = RelayTransport(recipientOrigin(family))
         return withWrapping { wrapping ->
-            val prepared = core.resumeJoinFamily(family, wrapping)
+            val pages = joinControlPages(relay, family.familyId, wrapping, null, family)
+            val prepared = core.refreshJoinPages(family, wrapping, pages)
             val response = relay.post("/v1/families/${family.familyId.hex()}/control", prepared.candidateBytes)
             core.confirmJoinClaim(family, wrapping, response)
             prepared
         }
+    }
+
+    private fun joinControlPages(
+        relay: RelayTransport,
+        familyId: ByteArray,
+        wrapping: ByteArray,
+        fragment: String?,
+        saved: FamilyRef?,
+    ): List<ByteArray> {
+        val pages = mutableListOf<ByteArray>()
+        var after = 0uL
+        var totalBytes = 0L
+        while (true) {
+            check(pages.size < 64) { "Invitation control history exceeds the current page limit" }
+            val read = if (fragment != null) invitationControlRead(fragment, after)
+                else core.savedJoinControlRead(saved ?: error("Saved join missing"), wrapping, after, false)
+            val page = try {
+                relay.get(read.path, read.auth)
+            } catch (failure: IllegalStateException) {
+                if (saved == null) throw failure
+                val pending = core.savedJoinControlRead(saved, wrapping, after, true)
+                relay.get(pending.path, pending.auth)
+            }
+            totalBytes += page.size
+            check(totalBytes <= 16L * 1024 * 1024) { "Invitation control history exceeds the current size limit" }
+            val progress = controlPageProgress(familyId, page, after)
+            pages.add(page)
+            if (!progress.hasMore) break
+            after = progress.nextAfter
+        }
+        return pages
     }
 
     fun respondToClaim(family: FamilyRef, origin: String) {

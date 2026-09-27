@@ -260,6 +260,26 @@ async fn later_issue_keeps_exact_candidate_and_commits_after_first_issue() {
         3
     );
 
+    let unrelated =
+        LaterInviteIssue::prepare_for_initial_manager(&mut local, &creation, &wrapping, 1).unwrap();
+    stage_objects(
+        &app,
+        family.family_id,
+        &[(unrelated.object_id(), unrelated.stage_body().unwrap())],
+    )
+    .await;
+    let unrelated_response =
+        commit_control(&app, family.family_id, unrelated.candidate_bytes()).await;
+    let Value::Map(unrelated_result) = cbor::decode(&unrelated_response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(unrelated_committed) = &unrelated_result[1].1 else {
+        panic!()
+    };
+    unrelated
+        .confirm(&mut local, unrelated_committed, "http://localhost:3400")
+        .unwrap();
+
     let path = format!(
         "/v1/families/{}/control?after=0",
         lower_hex(&family.family_id)
@@ -271,7 +291,7 @@ async fn later_issue_keeps_exact_candidate_and_commits_after_first_issue() {
         0,
     )
     .unwrap();
-    assert_eq!(page.entries.len(), 3);
+    assert_eq!(page.entries.len(), 4);
     let controls: Vec<(u64, Vec<u8>)> = page
         .entries
         .iter()
@@ -329,19 +349,126 @@ async fn later_issue_keeps_exact_candidate_and_commits_after_first_issue() {
         &recipient_wrap,
     )
     .unwrap();
-    assert_eq!(prepared.pending_control_cursor(&recipient).unwrap(), 3);
-    let saved_claim = prepared.claim_candidate().to_vec();
+    assert_eq!(prepared.pending_control_cursor(&recipient).unwrap(), 4);
+    let Value::Map(claim_candidate) = cbor::decode(prepared.claim_candidate()).unwrap() else {
+        panic!()
+    };
+    let Value::Map(claim_unsigned) = &claim_candidate[0].1 else {
+        panic!()
+    };
+    assert_eq!(
+        claim_unsigned[3].1,
+        Value::Bytes(
+            PublicHistorySession::resume(&local, family)
+                .unwrap()
+                .head_hash()
+                .to_vec()
+        )
+    );
+    let stale_claim = prepared.claim_candidate().to_vec();
+
+    let later_head =
+        LaterInviteIssue::prepare_for_initial_manager(&mut local, &creation, &wrapping, 1).unwrap();
+    stage_objects(
+        &app,
+        family.family_id,
+        &[(later_head.object_id(), later_head.stage_body().unwrap())],
+    )
+    .await;
+    let later_head_response =
+        commit_control(&app, family.family_id, later_head.candidate_bytes()).await;
+    let Value::Map(later_head_result) = cbor::decode(&later_head_response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(later_head_committed) = &later_head_result[1].1 else {
+        panic!()
+    };
+    later_head
+        .confirm(&mut local, later_head_committed, "http://localhost:3400")
+        .unwrap();
+    drop(recipient);
+    let mut recipient = SqliteStore::open(&recipient_path).unwrap();
+    let resumed_stale =
+        EnrollmentAttempt::resume(&mut recipient, family.family_id, &recipient_wrap).unwrap();
+    assert_eq!(resumed_stale.claim_candidate(), stale_claim);
+    let auth = link.sign_get(&path).unwrap();
+    let updated_page = ControlPage::decode(
+        &http_bytes(&app, Method::GET, &path, auth.bytes).await,
+        family.family_id,
+        0,
+    )
+    .unwrap();
+    let updated_controls: Vec<(u64, Vec<u8>)> = updated_page
+        .entries
+        .iter()
+        .map(|entry| (entry.cursor, entry.committed_bytes.clone()))
+        .collect();
+    assert_eq!(updated_controls.len(), 5);
+    let refreshed = EnrollmentAttempt::refresh_sparse_prefix(
+        &mut recipient,
+        &link,
+        &updated_controls,
+        &recipient_wrap,
+    )
+    .unwrap();
+    assert_eq!(refreshed.family(), prepared.family());
+    assert_ne!(refreshed.claim_candidate(), stale_claim);
+    let Value::Map(stale_root) = cbor::decode(&stale_claim).unwrap() else {
+        panic!()
+    };
+    let Value::Map(stale_unsigned) = &stale_root[0].1 else {
+        panic!()
+    };
+    let Value::Map(stale_delta) = &stale_unsigned[6].1 else {
+        panic!()
+    };
+    let Value::Map(fresh_root) = cbor::decode(refreshed.claim_candidate()).unwrap() else {
+        panic!()
+    };
+    let Value::Map(fresh_unsigned) = &fresh_root[0].1 else {
+        panic!()
+    };
+    let Value::Map(fresh_delta) = &fresh_unsigned[6].1 else {
+        panic!()
+    };
+    for field in 0..6 {
+        assert_eq!(stale_delta[field].1, fresh_delta[field].1);
+    }
+    assert_ne!(stale_delta[6].1, fresh_delta[6].1);
+    assert_ne!(stale_unsigned[4].1, fresh_unsigned[4].1);
+    assert_eq!(refreshed.pending_control_cursor(&recipient).unwrap(), 5);
+    let saved_claim = refreshed.claim_candidate().to_vec();
     drop(recipient);
     let mut recipient = SqliteStore::open(&recipient_path).unwrap();
     let resumed =
         EnrollmentAttempt::resume(&mut recipient, family.family_id, &recipient_wrap).unwrap();
     assert_eq!(resumed.claim_candidate(), saved_claim);
-    assert_eq!(resumed.pending_control_cursor(&recipient).unwrap(), 3);
     let claim_response = commit_control(&app, family.family_id, &saved_claim).await;
     assert_eq!(
         commit_control(&app, family.family_id, &saved_claim).await,
         claim_response
     );
+    let pending_auth = resumed.sign_get(&path).unwrap();
+    let after_lost_response = ControlPage::decode(
+        &http_bytes(&app, Method::GET, &path, pending_auth.bytes).await,
+        family.family_id,
+        0,
+    )
+    .unwrap();
+    let verified_after_claim: Vec<(u64, Vec<u8>)> = after_lost_response
+        .entries
+        .iter()
+        .map(|entry| (entry.cursor, entry.committed_bytes.clone()))
+        .collect();
+    assert_eq!(verified_after_claim.len(), 6);
+    let after_retry = EnrollmentAttempt::refresh_sparse_prefix(
+        &mut recipient,
+        &link,
+        &verified_after_claim,
+        &recipient_wrap,
+    )
+    .unwrap();
+    assert_eq!(after_retry.claim_candidate(), saved_claim);
     let Value::Map(claim_result) = cbor::decode(&claim_response).unwrap() else {
         panic!()
     };
@@ -351,7 +478,7 @@ async fn later_issue_keeps_exact_candidate_and_commits_after_first_issue() {
     resumed
         .confirm_sparse_claim(&mut recipient, committed_claim)
         .unwrap();
-    assert_eq!(resumed.pending_control_cursor(&recipient).unwrap(), 4);
+    assert_eq!(resumed.pending_control_cursor(&recipient).unwrap(), 6);
     assert!(!resumed.has_committed_admission(&recipient).unwrap());
 }
 

@@ -427,11 +427,16 @@ impl SqliteStore {
         connection.execute_batch("PRAGMA foreign_keys = ON;")?;
         let schema_version: u32 =
             connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if schema_version == 3 {
+            return Ok(Self { connection });
+        }
         if schema_version == 2 {
+            migrate_claim_candidates(&connection)?;
             return Ok(Self { connection });
         }
         if schema_version == 1 {
             migrate_invite_issues(&connection)?;
+            migrate_claim_candidates(&connection)?;
             return Ok(Self { connection });
         }
         if schema_version != 0 {
@@ -637,6 +642,7 @@ impl SqliteStore {
              COMMIT;",
         )?;
         migrate_invite_issues(&connection)?;
+        migrate_claim_candidates(&connection)?;
         Ok(Self { connection })
     }
 
@@ -1885,6 +1891,66 @@ impl SqliteStore {
         Ok(())
     }
 
+    pub(crate) fn archived_enrollment_claims(
+        &self,
+        family: FamilyHandle,
+    ) -> Result<Vec<Vec<u8>>, Error> {
+        let _ = checked_family(&self.connection, family)?;
+        let mut query = self.connection.prepare(
+            "SELECT candidate_bytes FROM enrollment_claim_candidates
+             WHERE family_id=?1 ORDER BY transition_id",
+        )?;
+        query
+            .query_map([family.family_id.as_slice()], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Error::from)
+    }
+
+    /// Keep every superseded exact claim so an accepted lost response can
+    /// still be reconciled after a newer verified head requires rebasing.
+    pub(crate) fn swap_enrollment_claim(
+        &mut self,
+        family: FamilyHandle,
+        expected: &[u8],
+        expected_transition: [u8; 16],
+        replacement: &[u8],
+    ) -> Result<(), Error> {
+        let tx = self.connection.transaction()?;
+        let _ = checked_family(&tx, family)?;
+        let prior: Vec<u8> = tx.query_row(
+            "SELECT candidate_bytes FROM enrollment_attempts WHERE family_id=?1 AND device_id=?2",
+            params![family.family_id.as_slice(), family.device_id.as_slice()],
+            |row| row.get(0),
+        )?;
+        if prior != expected {
+            return Err(Error::CorruptState);
+        }
+        tx.execute(
+            "INSERT OR IGNORE INTO enrollment_claim_candidates(family_id,transition_id,candidate_bytes)
+             VALUES(?1,?2,?3)",
+            params![family.family_id.as_slice(), expected_transition.as_slice(), expected],
+        )?;
+        let archived: Vec<u8> = tx.query_row(
+            "SELECT candidate_bytes FROM enrollment_claim_candidates
+             WHERE family_id=?1 AND transition_id=?2",
+            params![family.family_id.as_slice(), expected_transition.as_slice()],
+            |row| row.get(0),
+        )?;
+        if archived != expected {
+            return Err(Error::CorruptState);
+        }
+        tx.execute(
+            "UPDATE enrollment_attempts SET candidate_bytes=?1 WHERE family_id=?2 AND device_id=?3",
+            params![
+                replacement,
+                family.family_id.as_slice(),
+                family.device_id.as_slice()
+            ],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
     pub(crate) fn enrollment_attempt(
         &self,
         family_id: [u8; 16],
@@ -2242,12 +2308,28 @@ fn migrate_invite_issues(connection: &Connection) -> Result<(), Error> {
     Ok(())
 }
 
+fn migrate_claim_candidates(connection: &Connection) -> Result<(), Error> {
+    connection.execute_batch(
+        "BEGIN IMMEDIATE;
+         CREATE TABLE enrollment_claim_candidates (
+           family_id BLOB NOT NULL CHECK(length(family_id) = 16),
+           transition_id BLOB NOT NULL CHECK(length(transition_id) = 16),
+           candidate_bytes BLOB NOT NULL,
+           PRIMARY KEY (family_id, transition_id),
+           FOREIGN KEY (family_id) REFERENCES enrollment_attempts(family_id)
+         );
+         PRAGMA user_version = 3;
+         COMMIT;",
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod invite_migration_tests {
     use super::*;
 
     #[test]
-    fn legacy_first_invite_keeps_exact_bytes_after_v2_upgrade() {
+    fn legacy_first_invite_keeps_exact_bytes_after_v3_upgrade() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("legacy-invite.db");
         let mut store = SqliteStore::open(&path).unwrap();
@@ -2284,7 +2366,7 @@ mod invite_migration_tests {
             .unwrap();
         store
             .connection
-            .execute_batch("DROP TABLE invite_issues; PRAGMA user_version = 1;")
+            .execute_batch("DROP TABLE enrollment_claim_candidates; DROP TABLE invite_issues; PRAGMA user_version = 1;")
             .unwrap();
         drop(store);
 
@@ -2301,7 +2383,7 @@ mod invite_migration_tests {
             .connection
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
         let later = InviteIssueRow {
             family,
             invitation_id: v4(7),

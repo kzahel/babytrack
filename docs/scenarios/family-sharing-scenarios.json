@@ -1515,6 +1515,26 @@
       "expect": ["Each response contains a nonempty prefix within the byte and entry limits, reports has_more while another matching entry remains, and eventually reaches the complete log without a permanent oversized-page error."],
       "variants": ["large first entry", "filtered cursor gaps", "exact byte boundary", "mixed control and batch pages", "restart", "later-device hydration"],
       "decisions": ["D6"]
+    },
+    {
+      "id": "FS76",
+      "status": "agreed",
+      "requirements": ["U1", "U3", "U4"],
+      "given": "A later invitation is committed, and unrelated signed controls advance the Family head before or after the recipient saves its exact claim.",
+      "actions": ["Fetch complete authenticated control pages, restart the recipient, lose an attempted claim response, and refresh the public prefix before retrying."],
+      "expect": ["The linked issue and every intervening control are verified; the claim targets the latest verified head while the invitation remains unused.", "A stale saved claim is retained by transition ID and replaced atomically with a new candidate using the same device keys and enrollment nonce; an already committed candidate is recovered exactly instead of rebased.", "A keyless recipient never claims shared data readiness."],
+      "variants": ["epoch two", "control before preparation", "control after preparation", "page boundary", "wrong cursor", "omitted or reordered control", "lost response", "issuer demotion", "restart"],
+      "decisions": ["D2", "D4", "D6"]
+    },
+    {
+      "id": "FS77",
+      "status": "agreed",
+      "requirements": ["U2", "U3", "U4"],
+      "given": "An invitation becomes canceled, expired, or claimed by another device, while the holder of the link may face an untrusted relay denial.",
+      "actions": ["Ask for invitation status using exact signed read authentication; compare a signed terminal result with an unsigned denial, timeout, or withheld response."],
+      "expect": ["No terminal reason is asserted from an unsigned response or timeout.", "A relay-signed status binds the Family, invitation, reason, current cursor/head, and relay time; the client may explain a verified unusable invitation and offer a new link without receiving event ciphertext or a Family key."],
+      "variants": ["cancel", "expiry boundary", "issuer removal", "already claimed", "unsigned 403", "relay withholding", "restart"],
+      "decisions": ["D2", "D8"]
     }
   ]
 }

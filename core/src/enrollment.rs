@@ -21,6 +21,7 @@ pub enum Error {
     Store(sqlite_store::Error),
     Random(getrandom::Error),
     Wire(crate::sync_wire::Error),
+    Authority(babytrack_wire::authority::Error),
     Invalid(&'static str),
 }
 impl From<bootstrap::Error> for Error {
@@ -58,6 +59,11 @@ impl From<crate::sync_wire::Error> for Error {
         Self::Wire(value)
     }
 }
+impl From<babytrack_wire::authority::Error> for Error {
+    fn from(value: babytrack_wire::authority::Error) -> Self {
+        Self::Authority(value)
+    }
+}
 impl From<shared_history::Error> for Error {
     fn from(value: shared_history::Error) -> Self {
         Self::History(value)
@@ -76,6 +82,7 @@ pub struct EnrollmentAttempt {
     candidate_bytes: Vec<u8>,
     device_sign_seed: [u8; 32],
     device_agreement_private: [u8; 32],
+    enrollment_nonce: [u8; 32],
 }
 
 impl EnrollmentAttempt {
@@ -143,11 +150,23 @@ impl EnrollmentAttempt {
         controls: &[(u64, Vec<u8>)],
         local_wrapping_key: &[u8; 32],
     ) -> Result<Self, Error> {
+        if store.enrollment_attempt(bootstrap.family_id())?.is_some() {
+            return Self::refresh_sparse_prefix(store, bootstrap, controls, local_wrapping_key);
+        }
         if controls.len() < 2 || controls[0].0 != 1 {
             return Err(Error::Invalid("invitation control ancestry incomplete"));
         }
         let genesis = &controls[0].1;
-        let issue = &controls[controls.len() - 1].1;
+        let issue_index = (1..controls.len()).find(|index| {
+            let prior: Vec<&[u8]> = controls[1..*index]
+                .iter()
+                .map(|(_, bytes)| bytes.as_slice())
+                .collect();
+            bootstrap
+                .verify_issue_sparse_with_controls(genesis, &controls[*index].1, &prior)
+                .is_ok()
+        });
+        let issue = &controls[issue_index.ok_or(Error::Invalid("linked issue missing"))?].1;
         Self::prepare_mode(
             store,
             bootstrap,
@@ -156,6 +175,100 @@ impl EnrollmentAttempt {
             local_wrapping_key,
             Some(&controls[1..]),
         )
+    }
+
+    /// Reconcile every saved exact candidate against newly verified public
+    /// history before rebasing. The device keys and enrollment nonce stay
+    /// fixed; a fresh transition ID and candidate are saved atomically.
+    pub fn refresh_sparse_prefix(
+        store: &mut SqliteStore,
+        bootstrap: &InvitationBootstrap,
+        controls: &[(u64, Vec<u8>)],
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
+        let attempt = Self::resume_for_invitation(store, bootstrap, local_wrapping_key)?
+            .ok_or(Error::Invalid("no saved claim to refresh"))?;
+        let row = store
+            .enrollment_attempt(bootstrap.family_id())?
+            .ok_or(Error::Invalid("no saved claim"))?;
+        if controls.len() < 2 || controls[0].0 != 1 || controls[0].1 != row.genesis_bytes {
+            return Err(Error::Invalid("refreshed ancestry differs from genesis"));
+        }
+        let issue_index = (1..controls.len())
+            .position(|index| controls[index].1 == row.issue_bytes)
+            .map(|offset| offset + 1)
+            .ok_or(Error::Invalid("linked issue omitted from refresh"))?;
+        let prior: Vec<&[u8]> = controls[1..issue_index]
+            .iter()
+            .map(|(_, bytes)| bytes.as_slice())
+            .collect();
+        bootstrap.verify_issue_sparse_with_controls(
+            &row.genesis_bytes,
+            &row.issue_bytes,
+            &prior,
+        )?;
+        let mut chain = control_chain::ControlChain::from_genesis(
+            &row.genesis_bytes,
+            bootstrap.relay_public_key_internal(),
+        )?;
+        for (cursor, bytes) in &controls[1..] {
+            chain.apply_sparse_control(bytes)?;
+            if chain.last_global_cursor() != *cursor {
+                return Err(Error::Invalid("refreshed control cursor mismatch"));
+            }
+        }
+        let saved = store.enrollment_controls(attempt.family)?;
+        if controls.len() < saved.len() + 1
+            || saved
+                .iter()
+                .zip(&controls[1..])
+                .any(|(old, new)| old != new)
+        {
+            return Err(Error::Invalid("refreshed history forks saved controls"));
+        }
+        for (cursor, bytes) in &controls[saved.len() + 1..] {
+            store.append_enrollment_control(attempt.family, *cursor, bytes)?;
+        }
+        let current = attempt.candidate_bytes.clone();
+        let archived = store.archived_enrollment_claims(attempt.family)?;
+        let mut accepted = None;
+        for (_, bytes) in &controls[1..] {
+            let candidate = committed_candidate(bytes)?;
+            if candidate == current || archived.contains(&candidate) {
+                accepted = Some(candidate);
+                break;
+            }
+        }
+        if let Some(candidate) = accepted {
+            if candidate != current {
+                store.swap_enrollment_claim(
+                    attempt.family,
+                    &current,
+                    candidate_transition_id(&current)?,
+                    &candidate,
+                )?;
+            }
+            return Self::resume(store, attempt.family.family_id, local_wrapping_key);
+        }
+        if chain.head_hash() == candidate_prior_head(&current)? {
+            return Ok(attempt);
+        }
+        let new_candidate = build_claim(
+            bootstrap,
+            &chain,
+            attempt.family,
+            &attempt.device_sign_seed,
+            &attempt.device_agreement_private,
+            &attempt.enrollment_nonce,
+            random_v4()?,
+        )?;
+        store.swap_enrollment_claim(
+            attempt.family,
+            &current,
+            candidate_transition_id(&current)?,
+            &new_candidate,
+        )?;
+        Self::resume(store, attempt.family.family_id, local_wrapping_key)
     }
 
     fn prepare_mode(
@@ -170,17 +283,15 @@ impl EnrollmentAttempt {
             return Ok(existing);
         }
         let chain = if let Some(controls) = sparse_controls {
-            if controls
-                .last()
-                .is_none_or(|(_, bytes)| bytes != issue_bytes)
-            {
-                return Err(Error::Invalid("invitation issue missing from ancestry"));
-            }
-            let prior: Vec<&[u8]> = controls[..controls.len() - 1]
+            let issue_index = controls
+                .iter()
+                .position(|(_, bytes)| bytes == issue_bytes)
+                .ok_or(Error::Invalid("invitation issue missing from ancestry"))?;
+            let prior: Vec<&[u8]> = controls[..issue_index]
                 .iter()
                 .map(|(_, bytes)| bytes.as_slice())
                 .collect();
-            let chain =
+            let linked_issue =
                 bootstrap.verify_issue_sparse_with_controls(genesis_bytes, issue_bytes, &prior)?;
             let mut checked = control_chain::ControlChain::from_genesis(
                 genesis_bytes,
@@ -192,10 +303,10 @@ impl EnrollmentAttempt {
                     return Err(Error::Invalid("invitation control cursor mismatch"));
                 }
             }
-            if chain.last_global_cursor() != checked.last_global_cursor() {
-                return Err(Error::Invalid("invitation ancestry differs"));
+            if linked_issue.last_global_cursor() != controls[issue_index].0 {
+                return Err(Error::Invalid("linked issue cursor differs"));
             }
-            chain
+            checked
         } else {
             bootstrap.verify_issue(genesis_bytes, issue_bytes)?
         };
@@ -324,7 +435,24 @@ impl EnrollmentAttempt {
                 &row.genesis_bytes,
                 &row.issue_bytes,
                 &prior,
-            )?
+            )?;
+            let expected_head = candidate_prior_head(&row.candidate_bytes)?;
+            let mut chain = control_chain::ControlChain::from_genesis(
+                &row.genesis_bytes,
+                bootstrap.relay_public_key_internal(),
+            )?;
+            let mut found = chain.head_hash() == expected_head;
+            for (_, bytes) in &sparse_controls {
+                if found {
+                    break;
+                }
+                chain.apply_sparse_control(bytes)?;
+                found = chain.head_hash() == expected_head;
+            }
+            if !found {
+                return Err(Error::Invalid("saved claim prior head absent"));
+            }
+            chain
         } else {
             bootstrap.verify_issue_with_batches(
                 &row.genesis_bytes,
@@ -366,6 +494,7 @@ impl EnrollmentAttempt {
         {
             return Err(Error::Invalid("stored issue differs from pinned history"));
         }
+        let archived = store.archived_enrollment_claims(row.family)?;
         let committed_controls: Vec<&[u8]> = if sparse {
             sparse_controls
                 .iter()
@@ -406,7 +535,7 @@ impl EnrollmentAttempt {
                 (1, root[0].1.clone()),
                 (2, root[1].1.clone()),
             ]))?;
-            if actual != row.candidate_bytes {
+            if actual != row.candidate_bytes && !archived.contains(&actual) {
                 return Err(Error::Invalid(
                     "invitation was claimed by a different candidate",
                 ));
@@ -419,6 +548,7 @@ impl EnrollmentAttempt {
             candidate_bytes: row.candidate_bytes,
             device_sign_seed,
             device_agreement_private,
+            enrollment_nonce,
         })
     }
 
@@ -427,6 +557,9 @@ impl EnrollmentAttempt {
     }
     pub fn invitation_id(&self) -> [u8; 16] {
         self.invitation_id
+    }
+    pub fn invitation_fragment(&self) -> &str {
+        &self.bootstrap_fragment
     }
     pub fn claim_candidate(&self) -> &[u8] {
         &self.candidate_bytes
@@ -675,10 +808,13 @@ fn build_claim(
             })
             .collect::<Result<Vec<_>, Error>>()?,
     );
-    Ok(cbor::encode(&Value::Map(vec![
-        (1, unsigned),
-        (2, signatures),
-    ]))?)
+    let candidate = cbor::encode(&Value::Map(vec![(1, unsigned), (2, signatures)]))?;
+    babytrack_wire::authority::prepare_claim(
+        &candidate,
+        &cbor::decode(&chain.state_bytes()?)?,
+        chain.head_hash(),
+    )?;
+    Ok(candidate)
 }
 
 fn local_aad(family: FamilyHandle, invitation_id: [u8; 16]) -> Result<[u8; 32], Error> {
@@ -699,6 +835,29 @@ fn candidate_transition_id(bytes: &[u8]) -> Result<[u8; 16], Error> {
         return Err(Error::Invalid("claim unsigned not map"));
     };
     fixed(&unsigned[4].1)
+}
+
+fn candidate_prior_head(bytes: &[u8]) -> Result<[u8; 32], Error> {
+    let Value::Map(root) = cbor::decode(bytes)? else {
+        return Err(Error::Invalid("claim candidate not map"));
+    };
+    let Value::Map(unsigned) = &root[0].1 else {
+        return Err(Error::Invalid("claim unsigned not map"));
+    };
+    fixed(&unsigned[3].1)
+}
+
+fn committed_candidate(bytes: &[u8]) -> Result<Vec<u8>, Error> {
+    let Value::Map(root) = cbor::decode(bytes)? else {
+        return Err(Error::Invalid("committed control not map"));
+    };
+    if root.len() != 4 {
+        return Err(Error::Invalid("committed control width"));
+    }
+    Ok(cbor::encode(&Value::Map(vec![
+        (1, root[0].1.clone()),
+        (2, root[1].1.clone()),
+    ]))?)
 }
 
 fn fixed<const N: usize>(value: &Value) -> Result<[u8; N], Error> {
@@ -771,6 +930,12 @@ mod tests {
             (2, claim[1].1.clone()),
         ]))
         .unwrap();
+        let Value::Map(unsigned) = &claim[0].1 else {
+            unreachable!()
+        };
+        let Value::Map(delta) = &unsigned[6].1 else {
+            unreachable!()
+        };
         let enrollment = EnrollmentAttempt {
             family,
             invitation_id: bootstrap.invitation_id(),
@@ -788,6 +953,7 @@ mod tests {
             )
             .try_into()
             .unwrap(),
+            enrollment_nonce: fixed(&delta[5].1).unwrap(),
         };
         let nonce = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)

@@ -757,6 +757,37 @@ pub fn first_join_prefix_chain(
     Ok(chain)
 }
 
+/// Reconstruct a previously verified public head, including interleaved
+/// accepted batches. A durable prepared control can be checked against the
+/// exact authority state it originally named after newer controls arrive.
+pub(crate) fn chain_at_head(
+    store: &SqliteStore,
+    family: FamilyHandle,
+    head: [u8; 32],
+) -> Result<ControlChain, Error> {
+    PublicHistorySession::resume(store, family)?;
+    let history = store
+        .shared_history(family)?
+        .ok_or(Error::Invalid("shared history absent"))?;
+    let mut chain = ControlChain::from_genesis(&history.genesis_bytes, history.relay_public_key)?;
+    if chain.head_hash() == head {
+        return Ok(chain);
+    }
+    for entry in history.entries {
+        if entry.kind == 1 {
+            chain.apply_control(&entry.committed_bytes)?;
+            if chain.head_hash() == head {
+                return Ok(chain);
+            }
+        } else {
+            chain.apply_public_batch(&entry.committed_bytes, &entry.receipt_bytes)?;
+        }
+    }
+    Err(Error::Invalid(
+        "prepared control prior head absent from verified history",
+    ))
+}
+
 /// Pending devices verify the signed control ancestry without treating
 /// missing data cursors as verified. This never advances the contiguous
 /// shared history high-water mark.

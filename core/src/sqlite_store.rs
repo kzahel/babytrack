@@ -2308,6 +2308,28 @@ impl SqliteStore {
             })
             .transpose()
     }
+
+    pub(crate) fn delete_prepared_control(
+        &mut self,
+        family: FamilyHandle,
+        kind: u8,
+        transition_id: [u8; 16],
+    ) -> Result<(), Error> {
+        let tx = self.connection.transaction()?;
+        let _ = checked_family(&tx, family)?;
+        tx.execute(
+            "DELETE FROM prepared_controls
+             WHERE family_id=?1 AND kind=?2 AND device_id=?3 AND transition_id=?4",
+            params![
+                family.family_id.as_slice(),
+                i64::from(kind),
+                family.device_id.as_slice(),
+                transition_id.as_slice(),
+            ],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
 }
 
 /// Version two replaces the one-row invitation slot with per-invitation

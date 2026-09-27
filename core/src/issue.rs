@@ -478,7 +478,7 @@ impl LaterInviteIssue {
             return Err(Error::Invalid("invitation unsigned not map"));
         };
         let prior_head = fixed::<32>(&unsigned[3].1)?;
-        let chain = chain_at_head(store, family, prior_head)?;
+        let chain = shared_history::chain_at_head(store, family, prior_head)?;
         let (candidate_bytes, object_bytes) = build_for_chain(
             family,
             &chain,
@@ -595,34 +595,6 @@ impl LaterInviteIssue {
             &prior_controls,
         )?)
     }
-}
-
-fn chain_at_head(
-    store: &SqliteStore,
-    family: FamilyHandle,
-    head: [u8; 32],
-) -> Result<ControlChain, Error> {
-    PublicHistorySession::resume(store, family)?;
-    let history = store
-        .shared_history(family)?
-        .ok_or(Error::Invalid("shared history absent"))?;
-    let mut chain = ControlChain::from_genesis(&history.genesis_bytes, history.relay_public_key)?;
-    if chain.head_hash() == head {
-        return Ok(chain);
-    }
-    for entry in history.entries {
-        if entry.kind == 1 {
-            chain.apply_control(&entry.committed_bytes)?;
-            if chain.head_hash() == head {
-                return Ok(chain);
-            }
-        } else {
-            chain.apply_public_batch(&entry.committed_bytes, &entry.receipt_bytes)?;
-        }
-    }
-    Err(Error::Invalid(
-        "invitation prior head absent from verified history",
-    ))
 }
 
 #[allow(clippy::too_many_arguments)]

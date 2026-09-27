@@ -1345,7 +1345,15 @@ invitation credential appears in the replayed reader state, proving the
 writer is no longer tied to the original join positions. A second recipient's
 signed claim now commits, changes that invitation to consumed, and appears
 only as a pending reader. Its signed pre-admission data upload gets a revoked
-receipt. Challenge, grant, and Android later-device flow are still open.
+receipt. The initial manager can now prepare and confirm a challenge for a
+later verified claim at its current data-ready head. The Rust path targets
+the named pending row, encrypts the verifier under the current epoch key,
+resumes exact bytes after restart, and can release an earlier committed
+preparation slot when a new challenge is needed. Real-relay tests stage and
+commit both challenge objects after unrelated issues, and again after the
+first recipient's removal and epoch rotation to admit a new candidate.
+Recipient proof, grant, hydration, admitted-manager challenge, and Android
+exposure remain open; this is not yet a completed third-device join.
 Ready replay can now start from a later recipient's admission grant at a
 rotated epoch: it verifies that epoch's committed keyring and membership,
 recovers earlier keys, then applies subsequent addressed rotations. A fixed

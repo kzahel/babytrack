@@ -485,6 +485,47 @@ async fn later_issue_keeps_exact_candidate_and_commits_after_first_issue() {
         .unwrap();
     assert_eq!(resumed.pending_control_cursor(&recipient).unwrap(), 6);
     assert!(!resumed.has_committed_admission(&recipient).unwrap());
+
+    PublicHistorySession::resume(&local, family)
+        .unwrap()
+        .accept_control(&mut local, committed_claim)
+        .unwrap();
+    let challenge = FirstChallenge::prepare_later_for_initial_manager(
+        &mut local,
+        &creation,
+        later.invitation_id(),
+        resumed.family().device_id,
+        &wrapping,
+    )
+    .unwrap();
+    let challenge_candidate = challenge.candidate_bytes().to_vec();
+    let staged = challenge.stage_bodies().unwrap();
+    drop(local);
+    let mut local = SqliteStore::open(&local_path).unwrap();
+    let resumed_challenge = FirstChallenge::resume(&local, &creation, &wrapping).unwrap();
+    assert_eq!(resumed_challenge.candidate_bytes(), challenge_candidate);
+    assert_eq!(resumed_challenge.stage_bodies().unwrap(), staged);
+    stage_objects(&app, family.family_id, &staged).await;
+    let challenge_response = commit_control(&app, family.family_id, &challenge_candidate).await;
+    assert_eq!(
+        commit_control(&app, family.family_id, &challenge_candidate).await,
+        challenge_response
+    );
+    let Value::Map(challenge_result) = cbor::decode(&challenge_response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(committed_challenge) = &challenge_result[1].1 else {
+        panic!()
+    };
+    resumed_challenge
+        .confirm(&mut local, committed_challenge)
+        .unwrap();
+    assert_eq!(
+        PublicHistorySession::resume(&local, family)
+            .unwrap()
+            .cursor(),
+        7
+    );
 }
 
 async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
@@ -2264,5 +2305,76 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
             .unwrap();
         assert_eq!(link.fixed_role(), 2);
         assert_eq!(resumed.ready_session(&local).unwrap().active_epoch(), 2);
+
+        let control_path = format!(
+            "/v1/families/{}/control?after=0",
+            lower_hex(&family.family_id)
+        );
+        let read = link.sign_get(&control_path).unwrap();
+        let page = ControlPage::decode(
+            &http_bytes(&app, Method::GET, &control_path, read.bytes).await,
+            family.family_id,
+            0,
+        )
+        .unwrap();
+        let controls: Vec<_> = page
+            .entries
+            .into_iter()
+            .map(|entry| (entry.cursor, entry.committed_bytes))
+            .collect();
+        let mut later_store = SqliteStore::open(dir.path().join("later-recipient.db")).unwrap();
+        let later_wrap = [0x52; 32];
+        let later_attempt = EnrollmentAttempt::prepare_sparse_prefix(
+            &mut later_store,
+            &link,
+            &controls,
+            &later_wrap,
+        )
+        .unwrap();
+        let claim_response =
+            commit_control(&app, family.family_id, later_attempt.claim_candidate()).await;
+        let Value::Map(fields) = cbor::decode(&claim_response).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(committed_claim) = &fields[1].1 else {
+            panic!()
+        };
+        PublicHistorySession::resume(&local, family)
+            .unwrap()
+            .accept_control(&mut local, committed_claim)
+            .unwrap();
+        let later_challenge = FirstChallenge::prepare_later_for_initial_manager(
+            &mut local,
+            &resumed,
+            later.invitation_id(),
+            later_attempt.family().device_id,
+            &wrapping_key,
+        )
+        .unwrap();
+        stage_objects(
+            &app,
+            family.family_id,
+            &later_challenge.stage_bodies().unwrap(),
+        )
+        .await;
+        let response =
+            commit_control(&app, family.family_id, later_challenge.candidate_bytes()).await;
+        let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(committed_challenge) = &fields[1].1 else {
+            panic!()
+        };
+        later_challenge
+            .confirm(&mut local, committed_challenge)
+            .unwrap();
+        assert_eq!(
+            PublicHistorySession::resume(&local, family)
+                .unwrap()
+                .chain()
+                .epoch()
+                .unwrap(),
+            2
+        );
     }
 }

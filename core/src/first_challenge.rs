@@ -1,4 +1,4 @@
-//! First manager-to-recipient key challenge, stored before upload.
+//! Holder-to-recipient key challenge, stored before upload.
 
 use rand_chacha::{ChaCha20Rng, rand_core::SeedableRng};
 
@@ -125,17 +125,86 @@ impl FirstChallenge {
         local_wrapping_key: &[u8; 32],
     ) -> Result<Self, Error> {
         let family = manager.family();
-        if store.prepared_control(family, 11)?.is_some() {
-            let existing = Self::resume(store, manager, local_wrapping_key)?;
-            if existing.invitation_id != invitation_id
-                || existing.pending_device_id != pending_device_id
-            {
-                return Err(Error::Invalid("another first challenge already prepared"));
-            }
-            return Ok(existing);
-        }
         let chain = shared_history::first_join_chain(store, family, manager.relay_public_key(), 3)?;
-        let pending = pending_row(&chain, invitation_id, pending_device_id)?;
+        Self::prepare_with(
+            store,
+            family,
+            &chain,
+            manager.signing_seed(),
+            manager.epoch_key(),
+            invitation_id,
+            pending_device_id,
+            local_wrapping_key,
+        )
+    }
+
+    /// Challenge a verified later claim at the current public head. The
+    /// initial manager must have a data-ready view of that head and epoch.
+    pub fn prepare_later_for_initial_manager(
+        store: &mut SqliteStore,
+        manager: &ManagerCreation,
+        invitation_id: [u8; 16],
+        pending_device_id: [u8; 16],
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
+        let ready = manager
+            .ready_session(store)
+            .map_err(|_| Error::Invalid("manager not data-ready"))?;
+        let public = PublicHistorySession::resume(store, manager.family())?;
+        if ready.observed_cursor() != public.cursor() || ready.observed_head() != public.head_hash()
+        {
+            return Err(Error::Invalid("holder view behind public authority"));
+        }
+        Self::prepare_with(
+            store,
+            manager.family(),
+            public.chain(),
+            manager.signing_seed(),
+            ready.current_key().bytes,
+            invitation_id,
+            pending_device_id,
+            local_wrapping_key,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn prepare_with(
+        store: &mut SqliteStore,
+        family: FamilyHandle,
+        chain: &ControlChain,
+        signing_seed: [u8; 32],
+        epoch_key: [u8; 32],
+        invitation_id: [u8; 16],
+        pending_device_id: [u8; 16],
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
+        if family.family_id != chain.family_id() {
+            return Err(Error::Invalid(
+                "challenge Family differs from verified chain",
+            ));
+        }
+        if let Some(row) = store.prepared_control(family, 11)? {
+            let history = store
+                .shared_history(family)?
+                .ok_or(Error::Invalid("shared history absent"))?;
+            let committed = history.entries.iter().any(|entry| {
+                entry.kind == 1
+                    && candidate_from_committed(&entry.committed_bytes)
+                        .is_ok_and(|candidate| candidate == row.candidate_bytes)
+            });
+            if committed {
+                store.delete_prepared_control(family, 11, row.transition_id)?;
+            } else {
+                let existing = Self::resume_with(store, family, signing_seed, local_wrapping_key)?;
+                if existing.invitation_id != invitation_id
+                    || existing.pending_device_id != pending_device_id
+                {
+                    return Err(Error::Invalid("another challenge already prepared"));
+                }
+                return Ok(existing);
+            }
+        }
+        let pending = pending_row(chain, invitation_id, pending_device_id)?;
         let transition_id = random_v4()?;
         let challenge_id = random_v4()?;
         let hpke_id = random_v4()?;
@@ -143,7 +212,7 @@ impl FirstChallenge {
         let secret = random::<32>()?;
         let verifier_nonce = random::<24>()?;
         let context = context(
-            &chain,
+            chain,
             invitation_id,
             pending_device_id,
             pending.claim_hash,
@@ -170,7 +239,7 @@ impl FirstChallenge {
         ]))?;
         let aad = crypto::hash("challenge-verifier-aad", &context)?;
         let verifier_ciphertext =
-            crypto::seal_with_nonce(&manager.epoch_key(), &verifier_nonce, &aad, &plaintext)?;
+            crypto::seal_with_nonce(&epoch_key, &verifier_nonce, &aad, &plaintext)?;
         let verifier_object = cbor::encode(&Value::Map(vec![
             (1, Value::Integer(1)),
             (2, Value::Bytes(challenge_id.to_vec())),
@@ -183,8 +252,9 @@ impl FirstChallenge {
         ]))?;
         let objects = vec![(2, hpke_id, hpke_object), (3, verifier_id, verifier_object)];
         let candidate_bytes = build_candidate(
-            &chain,
-            manager,
+            chain,
+            family,
+            &signing_seed,
             invitation_id,
             pending_device_id,
             transition_id,
@@ -212,7 +282,7 @@ impl FirstChallenge {
             secret_nonce,
             secret_ciphertext,
         })?;
-        Self::resume(store, manager, local_wrapping_key)
+        Self::resume_with(store, family, signing_seed, local_wrapping_key)
     }
 
     pub fn resume(
@@ -220,10 +290,23 @@ impl FirstChallenge {
         manager: &ManagerCreation,
         local_wrapping_key: &[u8; 32],
     ) -> Result<Self, Error> {
-        let family = manager.family();
+        Self::resume_with(
+            store,
+            manager.family(),
+            manager.signing_seed(),
+            local_wrapping_key,
+        )
+    }
+
+    fn resume_with(
+        store: &SqliteStore,
+        family: FamilyHandle,
+        signing_seed: [u8; 32],
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
         let row = store
             .prepared_control(family, 11)?
-            .ok_or(Error::Invalid("no prepared first challenge"))?;
+            .ok_or(Error::Invalid("no prepared challenge"))?;
         let candidate = cbor::decode(&row.candidate_bytes)?;
         let Value::Map(parts) = candidate else {
             return Err(Error::Invalid("challenge candidate not map"));
@@ -251,10 +334,12 @@ impl FirstChallenge {
         }
         let secret = fixed::<32>(&secret_parts[1])?;
         let objects = parse_objects(&row.objects_bytes)?;
-        let chain = base_chain(store, family, manager.relay_public_key())?;
+        let prior_head = fixed::<32>(&unsigned[3].1)?;
+        let chain = shared_history::chain_at_head(store, family, prior_head)?;
         let rebuilt = build_candidate(
             &chain,
-            manager,
+            family,
+            &signing_seed,
             invitation_id,
             pending_device_id,
             row.transition_id,
@@ -300,13 +385,7 @@ impl FirstChallenge {
             .collect()
     }
     pub fn confirm(&self, store: &mut SqliteStore, committed: &[u8]) -> Result<(), Error> {
-        let Value::Map(root) = cbor::decode(committed)? else {
-            return Err(Error::Invalid("committed challenge not map"));
-        };
-        let candidate = cbor::encode(&Value::Map(vec![
-            (1, root[0].1.clone()),
-            (2, root[1].1.clone()),
-        ]))?;
+        let candidate = candidate_from_committed(committed)?;
         if candidate != self.candidate_bytes {
             return Err(Error::Invalid("challenge candidate mismatch"));
         }
@@ -316,13 +395,10 @@ impl FirstChallenge {
         let committed_prior = history
             .entries
             .iter()
-            .filter(|entry| entry.kind == 1)
-            .nth(2);
+            .find(|entry| entry.kind == 1 && entry.committed_bytes == committed);
         let mut public = PublicHistorySession::resume(store, self.family)?;
         if committed_prior.is_none() {
             public.accept_control(store, committed)?;
-        } else if committed_prior.is_some_and(|entry| entry.committed_bytes != committed) {
-            return Err(Error::Invalid("committed challenge differs from history"));
         }
         for (_, id, bytes) in &self.objects {
             public.accept_object(store, *id, bytes)?;
@@ -347,10 +423,18 @@ fn pending_row(
     let Value::Array(pending) = &state[5].1 else {
         return Err(Error::Invalid("pending state not array"));
     };
-    if pending.len() != 1 {
-        return Err(Error::Invalid("first challenge expects one pending device"));
-    }
-    let Value::Array(row) = &pending[0] else {
+    let row = pending
+        .iter()
+        .find(|item| {
+            let Value::Array(fields) = item else {
+                return false;
+            };
+            fields.len() == 9
+                && fixed::<16>(&fields[0]).ok() == Some(invitation_id)
+                && fixed::<16>(&fields[1]).ok() == Some(device_id)
+        })
+        .ok_or(Error::Invalid("pending challenge target absent"))?;
+    let Value::Array(row) = row else {
         return Err(Error::Invalid("pending row not array"));
     };
     if row.len() != 9
@@ -393,7 +477,8 @@ fn context(
 #[allow(clippy::too_many_arguments)]
 fn build_candidate(
     chain: &ControlChain,
-    manager: &ManagerCreation,
+    family: FamilyHandle,
+    signing_seed: &[u8; 32],
     invitation_id: [u8; 16],
     pending_device_id: [u8; 16],
     transition_id: [u8; 16],
@@ -430,13 +515,24 @@ fn build_candidate(
     let Value::Array(rows) = &mut state[5].1 else {
         return Err(Error::Invalid("pending state not array"));
     };
-    let Value::Array(row) = &mut rows[0] else {
+    let row = rows
+        .iter_mut()
+        .find(|item| {
+            let Value::Array(fields) = item else {
+                return false;
+            };
+            fields.len() == 9
+                && fixed::<16>(&fields[0]).ok() == Some(invitation_id)
+                && fixed::<16>(&fields[1]).ok() == Some(pending_device_id)
+        })
+        .ok_or(Error::Invalid("pending challenge target absent"))?;
+    let Value::Array(row) = row else {
         return Err(Error::Invalid("pending row not array"));
     };
     row[7] = Value::Bytes(challenge_id.to_vec());
     row[8] = Value::Null;
     Ok(control_build::candidate(
-        manager.family(),
+        family,
         chain.relay_id(),
         chain.head_hash(),
         transition_id,
@@ -445,20 +541,21 @@ fn build_candidate(
         Value::Map(state),
         chain.epoch()?,
         objects,
-        &manager.signing_seed(),
+        signing_seed,
     )?)
 }
-fn base_chain(
-    store: &SqliteStore,
-    family: FamilyHandle,
-    relay_public: [u8; 32],
-) -> Result<ControlChain, Error> {
-    Ok(shared_history::first_join_prefix_chain(
-        store,
-        family,
-        relay_public,
-        3,
-    )?)
+
+fn candidate_from_committed(committed: &[u8]) -> Result<Vec<u8>, Error> {
+    let Value::Map(root) = cbor::decode(committed)? else {
+        return Err(Error::Invalid("committed challenge not map"));
+    };
+    if root.len() != 4 {
+        return Err(Error::Invalid("committed challenge shape"));
+    }
+    Ok(cbor::encode(&Value::Map(vec![
+        (1, root[0].1.clone()),
+        (2, root[1].1.clone()),
+    ]))?)
 }
 fn objects_bytes(objects: &[ChallengeObject]) -> Result<Vec<u8>, Error> {
     Ok(cbor::encode(&Value::Array(

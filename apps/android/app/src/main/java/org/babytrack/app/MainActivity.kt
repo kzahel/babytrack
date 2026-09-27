@@ -38,6 +38,8 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,6 +51,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -82,6 +86,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.Date
 import java.util.TimeZone
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     private var incomingInvitation by mutableStateOf<String?>(null)
@@ -415,6 +420,10 @@ private fun TrackerScreen(
     var logAtMs by remember { mutableStateOf<Long?>(null) }
     var timelineFilter by remember { mutableStateOf(TimelineFilter.ALL) }
     var message by remember { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(message) {
+        message?.let { snackbarHostState.showSnackbar(it) }
+    }
     var automaticSyncDelayed by remember { mutableStateOf(false) }
     var automaticSyncBlocked by remember { mutableStateOf(false) }
     var removalTarget by remember { mutableStateOf<ByteArray?>(null) }
@@ -635,7 +644,11 @@ private fun TrackerScreen(
             sharedSnapshot = data.joinedSnapshot
             runCatching { SleepTimerNotifications.update(context, data.activeSleepCount) }
                 .onFailure { android.util.Log.w("BabytrackTimer", "Could not update sleep notification", it) }
-        }.onFailure { message = errorText }
+        }.onFailure {
+            if (it is kotlinx.coroutines.CancellationException) throw it
+            Log.e("BabytrackTracker", "Could not load tracker", it)
+            message = errorText
+        }
     }
     val family = families.find { it.familyId.key() == selectedFamily }
     val child = children.find { it.id.key() == selectedChild }
@@ -644,6 +657,7 @@ private fun TrackerScreen(
     val filename = stringResource(R.string.backup_filename)
     val protectedFilename = stringResource(R.string.protected_backup_filename)
     val scrollState = rememberScrollState()
+    var timelineTop by remember { mutableStateOf(0) }
     fun logTime(): ActivityWhen = activityWhen(logAtMs ?: System.currentTimeMillis())
     fun resetLogTime(savedAt: Long?) {
         if (logAtMs == savedAt) logAtMs = null
@@ -654,7 +668,10 @@ private fun TrackerScreen(
         change(onSaved = { resetLogTime(chosenAt); onSaved?.invoke() }) { action(at) }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.screen_title)) }) }) { padding ->
+    Scaffold(
+        topBar = { TopAppBar(title = { Text(stringResource(R.string.screen_title)) }) },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { padding ->
         Column(
             modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(scrollState).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -1231,7 +1248,7 @@ private fun TrackerScreen(
 
                 if (child != null) {
                     OutlinedButton(onClick = {
-                        scope.launch { scrollState.animateScrollTo(scrollState.maxValue) }
+                        scope.launch { scrollState.animateScrollTo(timelineTop) }
                     }) { Text(stringResource(R.string.view_timeline)) }
                     Text(stringResource(R.string.log_time_title), style = MaterialTheme.typography.titleMedium)
                     Text(if (logAtMs == null) stringResource(R.string.log_time_now)
@@ -1666,7 +1683,11 @@ private fun TrackerScreen(
                             }.onFailure { message = errorText }
                         }
                     }) { Text(stringResource(R.string.save_note)) }
-                    Text(stringResource(R.string.timeline), style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.timeline),
+                        modifier = Modifier.onGloballyPositioned {
+                            timelineTop = it.positionInParent().y.roundToInt()
+                        },
+                        style = MaterialTheme.typography.titleLarge)
                     listOf(
                         TimelineFilter.ALL to R.string.timeline_all,
                         TimelineFilter.FEEDS to R.string.timeline_feeds,
@@ -1674,7 +1695,7 @@ private fun TrackerScreen(
                         TimelineFilter.DIAPERS to R.string.timeline_diapers,
                         TimelineFilter.CARE to R.string.timeline_care,
                         TimelineFilter.NOTES to R.string.timeline_notes,
-                    ).chunked(3).forEach { options ->
+                    ).chunked(2).forEach { options ->
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             options.forEach { (filter, label) ->
                                 FilterChip(selected = timelineFilter == filter,

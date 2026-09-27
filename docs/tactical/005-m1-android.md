@@ -72,13 +72,28 @@ The selected child's birth date and growth-chart sex can also be corrected
 without recreating the child or moving its activities. A blank date in this
 edit keeps the previous value; local restore and encrypted sync cover changes.
 The selected-child controls now include a direct action that scrolls to the
-timeline below the logging forms.
+timeline below the logging forms. A 1.5× Android text-size check exposed that
+scrolling to the screen's bottom landed in backup controls. The action now
+targets the measured timeline heading, and the filter chips use two per row
+so their labels stay readable at that size.
 The timeline now groups entries under the viewer's local calendar day and
 filters the selected child's entries by feeds, sleep, diapers, growth/care,
 or notes. The Rust core still supplies the ordered activity projection;
 filtering only changes the Android view.
 An emulator UI pass hid a diaper under Feeds, restored it under All, and
 showed its local calendar-day heading.
+The same large-text check found a stale generic error after startup: a
+superseded Compose load coroutine reported normal cancellation as a load
+failure. Cancellation now ends that load silently; real failures still log
+and show an error. Startup/navigation on the emulator no longer shows it.
+Action results now also appear in a transient snackbar, so a failed log is
+visible beside the current form without scrolling to the page's status text.
+The oversized-bottle rejection showed that message while retaining its input
+at 1.5× text size.
+The full headed emulator UI smoke then passed creation, filtering, logging,
+editing, deletion, and restart after the timeline and feedback changes. Its
+keyboard helper now sends Back only while Android reports the keyboard open,
+avoiding an accidental app exit when an input already dismissed it.
 The Android logging screen also lets a caregiver choose an earlier local date
 and time for the next completed entry. It records the offset at that instant
 and returns to current time after a successful save; running sleep timers

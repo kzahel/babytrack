@@ -22,6 +22,7 @@ pub mod first_admission;
 pub mod first_challenge;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod first_proof;
+pub mod first_removal;
 pub mod grant;
 pub mod handoff;
 pub mod hlc;

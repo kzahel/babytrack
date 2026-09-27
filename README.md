@@ -5,31 +5,24 @@ opt-in sharing that is always end-to-end encrypted. Planned clients include
 native phone/watch apps and a web client.
 `babytrack` is a working name.
 
-**Status: M0 implementation in progress.** The Rust core has a strict
-canonical CBOR codec, structural operation decoder, tested hash, signature,
-AEAD, and HPKE primitives, plus a signed encrypted batch byte proof in Rust,
-JavaScript, Swift, and Kotlin. It has in-memory local/shared projections, a
-native SQLite and browser IndexedDB local-only journals, and a per-Family
-HLC. The development relay can commit a signed Family genesis, its first
-manager-issued invitation, recipient claim, holder challenge, pending
-key proof, and admission grant, then serve role-limited authenticated
-control/object reads and accept encrypted epoch-one batches for the first
-two devices. General membership, removal, rotation, and transport recovery
-remain open. The Android app handles local tracking and readable or
-password-protected file backup. Its debug sharing preview can promote a
-Family, issue an invitation, and submit a recipient's keyless claim through a
-development relay. The debug flow also commits the challenge, proof, and
-encrypted admission grant. The recipient can then verify and open the full
-shared history through a bounded manual sync pass. A verified shared snapshot
-can list children and entries in the Android join preview. Shared child,
-diaper, and bottle actions save offline in the Rust outbox, then a manual
-sync uploads signed encrypted batches and verifies their acceptance. The
-real-relay emulator test converges edits in both directions. Recipient
-enrollment resumes by stored Family identity and relay origin after restart;
-the Android manager screen retains its relay address. The app polls while
-its screen is active to advance the first join and sync. Suspended-app wake,
-removal, and shared backup UI remain open. Scenario
-files still include symbolic expectations.
+**Status: M0 implementation in progress.** The Rust core has canonical
+CBOR, tested crypto and cross-language batch vectors, durable local/shared
+SQLite replay, browser IndexedDB local storage, and signed encrypted sync.
+The development relay can admit an initial two-device cohort and accept
+their epoch-one batches. A real-relay CLI test now also commits a first
+recipient removal with epoch rotation, signed proof, revoked data access,
+and an epoch-two manager upload. General membership and removal recovery
+remain open.
+
+The Android debug app logs children, diapers, and bottles locally or in a
+shared Family. It can promote a Family, invite one other device, complete
+keyless claim/challenge/proof/admission, and converge both devices through
+the relay. It resumes enrollment after restart, polls while open, schedules
+background sync work, and offers readable or protected backup plus an
+explicit private copy. The real-relay emulator suite covers those flows.
+The first-removal path is not yet exposed in Android, and automatic private
+copy on verified removal remains open. Scenario files still include symbolic
+expectations.
 
 ## Product and architecture
 

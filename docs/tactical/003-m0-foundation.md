@@ -377,14 +377,17 @@ and one recipient edit. The manager marks only the promoted prefix accepted;
 post-watermark local edits remain in its outbox. Multi-chunk limits and
 transport-failure campaigns remain to be exercised.
 
-The Rust core now constructs a first active-removal proposal from a verified
-epoch-one chain. It removes exactly the target credential, preserves the
-last-manager invariant, encrypts matching membership and a history keyring
-under a fresh epoch-two key, and HPKE-grants that key only to remaining
-active devices. A test commits the signed proposal with a relay receipt,
-opens the manager's grant and keyring, and proves the removed recipient
-cannot open it. This is a producer and verifier proof only: durable retry,
-relay compare-and-swap, batch cutover, Android UI, and automatic private copy
+The Rust core now durably prepares a first active-removal proposal from a
+verified epoch-one chain. It removes exactly the target credential, preserves
+the last-manager invariant, encrypts matching membership and a history
+keyring under a fresh epoch-two key, and HPKE-grants that key only to the
+remaining manager. The relay stages all objects and commits the transition
+atomically; a missing keyring leaves authority unchanged. Both real-relay
+CLI variants restart the manager before sending, verify the removed device
+can read its signed control proof but not later data, retain its rejected
+pending edit, rebase a manager's old-epoch batch, and accept an epoch-two
+upload. This is still a first-cohort path. Android UI, automatic private
+copy on verified removal, later-device enrollment, and broader rotation
 remain open.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic

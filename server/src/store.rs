@@ -1,7 +1,7 @@
 //! Durable genesis reservation and commit. All methods are internal until
 //! authenticated routes and the remaining authority transitions are ready.
 
-use std::path::Path;
+use std::{collections::BTreeSet, path::Path};
 
 use babytrack_wire::{
     cbor::{self, Value},
@@ -72,6 +72,7 @@ type SavedReservation = (Vec<u8>, Vec<u8>, i64, Option<Vec<u8>>);
 enum ControlReader {
     Manager,
     Active,
+    Removed,
     Invitation { issue_object: [u8; 16] },
     Pending { challenge_object: Option<[u8; 16]> },
 }
@@ -109,6 +110,10 @@ impl RelayStore {
                candidate_bytes BLOB NOT NULL
              );
              CREATE TABLE IF NOT EXISTS staged_admissions (
+               family_id BLOB PRIMARY KEY, transition_id BLOB NOT NULL,
+               candidate_bytes BLOB NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS staged_removals (
                family_id BLOB PRIMARY KEY, transition_id BLOB NOT NULL,
                candidate_bytes BLOB NOT NULL
              );
@@ -1029,6 +1034,209 @@ impl RelayStore {
         Ok(receipt::control_commit_response(&committed)?)
     }
 
+    pub fn stage_first_removal_object(
+        &mut self,
+        path_family: [u8; 16],
+        path_object: [u8; 16],
+        body: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        let (candidate_bytes, kind, object_id, object_bytes) = stage_parts(body)?;
+        let prefix = load_admitted_prefix(&self.db, self.relay_public, path_family)?;
+        let removal = authority::verify_first_removal(
+            &candidate_bytes,
+            &prefix.proved.join.genesis,
+            &prefix.proved.join.issue,
+            &prefix.proved.join.claim,
+            &prefix.admission,
+            prefix.admission_head,
+        )?;
+        let listed = removal
+            .manifest
+            .iter()
+            .find(|entry| entry.kind == kind && entry.object_id == object_id)
+            .ok_or(Error::Invalid("removal object absent from manifest"))?;
+        if object_id != path_object
+            || listed.object_hash != crypto::hash("object", &object_bytes)?
+            || listed.object_len as usize != object_bytes.len()
+        {
+            return Err(Error::Invalid("removal object path or bytes mismatch"));
+        }
+        validate_first_removal_object(
+            kind,
+            object_id,
+            &object_bytes,
+            &candidate_bytes,
+            &prefix.proved.join.genesis,
+        )?;
+        if prefix.proved.join.controls >= 7 {
+            let committed = control_at(&self.db, path_family, 6)?;
+            let existing: Option<Vec<u8>> = self.db.query_row(
+                "SELECT object_bytes FROM committed_objects WHERE family_id=?1 AND object_id=?2 AND transition_id=?3",
+                params![&path_family[..], &object_id[..], &removal.transition_id[..]], |r| r.get(0),
+            ).optional()?;
+            if control_candidate(&committed)? == candidate_bytes
+                && existing.as_deref() == Some(&object_bytes)
+            {
+                return Ok(receipt::object_stage_response(&object_bytes)?);
+            }
+            return Err(Error::Invalid("removal already committed differently"));
+        }
+        if prefix.proved.join.controls != 6 || prefix.proved.join.head != prefix.admission_head {
+            return Err(Error::Invalid("removal head stale"));
+        }
+        ensure_first_removal_ids_unused(&self.db, path_family, &removal)?;
+        let tx = self.db.transaction()?;
+        let prior: Option<Vec<u8>> = tx
+            .query_row(
+                "SELECT candidate_bytes FROM staged_removals WHERE family_id=?1",
+                params![&path_family[..]],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(saved) = prior {
+            if saved != candidate_bytes {
+                return Err(Error::Invalid("another removal staged"));
+            }
+        } else {
+            tx.execute(
+                "INSERT INTO staged_removals(family_id,transition_id,candidate_bytes) VALUES(?1,?2,?3)",
+                params![&path_family[..], &removal.transition_id[..], &candidate_bytes],
+            )?;
+        }
+        let prior: Option<Vec<u8>> = tx
+            .query_row(
+                "SELECT object_bytes FROM staged_objects WHERE family_id=?1 AND object_id=?2",
+                params![&path_family[..], &object_id[..]],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(saved) = prior {
+            if saved != object_bytes {
+                return Err(Error::Invalid("removal object ID collision"));
+            }
+        } else {
+            let committed: Option<i64> = tx
+                .query_row(
+                    "SELECT 1 FROM committed_objects WHERE family_id=?1 AND object_id=?2",
+                    params![&path_family[..], &object_id[..]],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if committed.is_some() {
+                return Err(Error::Invalid("removal object ID reused"));
+            }
+            tx.execute(
+                "INSERT INTO staged_objects(family_id,object_id,kind,object_hash,object_bytes) VALUES(?1,?2,?3,?4,?5)",
+                params![&path_family[..], &object_id[..], i64::from(kind), &listed.object_hash[..], &object_bytes],
+            )?;
+        }
+        tx.commit()?;
+        Ok(receipt::object_stage_response(&object_bytes)?)
+    }
+
+    pub fn commit_first_removal(
+        &mut self,
+        path_family: [u8; 16],
+        candidate_bytes: &[u8],
+        committed_ms: i64,
+    ) -> Result<Vec<u8>, Error> {
+        let prefix = load_admitted_prefix(&self.db, self.relay_public, path_family)?;
+        let removal = authority::verify_first_removal(
+            candidate_bytes,
+            &prefix.proved.join.genesis,
+            &prefix.proved.join.issue,
+            &prefix.proved.join.claim,
+            &prefix.admission,
+            prefix.admission_head,
+        )?;
+        if prefix.proved.join.controls >= 7 {
+            let committed = control_at(&self.db, path_family, 6)?;
+            if control_candidate(&committed)? == candidate_bytes {
+                return Ok(receipt::control_commit_response(&committed)?);
+            }
+            return Err(Error::Invalid("removal already committed differently"));
+        }
+        if prefix.proved.join.controls != 6
+            || prefix.proved.join.head != prefix.admission_head
+            || committed_ms < prefix.admission_time
+        {
+            return Err(Error::Invalid("removal head or relay time invalid"));
+        }
+        ensure_first_removal_ids_unused(&self.db, path_family, &removal)?;
+        let tx = self.db.transaction()?;
+        let saved: Option<Vec<u8>> = tx.query_row(
+            "SELECT candidate_bytes FROM staged_removals WHERE family_id=?1 AND transition_id=?2",
+            params![&path_family[..], &removal.transition_id[..]], |r| r.get(0),
+        ).optional()?;
+        if saved.as_deref() != Some(candidate_bytes) {
+            return Err(Error::Invalid("removal candidate not staged"));
+        }
+        for entry in &removal.manifest {
+            let staged: Option<(i64, Vec<u8>, Vec<u8>)> = tx.query_row(
+                "SELECT kind,object_hash,object_bytes FROM staged_objects WHERE family_id=?1 AND object_id=?2",
+                params![&path_family[..], &entry.object_id[..]],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            ).optional()?;
+            let Some((kind, hash, bytes)) = staged else {
+                return Err(Error::Invalid("removal object missing"));
+            };
+            if kind != i64::from(entry.kind)
+                || hash != entry.object_hash
+                || bytes.len() != entry.object_len as usize
+                || crypto::hash("object", &bytes)? != entry.object_hash
+            {
+                return Err(Error::Invalid("removal staged bytes changed"));
+            }
+            validate_first_removal_object(
+                entry.kind,
+                entry.object_id,
+                &bytes,
+                candidate_bytes,
+                &prefix.proved.join.genesis,
+            )?;
+            tx.execute(
+                "INSERT INTO committed_objects(family_id,object_id,kind,object_hash,object_bytes,transition_id) VALUES(?1,?2,?3,?4,?5,?6)",
+                params![&path_family[..], &entry.object_id[..], kind, &hash, &bytes, &removal.transition_id[..]],
+            )?;
+        }
+        let next_cursor = prefix
+            .proved
+            .join
+            .cursor
+            .checked_add(1)
+            .ok_or(Error::Invalid("cursor overflow"))?;
+        let committed = receipt::commit_control(
+            candidate_bytes,
+            &self.relay_seed,
+            next_cursor as u64,
+            committed_ms,
+        )?;
+        let next_head = crypto::hash("control-head", &committed)?;
+        tx.execute(
+            "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,?2,1,?3)",
+            params![&path_family[..], next_cursor, &committed],
+        )?;
+        let updated = tx.execute(
+            "UPDATE families SET cursor=?2,head_hash=?3 WHERE family_id=?1 AND cursor=?4 AND head_hash=?5",
+            params![&path_family[..], next_cursor, &next_head[..], prefix.proved.join.cursor, &prefix.admission_head[..]],
+        )?;
+        if updated != 1 {
+            return Err(Error::Invalid("removal compare-and-swap failed"));
+        }
+        tx.execute(
+            "DELETE FROM staged_removals WHERE family_id=?1",
+            params![&path_family[..]],
+        )?;
+        for entry in &removal.manifest {
+            tx.execute(
+                "DELETE FROM staged_objects WHERE family_id=?1 AND object_id=?2",
+                params![&path_family[..], &entry.object_id[..]],
+            )?;
+        }
+        tx.commit()?;
+        Ok(receipt::control_commit_response(&committed)?)
+    }
+
     /// Accept an epoch-one batch from the initial manager or first admitted
     /// recipient. The manager remains authorized throughout the join, so its
     /// durable outbox may refer to any committed first-cohort control ancestor.
@@ -1038,7 +1246,7 @@ impl RelayStore {
         envelope_bytes: &[u8],
     ) -> Result<Vec<u8>, Error> {
         let controls = control_count(&self.db, path_family)?;
-        if !(1..=6).contains(&controls) {
+        if !(1..=7).contains(&controls) {
             return Err(Error::Invalid("initial-cohort batch authority superseded"));
         }
         let (genesis_bytes, genesis_committed): (Vec<u8>, Vec<u8>) = self.db.query_row(
@@ -1117,11 +1325,15 @@ impl RelayStore {
             .map_err(|_| Error::Invalid("stored sequence negative"))?
             .checked_add(1)
             .ok_or(Error::Invalid("sequence overflow"))?;
+        let current_epoch = if controls == 7 { 2 } else { 1 };
         let reason = if !active_author {
             Some(2)
-        } else if batch.epoch != 1 {
+        } else if batch.epoch != current_epoch {
             Some(1)
-        } else if !known_ancestor || (controls == 1 && batch.control_head != genesis_head) {
+        } else if !known_ancestor
+            || (controls == 1 && batch.control_head != genesis_head)
+            || (controls == 7 && batch.control_head != current_head)
+        {
             Some(3)
         } else if batch.sequence != next_sequence {
             Some(4)
@@ -1411,7 +1623,7 @@ impl RelayStore {
         let (genesis_bytes, genesis_committed) =
             saved.ok_or(Error::Invalid("Family not active"))?;
         let controls = control_count(&self.db, family_id)?;
-        if !(1..=6).contains(&controls) {
+        if !(1..=7).contains(&controls) {
             return Err(Error::Invalid("initial-cohort reader authority superseded"));
         }
         let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
@@ -1463,7 +1675,11 @@ impl RelayStore {
                     if admission.recipient_id != signer {
                         return Err(Error::Invalid("reader not admitted device"));
                     }
-                    (ControlReader::Active, claim.signing_public)
+                    if controls == 7 {
+                        (ControlReader::Removed, claim.signing_public)
+                    } else {
+                        (ControlReader::Active, claim.signing_public)
+                    }
                 } else {
                     let challenge_object = if controls >= 4 {
                         let challenge_committed = control_at(&self.db, family_id, 3)?;
@@ -1567,6 +1783,138 @@ fn stage_parts(body: &[u8]) -> Result<StagedObjectParts, Error> {
     Ok((candidate, kind, object_id, bytes.clone()))
 }
 
+fn validate_first_removal_object(
+    kind: u16,
+    object_id: [u8; 16],
+    object_bytes: &[u8],
+    candidate_bytes: &[u8],
+    genesis: &authority::GenesisCandidate,
+) -> Result<(), Error> {
+    let Value::Map(candidate) = cbor::decode(candidate_bytes)? else {
+        return Err(Error::Invalid("removal candidate not map"));
+    };
+    let Value::Map(unsigned) = &candidate[0].1 else {
+        return Err(Error::Invalid("removal unsigned not map"));
+    };
+    let core_hash = fixed::<32>(&unsigned[10].1)?;
+    let Value::Map(fields) = cbor::decode(object_bytes)? else {
+        return Err(Error::Invalid("removal object not map"));
+    };
+    if fields
+        .iter()
+        .enumerate()
+        .any(|(i, (key, _))| *key != i as u64 + 1)
+    {
+        return Err(Error::Invalid("removal object keys"));
+    }
+    match kind {
+        1 | 5 => {
+            if fields.len() != 3
+                || number(&fields[0].1)? != 1
+                || !matches!(&fields[1].1, Value::Bytes(bytes) if bytes.len() == 24)
+                || !matches!(&fields[2].1, Value::Bytes(bytes) if bytes.len() >= 16)
+            {
+                return Err(Error::Invalid("removal ciphertext object invalid"));
+            }
+        }
+        4 => {
+            let Value::Array(manager) = &genesis.manager_row else {
+                return Err(Error::Invalid("manager row not array"));
+            };
+            if fields.len() != 9
+                || number(&fields[0].1)? != 1
+                || fixed::<16>(&fields[1].1)? != object_id
+                || number(&fields[2].1)? != 2
+                || fixed::<16>(&fields[3].1)? != genesis.manager_id
+                || number(&fields[4].1)? != number(&manager[3])?
+                || fields[5].1
+                    != Value::Array(vec![
+                        Value::Integer(32),
+                        Value::Integer(1),
+                        Value::Integer(3),
+                    ])
+                || fixed::<32>(&fields[6].1)? != core_hash
+                || !matches!(&fields[7].1, Value::Bytes(bytes) if bytes.len() == 32)
+                || !matches!(&fields[8].1, Value::Bytes(bytes) if bytes.len() >= 16)
+            {
+                return Err(Error::Invalid(
+                    "rotation grant is not for remaining manager",
+                ));
+            }
+        }
+        _ => return Err(Error::Invalid("unexpected removal object kind")),
+    }
+    Ok(())
+}
+
+fn ensure_first_removal_ids_unused(
+    db: &Connection,
+    family: [u8; 16],
+    removal: &authority::FirstRemovalCandidate,
+) -> Result<(), Error> {
+    let mut prior_control_ids = Vec::new();
+    for ordinal in 0..6 {
+        let committed = control_at(db, family, ordinal)?;
+        let Value::Map(root) = cbor::decode(&committed)? else {
+            return Err(Error::Invalid("committed control not map"));
+        };
+        let Value::Map(unsigned) = &root[0].1 else {
+            return Err(Error::Invalid("committed unsigned not map"));
+        };
+        let prior_id = fixed::<16>(&unsigned[4].1)?;
+        if prior_id == removal.transition_id {
+            return Err(Error::Invalid("removal transition ID reused"));
+        }
+        prior_control_ids.push(prior_id);
+    }
+    let reused_batch: Option<i64> = db
+        .query_row(
+            "SELECT 1 FROM batch_results WHERE family_id=?1 AND batch_id=?2",
+            params![&family[..], &removal.transition_id[..]],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if reused_batch.is_some() {
+        return Err(Error::Invalid("removal transition ID reused as batch"));
+    }
+    let reused_object: Option<i64> = db
+        .query_row(
+            "SELECT 1 FROM committed_objects WHERE family_id=?1 AND object_id=?2",
+            params![&family[..], &removal.transition_id[..]],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if reused_object.is_some() {
+        return Err(Error::Invalid("removal transition ID reused as object"));
+    }
+    let mut new_ids = BTreeSet::new();
+    for entry in &removal.manifest {
+        let reused_object: Option<i64> = db
+            .query_row(
+                "SELECT 1 FROM committed_objects WHERE family_id=?1 AND object_id=?2",
+                params![&family[..], &entry.object_id[..]],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let reused_batch: Option<i64> = db
+            .query_row(
+                "SELECT 1 FROM batch_results WHERE family_id=?1 AND batch_id=?2",
+                params![&family[..], &entry.object_id[..]],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if !new_ids.insert(entry.object_id)
+            || reused_object.is_some()
+            || reused_batch.is_some()
+            || prior_control_ids.contains(&entry.object_id)
+            || entry.object_id == removal.transition_id
+        {
+            return Err(Error::Invalid("removal object ID reused"));
+        }
+    }
+    Ok(())
+}
+
 fn control_candidate(committed: &[u8]) -> Result<Vec<u8>, Error> {
     let value = cbor::decode(committed)?;
     let Value::Map(fields) = value else {
@@ -1664,6 +2012,38 @@ struct ProvedPrefix {
     proof: authority::ProofCandidate,
     proof_head: [u8; 32],
     proof_time: i64,
+}
+struct AdmittedPrefix {
+    proved: ProvedPrefix,
+    admission: authority::AdmissionCandidate,
+    admission_head: [u8; 32],
+    admission_time: i64,
+}
+fn load_admitted_prefix(
+    db: &Connection,
+    relay_public: [u8; 32],
+    family: [u8; 16],
+) -> Result<AdmittedPrefix, Error> {
+    let proved = load_proved_prefix(db, relay_public, family)?;
+    if proved.join.controls < 6 {
+        return Err(Error::Invalid("first admission not committed"));
+    }
+    let committed = control_at(db, family, 5)?;
+    let admission = authority::verify_first_admission(
+        &control_candidate(&committed)?,
+        &proved.join.genesis,
+        &proved.join.issue,
+        &proved.join.claim,
+        &proved.challenge,
+        &proved.proof,
+        proved.proof_head,
+    )?;
+    Ok(AdmittedPrefix {
+        proved,
+        admission,
+        admission_head: crypto::hash("control-head", &committed)?,
+        admission_time: control_commit_time(&committed)?,
+    })
 }
 fn load_proved_prefix(
     db: &Connection,

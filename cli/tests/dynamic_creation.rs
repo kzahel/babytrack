@@ -16,6 +16,7 @@ use babytrack_core::{
     first_admission::FirstAdmission,
     first_challenge::FirstChallenge,
     first_proof::FirstProof,
+    first_removal::FirstRemoval,
     issue::FirstInviteIssue,
     operation::{Hlc, Kind, NewOperation, Scope},
     portable_file::{
@@ -1156,5 +1157,259 @@ async fn dynamic_flow(early_batch: bool) {
     assert_eq!(
         private_copy_shared(&mut recipient_store, &recipient_ready, 1_700_000_004_003).unwrap(),
         copy
+    );
+
+    let before_removal = resumed.ready_session(&local).unwrap();
+    let stale_child = v7(0x3b);
+    before_removal
+        .append_local(
+            &mut local,
+            NewOperation {
+                family_id: family.family_id,
+                operation_id: v7(0x3c),
+                record_id: stale_child,
+                scope: Scope::Child,
+                kind: Kind::Create,
+                author_device_id: family.device_id,
+                hlc: Hlc {
+                    wall_ms: 1_700_000_004_500,
+                    counter: 0,
+                    device_id: family.device_id,
+                },
+                record_type: Some("child".to_owned()),
+                child_id: None,
+                fields: Some(vec![(1, Value::Text("Across rotation".to_owned()))]),
+            },
+            1_700_000_004_500,
+        )
+        .unwrap();
+    let old_epoch_upload = match resumed
+        .stage_next_local(&before_removal, &mut local)
+        .unwrap()
+    {
+        NextUpload::Fresh(batch) => batch,
+        NextUpload::RetryExact(_) => panic!("manager batch already pending before removal"),
+    };
+
+    let removal = FirstRemoval::prepare(
+        &mut local,
+        &resumed,
+        &wrapping_key,
+        enrollment.family().device_id,
+    )
+    .unwrap();
+    let removal_candidate = removal.candidate_bytes().to_vec();
+    let removal_stage = removal.stage_bodies().unwrap();
+    drop(local);
+    let mut local = SqliteStore::open(&local_path).unwrap();
+    let resumed = ManagerCreation::resume(&local, family, &wrapping_key).unwrap();
+    let removal = FirstRemoval::resume(&local, &resumed, &wrapping_key).unwrap();
+    assert_eq!(removal.target_id(), enrollment.family().device_id);
+    assert_eq!(removal.candidate_bytes(), removal_candidate);
+    assert_eq!(removal.stage_bodies().unwrap(), removal_stage);
+    let control_path = format!("/v1/families/{}/control", lower_hex(&family.family_id));
+    assert_eq!(
+        http_response(&app, Method::POST, &control_path, removal_candidate.clone())
+            .await
+            .0,
+        StatusCode::CONFLICT,
+    );
+    stage_objects(&app, family.family_id, &removal_stage[..2]).await;
+    assert_eq!(
+        http_response(&app, Method::POST, &control_path, removal_candidate.clone())
+            .await
+            .0,
+        StatusCode::CONFLICT,
+    );
+    stage_objects(&app, family.family_id, &removal_stage[2..]).await;
+    let response = commit_control(&app, family.family_id, &removal_candidate).await;
+    assert_eq!(
+        response,
+        commit_control(&app, family.family_id, &removal_candidate).await
+    );
+    let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(committed_removal) = &fields[1].1 else {
+        panic!()
+    };
+    removal
+        .confirm(&mut local, &resumed, committed_removal)
+        .unwrap();
+    let manager_after = resumed.ready_session(&local).unwrap();
+    assert_eq!(
+        manager_after.observed_cursor(),
+        recipient_ready.observed_cursor() + 1
+    );
+
+    let stale = match recipient_ready
+        .stage_enrolled_local(&mut recipient_store, &resumed_enrollment)
+        .unwrap()
+    {
+        NextUpload::Fresh(batch) => batch,
+        NextUpload::RetryExact(_) => panic!("unexpected previously staged recipient batch"),
+    };
+    let rejected = http_bytes(
+        &app,
+        Method::POST,
+        &batch_path,
+        stale.envelope_bytes.clone(),
+    )
+    .await;
+    assert_eq!(
+        rejected,
+        http_bytes(
+            &app,
+            Method::POST,
+            &batch_path,
+            stale.envelope_bytes.clone()
+        )
+        .await
+    );
+    let result = BatchResult::decode(&rejected).unwrap();
+    assert!(result.receipt_bytes.is_some());
+
+    let proof_path = format!(
+        "/v1/families/{}/control?after={}",
+        lower_hex(&family.family_id),
+        recipient_ready.observed_cursor(),
+    );
+    let read = resumed_enrollment.sign_get(&proof_path).unwrap();
+    let page = ControlPage::decode(
+        &http_bytes(&app, Method::GET, &proof_path, read.bytes).await,
+        family.family_id,
+        recipient_ready.observed_cursor(),
+    )
+    .unwrap();
+    assert_eq!(page.entries.len(), 1);
+    let mut recipient_public =
+        PublicHistorySession::resume(&recipient_store, enrollment.family()).unwrap();
+    recipient_public
+        .accept_control(&mut recipient_store, &page.entries[0].committed_bytes)
+        .unwrap();
+    assert_eq!(
+        recipient_public
+            .resolve_pending_result(&mut recipient_store, &rejected)
+            .unwrap(),
+        PendingBatchResult::Blocked,
+    );
+    assert_eq!(recipient_public.chain().epoch().unwrap(), 2);
+    assert!(
+        recipient_public
+            .chain()
+            .active_devices()
+            .unwrap()
+            .iter()
+            .all(|row| row.device_id != enrollment.family().device_id)
+    );
+    assert!(ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).is_err());
+    let denied_path = format!(
+        "/v1/families/{}/log?after={}",
+        lower_hex(&family.family_id),
+        recipient_ready.observed_cursor(),
+    );
+    let read = resumed_enrollment.sign_get(&denied_path).unwrap();
+    assert_ne!(
+        http_response(&app, Method::GET, &denied_path, read.bytes)
+            .await
+            .0,
+        StatusCode::OK
+    );
+
+    let stale_result = http_bytes(
+        &app,
+        Method::POST,
+        &batch_path,
+        old_epoch_upload.envelope_bytes.clone(),
+    )
+    .await;
+    let mut manager_public = PublicHistorySession::resume(&local, family).unwrap();
+    assert_eq!(
+        manager_public
+            .resolve_pending_result(&mut local, &stale_result)
+            .unwrap(),
+        PendingBatchResult::Rebased,
+    );
+    let rebatch = match resumed
+        .stage_next_local(&manager_after, &mut local)
+        .unwrap()
+    {
+        NextUpload::Fresh(batch) => batch,
+        NextUpload::RetryExact(_) => panic!("old-epoch manager batch was not rebased"),
+    };
+    assert_ne!(rebatch.batch_id, old_epoch_upload.batch_id);
+    let result = http_bytes(
+        &app,
+        Method::POST,
+        &batch_path,
+        rebatch.envelope_bytes.clone(),
+    )
+    .await;
+    let Value::Map(fields) = cbor::decode(&result).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(receipt) = &fields[1].1 else {
+        panic!()
+    };
+    manager_public
+        .accept_batch(&mut local, &rebatch.envelope_bytes, receipt)
+        .unwrap();
+    let manager_after = resumed.ready_session(&local).unwrap();
+    assert!(manager_after.projection().record(&stale_child).is_some());
+
+    let new_child = v7(0x39);
+    manager_after
+        .append_local(
+            &mut local,
+            NewOperation {
+                family_id: family.family_id,
+                operation_id: v7(0x3a),
+                record_id: new_child,
+                scope: Scope::Child,
+                kind: Kind::Create,
+                author_device_id: family.device_id,
+                hlc: Hlc {
+                    wall_ms: 1_700_000_005_000,
+                    counter: 0,
+                    device_id: family.device_id,
+                },
+                record_type: Some("child".to_owned()),
+                child_id: None,
+                fields: Some(vec![(1, Value::Text("After removal".to_owned()))]),
+            },
+            1_700_000_005_000,
+        )
+        .unwrap();
+    let upload = match resumed
+        .stage_next_local(&manager_after, &mut local)
+        .unwrap()
+    {
+        NextUpload::Fresh(batch) => batch,
+        NextUpload::RetryExact(_) => panic!("unexpected stale manager upload"),
+    };
+    let response = http_bytes(
+        &app,
+        Method::POST,
+        &batch_path,
+        upload.envelope_bytes.clone(),
+    )
+    .await;
+    let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(receipt) = &fields[1].1 else {
+        panic!()
+    };
+    let mut manager_public = PublicHistorySession::resume(&local, family).unwrap();
+    manager_public
+        .accept_batch(&mut local, &upload.envelope_bytes, receipt)
+        .unwrap();
+    assert!(
+        resumed
+            .ready_session(&local)
+            .unwrap()
+            .projection()
+            .record(&new_child)
+            .is_some()
     );
 }

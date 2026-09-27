@@ -752,6 +752,83 @@ pub(crate) struct AdmissionCandidate {
     pub manifest: Vec<ManifestEntry>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct FirstRemovalCandidate {
+    pub transition_id: [u8; 16],
+    pub manifest: Vec<ManifestEntry>,
+}
+
+pub(crate) fn verify_first_removal(
+    candidate_bytes: &[u8],
+    genesis: &GenesisCandidate,
+    issue: &IssueCandidate,
+    claim: &ClaimCandidate,
+    admission: &AdmissionCandidate,
+    admission_head: [u8; 32],
+) -> Result<FirstRemovalCandidate, Error> {
+    let value = cbor::decode_with_limits(
+        candidate_bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?;
+    let root = exact_map(&value, 2)?;
+    let unsigned = exact_map(&root[0].1, 11)?;
+    let delta = exact_map(&unsigned[6].1, 3)?;
+    let target_id = fixed::<16>(&delta[0].1)?;
+    let old_role = number(&delta[1].1)?;
+    let new_commitment = fixed::<32>(&delta[2].1)?;
+    if target_id != claim.device_id
+        || old_role != issue.role
+        || new_commitment == genesis.epoch_commitment
+    {
+        return Err(Error::Invalid(
+            "first removal target, role, or key commitment invalid",
+        ));
+    }
+    let invitation = Value::Array(vec![
+        Value::Bytes(issue.invitation_id.to_vec()),
+        Value::Bytes(genesis.manager_id.to_vec()),
+        Value::Bytes(issue.invite_public.to_vec()),
+        Value::Integer(issue.role.into()),
+        Value::Bytes(issue.transition_id.to_vec()),
+        Value::Integer(2),
+    ]);
+    let resulting = Value::Map(vec![
+        (1, Value::Integer(1)),
+        (2, Value::Bytes(genesis.family_id.to_vec())),
+        (3, Value::Bytes(genesis.relay_id.to_vec())),
+        (4, Value::Integer(2)),
+        (5, Value::Array(vec![genesis.manager_row.clone()])),
+        (6, Value::Array(vec![])),
+        (7, Value::Array(vec![invitation])),
+    ]);
+    let header = verify_following(
+        candidate_bytes,
+        genesis,
+        FollowingPlan {
+            parent: admission_head,
+            kind: 8,
+            epoch: 2,
+            resulting: &resulting,
+            expected_signers: &[(genesis.manager_id, genesis.manager_signing_key)],
+            manifest_kinds: &[1, 4, 5],
+        },
+    )?;
+    if header.transition_id == admission.transition_id
+        || header.transition_id == genesis.transition_id
+        || header.transition_id == issue.transition_id
+        || header.transition_id == claim.transition_id
+    {
+        return Err(Error::Invalid("removal transition ID reused"));
+    }
+    Ok(FirstRemovalCandidate {
+        transition_id: header.transition_id,
+        manifest: header.manifest,
+    })
+}
+
 #[allow(dead_code)] // Consumed by the admission staging transaction.
 pub(crate) fn verify_first_admission(
     candidate_bytes: &[u8],

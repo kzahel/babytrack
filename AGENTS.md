@@ -16,15 +16,14 @@ in tacticals, exact protocol formats in future `docs/protocol/`, and test
 expectations in scenario/vector files. Summaries link to the owner. If two
 documents contradict, reconcile them or ask; do not silently pick one.
 
-Status: M0 implementation in progress. The Rust core has canonical CBOR,
-structural operation decoding, and first cryptographic primitives including
-HPKE with byte vectors and a signed batch byte proof. A native local-only
-SQLite journal and signed shared-history replay are under construction.
-The development relay implements signed genesis promotion, the first
-manager-issued invitation, recipient claim, holder challenge, key proof,
-and admission grant with role-limited reads; it cannot yet repair, rotate,
-or sync batches. No full application
-exists yet.
+Status: M0 implementation in progress. The Rust core has canonical bytes,
+cryptography, durable local/shared journals, signed sync, and a first
+rotating removal. The development relay admits an initial two-device cohort,
+syncs encrypted batches, and atomically removes that first recipient with
+epoch rotation. A real-relay CLI test covers the cutover. The Android debug
+app logs and syncs the first cohort, including scheduled background attempts;
+its removal UI, automatic private copy on removal, later-device admission,
+and the required security gates remain open.
 `babytrack` is a code name.
 
 The working tree may contain concurrent human or agent changes. Do not revert,

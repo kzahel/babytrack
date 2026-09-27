@@ -1,5 +1,5 @@
 //! Development relay routes for the first join and initial-cohort batches.
-//! Later membership, rotation, and general repair remain closed.
+//! Later membership and general repair remain closed.
 
 use std::{
     path::Path,
@@ -198,6 +198,7 @@ async fn stage_control_object(
         2 => store.stage_first_issue_object(family_id, object_id, &body),
         11 => store.stage_first_challenge_object(family_id, object_id, &body),
         6 => store.stage_first_admission_object(family_id, object_id, &body),
+        8 => store.stage_first_removal_object(family_id, object_id, &body),
         _ => return Err(StatusCode::NOT_IMPLEMENTED),
     }
     .map_err(|_| StatusCode::CONFLICT)?;
@@ -226,6 +227,7 @@ async fn commit_control(
         11 => store.commit_first_challenge(family_id, &body, committed_ms),
         5 => store.commit_first_proof(family_id, &body, committed_ms),
         6 => store.commit_first_admission(family_id, &body, committed_ms),
+        8 => store.commit_first_removal(family_id, &body, committed_ms),
         _ => return Err(StatusCode::NOT_IMPLEMENTED),
     }
     .map_err(|_| StatusCode::CONFLICT)?;

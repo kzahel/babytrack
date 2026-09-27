@@ -233,7 +233,15 @@ delivered, and removed access cannot obtain new Family data.
   corruption and wrong passwords without partial Family creation.
 - [ ] Check Android file save/restore on physical phones and across a new
   installation. Test missing/corrupt files, storage-provider failures, and
-  explicit presentation of data saved after the file point.
+  explicit presentation of data saved after the file point. An emulator now
+  saves a readable file through Android's document picker, logs an activity
+  after that save, sees the unsaved-changes warning, uninstalls the app, and
+  restores the file into a fresh installation. The saved activity returns,
+  the later activity does not, and the restored Family survives restart. The
+  same check saves a password-protected file through the picker, reinstalls,
+  rejects a wrong password without creating a Family, then restores with the
+  correct password. Physical phones, corrupt files, and provider failures
+  remain open.
 - [ ] Add the planned analysis export and Nara import through shared Rust
   import/export, with real sanitized samples and target preview. The
   current-state analysis CSV now exports local and shared Families through
@@ -262,7 +270,8 @@ what it contains; daily logging and recovery require no relay account.
 ## CI and review handoff
 
 The Android CI job builds APKs. Its emulator job runs the real-relay
-instrumentation suite and the command-driven local UI smoke. Expand UI
+instrumentation suite, the command-driven local UI smoke, and the
+document-picker recovery flow across fresh installations. Expand UI
 checks for sharing and backup only where a failure would escape the core
 integration suite. Record local emulator, physical phone, and observed
 remote CI results separately. The M0 end review in [003](003-m0-foundation.md)

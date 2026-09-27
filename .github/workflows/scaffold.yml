@@ -140,6 +140,7 @@ jobs:
           script: |
             bash scripts/check_android_relay_emulator.sh
             python3 scripts/check_android_ui_smoke.py
+            python3 scripts/check_android_recovery_ui.py
 
   required:
     name: Required checks

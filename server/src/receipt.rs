@@ -31,6 +31,101 @@ pub struct RelayEntry {
     pub committed_bytes: Vec<u8>,
 }
 
+#[derive(Debug)]
+pub(crate) struct VerifiedControlReceipt {
+    pub candidate_bytes: Vec<u8>,
+    pub family_id: [u8; 16],
+    pub relay_id: [u8; 32],
+    pub cursor: u64,
+}
+
+/// Authenticate stored committed control bytes before they influence relay
+/// authority reconstruction. The candidate and receipt context must agree.
+pub(crate) fn verify_control_receipt(
+    committed_bytes: &[u8],
+    relay_public: &[u8; 32],
+) -> Result<VerifiedControlReceipt, Error> {
+    let value = cbor::decode_with_limits(
+        committed_bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?;
+    let Value::Map(root) = value else {
+        return Err(Error::Invalid("committed control not map"));
+    };
+    if root.len() != 4
+        || root
+            .iter()
+            .enumerate()
+            .any(|(i, (key, _))| *key != i as u64 + 1)
+    {
+        return Err(Error::Invalid("committed control keys"));
+    }
+    let Value::Map(unsigned) = &root[0].1 else {
+        return Err(Error::Invalid("unsigned control not map"));
+    };
+    if unsigned.len() != 11
+        || unsigned
+            .iter()
+            .enumerate()
+            .any(|(i, (key, _))| *key != i as u64 + 1)
+    {
+        return Err(Error::Invalid("unsigned control keys"));
+    }
+    let family_id = fixed::<16>(&unsigned[1].1)?;
+    let relay_id = fixed::<32>(&unsigned[2].1)?;
+    let transition_id = fixed::<16>(&unsigned[4].1)?;
+    let Value::Array(receipt) = &root[2].1 else {
+        return Err(Error::Invalid("control receipt not array"));
+    };
+    if receipt.len() != 6
+        || fixed::<16>(&receipt[0])? != family_id
+        || fixed::<32>(&receipt[1])? != relay_id
+        || fixed::<16>(&receipt[2])? != transition_id
+    {
+        return Err(Error::Invalid("control receipt context"));
+    }
+    let Value::Integer(cursor) = &receipt[3] else {
+        return Err(Error::Invalid("control cursor not integer"));
+    };
+    let cursor: u64 = (*cursor)
+        .try_into()
+        .map_err(|_| Error::Invalid("control cursor range"))?;
+    if cursor == 0 {
+        return Err(Error::Invalid("zero control cursor"));
+    }
+    let Value::Integer(committed_ms) = &receipt[4] else {
+        return Err(Error::Invalid("control time not integer"));
+    };
+    let _: i64 = (*committed_ms)
+        .try_into()
+        .map_err(|_| Error::Invalid("control time range"))?;
+    let signed_hash = crypto::hash(
+        "control-signed",
+        &cbor::encode(&Value::Array(vec![root[0].1.clone(), root[1].1.clone()]))?,
+    )?;
+    if fixed::<32>(&receipt[5])? != signed_hash {
+        return Err(Error::Invalid("control signed hash"));
+    }
+    crypto::verify_cbor(
+        "control-receipt",
+        &cbor::encode(&root[2].1)?,
+        relay_public,
+        &fixed::<64>(&root[3].1)?,
+    )?;
+    Ok(VerifiedControlReceipt {
+        candidate_bytes: cbor::encode(&Value::Map(vec![
+            (1, root[0].1.clone()),
+            (2, root[1].1.clone()),
+        ]))?,
+        family_id,
+        relay_id,
+        cursor,
+    })
+}
+
 #[allow(dead_code)] // Called by the authority transaction in the next relay slice.
 pub(crate) fn commit_control(
     candidate_bytes: &[u8],

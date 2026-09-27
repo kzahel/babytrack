@@ -439,6 +439,11 @@ Damaged or incomplete reconstruction refuses further commits and reads.
 An offline request or staged object never becomes a
 confirmed authority change. Unknown versions/kinds fail closed.
 
+The current first-cohort relay authenticates its saved genesis candidate and
+receipt against the cursor-one log entry before authority reads or commits.
+Full committed-chain, object, batch, and derived-row reconstruction is still
+required for the general ledger.
+
 The extracted `wire` verifier prepares invitation-issue, two-signature
 claim, holder-challenge, pending key-proof, admission, and active-removal
 candidates for both

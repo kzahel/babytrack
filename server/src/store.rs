@@ -364,6 +364,12 @@ impl RelayStore {
             return Err(Error::Invalid("genesis differs from reservation"));
         }
         if active == 1 {
+            verify_stored_genesis(
+                &tx,
+                candidate.family_id,
+                &saved_candidate,
+                self.relay_public,
+            )?;
             return Ok(receipt::control_commit_response(
                 &committed.ok_or(Error::Invalid("active genesis missing bytes"))?,
             )?);
@@ -409,14 +415,19 @@ impl RelayStore {
     }
 
     pub fn genesis_result(&self, family_id: [u8; 16]) -> Result<Option<Vec<u8>>, Error> {
-        Ok(self
+        let saved: Option<(Vec<u8>, Vec<u8>)> = self
             .db
             .query_row(
-                "SELECT committed_bytes FROM families WHERE family_id=?1 AND active=1",
+                "SELECT candidate_bytes,committed_bytes FROM families WHERE family_id=?1 AND active=1",
                 params![&family_id[..]],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
-            .optional()?)
+            .optional()?;
+        let Some((candidate, committed)) = saved else {
+            return Ok(None);
+        };
+        verify_stored_genesis(&self.db, family_id, &candidate, self.relay_public)?;
+        Ok(Some(committed))
     }
 
     pub fn committed_object(
@@ -485,7 +496,8 @@ impl RelayStore {
         if active != 1 {
             return Err(Error::Invalid("Family not promoted"));
         }
-        let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
+        let genesis =
+            verify_stored_genesis(&self.db, path_family, &genesis_bytes, self.relay_public)?;
         let controls = control_count(&self.db, path_family)?;
         let head: [u8; 32] = head
             .ok_or(Error::Invalid("Family head absent"))?
@@ -550,7 +562,7 @@ impl RelayStore {
             "SELECT candidate_bytes,cursor,head_hash,committed_bytes FROM families WHERE family_id=?1 AND active=1",
             params![&path_family[..]], |r| Ok((r.get::<_,Vec<u8>>(0)?,r.get::<_,i64>(1)?,r.get::<_,Vec<u8>>(2)?,r.get::<_,Vec<u8>>(3)?)),
         )?;
-        let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
+        let genesis = verify_stored_genesis(&tx, path_family, &genesis_bytes, self.relay_public)?;
         let controls = control_count(&tx, path_family)?;
         let genesis_head = crypto::hash("control-head", &genesis_committed)?;
         let issue = authority::verify_first_invite_issue(candidate_bytes, &genesis, genesis_head)?;
@@ -651,7 +663,7 @@ impl RelayStore {
             "SELECT candidate_bytes,cursor,head_hash,committed_bytes FROM families WHERE family_id=?1 AND active=1",
             params![&path_family[..]],|r|Ok((r.get::<_,Vec<u8>>(0)?,r.get::<_,i64>(1)?,r.get::<_,Vec<u8>>(2)?,r.get::<_,Vec<u8>>(3)?)),
         )?;
-        let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
+        let genesis = verify_stored_genesis(&tx, path_family, &genesis_bytes, self.relay_public)?;
         let controls = control_count(&tx, path_family)?;
         let genesis_head = crypto::hash("control-head", &genesis_committed)?;
         let issue_committed = control_at(&tx, path_family, 1)?;
@@ -1278,7 +1290,7 @@ impl RelayStore {
             params![&path_family[..]],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
-        let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
+        let genesis = verify_stored_genesis(&tx, path_family, &genesis_bytes, self.relay_public)?;
         let (signer, active_author) = if author == genesis.manager_id {
             (genesis.manager_signing_key, true)
         } else if controls >= 3 {
@@ -1499,7 +1511,11 @@ impl RelayStore {
         let Some((candidate_bytes, active, committed)) = saved else {
             return Err(Error::Invalid("Family has no genesis reservation"));
         };
-        let candidate = authority::verify_genesis_candidate(&candidate_bytes, &self.relay_public)?;
+        let candidate = if active == 1 {
+            verify_stored_genesis(&self.db, family_id, &candidate_bytes, self.relay_public)?
+        } else {
+            authority::verify_genesis_candidate(&candidate_bytes, &self.relay_public)?
+        };
         if candidate.manifest.first().map(|entry| entry.object_id) != Some(promotion_id) {
             return Err(Error::Invalid("promotion ID mismatch"));
         }
@@ -1790,7 +1806,8 @@ impl RelayStore {
         if !(1..=7).contains(&controls) {
             return Err(Error::Invalid("initial-cohort reader authority superseded"));
         }
-        let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
+        let genesis =
+            verify_stored_genesis(&self.db, family_id, &genesis_bytes, self.relay_public)?;
         let signer = read_auth::claimed_signer(auth_bytes)?;
         let (reader, signing_key) = if signer == genesis.manager_id {
             (ControlReader::Manager, genesis.manager_signing_key)
@@ -2306,6 +2323,45 @@ fn ensure_control_ids(db: &Connection, family: [u8; 16], candidate: &[u8]) -> Re
 
 // Join transitions have a fixed order, but data batches occupy the same global
 // cursor space. Locate a control by its ordinal rather than assuming its cursor.
+fn verify_stored_genesis(
+    db: &Connection,
+    family: [u8; 16],
+    stored_candidate: &[u8],
+    relay_public: [u8; 32],
+) -> Result<authority::GenesisCandidate, Error> {
+    let committed: Vec<u8> = db.query_row(
+        "SELECT committed_bytes FROM families WHERE family_id=?1 AND active=1",
+        params![&family[..]],
+        |row| row.get(0),
+    )?;
+    let entry: Vec<u8> = db.query_row(
+        "SELECT committed_bytes FROM entries WHERE family_id=?1 AND cursor=1 AND kind=1",
+        params![&family[..]],
+        |row| row.get(0),
+    )?;
+    if committed != entry {
+        return Err(Error::Invalid(
+            "genesis family row differs from committed log",
+        ));
+    }
+    let receipt = receipt::verify_control_receipt(&entry, &relay_public)?;
+    if receipt.family_id != family
+        || receipt.cursor != 1
+        || receipt.candidate_bytes != stored_candidate
+    {
+        return Err(Error::Invalid(
+            "genesis candidate or receipt differs from committed log",
+        ));
+    }
+    let genesis = authority::verify_genesis_candidate(&receipt.candidate_bytes, &relay_public)?;
+    if receipt.relay_id != genesis.relay_id {
+        return Err(Error::Invalid(
+            "genesis relay differs from signed candidate",
+        ));
+    }
+    Ok(genesis)
+}
+
 fn control_at(db: &Connection, family: [u8; 16], ordinal: i64) -> Result<Vec<u8>, Error> {
     Ok(db.query_row(
         "SELECT committed_bytes FROM entries WHERE family_id=?1 AND kind=1 ORDER BY cursor LIMIT 1 OFFSET ?2",
@@ -2345,7 +2401,7 @@ fn load_join_prefix(
     if controls < 3 {
         return Err(Error::Invalid("claim not committed"));
     }
-    let genesis = authority::verify_genesis_candidate(&genesis_bytes, &relay_public)?;
+    let genesis = verify_stored_genesis(db, family, &genesis_bytes, relay_public)?;
     let genesis_head = crypto::hash("control-head", &genesis_committed)?;
     let issue_committed = control_at(db, family, 1)?;
     let issue = authority::verify_first_invite_issue(
@@ -2631,6 +2687,53 @@ mod tests {
         ])]);
         stage[5].1 = Value::Bytes(object);
         cbor::encode(&Value::Map(stage)).unwrap()
+    }
+
+    fn validly_resigned_genesis_with_changed_manifest(
+        candidate_bytes: &[u8],
+        manager_id: [u8; 16],
+        manager_seed: [u8; 32],
+    ) -> Vec<u8> {
+        let Value::Map(mut root) = cbor::decode(candidate_bytes).unwrap() else {
+            panic!()
+        };
+        let Value::Map(mut unsigned) = root[0].1.clone() else {
+            panic!()
+        };
+        let Value::Array(mut manifest) = unsigned[9].1.clone() else {
+            panic!()
+        };
+        let Value::Array(mut entry) = manifest[0].clone() else {
+            panic!()
+        };
+        entry[2] = Value::Bytes(vec![0; 32]);
+        manifest[0] = Value::Array(entry);
+        unsigned[9].1 = Value::Array(manifest);
+        let Value::Map(mut delta) = unsigned[6].1.clone() else {
+            panic!()
+        };
+        delta[2].1 = Value::Bytes(vec![0; 32]);
+        unsigned[6].1 = Value::Map(delta);
+        let core = Value::Array(
+            unsigned[..9]
+                .iter()
+                .map(|(_, value)| value.clone())
+                .collect(),
+        );
+        unsigned[10].1 = Value::Bytes(
+            crypto::hash("transition-core", &cbor::encode(&core).unwrap())
+                .unwrap()
+                .to_vec(),
+        );
+        let unsigned_bytes = cbor::encode(&Value::Map(unsigned.clone())).unwrap();
+        let signature =
+            crypto::sign_cbor("control-transition", &unsigned_bytes, &manager_seed).unwrap();
+        root[0].1 = Value::Map(unsigned);
+        root[1].1 = Value::Array(vec![Value::Array(vec![
+            Value::Bytes(manager_id.to_vec()),
+            Value::Bytes(signature.to_vec()),
+        ])]);
+        cbor::encode(&Value::Map(root)).unwrap()
     }
 
     fn signed_manager_batch(
@@ -3014,6 +3117,121 @@ mod tests {
         store
             .stage_first_issue_object(family, object_id, &issue_stage)
             .unwrap();
+    }
+
+    #[test]
+    fn restart_rejects_substituted_genesis_candidate_and_receipt() {
+        let genesis: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/api-genesis-v1.json").unwrap(),
+        )
+        .unwrap();
+        let issue: Json =
+            serde_json::from_str(&std::fs::read_to_string("../tests/vectors/api-v1.json").unwrap())
+                .unwrap();
+        let chain: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/contiguous-chain-v1.json").unwrap(),
+        )
+        .unwrap();
+        let seed: [u8; 32] = hex(chain["test_only_inputs"]["relay_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let manager_seed: [u8; 32] = hex(chain["test_only_inputs"]["manager_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let manager_id: [u8; 16] = hex(chain["test_only_inputs"]["manager_device_id_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let family: [u8; 16] = hex(genesis["inputs"]["family_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let promotion: [u8; 16] = hex(genesis["inputs"]["promotion_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let issue_object: [u8; 16] = hex("083e4567e89b42d3a456426614174000").try_into().unwrap();
+        let genesis_stage = hex(genesis["inputs"]["stage_body_cbor_hex"].as_str().unwrap());
+        let genesis_candidate = hex(genesis["inputs"]["commit_candidate_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let issue_stage = hex(issue["inputs"]["stage_body_cbor_hex"].as_str().unwrap());
+        let alternate = validly_resigned_genesis_with_changed_manifest(
+            &genesis_candidate,
+            manager_id,
+            manager_seed,
+        );
+        authority::verify_genesis_candidate(&alternate, &crypto::signing_public_key(&seed))
+            .unwrap();
+        let genesis_commit = hex(genesis["expect"]["commit_response_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let Value::Map(response) = cbor::decode(&genesis_commit).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(committed) = &response[1].1 else {
+            panic!()
+        };
+        let time = control_commit_time(committed).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("genesis-corruption.sqlite");
+        let mut store = RelayStore::open(&path, seed).unwrap();
+        store
+            .stage_genesis_object(family, promotion, &genesis_stage)
+            .unwrap();
+        store
+            .commit_genesis(family, &genesis_candidate, time)
+            .unwrap();
+        store
+            .db
+            .execute(
+                "UPDATE families SET candidate_bytes=?2 WHERE family_id=?1",
+                params![&family[..], &alternate],
+            )
+            .unwrap();
+        drop(store);
+        let mut store = RelayStore::open(&path, seed).unwrap();
+        assert!(
+            store
+                .stage_first_issue_object(family, issue_object, &issue_stage)
+                .is_err()
+        );
+        store
+            .db
+            .execute(
+                "UPDATE families SET candidate_bytes=?2 WHERE family_id=?1",
+                params![&family[..], &genesis_candidate],
+            )
+            .unwrap();
+        let mut changed = committed.clone();
+        *changed.last_mut().unwrap() ^= 1;
+        store
+            .db
+            .execute(
+                "UPDATE families SET committed_bytes=?2 WHERE family_id=?1",
+                params![&family[..], &changed],
+            )
+            .unwrap();
+        assert!(
+            store
+                .stage_first_issue_object(family, issue_object, &issue_stage)
+                .is_err()
+        );
+        store
+            .db
+            .execute(
+                "UPDATE entries SET committed_bytes=?2 WHERE family_id=?1 AND cursor=1",
+                params![&family[..], &changed],
+            )
+            .unwrap();
+        assert!(
+            store
+                .stage_first_issue_object(family, issue_object, &issue_stage)
+                .is_err()
+        );
     }
 
     #[test]

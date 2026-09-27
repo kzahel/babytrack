@@ -310,6 +310,10 @@ impl PublicLedger {
         self.next_sequences.get(&author).copied().unwrap_or(1)
     }
 
+    pub(crate) fn last_commit_ms(&self) -> i64 {
+        self.last_commit_ms
+    }
+
     pub(crate) fn reader(&self, signer_id: [u8; 16]) -> Result<Option<PublicReader>, Error> {
         let Value::Map(state) = &self.state else {
             return Err(Error::Invalid("public state not map"));

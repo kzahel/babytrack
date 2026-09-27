@@ -951,6 +951,204 @@ impl RelayStore {
         Ok(receipt::control_commit_response(&committed)?)
     }
 
+    /// Stage one object for a later control against the current public ledger.
+    /// The signed candidate supplies the manifest; ciphertext stays opaque.
+    pub fn stage_general_control_object(
+        &mut self,
+        family: [u8; 16],
+        path_object: [u8; 16],
+        body: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        let (candidate, kind, object_id, object_bytes) = stage_parts(body)?;
+        if object_id != path_object {
+            return Err(Error::Invalid("staged object path differs"));
+        }
+        let ids = control_birth_ids(&candidate)?;
+        let transition = ids[0];
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        verify_private_integrity(&tx, self.relay_public)?;
+        let mut controls = tx.prepare(
+            "SELECT committed_bytes FROM entries WHERE family_id=?1 AND kind=1 ORDER BY cursor",
+        )?;
+        let rows = controls.query_map(params![&family[..]], |row| row.get::<_, Vec<u8>>(0))?;
+        for row in rows {
+            let committed = row?;
+            if control_birth_ids(&committed)?.first() == Some(&transition) {
+                if control_candidate(&committed)? != candidate {
+                    return Err(Error::Invalid("transition ID reused with different bytes"));
+                }
+                let existing: Option<Vec<u8>> = tx.query_row(
+                    "SELECT object_bytes FROM committed_objects WHERE family_id=?1 AND object_id=?2 AND transition_id=?3",
+                    params![&family[..], &object_id[..], &transition[..]],
+                    |row| row.get(0),
+                ).optional()?;
+                if existing.as_deref() == Some(&object_bytes) {
+                    return Ok(receipt::object_stage_response(&object_bytes)?);
+                }
+                return Err(Error::Invalid("committed object differs from retry"));
+            }
+        }
+        drop(controls);
+        let mut ledger =
+            Self::verify_saved_family(&tx, family, self.relay_public, &self.relay_seed)?;
+        let cursor: i64 = tx.query_row(
+            "SELECT cursor FROM families WHERE family_id=?1 AND active=1",
+            params![&family[..]],
+            |row| row.get(0),
+        )?;
+        let provisional = receipt::commit_control(
+            &candidate,
+            &self.relay_seed,
+            u64::try_from(cursor)
+                .map_err(|_| Error::Invalid("cursor range"))?
+                .checked_add(1)
+                .ok_or(Error::Invalid("cursor overflow"))?,
+            ledger.last_commit_ms(),
+        )?;
+        let verified = receipt::verify_control_receipt(&provisional, &self.relay_public)?;
+        if !matches!(verified.kind, 2 | 6 | 8 | 10 | 11)
+            || verified.family_id != family
+            || verified.transition_id != transition
+        {
+            return Err(Error::Invalid("not a staged general control"));
+        }
+        ledger.apply(&verified, &provisional)?;
+        ensure_control_ids(&tx, family, &candidate)?;
+        let listed = verified
+            .manifest
+            .iter()
+            .find(|entry| entry.id == object_id && entry.kind == kind)
+            .ok_or(Error::Invalid("object absent from signed manifest"))?;
+        if listed.hash != crypto::hash("object", &object_bytes)?
+            || usize::try_from(listed.len).ok() != Some(object_bytes.len())
+        {
+            return Err(Error::Invalid("staged object differs from manifest"));
+        }
+        let entry = authority::ManifestEntry {
+            kind: listed.kind,
+            object_id: listed.id,
+            object_hash: listed.hash,
+            object_len: listed.len,
+        };
+        stage_control_object(&tx, family, transition, &candidate, &entry, &object_bytes)?;
+        refresh_private_integrity(&tx, &self.relay_seed)?;
+        tx.commit()?;
+        Ok(receipt::object_stage_response(&object_bytes)?)
+    }
+
+    /// Commit a non-genesis transition through the same public reducers used
+    /// by clients and relay restart. The writer lock serializes its cursor,
+    /// control head, staged objects, and authority decision.
+    pub fn commit_general_control_with_clock(
+        &mut self,
+        family: [u8; 16],
+        candidate: &[u8],
+        clock: impl FnOnce() -> Result<i64, Error>,
+    ) -> Result<Vec<u8>, Error> {
+        let ids = control_birth_ids(candidate)?;
+        let transition = ids[0];
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mut controls = tx.prepare(
+            "SELECT committed_bytes FROM entries WHERE family_id=?1 AND kind=1 ORDER BY cursor",
+        )?;
+        let rows = controls.query_map(params![&family[..]], |row| row.get::<_, Vec<u8>>(0))?;
+        for row in rows {
+            let committed = row?;
+            if control_birth_ids(&committed)?.first() == Some(&transition) {
+                if control_candidate(&committed)? == candidate {
+                    return Ok(receipt::control_commit_response(&committed)?);
+                }
+                return Err(Error::Invalid("transition ID reused with different bytes"));
+            }
+        }
+        drop(controls);
+        let mut ledger =
+            Self::verify_saved_family(&tx, family, self.relay_public, &self.relay_seed)?;
+        let (cursor, saved_head): (i64, Vec<u8>) = tx.query_row(
+            "SELECT cursor,head_hash FROM families WHERE family_id=?1 AND active=1",
+            params![&family[..]],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if saved_head != ledger.head() {
+            return Err(Error::Invalid("general control head differs"));
+        }
+        ensure_control_ids(&tx, family, candidate)?;
+        let next_cursor = cursor
+            .checked_add(1)
+            .ok_or(Error::Invalid("cursor overflow"))?;
+        let committed = receipt::commit_control(
+            candidate,
+            &self.relay_seed,
+            u64::try_from(next_cursor).map_err(|_| Error::Invalid("cursor range"))?,
+            clock()?,
+        )?;
+        let verified = receipt::verify_control_receipt(&committed, &self.relay_public)?;
+        if !matches!(verified.kind, 2 | 4 | 5 | 6 | 8 | 10 | 11)
+            || verified.family_id != family
+            || verified.transition_id != transition
+        {
+            return Err(Error::Invalid("not a general control"));
+        }
+        ledger.apply(&verified, &committed)?;
+        if !verified.manifest.is_empty() {
+            let staged: Option<Vec<u8>> = tx.query_row(
+                "SELECT candidate_bytes FROM staged_controls WHERE family_id=?1 AND transition_id=?2",
+                params![&family[..], &transition[..]],
+                |row| row.get(0),
+            ).optional()?;
+            if staged.as_deref() != Some(candidate) {
+                return Err(Error::Invalid("control candidate not staged"));
+            }
+            for object in &verified.manifest {
+                let saved: Option<(i64, Vec<u8>, Vec<u8>)> = tx.query_row(
+                    "SELECT kind,object_hash,object_bytes FROM staged_control_objects WHERE family_id=?1 AND transition_id=?2 AND object_id=?3",
+                    params![&family[..], &transition[..], &object.id[..]],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                ).optional()?;
+                let Some((kind, hash, bytes)) = saved else {
+                    return Err(Error::Invalid("control manifest object missing"));
+                };
+                if kind != i64::from(object.kind)
+                    || hash != object.hash
+                    || usize::try_from(object.len).ok() != Some(bytes.len())
+                    || crypto::hash("object", &bytes)? != object.hash
+                {
+                    return Err(Error::Invalid("control manifest object differs"));
+                }
+                tx.execute(
+                    "INSERT INTO committed_objects(family_id,object_id,kind,object_hash,object_bytes,transition_id) VALUES(?1,?2,?3,?4,?5,?6)",
+                    params![&family[..], &object.id[..], kind, &hash, &bytes, &transition[..]],
+                )?;
+            }
+        }
+        let next_head = ledger.head();
+        tx.execute(
+            "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,?2,1,?3)",
+            params![&family[..], next_cursor, &committed],
+        )?;
+        let changed = tx.execute(
+            "UPDATE families SET cursor=?2,head_hash=?3 WHERE family_id=?1 AND cursor=?4 AND head_hash=?5",
+            params![&family[..], next_cursor, &next_head[..], cursor, &saved_head],
+        )?;
+        if changed != 1 {
+            return Err(Error::Invalid("general control compare-and-swap failed"));
+        }
+        tx.execute(
+            "DELETE FROM staged_control_objects WHERE family_id=?1 AND transition_id=?2",
+            params![&family[..], &transition[..]],
+        )?;
+        tx.execute(
+            "DELETE FROM staged_controls WHERE family_id=?1 AND transition_id=?2",
+            params![&family[..], &transition[..]],
+        )?;
+        tx.commit()?;
+        Ok(receipt::control_commit_response(&committed)?)
+    }
+
     /// Commit a no-object manager transition against the authenticated
     /// current public ledger. Exact retries are resolved before current
     /// authority is checked, since a later control may have changed it.
@@ -3282,6 +3480,122 @@ mod tests {
             reopened.commit_batch(family, &second).unwrap(),
             second_result
         );
+    }
+
+    #[test]
+    fn general_control_writer_replays_published_chain_and_batch() {
+        let fixture: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/contiguous-chain-v1.json").unwrap(),
+        )
+        .unwrap();
+        let genesis: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/api-genesis-v1.json").unwrap(),
+        )
+        .unwrap();
+        let seed: [u8; 32] = hex(fixture["test_only_inputs"]["relay_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let family: [u8; 16] = hex(genesis["inputs"]["family_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let promotion: [u8; 16] = hex(genesis["inputs"]["promotion_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let transitions = fixture["transitions"].as_array().unwrap();
+        let objects = fixture["objects_by_id_hex"].as_object().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("relay.sqlite");
+        let mut store = RelayStore::open(&path, seed).unwrap();
+        store
+            .stage_genesis_object(
+                family,
+                promotion,
+                &hex(genesis["inputs"]["stage_body_cbor_hex"].as_str().unwrap()),
+            )
+            .unwrap();
+        let genesis_candidate = hex(genesis["inputs"]["commit_candidate_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let first_committed = hex(transitions[0]["committed_cbor_hex"].as_str().unwrap());
+        store
+            .commit_genesis(
+                family,
+                &genesis_candidate,
+                control_commit_time(&first_committed).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(control_at(&store.db, family, 0).unwrap(), first_committed);
+        for (index, transition) in transitions.iter().enumerate().skip(1) {
+            if transition["name"] == "remove_active" {
+                let batch = hex(fixture["batch"]["envelope_cbor_hex"].as_str().unwrap());
+                store.commit_batch(family, &batch).unwrap();
+            }
+            let unsigned =
+                cbor::decode(&hex(transition["unsigned_cbor_hex"].as_str().unwrap())).unwrap();
+            let signatures =
+                cbor::decode(&hex(transition["signatures_cbor_hex"].as_str().unwrap())).unwrap();
+            let candidate = cbor::encode(&Value::Map(vec![
+                (1, unsigned.clone()),
+                (2, signatures.clone()),
+            ]))
+            .unwrap();
+            if transition["name"] == "invite_issue" {
+                let signed = hex(transition["committed_cbor_hex"].as_str().unwrap());
+                assert!(
+                    store
+                        .commit_general_control_with_clock(family, &candidate, || {
+                            Ok(control_commit_time(&signed).unwrap())
+                        })
+                        .is_err()
+                );
+            }
+            for item in transition["manifest"].as_array().unwrap() {
+                let kind = item[0].as_u64().unwrap();
+                let id_hex = item[1].as_str().unwrap();
+                let id: [u8; 16] = hex(id_hex).try_into().unwrap();
+                let bytes = hex(objects[id_hex].as_str().unwrap());
+                let body = cbor::encode(&Value::Map(vec![
+                    (1, Value::Integer(1)),
+                    (2, unsigned.clone()),
+                    (3, signatures.clone()),
+                    (4, Value::Integer(kind.into())),
+                    (5, Value::Bytes(id.to_vec())),
+                    (6, Value::Bytes(bytes)),
+                ]))
+                .unwrap();
+                if transition["name"] == "invite_issue" {
+                    let mut changed = body.clone();
+                    *changed.last_mut().unwrap() ^= 1;
+                    assert!(
+                        store
+                            .stage_general_control_object(family, id, &changed)
+                            .is_err()
+                    );
+                }
+                store
+                    .stage_general_control_object(family, id, &body)
+                    .unwrap();
+            }
+            let committed = hex(transition["committed_cbor_hex"].as_str().unwrap());
+            let expected_time = control_commit_time(&committed).unwrap();
+            store
+                .commit_general_control_with_clock(family, &candidate, || Ok(expected_time))
+                .unwrap();
+            assert!(
+                control_at(&store.db, family, index as i64).unwrap() == committed,
+                "published bytes differ at {}",
+                transition["name"]
+            );
+            assert!(
+                store
+                    .commit_general_control_with_clock(family, &candidate, || panic!("retry clock"))
+                    .is_ok()
+            );
+        }
+        drop(store);
+        assert!(RelayStore::open(&path, seed).is_ok());
     }
     fn signed_get(
         family: [u8; 16],

@@ -1274,7 +1274,7 @@ fixed control positions. Published first-cohort states assert manager,
 unused invitation, pending challenge, admitted member, and removed-device
 classes; the dynamic CLI and two-emulator flows exercise the HTTP paths.
 General later-device negative and post-rotation read cases are still needed
-before exposing the manager-change route.
+before closing the reader authorization gate.
 
 The relay batch POST now derives the author's signing key and active status,
 the current epoch, historical head binding, and next sequence from the
@@ -1285,6 +1285,14 @@ tests and the two-emulator join, bidirectional sync, removal, and private-copy
 flow pass. The same verified no-object manager path now serves signed HTTP
 cancellation, role-change, and pending-removal requests. Later-device and
 rotation-race signed cases remain before the general authority gate closes.
+
+An internal general control writer now stages signed manifest objects and
+commits later issue, claim, challenge, proof, admission, repair, and rotation
+through the same ledger inside one SQLite write transaction. The published
+control chain and interleaved batch reproduce exact bytes, retry exactly,
+and survive reopen. A missing or altered staged object fails before commit.
+This is not yet an exposed later-device route: public grant-envelope checks,
+negative role and epoch cases, and a focused independent review remain.
 
 ## Advisory public-ledger restart review at bdbed9e
 

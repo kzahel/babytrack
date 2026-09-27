@@ -473,6 +473,11 @@ eighth cursor, a fresh replay matches incremental projection byte-for-byte;
 duplicate application fails without changing state. This is a bounded
 rebuild/convergence property check, not a randomized multi-client relay
 campaign.
+An injected late SQLite failure during removal-triggered private-copy
+creation now proves the copy Family, source mapping, origin, and operations
+roll back together across reopen. Retrying the same copy after removing the
+fault succeeds and preserves the child. This covers one transactional fault
+point; OS power loss and the broader cut-point matrix remain open.
 
 - [ ] Promote all local history atomically. Connect two CLI clients and the
   real-browser harness through the relay. Inject offline writes, duplicate

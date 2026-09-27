@@ -66,12 +66,134 @@ impl From<projection::Error> for Error {
 #[cfg(test)]
 mod enrollment_atomicity_tests {
     use super::*;
+    use crate::operation::{Kind, Scope};
 
     fn v4(tag: u8) -> [u8; 16] {
         let mut id = [tag; 16];
         id[6] = 0x40;
         id[8] = 0x80;
         id
+    }
+
+    fn v7(tag: u8) -> [u8; 16] {
+        let mut id = [tag; 16];
+        id[6] = 0x70;
+        id[8] = 0x80;
+        id
+    }
+
+    #[test]
+    fn removal_copy_rolls_back_mapping_and_family_after_late_sqlite_failure() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("copy.db");
+        let source = FamilyHandle {
+            family_id: v4(0x41),
+            device_id: v4(0x42),
+        };
+        let copy_id = v4(0x43);
+        let copy_device = v4(0x44);
+        let transition_id = v4(0x45);
+        let child_id = v7(0x46);
+        let origin = RestoredOrigin {
+            source_family_id: source.family_id,
+            snapshot_utc_ms: 1_000,
+            source_cursor: Some(7),
+            known_gap: true,
+        };
+        let operation = NewOperation {
+            family_id: copy_id,
+            operation_id: v7(0x47),
+            record_id: child_id,
+            scope: Scope::Child,
+            kind: Kind::Create,
+            author_device_id: copy_device,
+            hlc: Hlc {
+                wall_ms: 0,
+                counter: 0,
+                device_id: copy_device,
+            },
+            record_type: Some("child".to_owned()),
+            child_id: None,
+            fields: Some(vec![(1, Value::Text("Preserved".to_owned()))]),
+        };
+        let mut store = SqliteStore::open(&path).unwrap();
+        store
+            .create_family(source.family_id, source.device_id)
+            .unwrap();
+        // This test isolates the copy transaction after a removal proof has
+        // already been verified and saved by the public-history path.
+        store.connection.execute(
+            "INSERT INTO verified_removals(source_family_id,source_device_id,transition_id,cursor,source_cursor,known_gap,committed_bytes)
+             VALUES(?1,?2,?3,7,6,1,?4)",
+            params![source.family_id.as_slice(),source.device_id.as_slice(),transition_id.as_slice(),&[0x80u8][..]],
+        ).unwrap();
+        store
+            .connection
+            .execute_batch(
+                "CREATE TRIGGER fail_copy_op BEFORE INSERT ON local_operations
+                 BEGIN SELECT RAISE(ABORT, 'injected failure'); END;",
+            )
+            .unwrap();
+        assert!(
+            store
+                .restore_family_with_copy_source(
+                    copy_id,
+                    copy_device,
+                    vec![operation.clone()],
+                    1_000,
+                    origin,
+                    Some(CopySource::Removal(source, transition_id)),
+                )
+                .is_err()
+        );
+        drop(store);
+        let mut store = SqliteStore::open(&path).unwrap();
+        assert_eq!(store.families().unwrap(), vec![source]);
+        assert!(
+            store
+                .removal_copy_of(source, transition_id)
+                .unwrap()
+                .is_none()
+        );
+        for table in ["restored_origins", "removal_copies", "local_operations"] {
+            let count: i64 = store
+                .connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 0, "partial {table} row survived");
+        }
+        store
+            .connection
+            .execute_batch("DROP TRIGGER fail_copy_op")
+            .unwrap();
+        let copy = store
+            .restore_family_with_copy_source(
+                copy_id,
+                copy_device,
+                vec![operation],
+                1_000,
+                origin,
+                Some(CopySource::Removal(source, transition_id)),
+            )
+            .unwrap();
+        assert_eq!(
+            store.removal_copy_of(source, transition_id).unwrap(),
+            Some(copy)
+        );
+        assert_eq!(store.restored_origin(copy).unwrap(), Some(origin));
+        assert_eq!(
+            store
+                .load_local(copy)
+                .unwrap()
+                .record(&child_id)
+                .unwrap()
+                .field(1)
+                .unwrap()
+                .value,
+            Value::Text("Preserved".to_owned())
+        );
     }
 
     #[test]

@@ -54,6 +54,7 @@ pub struct Activity {
     pub note: Option<String>,
     pub diaper_kind: Option<u8>,
     pub bottle_ml: Option<i64>,
+    pub bottle_content: Option<u8>,
     pub breast_side: Option<u8>,
     pub breast_segments: Option<Vec<BreastSegment>>,
     pub solids_foods: Option<Vec<String>>,
@@ -445,6 +446,32 @@ impl LocalRepository {
             .ok_or(Error::Invalid("activity unavailable"))?;
         let operation =
             edit_bottle_ml_operation(family, child_id, activity, amount_ml, saved_at_ms)?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
+    pub fn edit_bottle(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        amount_ml: i64,
+        content: u8,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        if child.scope != Scope::Child || child.deleted {
+            return Err(Error::Invalid("target child unavailable"));
+        }
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("activity unavailable"))?;
+        let operation =
+            edit_bottle_operation(family, child_id, activity, amount_ml, content, saved_at_ms)?;
         self.store.append_local(family, operation, saved_at_ms)?;
         Ok(())
     }
@@ -1472,6 +1499,27 @@ pub fn edit_bottle_ml_operation(
     })
 }
 
+pub fn edit_bottle_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    amount_ml: i64,
+    content: u8,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    if !(1..=4).contains(&content) {
+        return Err(Error::Invalid("bottle content invalid"));
+    }
+    let mut operation =
+        edit_bottle_ml_operation(family, child_id, activity, amount_ml, saved_at_ms)?;
+    operation
+        .fields
+        .as_mut()
+        .expect("bottle edit has fields")
+        .push((101, Value::Integer(content.into())));
+    Ok(operation)
+}
+
 pub fn edit_diaper_kind_operation(
     family: FamilyHandle,
     child_id: [u8; 16],
@@ -1816,6 +1864,14 @@ fn activity_summary(record: &Record) -> Option<Activity> {
     } else {
         None
     };
+    let bottle_content = if record.record_type == "feed.bottle" {
+        match &record.field(101)?.value {
+            Value::Integer(content) => u8::try_from(*content).ok(),
+            _ => None,
+        }
+    } else {
+        None
+    };
     let breast_segments = if record.record_type == "feed.breast" {
         let Value::Array(segments) = &record.field(100)?.value else {
             return None;
@@ -1941,6 +1997,7 @@ fn activity_summary(record: &Record) -> Option<Activity> {
         },
         diaper_kind,
         bottle_ml,
+        bottle_content,
         breast_side,
         breast_segments,
         solids_foods,

@@ -151,6 +151,7 @@ pub struct ActivityRow {
     pub note: Option<String>,
     pub diaper_kind: Option<u8>,
     pub bottle_ml: Option<i64>,
+    pub bottle_content: Option<u8>,
     pub breast_side: Option<u8>,
     pub breast_segments: Option<Vec<BreastSegmentRow>>,
     pub solids_foods: Option<Vec<String>>,
@@ -1541,6 +1542,7 @@ impl NativeSharedStore {
                 note: row.note,
                 diaper_kind: row.diaper_kind,
                 bottle_ml: row.bottle_ml,
+                bottle_content: row.bottle_content,
                 breast_side: row.breast_side,
                 breast_segments: row
                     .breast_segments
@@ -2148,6 +2150,46 @@ impl NativeSharedStore {
         let operation =
             local_api::edit_bottle_ml_operation(handle, child_id, activity, amount_ml, saved_at_ms)
                 .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map(|_| ())
+            .map_err(rejected)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn edit_shared_bottle(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        amount_ml: i64,
+        content: u8,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let projection = ready.projection_with_pending(&store).map_err(rejected)?;
+        let child_id = fixed(&child_id)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(BindingError::InvalidBytes)?;
+        if child.scope != operation::Scope::Child || child.deleted {
+            return Err(BindingError::InvalidBytes);
+        }
+        let activity = projection
+            .record(&fixed(&activity_id)?)
+            .ok_or(BindingError::InvalidBytes)?;
+        let operation = local_api::edit_bottle_operation(
+            handle,
+            child_id,
+            activity,
+            amount_ml,
+            content,
+            saved_at_ms,
+        )
+        .map_err(rejected)?;
         ready
             .append_local(&mut store, operation, saved_at_ms)
             .map(|_| ())
@@ -3251,6 +3293,29 @@ impl NativeLocalStore {
             .map_err(rejected)
     }
 
+    pub fn edit_bottle(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        amount_ml: i64,
+        content: u8,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        self.repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .edit_bottle(
+                family.handle()?,
+                fixed(&child_id)?,
+                fixed(&activity_id)?,
+                amount_ml,
+                content,
+                saved_at_ms,
+            )
+            .map_err(rejected)
+    }
+
     pub fn edit_diaper_kind(
         &self,
         family: FamilyRef,
@@ -3484,6 +3549,7 @@ impl NativeLocalStore {
                 note: row.note,
                 diaper_kind: row.diaper_kind,
                 bottle_ml: row.bottle_ml,
+                bottle_content: row.bottle_content,
                 breast_side: row.breast_side,
                 breast_segments: row
                     .breast_segments

@@ -90,6 +90,11 @@ Bottle amount correction similarly replaces only the whole-millilitre
 measurement field on the same activity. The core validates its live
 Family/child target and amount, retaining the original time, content code,
 and unknown fields for replay and sync.
+Android now offers breast milk, formula, mixed, or other when logging a bottle
+and shows the saved content in its timeline. Its bottle edit can replace both
+the amount and content on that same activity in one field-set operation;
+neither change moves the original event time. The older amount-only core edit
+continues to preserve content.
 Solids correction replaces the complete foods list and entered amount on the
 same activity. The core validates the live Family and child, applies the same
 food and length limits as creation, and retains the original time and unknown
@@ -186,8 +191,9 @@ plan applied to events.
   displaced values remain inspectable in a live Family or private log copy,
   not after state-only file restore. CSV is not a full-fidelity backup.
   The first analysis CSV writes one row per current activity with Family,
-  child, time, type, and known entered fields. Child birth day and growth-chart
-  sex travel with each row. Deleted activities, operation history, unknown
+  child, time, type, and known entered fields, including bottle content.
+  Child birth day and growth-chart sex travel with each row. Deleted
+  activities, operation history, unknown
   fields, and access credentials are absent; use a portable file for recovery.
   JSON arrays inside cells preserve solids foods and breast segments. Text
   beginning like a spreadsheet formula is prefixed with an apostrophe, so

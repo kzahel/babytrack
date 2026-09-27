@@ -30,6 +30,11 @@
     <string name="both">Both</string>
     <string name="dry">Dry</string>
     <string name="log_bottle">Log bottle</string>
+    <string name="bottle_breast_milk">Breast milk</string>
+    <string name="bottle_formula">Formula</string>
+    <string name="bottle_mixed">Mixed</string>
+    <string name="bottle_other">Other</string>
+    <string name="bottle_with_content">Bottle · %1$d mL · %2$s</string>
     <string name="log_breast">Log breast feed</string>
     <string name="breast_left">Left</string>
     <string name="breast_right">Right</string>
@@ -83,7 +88,7 @@
     <string name="save_note">Save note</string>
     <string name="edit_note">Edit note</string>
     <string name="save_changes">Save changes</string>
-    <string name="edit_bottle">Edit bottle amount</string>
+    <string name="edit_bottle">Edit bottle</string>
     <string name="edit_diaper">Edit diaper type</string>
     <string name="edit_solids">Edit solids</string>
     <string name="edit_growth">Edit growth</string>

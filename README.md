@@ -16,10 +16,13 @@ grant, and remove a third device with key rotation. Later rotations, role
 changes, cancellation, browser shared sync, and broader recovery coverage
 remain open.
 
-The Android debug app logs children, diapers, bottles, sleep timers,
+The Android debug app logs children, diapers, bottles with milk/content
+choice, sleep timers,
 completed sleep, notes, growth, Celsius, medication, solids, breast-feed
 segments, and pumping entries locally or in a shared Family. Existing pumping
-amounts can be corrected without replacing the entry. A home-screen widget
+amounts can be corrected without replacing the entry. Completed entries can
+be logged at an earlier time, and bottle amount/content can be corrected on
+the same event. A home-screen widget
 shows saved running sleep timers, and the access list can label each enrolled
 device on this phone. Child birth date and growth-chart sex can be corrected
 on the existing child. The app can promote

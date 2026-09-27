@@ -28,7 +28,11 @@ an alternating breast feed, and verifies both states after restart. The
 timeline can correct a note's text through the shared Rust edit path while
 retaining its Family, child, activity ID, original time, and other fields.
 It can also correct a bottle's whole-millilitre amount on the same event;
-the content code and original time remain intact.
+the amount-only core path retains the content code and original time.
+Bottle logging now exposes all four content choices, and the timeline shows
+which was saved. An edit can change amount and content together on the same
+activity. Core restart/file restore, Android UI, and encrypted relay tests
+cover those values.
 Diaper type corrections likewise update the same activity, preserving its
 original time and any other fields. Local restart/file restore and the
 two-emulator encrypted relay flow cover the correction.

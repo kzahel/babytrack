@@ -281,12 +281,12 @@ class TwoDeviceRelayTest {
             )
             val bottleTime = System.currentTimeMillis()
             val bottle = sharing.logBottleMl(
-                family, note.childId, 90, ActivityWhen(bottleTime, 0, bottleTime)
+                family, note.childId, 90, 1u.toUByte(), ActivityWhen(bottleTime, 0, bottleTime)
             )
             assertTrue(runCatching {
                 sharing.editBottleMl(family, otherChild.id, bottle, 120, System.currentTimeMillis())
             }.isFailure)
-            sharing.editBottleMl(family, note.childId, bottle, 120, System.currentTimeMillis())
+            sharing.editBottle(family, note.childId, bottle, 120, 3u.toUByte(), System.currentTimeMillis())
             val diaperTime = System.currentTimeMillis()
             val diaper = sharing.logDiaper(
                 family, note.childId, 1u.toUByte(), ActivityWhen(diaperTime, 0, diaperTime)
@@ -316,7 +316,7 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).activities.none { it.note == "Care note marker 67" })
             assertTrue(sharing.snapshot(family).activities.any { it.note == "After sync correction" })
             assertTrue(sharing.snapshot(family).activities.any {
-                it.kind == "feed.bottle" && it.bottleMl == 120L
+                it.kind == "feed.bottle" && it.bottleMl == 120L && it.bottleContent == 3u.toUByte()
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "feed.solids" && it.solidsFoods == listOf("Apple", "Rice") &&

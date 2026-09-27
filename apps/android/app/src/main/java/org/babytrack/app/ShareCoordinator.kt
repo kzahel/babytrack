@@ -326,8 +326,8 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     fun logDiaper(family: FamilyRef, childId: ByteArray, kind: UByte, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedDiaper(family, wrapping, childId, kind, time) }
 
-    fun logBottleMl(family: FamilyRef, childId: ByteArray, amountMl: Long, time: ActivityWhen): ByteArray =
-        withWrapping { wrapping -> core.logSharedBottleMl(family, wrapping, childId, amountMl, 2u.toUByte(), time) }
+    fun logBottleMl(family: FamilyRef, childId: ByteArray, amountMl: Long, content: UByte, time: ActivityWhen): ByteArray =
+        withWrapping { wrapping -> core.logSharedBottleMl(family, wrapping, childId, amountMl, content, time) }
 
     fun logBreastFeed(family: FamilyRef, childId: ByteArray, side: UByte, time: ActivityWhen, endUtcMs: Long): ByteArray =
         withWrapping { wrapping -> core.logSharedBreastFeed(family, wrapping, childId, side, time, endUtcMs) }
@@ -365,6 +365,10 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
 
     fun editBottleMl(family: FamilyRef, childId: ByteArray, activityId: ByteArray, amountMl: Long, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedBottleMl(family, wrapping, childId, activityId, amountMl, savedAtMs) }
+
+    fun editBottle(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+                   amountMl: Long, content: UByte, savedAtMs: Long): Unit =
+        withWrapping { wrapping -> core.editSharedBottle(family, wrapping, childId, activityId, amountMl, content, savedAtMs) }
 
     fun editDiaperKind(family: FamilyRef, childId: ByteArray, activityId: ByteArray, kind: UByte, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedDiaperKind(family, wrapping, childId, activityId, kind, savedAtMs) }

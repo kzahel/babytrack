@@ -8,7 +8,7 @@ use crate::{
     projection::Record,
 };
 
-const HEADER: &str = "family_id,child_id,child_name,child_birth_day,child_sex,activity_id,type,start_utc_ms,start_offset_minutes,end_utc_ms,note,diaper_kind,bottle_ml,breast_side,breast_segments,solids_foods,solids_amount,pump_left_ml,pump_right_ml,pump_total_ml,growth_weight_g,growth_length_mm,temperature_c,medication_name,medication_dose_amount,medication_dose_unit\r\n";
+const HEADER: &str = "family_id,child_id,child_name,child_birth_day,child_sex,activity_id,type,start_utc_ms,start_offset_minutes,end_utc_ms,note,diaper_kind,bottle_ml,bottle_content,breast_side,breast_segments,solids_foods,solids_amount,pump_left_ml,pump_right_ml,pump_total_ml,growth_weight_g,growth_length_mm,temperature_c,medication_name,medication_dose_amount,medication_dose_unit\r\n";
 
 pub fn export<'a>(family_id: [u8; 16], records: impl Iterator<Item = &'a Record>) -> Vec<u8> {
     let records = records.collect::<Vec<_>>();
@@ -55,6 +55,7 @@ pub fn export<'a>(family_id: [u8; 16], records: impl Iterator<Item = &'a Record>
             activity.note.unwrap_or_default(),
             display(activity.diaper_kind),
             display(activity.bottle_ml),
+            display(activity.bottle_content),
             display(activity.breast_side),
             segments.unwrap_or_default(),
             foods.unwrap_or_default(),

@@ -1314,8 +1314,34 @@ receipt. Challenge, grant, and Android later-device flow are still open.
 The relay page selector now stops before the four-MiB encoded response cap
 instead of blindly taking 256 entries and failing the entire read. FS75
 pages through both canonical large entries and 25 signed near-limit batches
-via authenticated full and filtered reads; the two-emulator sync flow still
+via authenticated full and filtered reads, including after relay restart;
+the two-emulator sync flow still
 passes. A bounded transport HTTP variant remains for the M0 mixed-client
+gate.
+
+## Advisory general-authority implementation review at 2461763
+
+Daybreak Blue at high thinking reviewed fixed clean commit
+`24617639ba5bef9bef7a98bbf488b7cad51150d4` in read-only Yep Anywhere
+session `01a0e283-9244-7262-9f89-2217b987de9e`. It reached verified idle
+with an empty queue and made no edits. The reviewer ran server, dynamic CLI,
+and core control-chain tests. Result: **advisory FAIL**, not the formal M0
+exit gate. It found no concrete role escalation, forged batch authorship,
+stale epoch/head/sequence acceptance, premature grant exposure, partial
+control commit, or first-cohort retry regression.
+
+| Finding | Disposition |
+|---|---|
+| High: 17 valid near-limit batches could make `/log` and `/batches` permanently unpageable at the four-MiB response limit. | The relay now takes the largest fitting contiguous prefix and returns `has_more`. FS75/APIPAGE02 exercises 25 signed large batches through authenticated full and filtered pages after restart. Large-control and later-device hydration variants remain for the mixed-client gate. |
+| Medium: the exact protocol required a membership object for cancellation, role change, and pending removal while implemented client/relay reducers required empty manifests. | The exact v1 contract now has a per-kind object table. The three object-free manager controls use empty signed manifests, and deterministic full committed bytes are pinned in `no-object-controls-v1.json` and checked by the core control-chain test (FS71). V1 is undeployed, so no migration is required. |
+| Medium hardening: staged object reservations did not participate in the Family-wide public ID collision check. | The relay checks permanent reservations when committing public IDs, permits a candidate's own exact object binding, and checks committed-object consistency. FS73/IDCOLL01 now names batch, transition, device, and invitation collisions; a signed colliding batch fails before and after restart while the original object remains restageable. Other category variants remain for later-device testing. |
+
+The reviewer assumed one honest ordered relay process with SQLite writer
+transactions, authorized hostile devices, and storage compromise without
+the live relay signing seed. Malicious relay forks, withheld history,
+signed-time lies, and coherent whole-database rollback remain the documented
+limits. A fresh fixed-revision recheck is required before this advisory can
+pass; full M0 exit still depends on the broader mixed-client and recovery
 gate.
 
 ## Advisory public-ledger restart review at bdbed9e

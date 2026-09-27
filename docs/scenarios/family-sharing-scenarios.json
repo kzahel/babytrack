@@ -1490,10 +1490,10 @@
       "id": "FS73",
       "status": "agreed",
       "requirements": ["U3", "U4"],
-      "given": "Two candidate-scoped stages use the same previously uncommitted object ID with different bytes.",
-      "actions": ["Stage the first binding, try the competing bytes under another transition kind, clean up one candidate, restart, and try the reused ID again."],
-      "expect": ["The Family-wide ID-to-hash binding remains durable despite candidate cleanup; different bytes are rejected without changing committed authority or visibility.", "An exact retry with the original bytes remains possible according to the staging contract."],
-      "variants": ["same head competitors", "cross-category ID", "cleanup", "restart"],
+      "given": "A candidate stages an object ID that is still uncommitted, reserving its Family-wide ID-to-hash binding.",
+      "actions": ["Try competing bytes under another transition kind, a signed batch with that ID, and a control using it as a transition, device, or invitation ID; clean up candidate staging, restart, and retry the original binding."],
+      "expect": ["The Family-wide reservation remains durable despite candidate cleanup; competing bytes and public cross-category IDs are rejected without changing committed authority or visibility.", "An exact retry with the original bytes remains possible according to the staging contract."],
+      "variants": ["same head competitors", "accepted batch ID", "rejected batch ID", "transition/device/invitation ID", "cleanup", "restart"],
       "decisions": ["D4"]
     },
     {
@@ -1511,9 +1511,9 @@
       "status": "agreed",
       "requirements": ["U1", "U4"],
       "given": "An active Family has enough large committed batches that the next 256 entries would exceed the four-MiB page limit.",
-      "actions": ["Fetch full-log and filtered-batch pages repeatedly from cursor zero, advancing by each verified next cursor."],
+      "actions": ["Restart the relay, then fetch full-log and filtered-batch pages repeatedly from cursor zero, advancing by each verified next cursor; separately page large controls and let a later device hydrate across the boundary."],
       "expect": ["Each response contains a nonempty prefix within the byte and entry limits, reports has_more while another matching entry remains, and eventually reaches the complete log without a permanent oversized-page error."],
-      "variants": ["large first entry", "filtered cursor gaps", "exact byte boundary", "mixed control and batch pages"],
+      "variants": ["large first entry", "filtered cursor gaps", "exact byte boundary", "mixed control and batch pages", "restart", "later-device hydration"],
       "decisions": ["D6"]
     }
   ]

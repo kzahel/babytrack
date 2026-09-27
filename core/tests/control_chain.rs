@@ -732,6 +732,29 @@ fn v4(suffix: u8) -> [u8; 16] {
 
 #[test]
 fn manager_cancel_role_and_pending_removal_preserve_fixed_authority() {
+    let exact: serde_json::Value = serde_json::from_str(include_str!(
+        "../../tests/vectors/no-object-controls-v1.json"
+    ))
+    .unwrap();
+    let check = |name: &str, bytes: &[u8]| {
+        let case = exact["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["name"] == name)
+            .unwrap();
+        assert_eq!(
+            bytes,
+            hex_bytes(case["committed_cbor_hex"].as_str().unwrap())
+        );
+        let Value::Map(root) = cbor::decode(bytes).unwrap() else {
+            unreachable!()
+        };
+        let Value::Map(unsigned) = &root[0].1 else {
+            unreachable!()
+        };
+        assert_eq!(unsigned[9].1, Value::Array(vec![]));
+    };
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../tests/vectors/contiguous-chain-v1.json")).unwrap();
     let transitions = fixture["transitions"].as_array().unwrap();
@@ -791,6 +814,7 @@ fn manager_cancel_role_and_pending_removal_preserve_fixed_authority() {
         (manager_id, manager_seed),
         relay_seed,
     );
+    check("invite_cancel", &cancel);
     chain.apply_control(&cancel).unwrap();
     assert_eq!(
         chain.state_bytes().unwrap(),
@@ -817,6 +841,7 @@ fn manager_cancel_role_and_pending_removal_preserve_fixed_authority() {
         (manager_id, manager_seed),
         relay_seed,
     );
+    check("remove_pending", &remove_pending);
     pending_chain.apply_control(&remove_pending).unwrap();
     assert_eq!(
         pending_chain.state_bytes().unwrap(),
@@ -853,6 +878,7 @@ fn manager_cancel_role_and_pending_removal_preserve_fixed_authority() {
         (manager_id, manager_seed),
         relay_seed,
     );
+    check("role_change", &promote);
     role_chain.apply_control(&promote).unwrap();
     assert_eq!(
         role_chain.state_bytes().unwrap(),

@@ -1869,7 +1869,7 @@ impl RelayStore {
         if batch.batch_id != claimed_id || batch.author_id != author {
             return Err(Error::Invalid("batch claimed identity mismatch"));
         }
-        ensure_new_protocol_ids(&tx, path_family, &[batch.batch_id])?;
+        ensure_new_protocol_ids(&tx, path_family, &[batch.batch_id], &[])?;
         let known_ancestor = ledger.epoch_for_head(&batch.control_head) == Some(batch.epoch);
         let (cursor, current_head): (i64, Vec<u8>) = tx.query_row(
             "SELECT cursor,head_hash FROM families WHERE family_id=?1 AND active=1",
@@ -3027,6 +3027,7 @@ fn ensure_new_protocol_ids(
     db: &Connection,
     family: [u8; 16],
     candidate_ids: &[[u8; 16]],
+    candidate_objects: &[([u8; 16], u16, [u8; 32])],
 ) -> Result<(), Error> {
     let relay_public: Vec<u8> = db.query_row(
         "SELECT public_key FROM relay_identity WHERE singleton=1",
@@ -3064,6 +3065,48 @@ fn ensure_new_protocol_ids(
             }
         }
     }
+    let mut reservations = db
+        .prepare("SELECT object_id,kind,object_hash FROM object_reservations WHERE family_id=?1")?;
+    let rows = reservations.query_map([&family[..]], |row| {
+        Ok((
+            row.get::<_, Vec<u8>>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, Vec<u8>>(2)?,
+        ))
+    })?;
+    for row in rows {
+        let (id, kind, hash) = row?;
+        let id: [u8; 16] = id
+            .try_into()
+            .map_err(|_| Error::Invalid("stored object reservation ID length"))?;
+        let kind: u16 = kind
+            .try_into()
+            .map_err(|_| Error::Invalid("stored object reservation kind"))?;
+        let hash: [u8; 32] = hash
+            .try_into()
+            .map_err(|_| Error::Invalid("stored object reservation hash length"))?;
+        let committed: Option<(i64, Vec<u8>)> = db
+            .query_row(
+                "SELECT kind,object_hash FROM committed_objects WHERE family_id=?1 AND object_id=?2",
+                params![&family[..], &id[..]],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        if let Some((committed_kind, committed_hash)) = committed {
+            if committed_kind != i64::from(kind) || committed_hash != hash || !seen.contains(&id) {
+                return Err(Error::Invalid("committed object reservation mismatch"));
+            }
+        } else if let Some((_, expected_kind, expected_hash)) = candidate_objects
+            .iter()
+            .find(|(object_id, _, _)| *object_id == id)
+        {
+            if *expected_kind != kind || *expected_hash != hash {
+                return Err(Error::Invalid("object reservation differs from candidate"));
+            }
+        } else if !seen.insert(id) {
+            return Err(Error::Invalid("stored protocol ID collision"));
+        }
+    }
     for id in candidate_ids {
         if !seen.insert(*id) {
             return Err(Error::Invalid("protocol ID reused across categories"));
@@ -3073,7 +3116,39 @@ fn ensure_new_protocol_ids(
 }
 
 fn ensure_control_ids(db: &Connection, family: [u8; 16], candidate: &[u8]) -> Result<(), Error> {
-    ensure_new_protocol_ids(db, family, &control_birth_ids(candidate)?)
+    let value = cbor::decode(candidate)?;
+    let Value::Map(root) = value else {
+        return Err(Error::Invalid("control ID root not map"));
+    };
+    let Some((1, Value::Map(unsigned))) = root.iter().find(|(key, _)| *key == 1) else {
+        return Err(Error::Invalid("control ID unsigned not map"));
+    };
+    let Some((10, Value::Array(manifest))) = unsigned.iter().find(|(key, _)| *key == 10) else {
+        return Err(Error::Invalid("control ID manifest not array"));
+    };
+    let mut objects = Vec::with_capacity(manifest.len());
+    for entry in manifest {
+        let Value::Array(parts) = entry else {
+            return Err(Error::Invalid("control ID manifest entry not array"));
+        };
+        let id = parts
+            .get(1)
+            .ok_or(Error::Invalid("control ID object absent"))?;
+        let kind = parts
+            .first()
+            .ok_or(Error::Invalid("control ID object kind absent"))?;
+        let hash = parts
+            .get(2)
+            .ok_or(Error::Invalid("control ID object hash absent"))?;
+        objects.push((
+            fixed::<16>(id)?,
+            number(kind)?
+                .try_into()
+                .map_err(|_| Error::Invalid("control ID object kind"))?,
+            fixed::<32>(hash)?,
+        ));
+    }
+    ensure_new_protocol_ids(db, family, &control_birth_ids(candidate)?, &objects)
 }
 
 // Join transitions have a fixed order, but data batches occupy the same global
@@ -3404,7 +3479,8 @@ mod tests {
             authority::verify_genesis_candidate(&candidate, &crypto::signing_public_key(&seed))
                 .unwrap();
         let dir = tempfile::tempdir().unwrap();
-        let mut store = RelayStore::open(dir.path().join("relay.sqlite"), seed).unwrap();
+        let path = dir.path().join("relay.sqlite");
+        let mut store = RelayStore::open(&path, seed).unwrap();
         store
             .stage_genesis_object(
                 family,
@@ -3445,6 +3521,8 @@ mod tests {
                 None
             );
         }
+        drop(store);
+        let mut store = RelayStore::open(&path, seed).unwrap();
         for filtered in [false, true] {
             let mut after = 0;
             let mut count = 0;
@@ -5126,6 +5204,15 @@ mod tests {
         store
             .stage_first_issue_object(family, object_id, &issue_stage)
             .unwrap();
+        let colliding_batch = resign_batch_author(
+            &signed_manager_batch(committed, &parsed, manager_seed),
+            parsed.manager_id,
+            1,
+            Some(object_id),
+            manager_seed,
+        );
+        assert!(store.commit_batch(family, &colliding_batch).is_err());
+        assert!(ensure_new_protocol_ids(&store.db, family, &[object_id], &[]).is_err());
         assert!(
             store
                 .stage_first_issue_object(family, object_id, &changed)
@@ -5147,6 +5234,7 @@ mod tests {
             .unwrap();
         drop(store);
         let mut store = RelayStore::open(&path, seed).unwrap();
+        assert!(store.commit_batch(family, &colliding_batch).is_err());
         assert!(
             store
                 .stage_first_issue_object(family, object_id, &changed)
@@ -5552,12 +5640,17 @@ mod tests {
             authority::verify_first_invite_issue(&issue_candidate, &genesis_parsed, genesis_head)
                 .unwrap();
         assert!(
-            ensure_new_protocol_ids(&store.db, family, &[genesis_parsed.transition_id]).is_err()
+            ensure_new_protocol_ids(&store.db, family, &[genesis_parsed.transition_id], &[])
+                .is_err()
         );
-        assert!(ensure_new_protocol_ids(&store.db, family, &[genesis_parsed.manager_id]).is_err());
-        assert!(ensure_new_protocol_ids(&store.db, family, &[issue_parsed.invitation_id]).is_err());
-        assert!(ensure_new_protocol_ids(&store.db, family, &[issue_object]).is_err());
-        assert!(ensure_new_protocol_ids(&store.db, family, &[[0x9a; 16]]).is_ok());
+        assert!(
+            ensure_new_protocol_ids(&store.db, family, &[genesis_parsed.manager_id], &[]).is_err()
+        );
+        assert!(
+            ensure_new_protocol_ids(&store.db, family, &[issue_parsed.invitation_id], &[]).is_err()
+        );
+        assert!(ensure_new_protocol_ids(&store.db, family, &[issue_object], &[]).is_err());
+        assert!(ensure_new_protocol_ids(&store.db, family, &[[0x9a; 16]], &[]).is_ok());
         let invite_seed: [u8; 32] = hex(chain["test_only_inputs"]["invitation_sign_seed_hex"]
             .as_str()
             .unwrap())

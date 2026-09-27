@@ -17,6 +17,7 @@ sequence, or outbox mutation unless the expected result says otherwise.
 - [Complete genesis and signed encrypted batch bytes](full-wire-v1.json)
 - [Challenge, admission, rotation, and keyring bytes](join-rotation-v1.json)
 - [Contiguous signed join, batch, and removal chain](contiguous-chain-v1.json)
+- [Exact object-free manager control bytes](no-object-controls-v1.json)
 - [Encrypted minor-version and inert-batch negatives](negative-batch-v1.json)
 - [Unsigned-byte array ordering](ordering-v1.json)
 - [Object stage, control commit, and fetch bytes](api-v1.json)
@@ -29,6 +30,9 @@ The [scenario catalog](../../docs/scenarios/README.md) owns user-visible
 observations; a vector's `scenario` field connects the lower-level assertion
 to one or more of those cases. The contiguous chain supplies complete
 genesis, issue, claim, challenge, proof, admission, repair, batch, and removal
-transcripts. Negative state-machine cases remain in the smaller JSON files.
+transcripts. The object-free cancellation, role-change, and pending-removal
+bytes are checked by the Rust control-chain test; other platform runners
+have not consumed them yet. Negative state-machine cases remain in the
+smaller JSON files.
 Cryptographic test keys
 must never be production keys.

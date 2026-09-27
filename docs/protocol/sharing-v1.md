@@ -189,17 +189,32 @@ next_epoch])` and `core_hash = H("transition-core", transition_core)`.
 The client recomputes and compares key 11. A commitment for each epoch is
 recorded in the genesis/rotation delta and cannot be changed by a repair.
 
-`invite_claim`, `holder_challenge`, and `key_proof` are public control
-transitions: `invite_claim` and `key_proof` have an empty object manifest,
-while `holder_challenge` contains the two challenge objects specified below.
-They do **not** require a membership ciphertext or a key holder signature
-for a keyless recipient's claim/proof. The public auth state is sufficient
-to represent keyless pending progress. Every other non-genesis transition
-has an encrypted membership object repeating CBOR map `{1: transition_id,
+The signed manifest's required object kinds are exact for each transition:
+
+| Kind | Required object kinds |
+|---|---|
+| genesis | promotion manifest (6) and zero or more promotion chunks (7) |
+| invite_issue | membership (1) |
+| invite_cancel | none |
+| invite_claim | none |
+| key_proof | none |
+| admit_grant | membership (1) and epoch grant (4) |
+| role_change | none |
+| remove_active | membership (1), epoch grants (4) for exactly the remaining active devices, and keyring (5) |
+| remove_pending | none |
+| grant_repair | membership (1) and epoch grant (4) |
+| holder_challenge | challenge HPKE (2) and challenge verifier (3) |
+
+`invite_claim` and `key_proof` need no membership ciphertext or key holder
+signature for a keyless recipient's claim/proof. The public auth state also
+fully describes cancellation, role change, and pending removal. For those
+three manager-signed controls, an empty manifest authenticates the complete
+state effect. A transition requiring membership (1) repeats CBOR map
+`{1: transition_id,
 2: prior_head_hash, 3: resulting_state_hash, 4: next_epoch, 5: exact_delta}`.
 It is encrypted under the resulting epoch key for a rotation and otherwise
 the current key, with associated data `H("membership-aad", core_hash)`.
-The manager or grantor signs a manifest containing its object hash. After
+The manager or grantor signs the manifest containing its object hash. After
 decryption, clients compare every repeated field byte-for-byte to the public
 transition; disagreement quarantines the Family and is never projected as a
 different UI membership event. A removed device cannot decrypt the new

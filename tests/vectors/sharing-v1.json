@@ -488,8 +488,15 @@
       "id": "IDCOLL01",
       "scenario": "FS64",
       "initial": {"family": "genesis-plus-first-cohort-history", "id_scope": "one-Family-all-protocol-categories"},
-      "actions": ["reuse a historical transition ID as a new invitation ID", "reuse a device ID as a new transition ID", "reuse an accepted or rejected batch ID as a new object or transition ID", "replay exact committed bytes"],
-      "expect": {"new_cross_category_ids": "commit-rejects-without-cursor-or-head-change", "staging": "may-accept-before-commit-rejection", "client_replay": "rejects-collisions-in-committed-chain", "rejected_batch_id": "relay-private-durable-reservation", "exact_committed_retry": "same-result"}
+      "actions": ["reuse a historical transition ID as a new invitation ID", "reuse a device ID as a new transition ID", "reuse an accepted or rejected batch ID as a new object or transition ID", "stage an object ID then try it as an accepted or rejected batch ID or transition/device/invitation ID before and after restart", "replay exact committed bytes"],
+      "expect": {"new_cross_category_ids": "commit-rejects-without-cursor-or-head-change", "staging": "may-accept-before-commit-rejection; an uncommitted reserved object ID blocks other public categories", "client_replay": "rejects-collisions-in-committed-chain", "rejected_batch_id": "relay-private-durable-reservation", "exact_object_restage": "same-reserved-kind-and-hash", "exact_committed_retry": "same-result"}
+    },
+    {
+      "id": "APIPAGE02",
+      "scenario": "FS75",
+      "initial": {"family": "active manager", "history": "at least 17 signed near-limit encrypted batches"},
+      "actions": ["restart relay", "fetch /log and /batches repeatedly from cursor zero", "fetch /control with large controls", "hydrate a later device across the page boundary"],
+      "expect": {"each_page": "nonempty-contiguous-prefix-at-most-4MiB-and-256-entries", "cursor": "last-returned-global-cursor", "has_more": "true-until-no-matching-entry-remains", "complete": "reaches-all-later-entries"}
     },
     {
       "id": "APIROUTES01",

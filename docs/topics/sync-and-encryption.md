@@ -394,9 +394,10 @@ is M2 product work and is not an original-Family recovery credential.
 
 ### Proposed implementation seam for general relay authority
 
-The current client control chain replays all published transition kinds,
-while the relay's executable admission and read checks cover only the
-initial manager and first recipient. Before adding later devices, factor
+The client control chain replays all published transition kinds. The relay
+now uses the shared public verifier for the first cohort and later control
+routes, with later-device negative and hydration coverage still in progress.
+The implementation seam factors
 the deterministic **public** authority transition rules into `wire/`, which
 already supplies canonical CBOR and public cryptography to both sides. The
 candidate phase consumes the previous public state, a durable public history
@@ -412,6 +413,13 @@ ID-to-hash reservations, and admission/grant associations. The canonical
 seven-field authorization state
 alone cannot answer historical reads or batch ancestry. The shared verifier
 never accepts an epoch key, decrypts an object, or interprets event data.
+The exact [per-kind manifest contract](../protocol/sharing-v1.md#authorization-state-and-ordered-log)
+allows empty manifests for cancellation, role change, and pending removal;
+their manager signatures authenticate their complete public state effect.
+An uncommitted staged object's permanent ID binding blocks another public
+category from claiming that ID. Its own exact kind/hash binding remains
+usable by the staging candidate; already committed objects retain their
+matching reservation without counting as a second ID birth.
 
 The client continues to verify relay receipts, pin the committed head,
 open addressed grants and membership objects, and project encrypted data.
@@ -440,7 +448,7 @@ control replay and the first-cohort relay use it; the relay reconstructs the
 bindings on restart and checks each accepted batch against its historical
 active signing key, exact signature, next per-device sequence, globally new
 batch ID, authoring-head ancestry, and active epoch. General route commit
-transactions still need to use the same verified history.
+transactions now use the same verified history.
 Damaged or incomplete reconstruction refuses further commits and reads.
 On reopen, each extant rejected-result row requires a valid relay signature,
 exact envelope hash/ID/sequence/Family/relay binding, and a signed cursor/head

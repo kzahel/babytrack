@@ -101,6 +101,54 @@ pub struct PublicHistorySession {
 }
 
 impl PublicHistorySession {
+    /// Classify an uncertain exact upload after removal without changing the
+    /// source outbox or needing ciphertext that the credential cannot read.
+    /// 0 means no staged batch, 1 unknown, 2 accepted, 3 rejected.
+    pub fn inspect_removed_pending_result(
+        &self,
+        store: &SqliteStore,
+        result_bytes: &[u8],
+    ) -> Result<u8, Error> {
+        let Some(pending) = store.pending_batch(self.family)? else {
+            return Ok(0);
+        };
+        let result = sync_wire::BatchResult::decode(result_bytes)?;
+        let Some(receipt_bytes) = result.receipt_bytes else {
+            return Ok(1);
+        };
+        let history = store
+            .shared_history(self.family)?
+            .ok_or(Error::Invalid("Family has no shared genesis"))?;
+        if let Ok(accepted) =
+            session::verify_accepted_receipt(&receipt_bytes, &history.relay_public_key)
+        {
+            if accepted.family_id == self.family.family_id
+                && accepted.relay_id == self.chain.relay_id()
+                && accepted.batch_id == pending.batch_id
+                && accepted.object_hash == pending.object_hash
+                && accepted.device_sequence == pending.sequence
+                && accepted.cursor > self.cursor()
+            {
+                return Ok(2);
+            }
+            return Err(Error::Invalid(
+                "accepted removal result differs from saved batch",
+            ));
+        }
+        let rejected = session::verify_rejected_receipt(&receipt_bytes, &history.relay_public_key)?;
+        if rejected.family_id != self.family.family_id
+            || rejected.relay_id != self.chain.relay_id()
+            || rejected.batch_id != pending.batch_id
+            || rejected.object_hash != pending.object_hash
+            || rejected.device_sequence != pending.sequence
+        {
+            return Err(Error::Invalid(
+                "rejected removal result differs from saved batch",
+            ));
+        }
+        Ok(3)
+    }
+
     pub fn save_removed_control_page(
         &self,
         store: &mut SqliteStore,

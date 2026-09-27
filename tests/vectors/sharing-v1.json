@@ -476,6 +476,13 @@
       "initial": {"device_sequence": 2, "copied_credential": true},
       "actions": ["accept X at sequence 2", "reject independently sealed Y at sequence 2", "retry and query Y result", "verify X in ordered prefix", "reseal Y operation at sequence 3"],
       "expect": {"Y_rejection_reason": 4, "Y_exact_result": "stable-signed-receipt", "Y_operation": "retained-until-accepted", "next_sequence": 4}
+    },
+    {
+      "id": "BATCH08",
+      "scenario": "FS63",
+      "initial": {"recipient_state": "active", "pending_batch": "exact-signed-envelope"},
+      "actions": ["lose recipient POST response", "commit manager removal and key rotation", "query batch result with removed recipient signer", "query manager batch result with removed signer", "query unknown batch ID", "try new log and object reads"],
+      "expect": {"own_accepted_before_removal": "signed-result", "own_rejected_after_removal": "signed-result", "known_other": "deny", "unknown": "null-not-noninclusion", "new_log_and_objects": "deny", "local_copy": "preserves-pending-work"}
     }
   ]
 }

@@ -305,6 +305,7 @@ private fun removedProgress(removed: RemovedDeviceRow): RecipientSyncRow = Recip
     childCount = 0uL,
     removed = true,
     privateCopy = removed.privateCopy,
+    pendingResult = removed.pendingResult,
 )
 
 private fun parsePublicKey(text: String): ByteArray {

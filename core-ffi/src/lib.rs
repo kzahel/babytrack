@@ -204,6 +204,7 @@ pub struct RecipientSyncRow {
     pub child_count: u64,
     pub removed: bool,
     pub private_copy: Option<FamilyRef>,
+    pub pending_result: u8,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -211,6 +212,8 @@ pub struct RemovedDeviceRow {
     pub verified_cursor: u64,
     pub known_gap: bool,
     pub private_copy: Option<FamilyRef>,
+    /// 0 no staged batch, 1 unknown, 2 accepted, 3 rejected.
+    pub pending_result: u8,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -853,6 +856,26 @@ impl NativeSharedStore {
                 .map_err(rejected)?
         };
         let Some(saved) = saved else { return Ok(None) };
+        let public = PublicHistorySession::resume(&store, handle).map_err(rejected)?;
+        let pending_result =
+            if let Some(batch_id) = public.pending_batch_id(&store).map_err(rejected)? {
+                let attempt = EnrollmentAttempt::resume(&mut store, handle.family_id, &wrapping)
+                    .map_err(rejected)?;
+                let path = format!(
+                    "/v1/families/{}/batch-results/{}",
+                    lower_hex(&handle.family_id),
+                    lower_hex(&batch_id),
+                );
+                let auth = attempt.sign_get(&path).map_err(rejected)?.bytes;
+                match transport.get(path, auth) {
+                    Ok(bytes) => public
+                        .inspect_removed_pending_result(&store, &bytes)
+                        .unwrap_or(1),
+                    Err(_) => 1,
+                }
+            } else {
+                0
+            };
         let copy = if let Some(existing) = store
             .removal_copy_of(handle, saved.transition_id)
             .map_err(rejected)?
@@ -875,6 +898,7 @@ impl NativeSharedStore {
             verified_cursor: saved.cursor,
             known_gap: saved.known_gap,
             private_copy: copy.map(Into::into),
+            pending_result,
         }))
     }
 
@@ -926,6 +950,7 @@ impl NativeSharedStore {
                 child_count: 0,
                 removed: false,
                 private_copy: None,
+                pending_result: 0,
             });
         }
         let pull = futures::executor::block_on(active_pull::pull_active_log(
@@ -967,6 +992,7 @@ impl NativeSharedStore {
                 child_count: 0,
                 removed: false,
                 private_copy: None,
+                pending_result: 0,
             });
         }
         let ready = ReadyFamilySession::from_enrollment(&store, &attempt).map_err(rejected)?;
@@ -987,6 +1013,7 @@ impl NativeSharedStore {
             child_count: children as u64,
             removed: false,
             private_copy: None,
+            pending_result: 0,
         })
     }
 

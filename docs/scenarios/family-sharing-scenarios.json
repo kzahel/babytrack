@@ -1385,6 +1385,16 @@
       "expect": ["The exact retry and batch-ID query return the original signed rejection without consuming another sequence.", "An unverified or forged rejection cannot clear the outbox.", "The retained operation enters shared history at most once after verified resealing, and all devices converge."],
       "variants": ["response lost before local persistence", "relay or client restart", "another entry follows the rejected receipt cursor", "conflicting batch contains a different local operation"],
       "decisions": ["D6"]
+    },
+    {
+      "id": "FS63",
+      "status": "agreed",
+      "requirements": ["U1", "U3", "U5"],
+      "given": "A recipient has an exact signed upload in flight while its manager removes its device and rotates the key.",
+      "actions": ["Lose the upload response; verify signed removal through the public control route; query the earlier upload result with the removed credential.", "Try the same credential against another device's result, the data log, and a new object."],
+      "expect": ["An accepted-before-removal or rejected-after-removal result is returned only to its author and verifies against the exact saved envelope.", "Unknown result is reported as unknown, not noninclusion; another author's result and post-removal data remain denied.", "A private copy preserves locally held work while the interface reports accepted, rejected, or unknown delivery honestly."],
+      "variants": ["accepted before removal", "rejected after removal", "lost response", "unknown own batch ID", "known other batch ID", "restart after proof"],
+      "decisions": ["D6", "D7"]
     }
   ]
 }

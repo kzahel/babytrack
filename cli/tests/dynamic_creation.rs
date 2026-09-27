@@ -92,15 +92,20 @@ fn v7(tag: u8) -> [u8; 16] {
 
 #[tokio::test]
 async fn existing_local_family_promotes_and_shares_with_durable_keys() {
-    dynamic_flow(false).await;
+    dynamic_flow(false, false).await;
 }
 
 #[tokio::test]
 async fn manager_batch_interleaves_before_invite_and_recipient_joins() {
-    dynamic_flow(true).await;
+    dynamic_flow(true, false).await;
 }
 
-async fn dynamic_flow(early_batch: bool) {
+#[tokio::test]
+async fn removed_recipient_recovers_accepted_result_after_lost_response() {
+    dynamic_flow(false, true).await;
+}
+
+async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
     let shift = if early_batch { 1 } else { 0 };
     let dir = tempfile::tempdir().unwrap();
     let local_path = dir.path().join("manager.db");
@@ -1160,6 +1165,38 @@ async fn dynamic_flow(early_batch: bool) {
         copy
     );
 
+    let accepted_without_response = if accepted_before_removal {
+        let pending = match recipient_ready
+            .stage_enrolled_local(&mut recipient_store, &resumed_enrollment)
+            .unwrap()
+        {
+            NextUpload::Fresh(batch) => batch,
+            NextUpload::RetryExact(_) => panic!("recipient batch already staged"),
+        };
+        let response = http_bytes(
+            &app,
+            Method::POST,
+            &batch_path,
+            pending.envelope_bytes.clone(),
+        )
+        .await;
+        let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(receipt) = &fields[1].1 else {
+            panic!()
+        };
+        let mut manager_public = PublicHistorySession::resume(&local, family).unwrap();
+        manager_public
+            .accept_batch(&mut local, &pending.envelope_bytes, receipt)
+            .unwrap();
+        // The recipient loses the POST response and keeps the exact pending
+        // envelope while the manager proceeds to removal.
+        Some(pending)
+    } else {
+        None
+    };
+
     if early_batch {
         let current = resumed.ready_session(&local).unwrap();
         current
@@ -1289,15 +1326,19 @@ async fn dynamic_flow(early_batch: bool) {
     let manager_after = resumed.ready_session(&local).unwrap();
     assert_eq!(
         manager_after.observed_cursor(),
-        recipient_ready.observed_cursor() + 1 + u64::from(early_batch)
+        recipient_ready.observed_cursor()
+            + 1
+            + u64::from(early_batch)
+            + u64::from(accepted_before_removal)
     );
 
     let stale = match recipient_ready
         .stage_enrolled_local(&mut recipient_store, &resumed_enrollment)
         .unwrap()
     {
-        NextUpload::Fresh(batch) => batch,
-        NextUpload::RetryExact(_) => panic!("unexpected previously staged recipient batch"),
+        NextUpload::Fresh(batch) if !accepted_before_removal => batch,
+        NextUpload::RetryExact(batch) if accepted_before_removal => batch,
+        _ => panic!("recipient batch retry differs from expected path"),
     };
     let rejected = http_bytes(
         &app,
@@ -1318,6 +1359,38 @@ async fn dynamic_flow(early_batch: bool) {
     );
     let result = BatchResult::decode(&rejected).unwrap();
     assert!(result.receipt_bytes.is_some());
+    if let Some(accepted) = &accepted_without_response {
+        assert_eq!(stale.envelope_bytes, accepted.envelope_bytes);
+        assert_eq!(stale.batch_id, accepted.batch_id);
+    }
+    for (id, expected) in [
+        (batch.batch_id, true),
+        (stale.batch_id, true),
+        (v7(0x78), false),
+    ] {
+        let path = format!(
+            "/v1/families/{}/batch-results/{}",
+            lower_hex(&family.family_id),
+            lower_hex(&id),
+        );
+        let auth = resumed_enrollment.sign_get(&path).unwrap();
+        let found = BatchResult::decode(&http_bytes(&app, Method::GET, &path, auth.bytes).await)
+            .unwrap()
+            .receipt_bytes;
+        assert_eq!(found.is_some(), expected);
+    }
+    let other_path = format!(
+        "/v1/families/{}/batch-results/{}",
+        lower_hex(&family.family_id),
+        lower_hex(&manager_batch.batch_id),
+    );
+    let auth = resumed_enrollment.sign_get(&other_path).unwrap();
+    assert_ne!(
+        http_response(&app, Method::GET, &other_path, auth.bytes)
+            .await
+            .0,
+        StatusCode::OK
+    );
 
     let proof_path = format!(
         "/v1/families/{}/control?after={}",
@@ -1328,13 +1401,19 @@ async fn dynamic_flow(early_batch: bool) {
     let proof_bytes = http_bytes(&app, Method::GET, &proof_path, read.bytes).await;
     let recipient_public =
         PublicHistorySession::resume(&recipient_store, enrollment.family()).unwrap();
+    assert_eq!(
+        recipient_public
+            .inspect_removed_pending_result(&recipient_store, &rejected)
+            .unwrap(),
+        if accepted_before_removal { 2 } else { 3 },
+    );
     let proof = recipient_public
         .verify_removed_control_page(&proof_bytes)
         .unwrap()
         .unwrap();
     assert_eq!(proof.cursor, manager_after.observed_cursor());
     assert_eq!(proof.source_cursor, recipient_ready.observed_cursor());
-    assert_eq!(proof.known_gap, early_batch);
+    assert_eq!(proof.known_gap, early_batch || accepted_before_removal);
     let saved = recipient_public
         .save_removed_control_page(&mut recipient_store, &proof_bytes)
         .unwrap()
@@ -1393,7 +1472,7 @@ async fn dynamic_flow(early_batch: bool) {
             .unwrap()
             .unwrap()
             .known_gap,
-        early_batch
+        early_batch || accepted_before_removal
     );
     drop(recipient_store);
     let mut recipient_store = SqliteStore::open(&recipient_path).unwrap();
@@ -1420,7 +1499,7 @@ async fn dynamic_flow(early_batch: bool) {
     assert_eq!(page.entries.len(), 1);
     let mut recipient_public =
         PublicHistorySession::resume(&recipient_store, enrollment.family()).unwrap();
-    if early_batch {
+    if early_batch || accepted_before_removal {
         assert!(
             recipient_public
                 .accept_control(&mut recipient_store, &page.entries[0].committed_bytes)
@@ -1435,9 +1514,13 @@ async fn dynamic_flow(early_batch: bool) {
         recipient_public
             .resolve_pending_result(&mut recipient_store, &rejected)
             .unwrap(),
-        PendingBatchResult::Blocked,
+        if accepted_before_removal {
+            PendingBatchResult::AcceptedAhead
+        } else {
+            PendingBatchResult::Blocked
+        },
     );
-    if !early_batch {
+    if !early_batch && !accepted_before_removal {
         assert_eq!(recipient_public.chain().epoch().unwrap(), 2);
         assert!(
             recipient_public
@@ -1471,6 +1554,18 @@ async fn dynamic_flow(early_batch: bool) {
         old_epoch_upload.envelope_bytes.clone(),
     )
     .await;
+    let other_rejected_path = format!(
+        "/v1/families/{}/batch-results/{}",
+        lower_hex(&family.family_id),
+        lower_hex(&old_epoch_upload.batch_id),
+    );
+    let auth = resumed_enrollment.sign_get(&other_rejected_path).unwrap();
+    assert_ne!(
+        http_response(&app, Method::GET, &other_rejected_path, auth.bytes)
+            .await
+            .0,
+        StatusCode::OK
+    );
     let mut manager_public = PublicHistorySession::resume(&local, family).unwrap();
     assert_eq!(
         manager_public

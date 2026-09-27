@@ -229,8 +229,7 @@ private fun TrackerScreen(
             recipientStages[selectedRecipient]?.let { progress ->
                 if (progress.removed) sharedSnapshot = null
                 joinStage = when {
-                    progress.removed && progress.privateCopy != null -> context.getString(R.string.history_removed_copied)
-                    progress.removed -> context.getString(R.string.history_removed)
+                    progress.removed -> removedHistoryMessage(context, progress)
                     progress.ready -> context.getString(R.string.history_ready_auto)
                     progress.awaitingGrant -> context.getString(R.string.history_awaiting_grant, progress.pendingControlCursor.toLong())
                     else -> context.getString(R.string.history_pending, progress.verifiedCursor.toLong())
@@ -457,10 +456,8 @@ private fun TrackerScreen(
                                     }
                                 }.onSuccess { (progress, snapshot) ->
                                     sharedSnapshot = snapshot
-                                    joinStage = if (progress.removed && progress.privateCopy != null) {
-                                        context.getString(R.string.history_removed_copied)
-                                    } else if (progress.removed) {
-                                        context.getString(R.string.history_removed)
+                                    joinStage = if (progress.removed) {
+                                        removedHistoryMessage(context, progress)
                                     } else if (progress.ready) {
                                         context.getString(R.string.history_ready, progress.childCount.toLong())
                                     } else if (progress.awaitingGrant) {
@@ -972,6 +969,17 @@ private fun sharedSyncMessage(context: Context, progress: SharedSyncRow): String
     progress.outboxState == 2.toUByte() -> context.getString(R.string.shared_upload_uncertain)
     progress.outboxState == 1.toUByte() -> context.getString(R.string.shared_upload_pending)
     else -> context.getString(R.string.shared_synced, progress.verifiedCursor.toLong())
+}
+
+private fun removedHistoryMessage(
+    context: Context,
+    progress: uniffi.babytrack_core_ffi.RecipientSyncRow,
+): String = when {
+    progress.privateCopy == null -> context.getString(R.string.history_removed)
+    progress.pendingResult == 0.toUByte() -> context.getString(R.string.history_removed_unsent)
+    progress.pendingResult == 2.toUByte() -> context.getString(R.string.history_removed_accepted)
+    progress.pendingResult == 3.toUByte() -> context.getString(R.string.history_removed_rejected)
+    else -> context.getString(R.string.history_removed_copied)
 }
 
 private fun savedTime(utcMs: Long): String =

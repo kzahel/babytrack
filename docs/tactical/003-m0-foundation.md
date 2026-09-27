@@ -412,6 +412,11 @@ transition. A restart reuses that copy. The real-relay CLI covers a prior
 explicit copy and a cursor gap; the disposable-relay emulator verifies the
 removed notice and preserved offline child across coordinator restarts.
 The source Family remains locally readable and exportable.
+The removed recipient can now query only its own accepted or rejected
+batch result after losing a POST response. The core verifies that receipt
+against the exact saved envelope without clearing the archived source
+outbox. Android distinguishes never-uploaded, accepted, rejected, and
+unknown delivery when showing the new private Family.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed
@@ -932,7 +937,7 @@ UI and the removed-device proof/copy implementation.
 
 | Finding | Disposition |
 |---|---|
-| Medium blocker: the relay denies a removed author its own accepted or rejected batch result after a lost POST response, so pending-work disposition cannot be verified. | Repair the removed-author batch-result ACL and rejected-result author binding, then exercise accepted-before-removal and rejected-after-removal lost responses. Rerun the independent gate at a fixed repair SHA. |
+| Medium blocker: the relay denies a removed author its own accepted or rejected batch result after a lost POST response, so pending-work disposition cannot be verified. | The relay now allows only the removed signer's accepted receipt and verifies authorship of stored rejected envelopes before returning those receipts. FS63/BATCH08 and a real-relay CLI lost-accepted-response variant cover accepted, rejected, unknown, known-other, and denied post-removal data. Android queries the saved batch result after proof and reports accepted, rejected, or unknown while preserving local work. This repair still needs fixed-revision independent recheck. |
 | Medium hardening: protocol IDs can be reused across categories even though the contract says never reused. | Add a durable per-Family cross-category ID registry in relay authority and client replay before later-device authority expands. Add collision regressions. |
 | Low contract gap: three advertised GET routes are not implemented. | Add authenticated routes and API vectors or narrow the exact v1 contract before other clients rely on them. |
 

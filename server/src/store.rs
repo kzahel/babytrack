@@ -72,9 +72,17 @@ type SavedReservation = (Vec<u8>, Vec<u8>, i64, Option<Vec<u8>>);
 enum ControlReader {
     Manager,
     Active,
-    Removed,
-    Invitation { issue_object: [u8; 16] },
-    Pending { challenge_object: Option<[u8; 16]> },
+    Removed {
+        device_id: [u8; 16],
+        signing_public: [u8; 32],
+        relay_id: [u8; 32],
+    },
+    Invitation {
+        issue_object: [u8; 16],
+    },
+    Pending {
+        challenge_object: Option<[u8; 16]>,
+    },
 }
 
 #[allow(dead_code)] // The methods become route handlers after read authentication.
@@ -1402,28 +1410,61 @@ impl RelayStore {
         if exact_path != expected {
             return Err(Error::Invalid("batch result path not canonical"));
         }
-        match self.verify_control_reader(family_id, exact_path, auth_bytes)? {
-            ControlReader::Manager | ControlReader::Active => {}
-            _ => return Err(Error::Invalid("reader cannot fetch batch results")),
+        let reader = self.verify_control_reader(family_id, exact_path, auth_bytes)?;
+        if !matches!(
+            reader,
+            ControlReader::Manager | ControlReader::Active | ControlReader::Removed { .. }
+        ) {
+            return Err(Error::Invalid("reader cannot fetch batch results"));
         }
-        let mut receipt: Option<Vec<u8>> = self
+        let accepted: Option<(Vec<u8>, Vec<u8>)> = self
             .db
             .query_row(
-                "SELECT receipt_bytes FROM batch_results WHERE family_id=?1 AND batch_id=?2",
+                "SELECT author_id,receipt_bytes FROM batch_results WHERE family_id=?1 AND batch_id=?2",
                 params![&family_id[..], &batch_id[..]],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
-        if receipt.is_none() {
-            receipt = self
-                .db
-                .query_row(
-                    "SELECT receipt_bytes FROM rejected_batch_results WHERE family_id=?1 AND batch_id=?2",
-                    params![&family_id[..], &batch_id[..]],
-                    |r| r.get(0),
-                )
-                .optional()?;
-        }
+        let receipt = if let Some((author, receipt)) = accepted {
+            if let ControlReader::Removed { device_id, .. } = reader
+                && author.as_slice() != device_id
+            {
+                return Err(Error::Invalid(
+                    "removed reader cannot fetch another author's result",
+                ));
+            }
+            Some(receipt)
+        } else {
+            let rejected: Option<(Vec<u8>, Vec<u8>)> = self.db.query_row(
+                "SELECT envelope_bytes,receipt_bytes FROM rejected_batch_results WHERE family_id=?1 AND batch_id=?2",
+                params![&family_id[..], &batch_id[..]],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            ).optional()?;
+            match rejected {
+                Some((envelope, receipt)) => {
+                    if let ControlReader::Removed {
+                        device_id,
+                        signing_public,
+                        relay_id,
+                    } = reader
+                    {
+                        let batch = batch_authority::verify(
+                            &envelope,
+                            family_id,
+                            relay_id,
+                            signing_public,
+                        )?;
+                        if batch.author_id != device_id || batch.batch_id != batch_id {
+                            return Err(Error::Invalid(
+                                "removed reader cannot fetch another author's result",
+                            ));
+                        }
+                    }
+                    Some(receipt)
+                }
+                None => None,
+            }
+        };
         Ok(cbor::encode(&Value::Map(vec![
             (1, Value::Integer(1)),
             (2, receipt.map_or(Value::Null, Value::Bytes)),
@@ -1676,7 +1717,14 @@ impl RelayStore {
                         return Err(Error::Invalid("reader not admitted device"));
                     }
                     if controls == 7 {
-                        (ControlReader::Removed, claim.signing_public)
+                        (
+                            ControlReader::Removed {
+                                device_id: claim.device_id,
+                                signing_public: claim.signing_public,
+                                relay_id: genesis.relay_id,
+                            },
+                            claim.signing_public,
+                        )
                     } else {
                         (ControlReader::Active, claim.signing_public)
                     }

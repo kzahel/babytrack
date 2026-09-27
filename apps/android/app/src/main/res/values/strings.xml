@@ -86,7 +86,10 @@
     <string name="history_ready">Shared history verified. %1$d children loaded.</string>
     <string name="history_ready_auto">Shared history verified and ready.</string>
     <string name="history_removed">This device’s removal was verified. The shared Family is read only here; you can still export its locally held data.</string>
-    <string name="history_removed_copied">This device’s removal was verified. Pending edits were saved in a new private Family. The original shared Family is read only.</string>
+    <string name="history_removed_copied">This device’s removal was verified. Delivery of the last upload is unconfirmed; locally held edits were saved in a new private Family. The original shared Family is read only.</string>
+    <string name="history_removed_unsent">This device’s removal was verified. Offline edits were saved in a new private Family; they were never uploaded to the old one.</string>
+    <string name="history_removed_accepted">This device’s removal was verified. The last upload was accepted before removal. Locally held history was saved in a new private Family.</string>
+    <string name="history_removed_rejected">This device’s removal was verified. The last upload was rejected; pending edits were saved in a new private Family.</string>
     <string name="shared_children">Verified shared children</string>
     <string name="shared_devices">Devices with verified access</string>
     <string name="remove_device">Remove device %1$s</string>

@@ -186,6 +186,7 @@ private fun TrackerScreen(
     var shareStage by remember { mutableStateOf<String?>(null) }
     var invitationFragment by remember { mutableStateOf<String?>(null) }
     var receivedFragment by remember { mutableStateOf("") }
+    var showJoinForm by remember { mutableStateOf(false) }
     var joinStage by remember { mutableStateOf<String?>(null) }
     var sharedSnapshot by remember { mutableStateOf<SharedSnapshotRow?>(null) }
     var sharedSelectedChild by remember { mutableStateOf<String?>(null) }
@@ -388,7 +389,10 @@ private fun TrackerScreen(
             }) { Text(stringResource(R.string.new_family)) }
 
             if (BuildConfig.DEBUG) {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                if (!showJoinForm && recipientFamilies.isEmpty()) OutlinedButton(
+                    onClick = { showJoinForm = true },
+                ) { Text(stringResource(R.string.join_family)) }
+                else Card(modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),

@@ -24,7 +24,8 @@ To exercise the current relay slice on an emulator:
    **Create or retry invitation**. Exact prepared bytes survive process
    restart and uncertain POST responses; a confirmed invite yields a
    one-device fragment.
-4. On a receiving debug app, paste that fragment in **Join preview**. The app
+4. On a receiving debug app, choose **Join a Family** and paste that fragment
+   in **Join preview**. The app
    signs an authenticated read, verifies the invitation-linked public
    controls in Rust, and submits the exact durable claim. It reports waiting
    for a key holder; this stage does not provide shared data yet. Retrying

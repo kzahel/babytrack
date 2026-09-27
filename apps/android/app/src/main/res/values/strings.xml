@@ -6,6 +6,7 @@
     <string name="automatic_sync_delayed">Shared sync is delayed. Local entries stay saved; retry when connected.</string>
     <string name="families">Families</string>
     <string name="new_family">New Family</string>
+    <string name="join_family">Join a Family</string>
     <string name="family_number">Family %1$d</string>
     <string name="children">Children</string>
     <string name="child_name">Child’s name</string>

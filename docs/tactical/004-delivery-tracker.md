@@ -40,6 +40,10 @@ on an emulator. The current passing checks do not close an M0 slice.
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.
+The first-run Android screen now shows separate create, join, and restore
+actions; the join form opens on request and remains visible for a saved
+pending recipient. A headed emulator launch and accessibility-tree tap
+checked both states.
 
 ## Ordered delivery handoffs
 

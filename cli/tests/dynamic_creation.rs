@@ -1159,6 +1159,55 @@ async fn dynamic_flow(early_batch: bool) {
         copy
     );
 
+    if early_batch {
+        let current = resumed.ready_session(&local).unwrap();
+        current
+            .append_local(
+                &mut local,
+                NewOperation {
+                    family_id: family.family_id,
+                    operation_id: v7(0x3d),
+                    record_id: v7(0x3e),
+                    scope: Scope::Child,
+                    kind: Kind::Create,
+                    author_device_id: family.device_id,
+                    hlc: Hlc {
+                        wall_ms: 1_700_000_004_200,
+                        counter: 0,
+                        device_id: family.device_id,
+                    },
+                    record_type: Some("child".to_owned()),
+                    child_id: None,
+                    fields: Some(vec![(1, Value::Text("Unseen before removal".to_owned()))]),
+                },
+                1_700_000_004_200,
+            )
+            .unwrap();
+        let unseen = match resumed.stage_next_local(&current, &mut local).unwrap() {
+            NextUpload::Fresh(batch) => batch,
+            NextUpload::RetryExact(_) => panic!("unseen edit already staged"),
+        };
+        let result = http_bytes(
+            &app,
+            Method::POST,
+            &batch_path,
+            unseen.envelope_bytes.clone(),
+        )
+        .await;
+        let Value::Map(fields) = cbor::decode(&result).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(receipt) = &fields[1].1 else {
+            panic!()
+        };
+        let mut manager_public = PublicHistorySession::resume(&local, family).unwrap();
+        manager_public
+            .accept_batch(&mut local, &unseen.envelope_bytes, receipt)
+            .unwrap();
+        // The recipient remains offline and cannot fetch this old-epoch
+        // batch after removal; its public proof must tolerate the gap.
+    }
+
     let before_removal = resumed.ready_session(&local).unwrap();
     let stale_child = v7(0x3b);
     before_removal
@@ -1239,7 +1288,7 @@ async fn dynamic_flow(early_batch: bool) {
     let manager_after = resumed.ready_session(&local).unwrap();
     assert_eq!(
         manager_after.observed_cursor(),
-        recipient_ready.observed_cursor() + 1
+        recipient_ready.observed_cursor() + 1 + u64::from(early_batch)
     );
 
     let stale = match recipient_ready
@@ -1275,8 +1324,18 @@ async fn dynamic_flow(early_batch: bool) {
         recipient_ready.observed_cursor(),
     );
     let read = resumed_enrollment.sign_get(&proof_path).unwrap();
+    let proof_bytes = http_bytes(&app, Method::GET, &proof_path, read.bytes).await;
+    let recipient_public =
+        PublicHistorySession::resume(&recipient_store, enrollment.family()).unwrap();
+    let proof = recipient_public
+        .verify_removed_control_page(&proof_bytes)
+        .unwrap()
+        .unwrap();
+    assert_eq!(proof.cursor, manager_after.observed_cursor());
+    assert_eq!(proof.source_cursor, recipient_ready.observed_cursor());
+    assert_eq!(proof.known_gap, early_batch);
     let page = ControlPage::decode(
-        &http_bytes(&app, Method::GET, &proof_path, read.bytes).await,
+        &proof_bytes,
         family.family_id,
         recipient_ready.observed_cursor(),
     )
@@ -1284,25 +1343,37 @@ async fn dynamic_flow(early_batch: bool) {
     assert_eq!(page.entries.len(), 1);
     let mut recipient_public =
         PublicHistorySession::resume(&recipient_store, enrollment.family()).unwrap();
-    recipient_public
-        .accept_control(&mut recipient_store, &page.entries[0].committed_bytes)
-        .unwrap();
+    if early_batch {
+        assert!(
+            recipient_public
+                .accept_control(&mut recipient_store, &page.entries[0].committed_bytes)
+                .is_err()
+        );
+    } else {
+        recipient_public
+            .accept_control(&mut recipient_store, &page.entries[0].committed_bytes)
+            .unwrap();
+    }
     assert_eq!(
         recipient_public
             .resolve_pending_result(&mut recipient_store, &rejected)
             .unwrap(),
         PendingBatchResult::Blocked,
     );
-    assert_eq!(recipient_public.chain().epoch().unwrap(), 2);
-    assert!(
-        recipient_public
-            .chain()
-            .active_devices()
-            .unwrap()
-            .iter()
-            .all(|row| row.device_id != enrollment.family().device_id)
-    );
-    assert!(ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).is_err());
+    if !early_batch {
+        assert_eq!(recipient_public.chain().epoch().unwrap(), 2);
+        assert!(
+            recipient_public
+                .chain()
+                .active_devices()
+                .unwrap()
+                .iter()
+                .all(|row| row.device_id != enrollment.family().device_id)
+        );
+        assert!(
+            ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).is_err()
+        );
+    }
     let denied_path = format!(
         "/v1/families/{}/log?after={}",
         lower_hex(&family.family_id),

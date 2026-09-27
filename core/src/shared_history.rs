@@ -5,6 +5,7 @@
 use crate::{
     batch,
     cbor::{self, Value},
+    control::{self, exact_map, fixed, number},
     control_chain::{self, ControlChain},
     crypto, session,
     sqlite_store::{self, FamilyHandle, SqliteStore, VerifiedSharedEntry},
@@ -15,6 +16,7 @@ use crate::{
 pub enum Error {
     Batch(batch::Error),
     Control(control_chain::Error),
+    ControlShape(control::Error),
     Cbor(cbor::Error),
     Crypto(crypto::Error),
     Session(session::Error),
@@ -30,6 +32,11 @@ impl From<batch::Error> for Error {
 impl From<control_chain::Error> for Error {
     fn from(value: control_chain::Error) -> Self {
         Self::Control(value)
+    }
+}
+impl From<control::Error> for Error {
+    fn from(value: control::Error) -> Self {
+        Self::ControlShape(value)
     }
 }
 impl From<cbor::Error> for Error {
@@ -67,12 +74,71 @@ pub enum PendingBatchResult {
     Blocked,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedRemovalProof {
+    pub transition_id: [u8; 16],
+    pub cursor: u64,
+    pub source_cursor: u64,
+    pub known_gap: bool,
+    pub committed_bytes: Vec<u8>,
+}
+
 pub struct PublicHistorySession {
     family: FamilyHandle,
     chain: ControlChain,
 }
 
 impl PublicHistorySession {
+    /// A removed credential can fetch signed public controls after its data
+    /// reads have been revoked. Verify their ancestry without advancing the
+    /// contiguous data pin or claiming any skipped batches were downloaded.
+    pub fn verify_removed_control_page(
+        &self,
+        page_bytes: &[u8],
+    ) -> Result<Option<VerifiedRemovalProof>, Error> {
+        self.chain.active_signing_public(self.family.device_id)?;
+        let page =
+            sync_wire::ControlPage::decode(page_bytes, self.family.family_id, self.cursor())?;
+        let mut chain = self.chain.clone();
+        for entry in page.entries {
+            chain.apply_sparse_control(&entry.committed_bytes)?;
+            if chain.last_global_cursor() != entry.cursor {
+                return Err(Error::Invalid("removal proof cursor differs from receipt"));
+            }
+            let control = cbor::decode_with_limits(
+                &entry.committed_bytes,
+                cbor::Limits {
+                    max_bytes: 1024 * 1024,
+                    max_depth: 16,
+                },
+            )?;
+            let root = exact_map(&control, 4)?;
+            let unsigned = exact_map(&root[0].1, 11)?;
+            if number(&unsigned[5].1)? != 8 {
+                continue;
+            }
+            let delta = exact_map(&unsigned[6].1, 3)?;
+            if fixed::<16>(&delta[0].1)? != self.family.device_id {
+                continue;
+            }
+            if chain
+                .active_devices()?
+                .iter()
+                .any(|row| row.device_id == self.family.device_id)
+            {
+                return Err(Error::Invalid("removal proof did not revoke this device"));
+            }
+            let transition_id = fixed::<16>(&unsigned[4].1)?;
+            return Ok(Some(VerifiedRemovalProof {
+                transition_id,
+                cursor: entry.cursor,
+                source_cursor: self.cursor(),
+                known_gap: entry.cursor > self.cursor().saturating_add(1),
+                committed_bytes: entry.committed_bytes,
+            }));
+        }
+        Ok(None)
+    }
     pub fn pending_batch_id(&self, store: &SqliteStore) -> Result<Option<[u8; 16]>, Error> {
         Ok(store
             .pending_batch(self.family)?

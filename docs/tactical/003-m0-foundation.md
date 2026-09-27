@@ -398,6 +398,11 @@ this path. The runner clears the test app's prior databases before launch,
 so stale Family rows from older relay instances cannot affect scheduled
 job assertions. The removed Android device still lacks a sparse signed
 proof/notice and automatic private-copy path.
+The core now verifies a removed device's signed control page from its
+contiguous pin without advancing that pin across unseen ciphertext. The
+real-relay CLI test covers both a contiguous removal and one with an
+old-epoch batch hidden behind the removal proof. Proof persistence, Android
+notice, and automatic copy remain open.
 
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed

@@ -171,8 +171,11 @@ delivered, and removed access cannot obtain new Family data.
   now reflects open timers across local and ready shared Families, opens the
   tracker on tap, and refreshes after foreground edits and scheduled sync.
   It requests Android's notification permission after a timer starts. The
-  local journal start/stop notification case passes on an emulator; widgets,
-  reboot restoration, and physical-phone checks remain.
+  local journal start/stop notification case passes on an emulator. A boot
+  receiver now rereads saved timers and restores the notification without
+  waiting for network sync; the emulator test clears and restores that
+  notification from the journal. An actual device reboot, widgets, and
+  physical-phone checks remain.
 
 Gate: caregivers can move a saved point to another phone and understand
 what it contains; daily logging and recovery require no relay account.

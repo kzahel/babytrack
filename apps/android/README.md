@@ -6,6 +6,8 @@ proof, grant, and recipient history verification. Both devices can edit and
 sync; each can save a shared backup or make an independent private copy.
 While the app is in the foreground it polls the relay every 30 seconds. A
 persisted Android job also requests network sync when the OS allows it.
+After reboot, a receiver restores the ongoing sleep-timer notification from
+the local journal without waiting for network sync.
 The manager can remove the first recipient. After verifying a signed
 removal, that device stops shared writes and automatically makes a private
 Family copy when it has pending changes. The release manifest does not allow

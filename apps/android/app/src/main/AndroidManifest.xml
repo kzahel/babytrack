@@ -2,7 +2,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <application android:name=".BabytrackApplication" android:label="@string/app_name" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false">
+    <application android:name=".BabytrackApplication" android:label="@string/app_name" android:theme="@style/BabytrackTheme" android:allowBackup="false">
         <service
             android:name=".SharedSyncJobService"
             android:permission="android.permission.BIND_JOB_SERVICE"

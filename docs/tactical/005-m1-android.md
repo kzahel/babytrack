@@ -29,6 +29,8 @@ timeline can correct a note's text through the shared Rust edit path while
 retaining its Family, child, activity ID, original time, and other fields.
 It can also correct a bottle's whole-millilitre amount on the same event;
 the content code and original time remain intact.
+The Android surface now follows the device's light or dark mode for both
+Compose content and system bars; emulator captures checked each mode.
 Child creation can also record a birth date and the sex code needed for
 eventual growth charts. The shared core persists these as child metadata in
 local and shared history; growth percentiles are still pending.

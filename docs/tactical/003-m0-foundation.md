@@ -105,6 +105,12 @@ restart without using the invitation credential. Rebuilding a saved proof
 uses its verified challenge prefix even after the proof commits; a sparse
 recipient still does not claim data readiness. Holder verification, admission,
 and full history hydration remain open.
+The holder now fetches and verifies the proof control, has Rust recheck the
+pending challenge proof against the saved verifier, then stages the encrypted
+membership and epoch-key grant and confirms the admission. The emulator test
+retries admission, proof, and challenge after later controls commit; all
+rebuild from verified historical prefixes. The recipient still has no usable
+shared view until it fetches the full log, required objects, and grant.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

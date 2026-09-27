@@ -81,6 +81,27 @@ pub struct FirstAdmission {
     objects: Vec<AdmissionObject>,
 }
 impl FirstAdmission {
+    pub fn prepare_for_only_proved(
+        store: &mut SqliteStore,
+        manager: &ManagerCreation,
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
+        if store.prepared_control(manager.family(), 6)?.is_some() {
+            return Self::resume(store, manager, local_wrapping_key);
+        }
+        let challenge =
+            crate::first_challenge::FirstChallenge::resume(store, manager, local_wrapping_key)
+                .map_err(|_| Error::Invalid("verified first challenge absent"))?;
+        let (invitation_id, recipient_id) = challenge.target();
+        Self::prepare(
+            store,
+            manager,
+            invitation_id,
+            recipient_id,
+            local_wrapping_key,
+        )
+    }
+
     pub fn prepare(
         store: &mut SqliteStore,
         manager: &ManagerCreation,
@@ -476,7 +497,7 @@ fn chain_through_proof(
     family: FamilyHandle,
     relay_public: [u8; 32],
 ) -> Result<ControlChain, Error> {
-    Ok(shared_history::first_join_chain(
+    Ok(shared_history::first_join_prefix_chain(
         store,
         family,
         relay_public,

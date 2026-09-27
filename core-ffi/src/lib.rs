@@ -9,6 +9,7 @@ use babytrack_core::{
     cbor::{self, Value},
     creation::ManagerCreation,
     enrollment::EnrollmentAttempt,
+    first_admission::FirstAdmission,
     first_challenge::FirstChallenge,
     first_proof::FirstProof,
     issue::FirstInviteIssue,
@@ -175,6 +176,12 @@ pub struct ChallengeReadRow {
     pub path: String,
     pub auth: Vec<u8>,
     pub object_id: Vec<u8>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PreparedAdmissionRow {
+    pub candidate_bytes: Vec<u8>,
+    pub objects: Vec<StagedObjectRow>,
 }
 
 #[derive(uniffi::Object)]
@@ -607,6 +614,67 @@ impl NativeSharedStore {
         FirstProof::resume(&store, &attempt, &fixed(&wrapping_key)?)
             .map_err(rejected)?
             .confirm(&mut store, &committed_control(&commit_response)?)
+            .map_err(rejected)
+    }
+
+    pub fn prepare_first_admission(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        read: SignedReadRow,
+        control_page: Vec<u8>,
+    ) -> Result<PreparedAdmissionRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+            .map_err(rejected)?;
+        let mut public =
+            PublicHistorySession::resume(&store, family.handle()?).map_err(rejected)?;
+        if read.after != public.cursor()
+            || read.path
+                != format!(
+                    "/v1/families/{}/control?after={}",
+                    lower_hex(&family.family_id),
+                    read.after
+                )
+        {
+            return Err(BindingError::InvalidBytes);
+        }
+        let page = ControlPage::decode(&control_page, family.handle()?.family_id, read.after)
+            .map_err(rejected)?;
+        for entry in page.entries {
+            public
+                .accept_control(&mut store, &entry.committed_bytes)
+                .map_err(rejected)?;
+        }
+        let admission =
+            FirstAdmission::prepare_for_only_proved(&mut store, &manager, &fixed(&wrapping_key)?)
+                .map_err(rejected)?;
+        Ok(PreparedAdmissionRow {
+            candidate_bytes: admission.candidate_bytes().to_vec(),
+            objects: admission
+                .stage_bodies()
+                .map_err(rejected)?
+                .into_iter()
+                .map(|(object_id, body)| StagedObjectRow {
+                    object_id: object_id.to_vec(),
+                    body,
+                })
+                .collect(),
+        })
+    }
+
+    pub fn confirm_first_admission(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        commit_response: Vec<u8>,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+            .map_err(rejected)?;
+        FirstAdmission::resume(&store, &manager, &fixed(&wrapping_key)?)
+            .map_err(rejected)?
+            .confirm(&mut store, &manager, &committed_control(&commit_response)?)
             .map_err(rejected)
     }
 }

@@ -393,6 +393,22 @@ private fun TrackerScreen(
                                     }
                                 }
                             }) { Text(stringResource(R.string.respond_to_claim)) }
+                            OutlinedButton(onClick = {
+                                shareStage = context.getString(R.string.admission_preparing)
+                                scope.launch {
+                                    runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            sharing.admitProvedDevice(family, relayOrigin.trim())
+                                        }
+                                    }.onSuccess {
+                                        shareStage = context.getString(R.string.admission_confirmed)
+                                        message = null
+                                    }.onFailure {
+                                        shareStage = context.getString(R.string.share_retry)
+                                        message = errorText
+                                    }
+                                }
+                            }) { Text(stringResource(R.string.admit_device)) }
                         }
                     }
                 }

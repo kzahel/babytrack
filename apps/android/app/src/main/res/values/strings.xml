@@ -70,4 +70,7 @@
     <string name="prove_challenge">Prove device key</string>
     <string name="proof_preparing">Checking the holder challenge and preparing proof…</string>
     <string name="proof_confirmed">Proof committed. Waiting for the holder to grant access.</string>
+    <string name="admit_device">Grant device access</string>
+    <string name="admission_preparing">Verifying proof and preparing the encrypted grant…</string>
+    <string name="admission_confirmed">Grant committed. The recipient still needs to load and verify the Family history.</string>
 </resources>

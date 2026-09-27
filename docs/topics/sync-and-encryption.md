@@ -125,6 +125,9 @@ chooses the recipient from verified pending authority state in Rust.
 The recipient's proof also rebuilds from its verified challenge prefix after
 a later control commits. A pending sparse-control cursor remains distinct
 from verified full-history readiness throughout this exchange.
+The first holder admission is confirmed only after the saved challenge proof
+is verified against the holder's verifier object. A committed grant alone
+does not make the recipient's data view ready.
 
 Per-holder keypairs are needed because a removed device that knows the old
 shared key could otherwise read the new key while it is handed to the

@@ -18,7 +18,9 @@ two devices. General membership, removal, rotation, and transport recovery
 remain open. The Android app handles local tracking and readable or
 password-protected file backup. Its debug sharing preview can promote a
 Family, issue an invitation, and submit a recipient's keyless claim through a
-development relay. Key handoff and automatic sync are still open. Scenario
+development relay. The debug flow also commits the challenge, proof, and
+encrypted admission grant. Recipient history hydration and automatic sync
+are still open. Scenario
 files still include symbolic expectations.
 
 ## Product and architecture

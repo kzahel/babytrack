@@ -282,6 +282,9 @@ impl FirstChallenge {
     pub fn challenge_id(&self) -> [u8; 16] {
         self.challenge_id
     }
+    pub fn target(&self) -> ([u8; 16], [u8; 16]) {
+        (self.invitation_id, self.pending_device_id)
+    }
     pub fn transition_id(&self) -> [u8; 16] {
         self.transition_id
     }

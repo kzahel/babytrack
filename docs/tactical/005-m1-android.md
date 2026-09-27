@@ -52,6 +52,10 @@ changing its time or unknown fields; local restore and encrypted sync cover it.
 The selected child's name can now be corrected through a field-level Rust
 operation without changing its ID, birth date, sex, or existing activities.
 Local restart/file restore and the two-emulator relay flow check the edit.
+Pumping amounts can now be corrected on the existing activity, including a
+switch between left/right amounts and a single total. The Rust operation
+clears the old form, retains the original interval and activity ID, and is
+checked across local restore and encrypted two-device sync.
 
 Two separate emulator installations and a disposable relay pass first-cohort
 join without simultaneous foreground use, reciprocal encrypted edits,
@@ -121,12 +125,18 @@ handoff. This is still a development flow, not a released product flow.
 - [x] Log sleep timers/completed sleep, notes, growth in whole grams and
   millimetres, and entered Celsius decimals through the local/shared core.
 - [ ] Complete the MVP logging set: growth percentile display and practical
-  edits beyond child name, note, bottle amount, diaper type, solids, growth, completed sleep, and temperature. Multi-segment breast
+  edits beyond child name, note, bottle amount, diaper type, solids, growth,
+  pumping amounts, completed sleep, and temperature. Multi-segment breast
   feeds, note, bottle, diaper, and solids correction, and
   single-activity deletion now pass
   local restart/file restore, two-emulator encrypted sync, and UI tap flows.
   Preserve unknown fields and exact Family/child targets. Keep clinical
   recommendations out of the UI.
+  WHO publishes the growth reference tables, but the terms for bundling those
+  tables in this MIT app need resolution before adding percentile data. Check
+  the [WHO standards](https://www.who.int/tools/child-growth-standards/standards)
+  and [WHO reuse terms](https://www.who.int/about/policies/publishing/data-policy/terms-and-conditions)
+  for the exact source chosen; do not silently copy a restricted table.
 - [ ] Run local logging, Family switching, and restart on a physical Android
   phone. Check accessible labels, large text, dark night use, startup size
   and latency, and the common feed/diaper path with one hand.

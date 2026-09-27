@@ -31,13 +31,16 @@ HTTP and Android instrumentation.
 Role changes, cancellation, browser shared
 outbox, complete vector coverage, and the M0 exit review remain open.
 Android local and first-cohort UI work, including solids, completed
-multi-segment breast-feed, pumping logs, and note, bottle, and diaper
-corrections, plus child name, growth, and completed sleep corrections, runs
+multi-segment breast-feed, pumping logs, and note, bottle, diaper, and pumping
+amount corrections, plus child name, growth, and completed sleep corrections, runs
 alongside M0 on emulators; its physical phone gates remain open.
 Android can now share an invitation through the system chooser and receive
 one through the text share target, prefilled for an explicit join action.
 Ready joined Families now enter the normal Android Family switcher and full
 tracker; pending joins remain outside it.
+The daily-use surface now has a saved-timer home-screen widget and local
+labels for individual enrolled devices. Growth reference data licensing and
+Nara sample mapping remain open for their planned features.
 
 | Field | Current answer |
 |---|---|

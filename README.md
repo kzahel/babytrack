@@ -18,7 +18,10 @@ remain open.
 
 The Android debug app logs children, diapers, bottles, sleep timers,
 completed sleep, notes, growth, Celsius, medication, solids, breast-feed
-segments, and pumping entries locally or in a shared Family. It can promote
+segments, and pumping entries locally or in a shared Family. Existing pumping
+amounts can be corrected without replacing the entry. A home-screen widget
+shows saved running sleep timers, and the access list can label each enrolled
+device on this phone. The app can promote
 a Family, invite another device, complete keyless
 claim/challenge/proof/admission, and converge both devices through
 the relay. It resumes enrollment after restart, polls while open, schedules

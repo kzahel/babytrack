@@ -232,9 +232,15 @@ class TwoDeviceRelayTest {
                     listOf(1u.toUByte(), 2u.toUByte(), 1u.toUByte()) &&
                     it.endUtcMs != null && it.endUtcMs!! - it.startUtcMs == 16 * 60_000L
             })
-            assertTrue(sharing.snapshot(family).activities.any {
+            val pump = sharing.snapshot(family).activities.single {
                 it.kind == "pump" && it.pumpLeftMl == 20L && it.pumpRightMl == 15L &&
                     it.pumpTotalMl == null
+            }
+            sharing.editPumpAmounts(family, pump.childId, pump.id,
+                PumpInput(null, null, 40), System.currentTimeMillis())
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.id.contentEquals(pump.id) && it.pumpLeftMl == null && it.pumpRightMl == null &&
+                    it.pumpTotalMl == 40L && it.startUtcMs == pump.startUtcMs && it.endUtcMs == pump.endUtcMs
             })
             val note = sharing.snapshot(family).activities.single { it.note == "Care note marker 67" }
             val otherChild = sharing.snapshot(family).children.single { !it.id.contentEquals(note.childId) }
@@ -299,6 +305,10 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "feed.solids" && it.solidsFoods == listOf("Apple", "Rice") &&
                     it.solidsAmount == "half bowl"
+            })
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.kind == "pump" && it.pumpTotalMl == 40L &&
+                    it.pumpLeftMl == null && it.pumpRightMl == null
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "growth" && it.growthWeightG == 4_300L && it.growthLengthMm == 540L

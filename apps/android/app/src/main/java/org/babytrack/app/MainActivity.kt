@@ -193,6 +193,15 @@ private data class PendingGrowthEdit(
     val weight: String,
     val length: String,
 )
+private data class PendingPumpEdit(
+    val family: FamilyRef,
+    val childId: ByteArray,
+    val activityId: ByteArray,
+    val shared: Boolean,
+    val left: String,
+    val right: String,
+    val total: String,
+)
 private data class PendingSleepEdit(
     val family: FamilyRef,
     val childId: ByteArray,
@@ -382,6 +391,7 @@ private fun TrackerScreen(
     var pendingDiaperEdit by remember { mutableStateOf<PendingDiaperEdit?>(null) }
     var pendingSolidsEdit by remember { mutableStateOf<PendingSolidsEdit?>(null) }
     var pendingGrowthEdit by remember { mutableStateOf<PendingGrowthEdit?>(null) }
+    var pendingPumpEdit by remember { mutableStateOf<PendingPumpEdit?>(null) }
     var pendingSleepEdit by remember { mutableStateOf<PendingSleepEdit?>(null) }
     var pendingTemperatureEdit by remember { mutableStateOf<PendingTemperatureEdit?>(null) }
     var relayOrigin by remember { mutableStateOf("") }
@@ -1596,6 +1606,16 @@ private fun TrackerScreen(
                                         )
                                     }) { Text(stringResource(R.string.edit_solids)) }
                                 }
+                                if (entry.kind == "pump") {
+                                    OutlinedButton(onClick = {
+                                        pendingPumpEdit = PendingPumpEdit(
+                                            family, entry.childId.copyOf(), entry.id.copyOf(), activeShared,
+                                            entry.pumpLeftMl?.toString().orEmpty(),
+                                            entry.pumpRightMl?.toString().orEmpty(),
+                                            entry.pumpTotalMl?.toString().orEmpty(),
+                                        )
+                                    }) { Text(stringResource(R.string.edit_pump)) }
+                                }
                                 if (entry.kind == "growth") {
                                     OutlinedButton(onClick = {
                                         pendingGrowthEdit = PendingGrowthEdit(
@@ -1940,6 +1960,62 @@ private fun TrackerScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { pendingGrowthEdit = null }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+    pendingPumpEdit?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingPumpEdit = null },
+            title = { Text(stringResource(R.string.edit_pump)) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = target.left,
+                        onValueChange = { pendingPumpEdit = target.copy(left = it.filter(Char::isDigit).take(6)) },
+                        label = { Text(stringResource(R.string.pump_left_ml)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = target.right,
+                        onValueChange = { pendingPumpEdit = target.copy(right = it.filter(Char::isDigit).take(6)) },
+                        label = { Text(stringResource(R.string.pump_right_ml)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = target.total,
+                        onValueChange = { pendingPumpEdit = target.copy(total = it.filter(Char::isDigit).take(6)) },
+                        label = { Text(stringResource(R.string.pump_total_ml)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                    Text(stringResource(R.string.pump_edit_hint))
+                }
+            },
+            confirmButton = {
+                val left = target.left.toLongOrNull()
+                val right = target.right.toLongOrNull()
+                val total = target.total.toLongOrNull()
+                val valid = if (total != null) target.left.isBlank() && target.right.isBlank() && total in 1L..1_000_000L
+                    else (left ?: 0L) + (right ?: 0L) > 0L &&
+                        (left == null || left in 0L..1_000_000L) &&
+                        (right == null || right in 0L..1_000_000L)
+                Button(enabled = valid, onClick = {
+                    pendingPumpEdit = null
+                    val input = PumpInput(left, right, total)
+                    val savedAtMs = System.currentTimeMillis()
+                    change {
+                        if (target.shared) sharing.editPumpAmounts(
+                            target.family, target.childId, target.activityId, input, savedAtMs,
+                        ) else store.editPumpAmounts(
+                            target.family, target.childId, target.activityId, input, savedAtMs,
+                        )
+                    }
+                }) { Text(stringResource(R.string.save_changes)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingPumpEdit = null }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }

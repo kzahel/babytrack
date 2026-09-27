@@ -374,6 +374,10 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
                    weightG: Long?, lengthMm: Long?, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedGrowth(family, wrapping, childId, activityId, weightG, lengthMm, savedAtMs) }
 
+    fun editPumpAmounts(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+                        input: uniffi.babytrack_core_ffi.PumpInput, savedAtMs: Long): Unit =
+        withWrapping { wrapping -> core.editSharedPumpAmounts(family, wrapping, childId, activityId, input, savedAtMs) }
+
     fun editTemperatureC(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
                          enteredC: String, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedTemperatureC(family, wrapping, childId, activityId, enteredC, savedAtMs) }

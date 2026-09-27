@@ -97,6 +97,9 @@ fields. Both values survive file restore and encrypted shared sync.
 Pumping records a completed interval with either separate left/right
 millilitres or one total, never both forms in one entry. It does not create a
 freezer inventory balance.
+Pumping amount correction uses a field-set operation on the same activity.
+It clears the unselected amount form, preserving the interval, child target,
+and unknown fields.
 
 Growth percentiles are computed from WHO tables when shown, never stored.
 Wake-window hints are computed from sleep events on the device.

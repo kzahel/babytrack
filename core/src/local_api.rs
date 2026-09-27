@@ -507,6 +507,31 @@ impl LocalRepository {
         Ok(())
     }
 
+    pub fn edit_pump_amounts(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        amounts: PumpAmounts,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        if child.scope != Scope::Child || child.deleted {
+            return Err(Error::Invalid("target child unavailable"));
+        }
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("activity unavailable"))?;
+        let operation =
+            edit_pump_amounts_operation(family, child_id, activity, amounts, saved_at_ms)?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn edit_temperature_c(
         &mut self,
         family: FamilyHandle,
@@ -945,22 +970,8 @@ pub fn pump_operation(
     time: ActivityTime,
     end_utc_ms: i64,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    let PumpAmounts {
-        left_ml,
-        right_ml,
-        total_ml,
-    } = amounts;
-    if end_utc_ms < time.start_utc_ms
-        || end_utc_ms > time.saved_at_ms
-        || total_ml.is_some() && (left_ml.is_some() || right_ml.is_some())
-        || total_ml.is_none() && left_ml.unwrap_or(0) <= 0 && right_ml.unwrap_or(0) <= 0
-        || [left_ml, right_ml, total_ml]
-            .into_iter()
-            .flatten()
-            .any(|amount| !(0..=1_000_000).contains(&amount))
-        || total_ml == Some(0)
-    {
-        return Err(Error::Invalid("pump interval or amounts invalid"));
+    if end_utc_ms < time.start_utc_ms || end_utc_ms > time.saved_at_ms {
+        return Err(Error::Invalid("pump interval invalid"));
     }
     let mut fields = vec![(
         2,
@@ -969,12 +980,66 @@ pub fn pump_operation(
             Value::Integer(time.offset_minutes.into()),
         ]),
     )];
-    for (id, amount) in [(100, left_ml), (101, right_ml), (102, total_ml)] {
-        if let Some(amount) = amount {
-            fields.push((id, whole_measure(amount, 1)));
-        }
-    }
+    fields.extend(pump_amount_fields(amounts, false)?);
     activity_operation(family, child_id, "pump", fields, time)
+}
+
+fn pump_amount_fields(
+    amounts: PumpAmounts,
+    clear_missing: bool,
+) -> Result<Vec<(u64, Value)>, Error> {
+    let PumpAmounts {
+        left_ml,
+        right_ml,
+        total_ml,
+    } = amounts;
+    if total_ml.is_some() && (left_ml.is_some() || right_ml.is_some())
+        || total_ml.is_none() && left_ml.unwrap_or(0) <= 0 && right_ml.unwrap_or(0) <= 0
+        || [left_ml, right_ml, total_ml]
+            .into_iter()
+            .flatten()
+            .any(|amount| !(0..=1_000_000).contains(&amount))
+        || total_ml == Some(0)
+    {
+        return Err(Error::Invalid("pump amounts invalid"));
+    }
+    Ok([(100, left_ml), (101, right_ml), (102, total_ml)]
+        .into_iter()
+        .filter_map(|(id, amount)| {
+            amount
+                .map(|value| (id, whole_measure(value, 1)))
+                .or_else(|| clear_missing.then_some((id, Value::Null)))
+        })
+        .collect())
+}
+
+pub fn edit_pump_amounts_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    amounts: PumpAmounts,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    if activity.scope != Scope::Activity
+        || activity.child_id != Some(child_id)
+        || activity.record_type != "pump"
+        || activity.deleted
+    {
+        return Err(Error::Invalid("pump target unavailable"));
+    }
+    check_time(saved_at_ms)?;
+    Ok(NewOperation {
+        family_id: family.family_id,
+        operation_id: ids::random_v7(saved_at_ms)?,
+        record_id: activity.id,
+        scope: Scope::Activity,
+        kind: Kind::Set,
+        author_device_id: family.device_id,
+        hlc: placeholder_hlc(family),
+        record_type: None,
+        child_id: None,
+        fields: Some(pump_amount_fields(amounts, true)?),
+    })
 }
 
 pub fn solids_operation(

@@ -574,10 +574,15 @@ an app-owned authenticated GET transport. It verifies each contiguous control
 or batch against the signed relay result before advancing the durable cursor.
 An unknown batch-result fetch leaves that cursor at the last verified entry;
 the FS49 HTTP regression restarts the recipient and retries from there.
-The pull does not establish data readiness or fetch manifest objects by
-itself. A `no_more_visible` result reports the relay's page claim, not proof
-that a withholding relay has no hidden suffix. Network scheduling, object
-hydration, and background polling remain open.
+The core now separately hydrates missing objects from the verified control
+manifests with a per-pass budget. A denied promotion chunk leaves readiness
+pending, a substituted object kind is rejected, and the FS49 HTTP regression
+reopens the store and resumes object delivery. The pull and hydration steps
+alone never establish data readiness;
+the ready session replays and opens every required byte. A
+`no_more_visible` result reports the relay's page claim, not proof that a
+withholding relay has no hidden suffix. Network scheduling and background
+polling remain open.
 
 ## Advisory authority and key-handoff preflight
 

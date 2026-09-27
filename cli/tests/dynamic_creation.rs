@@ -641,33 +641,64 @@ async fn dynamic_flow(early_batch: bool) {
     }
     assert!(ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).is_err());
     let chunk_id = genesis_stages[1].0;
-    let mut object_ids = vec![object_id, issue.object_id()];
-    object_ids.extend(staged.iter().map(|(id, _)| *id));
-    object_ids.extend(admission_stage.iter().map(|(id, _)| *id));
-    object_ids.push(chunk_id);
-    for id in object_ids {
-        if id == chunk_id {
-            assert!(
-                ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).is_err()
-            );
-        }
-        let path = format!(
-            "/v1/families/{}/objects/{}",
-            lower_hex(&family.family_id),
-            lower_hex(&id)
-        );
-        let read = resumed_enrollment.sign_get(&path).unwrap();
-        let object = OpaqueObject::decode(
-            &relay
-                .object_authenticated(family.family_id, id, &path, &read.bytes)
-                .unwrap(),
-            id,
-        )
-        .unwrap();
-        recipient_public
-            .accept_object(&mut recipient_store, id, &object.object_bytes)
-            .unwrap();
-    }
+    let substituted_object = active_pull::hydrate_manifest_objects(
+        &mut recipient_store,
+        enrollment.family(),
+        16,
+        |path| {
+            let app = app.clone();
+            let read = resumed_enrollment.sign_get(&path).unwrap();
+            async move {
+                let response = http_bytes(&app, Method::GET, &path, read.bytes).await;
+                let Value::Map(mut fields) = cbor::decode(&response).unwrap() else {
+                    panic!()
+                };
+                fields[1].1 = Value::Integer(65535);
+                Ok::<_, ()>(cbor::encode(&Value::Map(fields)).unwrap())
+            }
+        },
+    )
+    .await;
+    assert!(matches!(
+        substituted_object,
+        Err(active_pull::Error::Invalid(_))
+    ));
+    assert!(ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).is_err());
+    let missing_chunk = active_pull::hydrate_manifest_objects(
+        &mut recipient_store,
+        enrollment.family(),
+        16,
+        |path| {
+            let app = app.clone();
+            let read = resumed_enrollment.sign_get(&path).unwrap();
+            let blocked = path.ends_with(&lower_hex(&chunk_id));
+            async move {
+                if blocked {
+                    Err(())
+                } else {
+                    Ok(http_bytes(&app, Method::GET, &path, read.bytes).await)
+                }
+            }
+        },
+    )
+    .await;
+    assert!(matches!(missing_chunk, Err(active_pull::Error::Transport)));
+    assert!(ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).is_err());
+    drop(recipient_store);
+    recipient_store = SqliteStore::open(&recipient_path).unwrap();
+    let hydrated = active_pull::hydrate_manifest_objects(
+        &mut recipient_store,
+        enrollment.family(),
+        16,
+        |path| {
+            let app = app.clone();
+            let read = resumed_enrollment.sign_get(&path).unwrap();
+            async move { Ok::<_, ()>(http_bytes(&app, Method::GET, &path, read.bytes).await) }
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!hydrated.remaining);
     let ready = ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).unwrap();
     assert_eq!(ready.observed_cursor(), 6 + shift);
     assert_eq!(ready.active_epoch(), 1);

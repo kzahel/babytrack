@@ -64,6 +64,12 @@ without recreating the child or moving its activities. A blank date in this
 edit keeps the previous value; local restore and encrypted sync cover changes.
 The selected-child controls now include a direct action that scrolls to the
 timeline below the logging forms.
+The Android logging screen also lets a caregiver choose an earlier local date
+and time for the next completed entry. It records the offset at that instant
+and returns to current time after a successful save; running sleep timers
+still start now. A failed save retains the choice for retry. On an emulator,
+a diaper saved for the previous day appeared at that time after process
+restart, and the time control reset to current for the next entry.
 
 Two separate emulator installations and a disposable relay pass first-cohort
 join without simultaneous foreground use, reciprocal encrypted edits,

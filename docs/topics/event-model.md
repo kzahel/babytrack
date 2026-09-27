@@ -143,6 +143,12 @@ the UI offers to merge them rather than guessing.
   operation's HLC records the author's causal estimate; verified log order
   controls shared merge order.
   Backfilling does not require rewriting old operations.
+  Android's logging screen can select an earlier local date and time for the
+  next completed entry. The core receives that event time with the offset at
+  the selected instant, while the operation is authored when it is saved.
+  Starting a running sleep timer always uses the current time. The selected
+  earlier time clears after a successful completed entry or a child/Family
+  switch; a failed save leaves it available for retry.
 - Lists and timelines show each event at the local time it was logged, with
   a marker when that offset differs from the viewing device's current one.
 - A day is a calendar day in the viewing device's current time zone. Events

@@ -4,6 +4,8 @@ import android.Manifest
 import android.os.Bundle
 import android.os.Build
 import android.app.ActivityManager
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -75,6 +77,8 @@ import uniffi.babytrack_core_ffi.SharedSnapshotRow
 import uniffi.babytrack_core_ffi.SharedSyncRow
 import java.text.DateFormat
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
 import java.util.Date
 import java.util.TimeZone
 
@@ -390,6 +394,7 @@ private fun TrackerScreen(
     var medicationName by remember { mutableStateOf("") }
     var doseAmount by remember { mutableStateOf("") }
     var doseUnit by remember { mutableStateOf("") }
+    var logAtMs by remember { mutableStateOf<Long?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var automaticSyncDelayed by remember { mutableStateOf(false) }
     var automaticSyncBlocked by remember { mutableStateOf(false) }
@@ -448,6 +453,7 @@ private fun TrackerScreen(
         breastDraftSegments = emptyList()
         breastMinutes = ""
         childRename = null
+        logAtMs = null
     }
     var pendingBackup by remember { mutableStateOf<BackupFileRow?>(null) }
     var pendingAnalysisCsv by remember { mutableStateOf<ByteArray?>(null) }
@@ -586,6 +592,15 @@ private fun TrackerScreen(
     val filename = stringResource(R.string.backup_filename)
     val protectedFilename = stringResource(R.string.protected_backup_filename)
     val scrollState = rememberScrollState()
+    fun logTime(): ActivityWhen = activityWhen(logAtMs ?: System.currentTimeMillis())
+    fun resetLogTime(savedAt: Long?) {
+        if (logAtMs == savedAt) logAtMs = null
+    }
+    fun logCompleted(action: (ActivityWhen) -> Unit) {
+        val chosenAt = logAtMs
+        val at = logTime()
+        change(onSaved = { resetLogTime(chosenAt) }) { action(at) }
+    }
 
     Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.screen_title)) }) }) { padding ->
         Column(
@@ -1166,12 +1181,41 @@ private fun TrackerScreen(
                     OutlinedButton(onClick = {
                         scope.launch { scrollState.animateScrollTo(scrollState.maxValue) }
                     }) { Text(stringResource(R.string.view_timeline)) }
+                    Text(stringResource(R.string.log_time_title), style = MaterialTheme.typography.titleMedium)
+                    Text(if (logAtMs == null) stringResource(R.string.log_time_now)
+                        else stringResource(R.string.log_time_selected,
+                            DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(logAtMs!!))))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = {
+                            val current = java.util.Calendar.getInstance()
+                            DatePickerDialog(context, { _, year, month, day ->
+                                TimePickerDialog(context, { _, hour, minute ->
+                                    val selected = LocalDateTime.of(year, month + 1, day, hour, minute)
+                                        .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                                    if (selected > System.currentTimeMillis()) {
+                                        message = context.getString(R.string.log_time_future)
+                                    } else {
+                                        logAtMs = selected
+                                        message = null
+                                    }
+                                }, current.get(java.util.Calendar.HOUR_OF_DAY),
+                                    current.get(java.util.Calendar.MINUTE), false).show()
+                            }, current.get(java.util.Calendar.YEAR),
+                                current.get(java.util.Calendar.MONTH),
+                                current.get(java.util.Calendar.DAY_OF_MONTH)).apply {
+                                datePicker.maxDate = System.currentTimeMillis()
+                            }.show()
+                        }) { Text(stringResource(R.string.log_time_choose)) }
+                        if (logAtMs != null) OutlinedButton(onClick = { logAtMs = null }) {
+                            Text(stringResource(R.string.log_time_reset))
+                        }
+                    }
                     Text(stringResource(R.string.log_diaper), style = MaterialTheme.typography.titleLarge)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(1u.toUByte() to R.string.wet, 2u.toUByte() to R.string.dirty, 3u.toUByte() to R.string.both).forEach { (kind, label) ->
-                            Button(onClick = { change {
-                                if (activeShared) sharing.logDiaper(family, child.id, kind, nowTime())
-                                else store.logDiaper(family, child.id, kind, nowTime())
+                            Button(onClick = { logCompleted { at ->
+                                if (activeShared) sharing.logDiaper(family, child.id, kind, at)
+                                else store.logDiaper(family, child.id, kind, at)
                             } }) {
                                 Text(stringResource(label))
                             }
@@ -1189,9 +1233,9 @@ private fun TrackerScreen(
                         )
                         Button(enabled = (amount.toLongOrNull() ?: 0) > 0, onClick = {
                             val ml = amount.toLongOrNull() ?: return@Button
-                            change {
-                                if (activeShared) sharing.logBottleMl(family, child.id, ml, nowTime())
-                                else store.logBottleMl(family, child.id, ml, 2u.toUByte(), nowTime())
+                            logCompleted { at ->
+                                if (activeShared) sharing.logBottleMl(family, child.id, ml, at)
+                                else store.logBottleMl(family, child.id, ml, 2u.toUByte(), at)
                             }
                             amount = ""
                         }) { Text(stringResource(R.string.log_bottle)) }
@@ -1237,7 +1281,8 @@ private fun TrackerScreen(
                         val minutes = breastMinutes.toLongOrNull() ?: return@Button
                         val draft = breastDraftSegments
                         val plan = draft + (breastSide to minutes)
-                        val end = nowTime()
+                        val chosenAt = logAtMs
+                        val end = logTime()
                         var cursor = end.startUtcMs - plan.sumOf { it.second * 60_000L }
                         val zone = TimeZone.getDefault()
                         val interval = ActivityWhen(cursor, (zone.getOffset(cursor) / 60_000).toShort(), end.savedAtMs)
@@ -1258,6 +1303,7 @@ private fun TrackerScreen(
                                 }
                                 version++
                                 message = null
+                                resetLogTime(chosenAt)
                             }.onFailure { message = errorText }
                         }
                     }) { Text(stringResource(R.string.save_breast)) }
@@ -1306,9 +1352,10 @@ private fun TrackerScreen(
                         val right = pumpRight.toLongOrNull()
                         val total = pumpTotal.toLongOrNull()
                         val input = PumpInput(left, right, total)
-                        val end = nowTime()
+                        val chosenAt = logAtMs
+                        val end = logTime()
                         val interval = ActivityWhen(end.startUtcMs - minutes * 60_000L,
-                            end.offsetMinutes, end.savedAtMs)
+                            (TimeZone.getDefault().getOffset(end.startUtcMs - minutes * 60_000L) / 60_000).toShort(), end.savedAtMs)
                         scope.launch {
                             runCatching { withContext(Dispatchers.IO) {
                                 if (activeShared) sharing.logPump(family, child.id, input, interval, end.startUtcMs)
@@ -1320,6 +1367,7 @@ private fun TrackerScreen(
                                 pumpTotal = ""
                                 version++
                                 message = null
+                                resetLogTime(chosenAt)
                             }.onFailure { message = errorText }
                         }
                     }) { Text(stringResource(R.string.save_pump)) }
@@ -1339,15 +1387,18 @@ private fun TrackerScreen(
                     Button(enabled = solidsFoods.isNotBlank(), onClick = {
                         val foods = solidsFoods.lines().map { it.trim() }.filter { it.isNotEmpty() }
                         val eaten = solidsAmount.trim()
+                        val chosenAt = logAtMs
+                        val at = logTime()
                         scope.launch {
                             runCatching { withContext(Dispatchers.IO) {
-                                if (activeShared) sharing.logSolids(family, child.id, foods, eaten, nowTime())
-                                else store.logSolids(family, child.id, foods, eaten, nowTime())
+                                if (activeShared) sharing.logSolids(family, child.id, foods, eaten, at)
+                                else store.logSolids(family, child.id, foods, eaten, at)
                             } }.onSuccess {
                                 solidsFoods = ""
                                 solidsAmount = ""
                                 version++
                                 message = null
+                                resetLogTime(chosenAt)
                             }.onFailure { message = errorText }
                         }
                     }) { Text(stringResource(R.string.save_solids)) }
@@ -1373,12 +1424,13 @@ private fun TrackerScreen(
                         )
                         Button(enabled = (sleepMinutes.toLongOrNull() ?: 0L) in 1L..1440L, onClick = {
                             val duration = sleepMinutes.toLongOrNull() ?: return@Button
-                            val end = System.currentTimeMillis()
+                            val chosenAt = logAtMs
+                            val end = logTime().startUtcMs
                             val start = end - duration * 60_000
                             val zone = TimeZone.getDefault()
-                            val whenStarted = ActivityWhen(start, (zone.getOffset(start) / 60_000).toShort(), end)
+                            val whenStarted = ActivityWhen(start, (zone.getOffset(start) / 60_000).toShort(), System.currentTimeMillis())
                             val endOffset = (zone.getOffset(end) / 60_000).toShort()
-                            change {
+                            change(onSaved = { resetLogTime(chosenAt) }) {
                                 if (activeShared) sharing.logSleep(family, child.id, whenStarted, end, endOffset)
                                 else store.logSleep(family, child.id, whenStarted, end, endOffset)
                             }
@@ -1413,15 +1465,18 @@ private fun TrackerScreen(
                         onClick = {
                             val savedWeight = growthWeight
                             val savedLength = growthLength
+                            val chosenAt = logAtMs
+                            val at = logTime()
                             scope.launch {
                                 runCatching { withContext(Dispatchers.IO) {
-                                    if (activeShared) sharing.logGrowth(family, child.id, weight, length, nowTime())
-                                    else store.logGrowth(family, child.id, weight, length, nowTime())
+                                    if (activeShared) sharing.logGrowth(family, child.id, weight, length, at)
+                                    else store.logGrowth(family, child.id, weight, length, at)
                                 } }.onSuccess {
                                     if (growthWeight == savedWeight) growthWeight = ""
                                     if (growthLength == savedLength) growthLength = ""
                                     version++
                                     message = null
+                                    resetLogTime(chosenAt)
                                 }.onFailure { message = errorText }
                             }
                         },
@@ -1438,14 +1493,17 @@ private fun TrackerScreen(
                         )
                         Button(enabled = temperatureC.isNotBlank(), onClick = {
                             val entered = temperatureC.trim()
+                            val chosenAt = logAtMs
+                            val at = logTime()
                             scope.launch {
                                 runCatching { withContext(Dispatchers.IO) {
-                                    if (activeShared) sharing.logTemperatureC(family, child.id, entered, nowTime())
-                                    else store.logTemperatureC(family, child.id, entered, nowTime())
+                                    if (activeShared) sharing.logTemperatureC(family, child.id, entered, at)
+                                    else store.logTemperatureC(family, child.id, entered, at)
                                 } }.onSuccess {
                                     if (temperatureC.trim() == entered) temperatureC = ""
                                     version++
                                     message = null
+                                    resetLogTime(chosenAt)
                                 }.onFailure { message = errorText }
                             }
                         }) { Text(stringResource(R.string.save_temperature)) }
@@ -1481,16 +1539,19 @@ private fun TrackerScreen(
                             val amount = doseAmount.trim()
                             val unit = doseUnit.trim()
                             val input = MedicationInput(name, amount, unit)
+                            val chosenAt = logAtMs
+                            val at = logTime()
                             scope.launch {
                                 runCatching { withContext(Dispatchers.IO) {
-                                    if (activeShared) sharing.logMedication(family, child.id, input, nowTime())
-                                    else store.logMedication(family, child.id, input, nowTime())
+                                    if (activeShared) sharing.logMedication(family, child.id, input, at)
+                                    else store.logMedication(family, child.id, input, at)
                                 } }.onSuccess {
                                     if (medicationName.trim() == name) medicationName = ""
                                     if (doseAmount.trim() == amount) doseAmount = ""
                                     if (doseUnit.trim() == unit) doseUnit = ""
                                     version++
                                     message = null
+                                    resetLogTime(chosenAt)
                                 }.onFailure { message = errorText }
                             }
                         },
@@ -1504,14 +1565,17 @@ private fun TrackerScreen(
                     )
                     Button(enabled = noteText.isNotBlank(), onClick = {
                         val note = noteText.trim()
+                        val chosenAt = logAtMs
+                        val at = logTime()
                         scope.launch {
                             runCatching { withContext(Dispatchers.IO) {
-                                if (activeShared) sharing.logNote(family, child.id, note, nowTime())
-                                else store.logNote(family, child.id, note, nowTime())
+                                if (activeShared) sharing.logNote(family, child.id, note, at)
+                                else store.logNote(family, child.id, note, at)
                             } }.onSuccess {
                                 if (noteText.trim() == note) noteText = ""
                                 version++
                                 message = null
+                                resetLogTime(chosenAt)
                             }.onFailure { message = errorText }
                         }
                     }) { Text(stringResource(R.string.save_note)) }
@@ -2287,9 +2351,14 @@ private fun TrackerScreen(
 }
 
 private fun nowTime(): ActivityWhen {
-    val now = System.currentTimeMillis()
-    return ActivityWhen(now, (TimeZone.getDefault().getOffset(now) / 60_000).toShort(), now)
+    return activityWhen(System.currentTimeMillis())
 }
+
+private fun activityWhen(atMs: Long): ActivityWhen = ActivityWhen(
+    atMs,
+    (TimeZone.getDefault().getOffset(atMs) / 60_000).toShort(),
+    System.currentTimeMillis(),
+)
 
 private fun terminalInvitationMessage(context: Context, reason: InvitationTerminalReason): String =
     context.getString(when (reason) {

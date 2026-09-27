@@ -107,6 +107,141 @@ pub struct PreparedAdmission {
     pub next_state: Value,
 }
 
+#[derive(Debug, Clone)]
+pub struct PreparedRemoval {
+    pub transition_id: [u8; 16],
+    pub target_id: [u8; 16],
+    pub new_epoch: u32,
+    pub new_commitment: [u8; 32],
+    pub signer_id: [u8; 16],
+    pub signer_key: [u8; 32],
+    pub manifest: Vec<ManifestEntry>,
+    pub next_state: Value,
+}
+
+/// Remove an active device, advance the epoch, and invalidate outstanding
+/// challenges. The caller checks grant/keyring object contents and history.
+pub fn prepare_removal(
+    candidate_bytes: &[u8],
+    state: &Value,
+    head: [u8; 32],
+    current_commitment: [u8; 32],
+) -> Result<PreparedRemoval, Error> {
+    let candidate = cbor::decode_with_limits(
+        candidate_bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?;
+    let root = exact_map(&candidate, 2)?;
+    let unsigned = exact_map(&root[0].1, 11)?;
+    let delta = exact_map(&unsigned[6].1, 3)?;
+    let target_id = fixed::<16>(&delta[0].1)?;
+    let old_role = number(&delta[1].1)?;
+    let new_commitment = fixed::<32>(&delta[2].1)?;
+    if new_commitment == current_commitment {
+        return Err(Error::Invalid("rotation must change epoch commitment"));
+    }
+    let old = exact_map(state, 7)?;
+    if number(&old[0].1)? != 1 {
+        return Err(Error::Invalid("removal state version"));
+    }
+    let family_id = fixed::<16>(&old[1].1)?;
+    let relay_id = fixed::<32>(&old[2].1)?;
+    let next_epoch: u32 = number(&old[3].1)?
+        .checked_add(1)
+        .ok_or(Error::Invalid("removal epoch overflow"))?
+        .try_into()
+        .map_err(|_| Error::Invalid("removal epoch range"))?;
+    let Value::Array(active) = &old[4].1 else {
+        return Err(Error::Invalid("removal active state not array"));
+    };
+    let target = active
+        .iter()
+        .find_map(|row| {
+            let fields = array(row, 5).ok()?;
+            (fixed::<16>(&fields[0]).ok()? == target_id).then_some(fields)
+        })
+        .ok_or(Error::Invalid("removal target not active"))?;
+    if number(&target[4])? != old_role {
+        return Err(Error::Invalid("removal prior role"));
+    }
+    let signatures = array(&root[1].1, 1)?;
+    let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
+    let signer = active
+        .iter()
+        .find_map(|row| {
+            let fields = array(row, 5).ok()?;
+            (fixed::<16>(&fields[0]).ok()? == signer_id).then_some(fields)
+        })
+        .ok_or(Error::Invalid("removal signer not active"))?;
+    if number(&signer[4])? != 2 {
+        return Err(Error::Invalid("removal signer not manager"));
+    }
+    let signer_key = fixed::<32>(&signer[1])?;
+    let mut next_state = state.clone();
+    let Value::Map(next) = &mut next_state else {
+        unreachable!()
+    };
+    next[3].1 = Value::Integer(next_epoch.into());
+    let Value::Array(next_active) = &mut next[4].1 else {
+        unreachable!()
+    };
+    next_active.retain(|row| {
+        !array(row, 5).is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(target_id))
+    });
+    if !next_active
+        .iter()
+        .any(|row| array(row, 5).is_ok_and(|fields| number(&fields[4]).ok() == Some(2)))
+    {
+        return Err(Error::Invalid("removal would leave no manager"));
+    }
+    let remaining = next_active.len();
+    let Value::Array(invitations) = &mut next[6].1 else {
+        return Err(Error::Invalid("removal invitations not array"));
+    };
+    for invitation in invitations {
+        let fields = array_mut(invitation, 6)?;
+        if fixed::<16>(&fields[1])? == target_id && number(&fields[5])? == 1 {
+            fields[5] = Value::Integer(3);
+        }
+    }
+    let Value::Array(pending) = &mut next[5].1 else {
+        return Err(Error::Invalid("removal pending not array"));
+    };
+    for row in pending {
+        let fields = array_mut(row, 9)?;
+        fields[7] = Value::Null;
+        fields[8] = Value::Null;
+    }
+    let mut kinds = Vec::with_capacity(remaining + 2);
+    kinds.push(1);
+    kinds.extend(std::iter::repeat_n(4, remaining));
+    kinds.push(5);
+    let header = prepare_following(
+        candidate_bytes,
+        family_id,
+        relay_id,
+        head,
+        8,
+        u64::from(next_epoch),
+        &next_state,
+        &[(signer_id, signer_key)],
+        &kinds,
+    )?;
+    Ok(PreparedRemoval {
+        transition_id: header.transition_id,
+        target_id,
+        new_epoch: next_epoch,
+        new_commitment,
+        signer_id,
+        signer_key,
+        manifest: header.manifest,
+        next_state,
+    })
+}
+
 /// Move a proved pending device into active membership for the current epoch.
 /// Callers check that the membership and grant objects match their manifests.
 pub fn prepare_admission(
@@ -925,6 +1060,15 @@ fn exact_map(value: &Value, width: usize) -> Result<&[(u64, Value)], Error> {
     Ok(fields)
 }
 fn array(value: &Value, width: usize) -> Result<&[Value], Error> {
+    let Value::Array(items) = value else {
+        return Err(Error::Invalid("array expected"));
+    };
+    if items.len() != width {
+        return Err(Error::Invalid("array width"));
+    }
+    Ok(items)
+}
+fn array_mut(value: &mut Value, width: usize) -> Result<&mut [Value], Error> {
     let Value::Array(items) = value else {
         return Err(Error::Invalid("array expected"));
     };

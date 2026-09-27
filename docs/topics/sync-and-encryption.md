@@ -431,7 +431,8 @@ database snapshot. An offline request or staged object never becomes a
 confirmed authority change. Unknown versions/kinds fail closed.
 
 The extracted `wire` verifier prepares invitation-issue, two-signature
-claim, holder-challenge, pending key-proof, and admission candidates for both
+claim, holder-challenge, pending key-proof, admission, and active-removal
+candidates for both
 the client control chain and relay. It checks the
 public state effects, hashes, manifests, and applicable signatures without
 time, receipt, or object opening. Historical ID checks still live in the

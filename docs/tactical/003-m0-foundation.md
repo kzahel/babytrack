@@ -1178,7 +1178,14 @@ pending row, current epoch commitment, signer, active-row insertion, and
 grant manifest are checked from public state on both client and relay.
 Encrypted grant and membership object contents remain client checks, and
 historical ID checks remain separate. Repair, cancellation, role change,
-pending removal, rotation, and later-device relay routes remain open.
+pending removal, and later-device relay routes remain open.
+
+Active removal now uses shared public preparation too. It checks a manager
+signature, target and prior role, a changed epoch commitment, a surviving
+manager, canceled unused invitations from the removed issuer, cleared pending
+proofs, and the rotation manifest shape. The client still opens and verifies
+the new grants and keyring. General relay rotation and historical access
+remain open; the current route still covers the first cohort only.
 
 The corrected [topic proposal](../topics/sync-and-encryption.md#proposed-implementation-seam-for-general-relay-authority)
 uses a public candidate verifier, a relay commit wrapper, and a client

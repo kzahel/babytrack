@@ -1014,63 +1014,21 @@ impl ControlChain {
             .try_into()
             .map_err(|_| Error::Invalid("epoch outside u32"))?;
         self.check_unsigned(unsigned, 8, next_epoch)?;
-        let delta = exact_map(&unsigned[6].1, 3)?;
-        let target_id = fixed::<16>(&delta[0].1)?;
-        let old_role = number(&delta[1].1)?;
-        let new_commitment = fixed::<32>(&delta[2].1)?;
-        let state = exact_map(&self.state, 7)?;
-        let target = find_row(&state[4].1, 5, 0, target_id)?
-            .ok_or(Error::Invalid("removal target not active"))?;
-        if number(&target[4])? != old_role {
-            return Err(Error::Invalid("removal old role mismatch"));
-        }
-        let signatures = array(&root[1].1, 1)?;
-        let signer_id = fixed::<16>(&array(&signatures[0], 2)?[0])?;
-        let signer = find_row(&state[4].1, 5, 0, signer_id)?
-            .ok_or(Error::Invalid("removal signer not active"))?;
-        if number(&signer[4])? != 2 {
-            return Err(Error::Invalid("removal signer not manager"));
-        }
-        let signer_key = fixed::<32>(&signer[1])?;
-        let mut next_state = self.state.clone();
-        let Value::Map(map) = &mut next_state else {
-            unreachable!()
-        };
-        map[3].1 = Value::Integer(next_epoch.into());
-        let Value::Array(active) = &mut map[4].1 else {
-            unreachable!()
-        };
-        active.retain(|row| {
-            !array(row, 5).is_ok_and(|fields| fixed::<16>(&fields[0]).ok() == Some(target_id))
-        });
-        if !active
-            .iter()
-            .any(|row| array(row, 5).is_ok_and(|fields| number(&fields[4]).ok() == Some(2)))
-        {
-            return Err(Error::Invalid("cannot remove final manager"));
-        }
-        let remaining = active.len();
-        let Value::Array(invitations) = &mut map[6].1 else {
-            unreachable!()
-        };
-        for invitation in invitations {
-            let Value::Array(fields) = invitation else {
-                unreachable!()
-            };
-            if fixed::<16>(&fields[1])? == target_id && number(&fields[5])? == 1 {
-                fields[5] = Value::Integer(3);
-            }
-        }
-        let Value::Array(pending) = &mut map[5].1 else {
-            unreachable!()
-        };
-        for row in pending {
-            let Value::Array(fields) = row else {
-                unreachable!()
-            };
-            fields[7] = Value::Null;
-            fields[8] = Value::Null;
-        }
+        self.check_new_control_ids(unsigned)?;
+        let signed_candidate = cbor::encode(&Value::Map(vec![
+            (1, root[0].1.clone()),
+            (2, root[1].1.clone()),
+        ]))?;
+        let prepared = babytrack_wire::authority::prepare_removal(
+            &signed_candidate,
+            &self.state,
+            self.head_hash,
+            self.current_commitment,
+        )?;
+        let target_id = prepared.target_id;
+        let new_commitment = prepared.new_commitment;
+        let next_state = prepared.next_state;
+        let remaining = prepared.manifest.len() - 2;
         let mut kinds = vec![1];
         kinds.extend(std::iter::repeat_n(4, remaining));
         kinds.push(5);
@@ -1091,38 +1049,28 @@ impl ControlChain {
                 ),
             );
         }
-        let manifest = array(&unsigned[9].1, remaining + 2)?;
         let mut grants = Vec::with_capacity(remaining);
-        for entry in &manifest[1..=remaining] {
-            let fields = array(entry, 4)?;
-            if number(&fields[0])? != 4 {
-                return Err(Error::Invalid("rotation grant manifest kind invalid"));
-            }
+        for entry in &prepared.manifest[1..=remaining] {
             grants.push(ObjectRef {
-                id: fixed::<16>(&fields[1])?,
-                hash: fixed::<32>(&fields[2])?,
+                id: entry.object_id,
+                hash: entry.object_hash,
             });
         }
-        let keyring_entry = array(&manifest[remaining + 1], 4)?;
-        if number(&keyring_entry[0])? != 5 {
-            return Err(Error::Invalid("rotation keyring manifest kind invalid"));
-        }
+        let keyring_entry = &prepared.manifest[remaining + 1];
         let rotation = VerifiedRotation {
             family_id: self.genesis.family_id(),
             relay_id: self.genesis.relay_id(),
             prior_head: fixed::<32>(&unsigned[3].1)?,
-            transition_id: fixed::<16>(&unsigned[4].1)?,
+            transition_id: prepared.transition_id,
             state_hash: fixed::<32>(&unsigned[7].1)?,
-            epoch: next_epoch
-                .try_into()
-                .map_err(|_| Error::Invalid("epoch outside u32"))?,
+            epoch: prepared.new_epoch,
             commitment: new_commitment,
             core_hash: fixed::<32>(&unsigned[10].1)?,
             delta: unsigned[6].1.clone(),
             grants,
             keyring: ObjectRef {
-                id: fixed::<16>(&keyring_entry[1])?,
-                hash: fixed::<32>(&keyring_entry[2])?,
+                id: keyring_entry.object_id,
+                hash: keyring_entry.object_hash,
             },
             recipients,
             prior_commitments: self.epoch_commitments.clone(),
@@ -1133,7 +1081,7 @@ impl ControlChain {
             unsigned,
             FinalizePlan {
                 next_state,
-                expected_signers: &[(signer_id, signer_key)],
+                expected_signers: &[(prepared.signer_id, prepared.signer_key)],
                 manifest_kinds: &kinds,
                 before_ms: None,
             },

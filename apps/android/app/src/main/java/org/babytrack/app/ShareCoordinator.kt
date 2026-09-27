@@ -463,6 +463,7 @@ private fun removedProgress(removed: RemovedDeviceRow): RecipientSyncRow = Recip
     verifiedCursor = removed.verifiedCursor,
     pendingControlCursor = removed.verifiedCursor,
     awaitingGrant = false,
+    joinPhase = 7u.toUByte(),
     noMoreVisible = false,
     remainingObjects = false,
     ready = false,

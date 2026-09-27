@@ -614,6 +614,44 @@ impl EnrollmentAttempt {
             .map(|challenge| challenge.hpke_object_id())
             .ok_or(Error::Invalid("recipient challenge absent"))
     }
+    /// UI phase from verified public authority only: 1 waiting for claim,
+    /// 2 waiting for holder challenge, 3 challenged, 4 proved, 5 admitted.
+    pub fn pending_phase(&self, store: &SqliteStore) -> Result<u8, Error> {
+        let chain =
+            shared_history::sparse_enrollment_chain(store, self.family, self.relay_public_key()?)?;
+        if chain
+            .initial_admission_grant(&self.family.device_id)
+            .is_some()
+        {
+            return Ok(5);
+        }
+        let Value::Map(state) = cbor::decode(&chain.state_bytes()?)? else {
+            return Err(Error::Invalid("verified authority state not map"));
+        };
+        let Value::Array(pending) = &state[5].1 else {
+            return Err(Error::Invalid("verified pending state not array"));
+        };
+        for item in pending {
+            let Value::Array(row) = item else {
+                return Err(Error::Invalid("verified pending row not array"));
+            };
+            if row.len() != 9 {
+                return Err(Error::Invalid("verified pending row width"));
+            }
+            if row[0] == Value::Bytes(self.invitation_id.to_vec())
+                && row[1] == Value::Bytes(self.family.device_id.to_vec())
+            {
+                return Ok(if row[7] == Value::Null {
+                    2
+                } else if row[8] == Value::Null {
+                    3
+                } else {
+                    4
+                });
+            }
+        }
+        Ok(1)
+    }
     pub fn has_committed_admission(&self, store: &SqliteStore) -> Result<bool, Error> {
         Ok(
             shared_history::sparse_enrollment_chain(store, self.family, self.relay_public_key()?)?

@@ -401,7 +401,7 @@ private fun TrackerScreen(
                 joinStage = when {
                     progress.removed -> removedHistoryMessage(context, progress)
                     progress.ready -> context.getString(R.string.history_ready_auto)
-                    progress.awaitingGrant -> context.getString(R.string.history_awaiting_grant, progress.pendingControlCursor.toLong())
+                    progress.awaitingGrant -> pendingRecipientMessage(context, progress)
                     else -> context.getString(R.string.history_pending, progress.verifiedCursor.toLong())
                 }
             }
@@ -649,7 +649,7 @@ private fun TrackerScreen(
                                     } else if (progress.ready) {
                                         context.getString(R.string.history_ready, progress.childCount.toLong())
                                     } else if (progress.awaitingGrant) {
-                                        context.getString(R.string.history_awaiting_grant, progress.pendingControlCursor.toLong())
+                                        pendingRecipientMessage(context, progress)
                                     } else {
                                         context.getString(R.string.history_pending, progress.verifiedCursor.toLong())
                                     }
@@ -1970,6 +1970,16 @@ private fun sharedSyncMessage(context: Context, progress: SharedSyncRow): String
     progress.outboxState == 2.toUByte() -> context.getString(R.string.shared_upload_uncertain)
     progress.outboxState == 1.toUByte() -> context.getString(R.string.shared_upload_pending)
     else -> context.getString(R.string.shared_synced, progress.verifiedCursor.toLong())
+}
+
+private fun pendingRecipientMessage(
+    context: Context,
+    progress: uniffi.babytrack_core_ffi.RecipientSyncRow,
+): String = when (progress.joinPhase.toInt()) {
+    2 -> context.getString(R.string.history_awaiting_challenge)
+    3 -> context.getString(R.string.history_challenge_received)
+    4 -> context.getString(R.string.history_proof_committed)
+    else -> context.getString(R.string.history_awaiting_grant, progress.pendingControlCursor.toLong())
 }
 
 private fun removedHistoryMessage(

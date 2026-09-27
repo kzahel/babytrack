@@ -169,6 +169,9 @@
     <string name="load_shared_history">Load shared history</string>
     <string name="history_loading">Fetching and verifying the full Family history…</string>
     <string name="history_awaiting_grant">Waiting for the holder to grant access. Public control stage %1$d; Family data is not ready.</string>
+    <string name="history_awaiting_challenge">Claim confirmed. Waiting for a Family key holder to respond.</string>
+    <string name="history_challenge_received">Holder challenge received. This device is preparing its key proof.</string>
+    <string name="history_proof_committed">Device proof confirmed. Waiting for a key holder to grant access.</string>
     <string name="history_pending">Verified through cursor %1$d. Waiting for more history or objects; retry on the next sync opportunity.</string>
     <string name="history_ready">Shared history verified. %1$d children loaded.</string>
     <string name="history_ready_auto">Shared history verified and ready.</string>

@@ -284,6 +284,9 @@ pub struct RecipientSyncRow {
     pub verified_cursor: u64,
     pub pending_control_cursor: u64,
     pub awaiting_grant: bool,
+    /// 1 claim, 2 holder challenge, 3 local proof, 4 holder grant,
+    /// 5 hydration, 6 ready, 7 removed.
+    pub join_phase: u8,
     pub no_more_visible: bool,
     pub remaining_objects: bool,
     pub ready: bool,
@@ -1291,6 +1294,7 @@ impl NativeSharedStore {
                 .map_err(rejected)?;
         }
         let pending_control_cursor = attempt.pending_control_cursor(&store).map_err(rejected)?;
+        let pending_phase = attempt.pending_phase(&store).map_err(rejected)?;
         if !attempt.has_committed_admission(&store).map_err(rejected)? {
             return Ok(RecipientSyncRow {
                 verified_cursor: PublicHistorySession::resume(&store, family.handle()?)
@@ -1298,6 +1302,7 @@ impl NativeSharedStore {
                     .cursor(),
                 pending_control_cursor,
                 awaiting_grant: true,
+                join_phase: pending_phase,
                 no_more_visible: false,
                 remaining_objects: true,
                 ready: false,
@@ -1340,6 +1345,7 @@ impl NativeSharedStore {
                 verified_cursor: pull.verified_cursor,
                 pending_control_cursor,
                 awaiting_grant: false,
+                join_phase: 5,
                 no_more_visible: pull.no_more_visible,
                 remaining_objects: hydration.remaining,
                 ready: false,
@@ -1361,6 +1367,7 @@ impl NativeSharedStore {
             verified_cursor: pull.verified_cursor,
             pending_control_cursor,
             awaiting_grant: false,
+            join_phase: 6,
             no_more_visible: true,
             remaining_objects: false,
             ready: true,

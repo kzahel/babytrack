@@ -74,6 +74,9 @@ calls for challenge, proof, and grant, with separate instrumented wake steps.
 Creating a later invitation now first syncs the manager's current view and
 pending edits, so a caregiver does not have to run a separate manual sync
 before tapping Invite.
+The join screen now names the verified stage: waiting for a holder challenge,
+preparing the recipient proof, waiting for a holder grant, or loading history.
+The later-device emulator flow checks the pending and proved phases.
 The early independent authority recheck passed for that implemented cohort
 at `82c0f4c`; [003](003-m0-foundation.md#early-m0-authority-recheck-at-82c0f4c)
 records its limits. No physical two-phone or full M0 exit gate has passed.

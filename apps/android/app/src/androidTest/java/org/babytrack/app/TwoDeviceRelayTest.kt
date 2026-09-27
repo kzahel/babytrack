@@ -80,7 +80,9 @@ class TwoDeviceRelayTest {
             ?: error("fragment required")
         ShareCoordinator(context, db.absolutePath).use { sharing ->
             val claimed = sharing.claim(fragment)
-            assertTrue(sharing.syncRecipient(claimed.family).awaitingGrant)
+            val progress = sharing.syncRecipient(claimed.family)
+            assertTrue(progress.awaitingGrant)
+            assertEquals(2u.toUByte(), progress.joinPhase)
         }
     }
 
@@ -107,6 +109,7 @@ class TwoDeviceRelayTest {
             val family = sharing.recipientFamilies().single()
             val progress = sharing.advanceRecipient(family)
             assertTrue(progress.awaitingGrant || progress.ready)
+            assertTrue(progress.joinPhase == 4u.toUByte() || progress.joinPhase == 6u.toUByte())
         }
     }
 

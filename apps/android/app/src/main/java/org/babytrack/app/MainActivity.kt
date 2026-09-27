@@ -207,6 +207,7 @@ private data class PendingTemperatureEdit(
 )
 internal data class ScreenData(
     val families: List<FamilyRef>,
+    val familyChildNames: Map<String, String>,
     val activeFamilyKey: String?,
     val activeFamilyIsLocal: Boolean,
     val children: List<ChildRow>,
@@ -260,6 +261,17 @@ internal fun loadTrackerData(
     val readyJoined = recipients.mapNotNull { candidate ->
         runCatching { candidate to sharing.snapshot(candidate) }.getOrNull()
     }
+    val familyChildNames = mutableMapOf<String, String>()
+    for (candidate in local) {
+        val firstChild = runCatching {
+            if (sharing.isShared(candidate)) sharing.snapshot(candidate).children.firstOrNull()?.name
+            else store.children(candidate).firstOrNull()?.name
+        }.getOrNull()
+        if (firstChild != null) familyChildNames[candidate.familyId.key()] = firstChild
+    }
+    for ((candidate, snapshot) in readyJoined) {
+        snapshot.children.firstOrNull()?.name?.let { familyChildNames[candidate.familyId.key()] = it }
+    }
     val joinedSnapshot = readyJoined.find {
         it.first.familyId.key() == recipient?.familyId?.key()
     }?.second
@@ -276,7 +288,7 @@ internal fun loadTrackerData(
             ?: store.timeline(family, child.id)
     } else emptyList()
     return ScreenData(
-        shown, family?.familyId?.key(), localFamily, kids, history,
+        shown, familyChildNames, family?.familyId?.key(), localFamily, kids, history,
         if (!shared) family?.let(store::revision) ?: 0uL else 0uL,
         if (!shared) family?.let(store::restoredOrigin) else null,
         shared, snapshot, recipients, joinedSnapshot,
@@ -315,6 +327,7 @@ private fun TrackerScreen(
         if (it) version++
     }
     var families by remember { mutableStateOf<List<FamilyRef>>(emptyList()) }
+    var familyChildNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var children by remember { mutableStateOf<List<ChildRow>>(emptyList()) }
     var entries by remember { mutableStateOf<List<ActivityRow>>(emptyList()) }
     var revision by remember { mutableStateOf(0uL) }
@@ -508,6 +521,7 @@ private fun TrackerScreen(
             val all = data.families
             val kids = data.children
             families = all
+            familyChildNames = data.familyChildNames
             selectedFamily = all.find { it.familyId.key() == selectedFamily }?.familyId?.key() ?: all.firstOrNull()?.familyId?.key()
             activeFamilyIsLocal = data.activeFamilyIsLocal
             children = kids
@@ -572,7 +586,11 @@ private fun TrackerScreen(
                 FilterChip(
                     selected = item.familyId.key() == selectedFamily,
                     onClick = { selectedFamily = item.familyId.key(); selectedChild = null },
-                    label = { Text(stringResource(R.string.family_number, index + 1)) },
+                    label = {
+                        val firstChild = familyChildNames[item.familyId.key()]
+                        Text(if (firstChild == null) stringResource(R.string.family_number, index + 1)
+                            else stringResource(R.string.family_with_child, index + 1, firstChild))
+                    },
                 )
             }
             OutlinedButton(onClick = {

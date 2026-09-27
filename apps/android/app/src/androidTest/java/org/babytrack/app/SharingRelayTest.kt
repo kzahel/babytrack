@@ -414,6 +414,7 @@ class SharingRelayTest {
                 val tracker = loadTrackerData(local, sharing, selected, null, null)
                 assertEquals(2, tracker.families.size)
                 assertEquals(selected, tracker.activeFamilyKey)
+                assertEquals("Handoff child", tracker.familyChildNames[selected])
                 assertTrue(tracker.shared)
                 assertTrue(!tracker.activeFamilyIsLocal)
                 assertEquals("Handoff child", tracker.children.single().name)

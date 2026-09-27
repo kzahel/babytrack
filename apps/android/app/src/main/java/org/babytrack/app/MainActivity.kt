@@ -61,6 +61,7 @@ import uniffi.babytrack_core_ffi.ChildRow
 import uniffi.babytrack_core_ffi.FamilyRef
 import uniffi.babytrack_core_ffi.NativeLocalStore
 import uniffi.babytrack_core_ffi.MedicationInput
+import uniffi.babytrack_core_ffi.PumpInput
 import uniffi.babytrack_core_ffi.RestoredOriginRow
 import uniffi.babytrack_core_ffi.SharedSnapshotRow
 import uniffi.babytrack_core_ffi.SharedSyncRow
@@ -175,6 +176,10 @@ private fun TrackerScreen(
     var amount by remember { mutableStateOf("") }
     var breastMinutes by remember { mutableStateOf("") }
     var breastSide by remember { mutableStateOf(1u.toUByte()) }
+    var pumpMinutes by remember { mutableStateOf("") }
+    var pumpLeft by remember { mutableStateOf("") }
+    var pumpRight by remember { mutableStateOf("") }
+    var pumpTotal by remember { mutableStateOf("") }
     var solidsFoods by remember { mutableStateOf("") }
     var solidsAmount by remember { mutableStateOf("") }
     var sleepMinutes by remember { mutableStateOf("") }
@@ -844,6 +849,68 @@ private fun TrackerScreen(
                             }.onFailure { message = errorText }
                         }
                     }) { Text(stringResource(R.string.save_breast)) }
+                    Text(stringResource(R.string.log_pump), style = MaterialTheme.typography.titleLarge)
+                    OutlinedTextField(
+                        value = pumpMinutes,
+                        onValueChange = { pumpMinutes = it.filter(Char::isDigit).take(3) },
+                        label = { Text(stringResource(R.string.pump_minutes)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = pumpLeft,
+                            onValueChange = { pumpLeft = it.filter(Char::isDigit).take(6) },
+                            label = { Text(stringResource(R.string.pump_left_ml)) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            value = pumpRight,
+                            onValueChange = { pumpRight = it.filter(Char::isDigit).take(6) },
+                            label = { Text(stringResource(R.string.pump_right_ml)) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                    }
+                    OutlinedTextField(
+                        value = pumpTotal,
+                        onValueChange = { pumpTotal = it.filter(Char::isDigit).take(6) },
+                        label = { Text(stringResource(R.string.pump_total_ml)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                    val pumpDuration = pumpMinutes.toLongOrNull() ?: 0L
+                    val pumpSides = (pumpLeft.toLongOrNull() ?: 0L) + (pumpRight.toLongOrNull() ?: 0L)
+                    val pumpCanSave = pumpDuration in 1L..240L &&
+                        ((pumpTotal.isBlank() && pumpSides > 0L) ||
+                            (pumpLeft.isBlank() && pumpRight.isBlank() &&
+                                (pumpTotal.toLongOrNull() ?: 0L) > 0L))
+                    Button(enabled = pumpCanSave, onClick = {
+                        val minutes = pumpMinutes.toLongOrNull() ?: return@Button
+                        val left = pumpLeft.toLongOrNull()
+                        val right = pumpRight.toLongOrNull()
+                        val total = pumpTotal.toLongOrNull()
+                        val input = PumpInput(left, right, total)
+                        val end = nowTime()
+                        val interval = ActivityWhen(end.startUtcMs - minutes * 60_000L,
+                            end.offsetMinutes, end.savedAtMs)
+                        scope.launch {
+                            runCatching { withContext(Dispatchers.IO) {
+                                if (activeShared) sharing.logPump(family, child.id, input, interval, end.startUtcMs)
+                                else store.logPump(family, child.id, input, interval, end.startUtcMs)
+                            } }.onSuccess {
+                                pumpMinutes = ""
+                                pumpLeft = ""
+                                pumpRight = ""
+                                pumpTotal = ""
+                                version++
+                                message = null
+                            }.onFailure { message = errorText }
+                        }
+                    }) { Text(stringResource(R.string.save_pump)) }
                     Text(stringResource(R.string.log_solids), style = MaterialTheme.typography.titleLarge)
                     OutlinedTextField(
                         value = solidsFoods,
@@ -1039,6 +1106,13 @@ private fun TrackerScreen(
                                 stringResource(R.string.breast_entry,
                                     stringResource(if (entry.breastSide == 1u.toUByte()) R.string.breast_left else R.string.breast_right),
                                     (entry.endUtcMs!! - entry.startUtcMs) / 60_000L)
+                            entry.kind == "pump" && entry.pumpTotalMl != null && entry.endUtcMs != null ->
+                                stringResource(R.string.pump_total_entry, entry.pumpTotalMl!!,
+                                    (entry.endUtcMs!! - entry.startUtcMs) / 60_000L)
+                            entry.kind == "pump" && entry.endUtcMs != null &&
+                                (entry.pumpLeftMl != null || entry.pumpRightMl != null) ->
+                                stringResource(R.string.pump_sides_entry, entry.pumpLeftMl ?: 0L,
+                                    entry.pumpRightMl ?: 0L, (entry.endUtcMs!! - entry.startUtcMs) / 60_000L)
                             entry.kind == "feed.solids" && entry.solidsFoods != null -> {
                                 val foods = entry.solidsFoods!!.joinToString(", ")
                                 if (entry.solidsAmount.isNullOrBlank()) stringResource(R.string.solids_entry, foods)

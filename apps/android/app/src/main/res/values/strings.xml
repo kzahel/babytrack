@@ -26,6 +26,14 @@
     <string name="breast_minutes">Minutes on selected side</string>
     <string name="save_breast">Save breast feed</string>
     <string name="breast_entry">Breast · %1$s · %2$d min</string>
+    <string name="log_pump">Log pumping</string>
+    <string name="pump_minutes">Minutes pumping</string>
+    <string name="pump_left_ml">Left (mL)</string>
+    <string name="pump_right_ml">Right (mL)</string>
+    <string name="pump_total_ml">Total (mL), instead of sides</string>
+    <string name="save_pump">Save pumping</string>
+    <string name="pump_total_entry">Pump · %1$d mL total · %2$d min</string>
+    <string name="pump_sides_entry">Pump · L %1$d mL · R %2$d mL · %3$d min</string>
     <string name="log_solids">Log solids</string>
     <string name="solids_foods">Foods (one per line)</string>
     <string name="solids_amount">Amount eaten (optional)</string>

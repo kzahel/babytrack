@@ -55,6 +55,9 @@ pub struct Activity {
     pub breast_side: Option<u8>,
     pub solids_foods: Option<Vec<String>>,
     pub solids_amount: Option<String>,
+    pub pump_left_ml: Option<i64>,
+    pub pump_right_ml: Option<i64>,
+    pub pump_total_ml: Option<i64>,
     pub growth_weight_g: Option<i64>,
     pub growth_length_mm: Option<i64>,
     pub temperature_c: Option<String>,
@@ -68,6 +71,13 @@ pub struct ActivityTime {
     pub start_utc_ms: i64,
     pub offset_minutes: i16,
     pub saved_at_ms: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PumpAmounts {
+    pub left_ml: Option<i64>,
+    pub right_ml: Option<i64>,
+    pub total_ml: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -188,6 +198,19 @@ impl LocalRepository {
     ) -> Result<[u8; 16], Error> {
         let (activity_id, operation) =
             breast_feed_operation(family, child_id, side, time, end_utc_ms)?;
+        self.append_activity(family, child_id, operation, time.saved_at_ms)?;
+        Ok(activity_id)
+    }
+
+    pub fn log_pump(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        amounts: PumpAmounts,
+        time: ActivityTime,
+        end_utc_ms: i64,
+    ) -> Result<[u8; 16], Error> {
+        let (activity_id, operation) = pump_operation(family, child_id, amounts, time, end_utc_ms)?;
         self.append_activity(family, child_id, operation, time.saved_at_ms)?;
         Ok(activity_id)
     }
@@ -560,6 +583,45 @@ pub fn breast_feed_operation(
         ],
         time,
     )
+}
+
+pub fn pump_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    amounts: PumpAmounts,
+    time: ActivityTime,
+    end_utc_ms: i64,
+) -> Result<([u8; 16], NewOperation), Error> {
+    let PumpAmounts {
+        left_ml,
+        right_ml,
+        total_ml,
+    } = amounts;
+    if end_utc_ms < time.start_utc_ms
+        || end_utc_ms > time.saved_at_ms
+        || total_ml.is_some() && (left_ml.is_some() || right_ml.is_some())
+        || total_ml.is_none() && left_ml.unwrap_or(0) <= 0 && right_ml.unwrap_or(0) <= 0
+        || [left_ml, right_ml, total_ml]
+            .into_iter()
+            .flatten()
+            .any(|amount| !(0..=1_000_000).contains(&amount))
+        || total_ml == Some(0)
+    {
+        return Err(Error::Invalid("pump interval or amounts invalid"));
+    }
+    let mut fields = vec![(
+        2,
+        Value::Array(vec![
+            Value::Integer(end_utc_ms.into()),
+            Value::Integer(time.offset_minutes.into()),
+        ]),
+    )];
+    for (id, amount) in [(100, left_ml), (101, right_ml), (102, total_ml)] {
+        if let Some(amount) = amount {
+            fields.push((id, whole_measure(amount, 1)));
+        }
+    }
+    activity_operation(family, child_id, "pump", fields, time)
 }
 
 pub fn solids_operation(
@@ -947,6 +1009,15 @@ fn activity_summary(record: &Record) -> Option<Activity> {
         };
         i64::try_from(*value).ok()
     };
+    let pump_measure = |field| -> Option<i64> {
+        let Value::Map(measure) = &record.field(field)?.value else {
+            return None;
+        };
+        let (1, Value::Integer(value)) = measure.first()? else {
+            return None;
+        };
+        i64::try_from(*value).ok()
+    };
     let temperature_c = if record.record_type == "temperature" {
         let Value::Map(measure) = &record.field(100)?.value else {
             return None;
@@ -1001,6 +1072,21 @@ fn activity_summary(record: &Record) -> Option<Activity> {
         breast_side,
         solids_foods,
         solids_amount,
+        pump_left_ml: if record.record_type == "pump" {
+            pump_measure(100)
+        } else {
+            None
+        },
+        pump_right_ml: if record.record_type == "pump" {
+            pump_measure(101)
+        } else {
+            None
+        },
+        pump_total_ml: if record.record_type == "pump" {
+            pump_measure(102)
+        } else {
+            None
+        },
         growth_weight_g: if record.record_type == "growth" {
             growth_measure(100)
         } else {

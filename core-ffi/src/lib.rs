@@ -90,6 +90,23 @@ pub struct MedicationInput {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct PumpInput {
+    pub left_ml: Option<i64>,
+    pub right_ml: Option<i64>,
+    pub total_ml: Option<i64>,
+}
+
+impl From<PumpInput> for local_api::PumpAmounts {
+    fn from(value: PumpInput) -> Self {
+        Self {
+            left_ml: value.left_ml,
+            right_ml: value.right_ml,
+            total_ml: value.total_ml,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct ActivityRow {
     pub id: Vec<u8>,
     pub child_id: Vec<u8>,
@@ -103,6 +120,9 @@ pub struct ActivityRow {
     pub breast_side: Option<u8>,
     pub solids_foods: Option<Vec<String>>,
     pub solids_amount: Option<String>,
+    pub pump_left_ml: Option<i64>,
+    pub pump_right_ml: Option<i64>,
+    pub pump_total_ml: Option<i64>,
     pub growth_weight_g: Option<i64>,
     pub growth_length_mm: Option<i64>,
     pub temperature_c: Option<String>,
@@ -1090,6 +1110,9 @@ impl NativeSharedStore {
                 breast_side: row.breast_side,
                 solids_foods: row.solids_foods,
                 solids_amount: row.solids_amount,
+                pump_left_ml: row.pump_left_ml,
+                pump_right_ml: row.pump_right_ml,
+                pump_total_ml: row.pump_total_ml,
                 growth_weight_g: row.growth_weight_g,
                 growth_length_mm: row.growth_length_mm,
                 temperature_c: row.temperature_c,
@@ -1308,6 +1331,33 @@ impl NativeSharedStore {
             handle,
             fixed(&child_id)?,
             side,
+            time.into(),
+            end_utc_ms,
+        )
+        .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map_err(rejected)?;
+        Ok(id.to_vec())
+    }
+
+    pub fn log_shared_pump(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        input: PumpInput,
+        time: ActivityWhen,
+        end_utc_ms: i64,
+    ) -> Result<Vec<u8>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let saved_at_ms = time.saved_at_ms;
+        let (id, operation) = local_api::pump_operation(
+            handle,
+            fixed(&child_id)?,
+            input.into(),
             time.into(),
             end_utc_ms,
         )
@@ -1925,6 +1975,29 @@ impl NativeLocalStore {
             .to_vec())
     }
 
+    pub fn log_pump(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        input: PumpInput,
+        time: ActivityWhen,
+        end_utc_ms: i64,
+    ) -> Result<Vec<u8>, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .log_pump(
+                family.handle()?,
+                fixed(&child_id)?,
+                input.into(),
+                time.into(),
+                end_utc_ms,
+            )
+            .map_err(rejected)?
+            .to_vec())
+    }
+
     pub fn log_solids(
         &self,
         family: FamilyRef,
@@ -2112,6 +2185,9 @@ impl NativeLocalStore {
                 breast_side: row.breast_side,
                 solids_foods: row.solids_foods,
                 solids_amount: row.solids_amount,
+                pump_left_ml: row.pump_left_ml,
+                pump_right_ml: row.pump_right_ml,
+                pump_total_ml: row.pump_total_ml,
                 growth_weight_g: row.growth_weight_g,
                 growth_length_mm: row.growth_length_mm,
                 temperature_c: row.temperature_c,

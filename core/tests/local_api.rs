@@ -1,7 +1,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use babytrack_core::{
-    local_api::{ActivityTime, LocalRepository, temperature_c_operation},
+    local_api::{ActivityTime, LocalRepository, PumpAmounts, temperature_c_operation},
     portable_file::parse_readable,
 };
 
@@ -431,6 +431,79 @@ fn completed_breast_feed_keeps_side_and_interval_after_restore() {
     assert_eq!(row.breast_side, Some(2));
     assert_eq!(row.start_utc_ms, time.start_utc_ms);
     assert_eq!(row.end_utc_ms, Some(end));
+    let backup = app.backup(family, end + 1).unwrap();
+    drop(app);
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.timeline(family, child).unwrap(), before);
+    let restored = app.restore(&backup, end + 2).unwrap();
+    assert_eq!(app.timeline(restored, child).unwrap(), before);
+}
+
+#[test]
+fn pump_sides_or_total_survive_restart_and_file_restore() {
+    let amounts = |left_ml, right_ml, total_ml| PumpAmounts {
+        left_ml,
+        right_ml,
+        total_ml,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pump.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    let child = app.add_child(family, "Baby", 1_790_000_000_001).unwrap();
+    let end = 1_790_000_600_000;
+    let time = ActivityTime {
+        start_utc_ms: end - 10 * 60_000,
+        offset_minutes: 120,
+        saved_at_ms: end,
+    };
+    assert!(
+        app.log_pump(family, child, amounts(None, None, None), time, end)
+            .is_err()
+    );
+    assert!(
+        app.log_pump(family, child, amounts(Some(0), Some(0), None), time, end)
+            .is_err()
+    );
+    assert!(
+        app.log_pump(family, child, amounts(Some(10), None, Some(10)), time, end)
+            .is_err()
+    );
+    assert!(
+        app.log_pump(
+            family,
+            child,
+            amounts(Some(i64::MAX), Some(i64::MAX), None),
+            time,
+            end,
+        )
+        .is_err()
+    );
+    let sides = app
+        .log_pump(family, child, amounts(Some(20), Some(15), None), time, end)
+        .unwrap();
+    let total = app
+        .log_pump(family, child, amounts(None, None, Some(35)), time, end)
+        .unwrap();
+    let before = app.timeline(family, child).unwrap();
+    let sides_row = before.iter().find(|row| row.id == sides).unwrap();
+    assert_eq!(
+        (
+            sides_row.pump_left_ml,
+            sides_row.pump_right_ml,
+            sides_row.pump_total_ml
+        ),
+        (Some(20), Some(15), None)
+    );
+    let total_row = before.iter().find(|row| row.id == total).unwrap();
+    assert_eq!(
+        (
+            total_row.pump_left_ml,
+            total_row.pump_right_ml,
+            total_row.pump_total_ml
+        ),
+        (None, None, Some(35))
+    );
     let backup = app.backup(family, end + 1).unwrap();
     drop(app);
     let mut app = LocalRepository::open(&path).unwrap();

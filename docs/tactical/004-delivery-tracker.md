@@ -26,8 +26,8 @@ M0 remains in progress. The implemented first cohort passes the early
 authority recheck and two separate emulators exercise join, encrypted sync,
 removal, and private-copy recovery. General membership, browser shared
 outbox, complete vector coverage, and the M0 exit review remain open.
-Android local and first-cohort UI work, including solids and completed
-single-side breast-feed logging, runs
+Android local and first-cohort UI work, including solids, completed
+single-side breast-feed, and pumping logs, runs
 alongside M0 on emulators; its physical phone gates remain open.
 
 | Field | Current answer |

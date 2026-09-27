@@ -68,14 +68,17 @@ hundredths using the published rule, and retains the entered text. Local
 restart/file restore and cross-device encrypted sync preserve these
 measurements. Medication entry records a name and entered dose amount/unit
 as text without a dosing recommendation; local file restore and encrypted
-cross-device sync preserve the fields. Other published event types and
-entered units remain M1 work. Solids entry stores one trimmed food per line
+cross-device sync preserve the fields. Other entered units and advanced
+editing remain M1 work. Solids entry stores one trimmed food per line
 as the published atomic list and preserves optional entered amount text;
 local file restore and encrypted cross-device sync preserve both.
 The first breast-feed path records one completed left or right segment with
 its start and end instants; the published segment array remains atomic so a
 later multi-segment editor can replace it as one field. The local file and
 encrypted shared paths preserve the side and interval.
+Pumping records a completed interval with either separate left/right
+millilitres or one total, never both forms in one entry. It does not create a
+freezer inventory balance.
 
 Growth percentiles are computed from WHO tables when shown, never stored.
 Wake-window hints are computed from sleep events on the device.

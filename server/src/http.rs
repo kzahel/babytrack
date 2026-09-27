@@ -78,6 +78,10 @@ fn router_with_clock(
             get(read_invite),
         )
         .route(
+            "/v1/families/{family}/invitation-status/{invitation}",
+            get(read_invitation_status),
+        )
+        .route(
             "/v1/families/{family}/batch-results/{batch}",
             get(read_batch_result),
         )
@@ -413,6 +417,30 @@ async fn read_invite(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let response = store
         .invite_authenticated(family_id, invitation_id, uri.path(), &auth)
+        .map_err(|_| StatusCode::FORBIDDEN)?;
+    Ok(cbor_response(response))
+}
+
+async fn read_invitation_status(
+    State(store): State<Shared>,
+    RoutePath((family, invitation)): RoutePath<(String, String)>,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<impl axum::response::IntoResponse, StatusCode> {
+    let family_id = canonical_id(&family)?;
+    let invitation_id = canonical_id(&invitation)?;
+    if uri.query().is_some() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let auth = read_auth(&headers, &body)?;
+    let now_ms = store.clock.now_ms()?;
+    let mut relay = store
+        .store
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let response = relay
+        .invitation_status_authenticated(family_id, invitation_id, uri.path(), &auth, now_ms)
         .map_err(|_| StatusCode::FORBIDDEN)?;
     Ok(cbor_response(response))
 }

@@ -23,6 +23,7 @@ sequence, or outbox mutation unless the expected result says otherwise.
 - [Object stage, control commit, and fetch bytes](api-v1.json)
 - [Genesis reservation, stage, and promotion result](api-genesis-v1.json)
 - [Signed invitation expiry boundary](invitation-boundary-v1.json)
+- [Signed terminal invitation status](invitation-status-v1.json)
 - [Sharing state machine and adversarial cases](sharing-v1.json)
 - [Portable file and recovery](portable-file-v1.json)
 

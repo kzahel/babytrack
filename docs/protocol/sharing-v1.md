@@ -510,8 +510,9 @@ the same in both forms; moving the bytes does not change authority or replay
 rules. Before genesis commits, the declared initial manager may
 query only the promotion result using the signing key in the reserved
 genesis candidate. An invitation key uses its invitation ID as signer ID and
-may fetch the public control chain and issue object but no Family data
-objects. A pending device may fetch that chain and its addressed
+may fetch the public control chain and issue object while unused, and the
+narrow signed invitation status afterward, but no Family data objects. A
+pending device may fetch that chain and its addressed
 challenge HPKE object; an active device may fetch all committed Family
 objects and entries; a removed device may fetch the public control chain,
 its own earlier batch-result receipts, and a removal proof. The relay checks
@@ -527,7 +528,23 @@ encryption still protects data if a malicious relay serves extra ciphertext.
 | `/v1/families/{family_hex}/batch-results/{batch_hex}` | `{1:1, 2:signed_receipt_bytes_bstr_or_null}`; null is unknown, not noninclusion |
 | `/v1/families/{family_hex}/control-results/{transition_hex}` | `{1:1, 2:committed_control_bytes_bstr_or_null}`; null is unknown |
 | `/v1/families/{family_hex}/invites/{invitation_hex}` | `{1:1, 2:committed_issue_control_bytes_bstr}`; current validity is derived by replaying the control chain |
+| `/v1/families/{family_hex}/invitation-status/{invitation_hex}` | `{1:1, 2:status_body_bytes_bstr, 3:relay_signature64}`; the invitation key may request this after ordinary read access closes |
 | `/v1/families/{family_hex}/promotions/{promotion_hex}` | `{1:1, 2:committed_genesis_bytes_bstr_or_null}`; null is unknown |
+
+The invitation-status route accepts only a signed GET whose signer ID is
+the path invitation ID and whose key matches the committed issue. It returns
+no Family ciphertext or control pages. Its canonical body is
+`CBOR([1, family_id16, relay_id32, invitation_id16, reason_u8,
+current_global_cursor_u64, current_control_head32, observed_relay_ms_i64,
+issue_signed_hash32])`. The relay signs the body bytes with
+`H("invitation-status", body_bytes)`. Reasons are `1=unused`, `2=claimed`,
+`3=canceled`, `4=expired`, `5=issuer no longer active`. The expiry reason
+uses relay-observed time, at least the last signed commit time. The client
+checks the relay key and every link-bound field before showing a terminal
+reason; unsigned HTTP errors, timeouts, or malformed status remain unknown.
+An active status is advisory freshness, not a guarantee that a future claim
+will commit. A malicious relay that owns its signing key can lie about time
+or withhold this response under the accepted trust limits.
 
 A page is CBOR `{1:1, 2:family_id16, 3:requested_after_cursor_u64,
 4:entries, 5:next_after_cursor_u64, 6:has_more_bool}`. Each entry is

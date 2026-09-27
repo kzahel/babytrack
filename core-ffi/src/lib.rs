@@ -248,6 +248,13 @@ pub struct ControlPageProgressRow {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct InvitationStatusRow {
+    pub reason: u8,
+    pub cursor: u64,
+    pub observed_ms: i64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct PreparedChallengeRow {
     pub candidate_bytes: Vec<u8>,
     pub objects: Vec<StagedObjectRow>,
@@ -573,6 +580,43 @@ impl NativeSharedStore {
                 .bytes
         };
         Ok(SignedReadRow { path, auth, after })
+    }
+
+    pub fn saved_invitation_status_read(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+    ) -> Result<SignedReadRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let attempt = EnrollmentAttempt::resume(
+            &mut store,
+            family.handle()?.family_id,
+            &fixed(&wrapping_key)?,
+        )
+        .map_err(rejected)?;
+        if attempt.family() != family.handle()? {
+            return Err(BindingError::InvalidBytes);
+        }
+        invitation_status_read(attempt.invitation_fragment().to_owned())
+    }
+
+    pub fn verify_saved_invitation_status(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        response: Vec<u8>,
+    ) -> Result<InvitationStatusRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let attempt = EnrollmentAttempt::resume(
+            &mut store,
+            family.handle()?.family_id,
+            &fixed(&wrapping_key)?,
+        )
+        .map_err(rejected)?;
+        if attempt.family() != family.handle()? {
+            return Err(BindingError::InvalidBytes);
+        }
+        verify_invitation_status(attempt.invitation_fragment().to_owned(), response)
     }
 
     pub fn refresh_join_pages(
@@ -2211,6 +2255,36 @@ pub fn invitation_control_read(
     );
     let auth = bootstrap.sign_get(&path).map_err(rejected)?.bytes;
     Ok(SignedReadRow { path, auth, after })
+}
+
+#[uniffi::export]
+pub fn invitation_status_read(fragment: String) -> Result<SignedReadRow, BindingError> {
+    let bootstrap = InvitationBootstrap::from_fragment(&fragment).map_err(rejected)?;
+    let path = format!(
+        "/v1/families/{}/invitation-status/{}",
+        lower_hex(&bootstrap.family_id()),
+        lower_hex(&bootstrap.invitation_id())
+    );
+    let auth = bootstrap.sign_get(&path).map_err(rejected)?.bytes;
+    Ok(SignedReadRow {
+        path,
+        auth,
+        after: 0,
+    })
+}
+
+#[uniffi::export]
+pub fn verify_invitation_status(
+    fragment: String,
+    response: Vec<u8>,
+) -> Result<InvitationStatusRow, BindingError> {
+    let bootstrap = InvitationBootstrap::from_fragment(&fragment).map_err(rejected)?;
+    let status = bootstrap.verify_status(&response).map_err(rejected)?;
+    Ok(InvitationStatusRow {
+        reason: status.reason,
+        cursor: status.cursor,
+        observed_ms: status.observed_ms,
+    })
 }
 
 #[uniffi::export]

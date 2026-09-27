@@ -13,6 +13,8 @@ import uniffi.babytrack_core_ffi.SharedSnapshotRow
 import uniffi.babytrack_core_ffi.SharedSyncRow
 import uniffi.babytrack_core_ffi.previewInvitation
 import uniffi.babytrack_core_ffi.invitationControlRead
+import uniffi.babytrack_core_ffi.invitationStatusRead
+import uniffi.babytrack_core_ffi.verifyInvitationStatus
 import uniffi.babytrack_core_ffi.controlPageProgress
 import uniffi.babytrack_core_ffi.validateRelayOrigin
 
@@ -101,9 +103,30 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
             val page = try {
                 relay.get(read.path, read.auth)
             } catch (failure: IllegalStateException) {
-                if (saved == null) throw failure
-                val pending = core.savedJoinControlRead(saved, wrapping, after, true)
-                relay.get(pending.path, pending.auth)
+                try {
+                    if (saved == null) throw failure
+                    val pending = core.savedJoinControlRead(saved, wrapping, after, true)
+                    relay.get(pending.path, pending.auth)
+                } catch (pendingFailure: IllegalStateException) {
+                    val status = try {
+                        val statusRead = if (fragment != null) invitationStatusRead(fragment)
+                            else core.savedInvitationStatusRead(saved ?: throw pendingFailure, wrapping)
+                        val response = relay.get(statusRead.path, statusRead.auth)
+                        if (fragment != null) verifyInvitationStatus(fragment, response)
+                            else core.verifySavedInvitationStatus(saved ?: throw pendingFailure, wrapping, response)
+                    } catch (_: Exception) {
+                        null
+                    }
+                    val terminal = when (status?.reason) {
+                        2u.toUByte() -> "Invitation already claimed"
+                        3u.toUByte() -> "Invitation canceled"
+                        4u.toUByte() -> "Invitation expired"
+                        5u.toUByte() -> "Invitation issuer no longer has access"
+                        else -> null
+                    }
+                    if (terminal != null) throw IllegalStateException(terminal)
+                    throw IllegalStateException("Invitation status cannot be verified yet", pendingFailure)
+                }
             }
             totalBytes += page.size
             check(totalBytes <= 16L * 1024 * 1024) { "Invitation control history exceeds the current size limit" }

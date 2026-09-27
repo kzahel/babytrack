@@ -314,6 +314,63 @@ impl PublicLedger {
         self.last_commit_ms
     }
 
+    /// Historical invitation signing keys remain usable only for the narrow
+    /// status route after the normal control-read credential closes.
+    pub(crate) fn invitation_status(
+        &self,
+        invitation_id: [u8; 16],
+        observed_ms: i64,
+    ) -> Result<Option<([u8; 32], u8)>, Error> {
+        let Value::Map(state) = &self.state else {
+            return Err(Error::Invalid("public state not map"));
+        };
+        let Value::Array(invitations) = &state[6].1 else {
+            return Err(Error::Invalid("invitations not array"));
+        };
+        for row in invitations {
+            let Value::Array(fields) = row else {
+                return Err(Error::Invalid("invitation row not array"));
+            };
+            if fixed::<16>(&fields[0])? != invitation_id {
+                continue;
+            }
+            let status = match fields[5] {
+                Value::Integer(2) => 2, // claimed
+                Value::Integer(3) => 3, // canceled
+                Value::Integer(1) => {
+                    let issued = *self
+                        .issue_times
+                        .get(&invitation_id)
+                        .ok_or(Error::Invalid("invitation issue time absent"))?;
+                    let expires = issued
+                        .checked_add(604_800_000)
+                        .ok_or(Error::Invalid("invitation expiry overflow"))?;
+                    if observed_ms >= expires {
+                        4 // expired
+                    } else {
+                        let Value::Array(active) = &state[4].1 else {
+                            return Err(Error::Invalid("active devices not array"));
+                        };
+                        let issuer = fixed::<16>(&fields[1])?;
+                        if active.iter().any(|device| {
+                            let Value::Array(device) = device else {
+                                return false;
+                            };
+                            fixed::<16>(&device[0]).ok() == Some(issuer)
+                        }) {
+                            1 // currently unused
+                        } else {
+                            5 // issuer lost authority
+                        }
+                    }
+                }
+                _ => return Err(Error::Invalid("invitation status invalid")),
+            };
+            return Ok(Some((fixed::<32>(&fields[2])?, status)));
+        }
+        Ok(None)
+    }
+
     pub(crate) fn reader(&self, signer_id: [u8; 16]) -> Result<Option<PublicReader>, Error> {
         let Value::Map(state) = &self.state else {
             return Err(Error::Invalid("public state not map"));
@@ -574,12 +631,41 @@ mod tests {
                     assert!(current.reader(invitation_id).unwrap().is_none());
                     assert!(current.reader(recipient_id).unwrap().is_none());
                 }
-                "invite_issue" => assert!(matches!(
-                    current.reader(invitation_id).unwrap(),
-                    Some(PublicReader::Invitation { issue_object: id, .. }) if id == issue_object
-                )),
+                "invite_issue" => {
+                    assert!(matches!(
+                        current.reader(invitation_id).unwrap(),
+                        Some(PublicReader::Invitation { issue_object: id, .. }) if id == issue_object
+                    ));
+                    assert_eq!(
+                        current
+                            .invitation_status(
+                                invitation_id,
+                                verified.committed_ms + 604_800_000 - 1
+                            )
+                            .unwrap()
+                            .unwrap()
+                            .1,
+                        1
+                    );
+                    assert_eq!(
+                        current
+                            .invitation_status(invitation_id, verified.committed_ms + 604_800_000)
+                            .unwrap()
+                            .unwrap()
+                            .1,
+                        4
+                    );
+                }
                 "invite_claim" => {
                     assert!(current.reader(invitation_id).unwrap().is_none());
+                    assert_eq!(
+                        current
+                            .invitation_status(invitation_id, verified.committed_ms)
+                            .unwrap()
+                            .unwrap()
+                            .1,
+                        2
+                    );
                     assert!(matches!(
                         current.reader(recipient_id).unwrap(),
                         Some(PublicReader::Pending {

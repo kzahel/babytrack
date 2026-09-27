@@ -848,6 +848,19 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
             .control_page_authenticated(family.family_id, 0, &path, &auth.bytes)
             .is_err()
     );
+    let status_path = format!(
+        "/v1/families/{}/invitation-status/{}",
+        lower_hex(&family.family_id),
+        lower_hex(&issue.invitation_id())
+    );
+    let status_auth = received_link.sign_get(&status_path).unwrap();
+    let status_response = http_bytes(&app, Method::GET, &status_path, status_auth.bytes).await;
+    let status = received_link.verify_status(&status_response).unwrap();
+    assert_eq!(status.reason, 2);
+    assert_eq!(status.cursor, if early_batch { 4 } else { 3 });
+    let mut forged = status_response.clone();
+    *forged.last_mut().unwrap() ^= 1;
+    assert!(received_link.verify_status(&forged).is_err());
 
     let mut manager_public = PublicHistorySession::resume(&local, family).unwrap();
     manager_public

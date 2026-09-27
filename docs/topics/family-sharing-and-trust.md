@@ -192,6 +192,11 @@ recipient; another authorized key-holding device may deliver the key. A
 normal background-wake path needs no further human action. Device wake and
 network availability can delay progress, so the app persists the attempt and
 resumes it on the next opportunity rather than promising an instant join.
+If a link is no longer usable, the app may name cancellation, expiry,
+consumption, or issuer loss only after verifying a relay-signed status bound
+to that invitation. An unsigned denial or timeout leaves its status unknown
+and invites a later retry; it is not evidence that the other person declined
+or that the link expired.
 The UI distinguishes invitation/enrollment pending, waiting for a Family
 key holder, verifying the grant and loading history, and ready for shared
 use; it never calls a keyless pending device ready. Exact status wording and

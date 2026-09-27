@@ -1474,12 +1474,14 @@ tests, and an FFI build; it did not run Android.
 | Finding | Disposition |
 |---|---|
 | High: an unrelated control after a later invitation issue made sparse recipient preparation require the issue as the final control. A control after saved claim preparation left Android retrying stale exact bytes forever. | FS76 and the dynamic real-relay test now cover controls both before and after saved preparation, page splitting, restart, rebase with stable keys and nonce, and reconciliation of an accepted claim after a lost response. Rust verifies the complete sparse prefix, archives superseded exact candidates, and Android refreshes before retry. A fixed-revision independent recheck remains due. |
-| Medium: cancel, expiry, or consumption closes the invitation read credential with unsigned HTTP 403, so a recipient cannot verify a terminal reason against a malicious relay. | FS77 records the required signed terminal status. Protocol, relay, client verification, and regression remain open; an unsigned denial must remain an unknown result. |
+| Medium: cancel, expiry, or consumption closes the invitation read credential with unsigned HTTP 403, so a recipient cannot verify a terminal reason against a malicious relay. | FS77/INVSTAT01 define a narrowly scoped relay-signed status response, available through the historical invitation key after ordinary reads close. Rust checks the link binding and signature; Android shows a terminal reason only after that check, otherwise reports unknown status. Core vector, relay cancellation/expiry, and CLI consumed-claim tests pass locally. Independent recheck remains due. |
 | Medium hardening: Android/FFI stop after 64 control pages or 16 MiB, leaving sufficiently long valid control history unjoinable. | Streaming, resumable verification and a large-history regression remain open. The current bound is reported as an implementation limit, not a protocol limit. |
 
 The reviewer also confirmed link binding, control signatures and cursors,
 relay writer compare-and-swap, and keyless recipient isolation. Those
 observations do not close the open findings or the broader M0 gate.
+The signed-status repair also passed the two-emulator first-cohort relay
+flow; that flow does not force the terminal-status UI branch.
 
 ## Completion condition
 

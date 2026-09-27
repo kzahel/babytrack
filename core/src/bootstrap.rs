@@ -51,6 +51,14 @@ pub struct InvitationBootstrap {
     issue_signed_hash: [u8; 32],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvitationStatus {
+    pub reason: u8,
+    pub cursor: u64,
+    pub head: [u8; 32],
+    pub observed_ms: i64,
+}
+
 impl InvitationBootstrap {
     pub fn from_committed_issue(
         relay_origin: &str,
@@ -253,6 +261,71 @@ impl InvitationBootstrap {
     }
     pub fn invitation_id(&self) -> [u8; 16] {
         self.invitation_id
+    }
+    pub fn verify_status(&self, response: &[u8]) -> Result<InvitationStatus, Error> {
+        let Value::Map(wrapper) = cbor::decode_with_limits(
+            response,
+            cbor::Limits {
+                max_bytes: 1024,
+                max_depth: 4,
+            },
+        )?
+        else {
+            return Err(Error::Invalid("invitation status response not map"));
+        };
+        if wrapper.len() != 3
+            || wrapper[0] != (1, Value::Integer(1))
+            || wrapper[1].0 != 2
+            || wrapper[2].0 != 3
+        {
+            return Err(Error::Invalid("invitation status response shape"));
+        }
+        let Value::Bytes(body) = &wrapper[1].1 else {
+            return Err(Error::Invalid("invitation status body not bytes"));
+        };
+        let signature = fixed::<64>(&wrapper[2].1)?;
+        crypto::verify_cbor(
+            "invitation-status",
+            body,
+            &self.relay_public_key,
+            &signature,
+        )?;
+        let Value::Array(fields) = cbor::decode(body)? else {
+            return Err(Error::Invalid("invitation status body not array"));
+        };
+        let relay_id: [u8; 32] = {
+            use sha2::{Digest, Sha256};
+            Sha256::digest(self.relay_public_key).into()
+        };
+        if fields.len() != 9
+            || fields[0] != Value::Integer(1)
+            || fields[1] != Value::Bytes(self.family_id.to_vec())
+            || fields[2] != Value::Bytes(relay_id.to_vec())
+            || fields[3] != Value::Bytes(self.invitation_id.to_vec())
+            || fields[8] != Value::Bytes(self.issue_signed_hash.to_vec())
+        {
+            return Err(Error::Invalid("invitation status context differs"));
+        }
+        let reason: u8 = number(&fields[4])?
+            .try_into()
+            .map_err(|_| Error::Invalid("invitation status reason range"))?;
+        if !(1..=5).contains(&reason) {
+            return Err(Error::Invalid("invitation status reason invalid"));
+        }
+        let cursor = number(&fields[5])?;
+        if cursor == 0 {
+            return Err(Error::Invalid("invitation status cursor invalid"));
+        }
+        let head = fixed::<32>(&fields[6])?;
+        let observed_ms: i64 = number(&fields[7])?
+            .try_into()
+            .map_err(|_| Error::Invalid("invitation status time range"))?;
+        Ok(InvitationStatus {
+            reason,
+            cursor,
+            head,
+            observed_ms,
+        })
     }
     pub fn fixed_role(&self) -> u8 {
         self.fixed_role
@@ -505,6 +578,55 @@ mod tests {
             .chunks_exact(2)
             .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
             .collect()
+    }
+
+    #[test]
+    fn signed_invitation_status_matches_byte_vector_and_rejects_wrong_link() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/vectors/invitation-status-v1.json"
+        ))
+        .unwrap();
+        let input = &vector["test_only_inputs"];
+        let expected = &vector["expected"];
+        let seed: [u8; 32] = hex_bytes(input["relay_sign_seed_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let relay_public_key = crypto::signing_public_key(&seed);
+        assert_eq!(
+            relay_public_key.to_vec(),
+            hex_bytes(expected["relay_public_key_hex"].as_str().unwrap())
+        );
+        let bootstrap = InvitationBootstrap {
+            relay_origin: "https://relay.example".into(),
+            relay_public_key,
+            family_id: hex_bytes(input["family_id_hex"].as_str().unwrap())
+                .try_into()
+                .unwrap(),
+            genesis_head: [0; 32],
+            invitation_id: hex_bytes(input["invitation_id_hex"].as_str().unwrap())
+                .try_into()
+                .unwrap(),
+            fixed_role: 1,
+            invitation_sign_seed: [0; 32],
+            issue_signed_hash: hex_bytes(input["issue_signed_hash_hex"].as_str().unwrap())
+                .try_into()
+                .unwrap(),
+        };
+        let body = hex_bytes(expected["body_hex"].as_str().unwrap());
+        assert_eq!(
+            crypto::sign_cbor("invitation-status", &body, &seed)
+                .unwrap()
+                .to_vec(),
+            hex_bytes(expected["signature_hex"].as_str().unwrap())
+        );
+        let response = hex_bytes(expected["response_hex"].as_str().unwrap());
+        assert_eq!(bootstrap.verify_status(&response).unwrap().reason, 2);
+        let mut wrong_link = bootstrap.clone();
+        wrong_link.issue_signed_hash[0] ^= 1;
+        assert!(wrong_link.verify_status(&response).is_err());
+        let mut forged = response;
+        *forged.last_mut().unwrap() ^= 1;
+        assert!(bootstrap.verify_status(&forged).is_err());
     }
 
     #[test]

@@ -2251,6 +2251,85 @@ impl RelayStore {
         ]))?)
     }
 
+    pub fn invitation_status_authenticated(
+        &mut self,
+        family_id: [u8; 16],
+        invitation_id: [u8; 16],
+        exact_path: &str,
+        auth_bytes: &[u8],
+        now_ms: i64,
+    ) -> Result<Vec<u8>, Error> {
+        let expected = format!(
+            "/v1/families/{}/invitation-status/{}",
+            lower_hex(&family_id),
+            lower_hex(&invitation_id)
+        );
+        if exact_path != expected {
+            return Err(Error::Invalid("invitation status path not canonical"));
+        }
+        let ledger =
+            Self::verify_saved_family(&self.db, family_id, self.relay_public, &self.relay_seed)?;
+        if read_auth::claimed_signer(auth_bytes)? != invitation_id {
+            return Err(Error::Invalid("status signer differs from invitation"));
+        }
+        let observed_ms = now_ms.max(ledger.last_commit_ms());
+        let (signing_key, reason) = ledger
+            .invitation_status(invitation_id, observed_ms)?
+            .ok_or(Error::Invalid("invitation not committed"))?;
+        let verified = read_auth::verify_get(
+            auth_bytes,
+            family_id,
+            ledger.relay_id(),
+            invitation_id,
+            signing_key,
+            exact_path,
+        )?;
+        self.record_read_id(family_id, &verified)?;
+        let (cursor, stored_head): (i64, Vec<u8>) = self.db.query_row(
+            "SELECT cursor,head_hash FROM families WHERE family_id=?1 AND active=1",
+            [&family_id[..]],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if stored_head.as_slice() != ledger.head() {
+            return Err(Error::Invalid("status head differs from ledger"));
+        }
+        let mut issue = None;
+        let mut controls = self.db.prepare(
+            "SELECT committed_bytes FROM entries WHERE family_id=?1 AND kind=1 ORDER BY cursor",
+        )?;
+        let rows = controls.query_map([&family_id[..]], |row| row.get::<_, Vec<u8>>(0))?;
+        for row in rows {
+            let committed = row?;
+            if control_birth_ids(&committed)?.last() == Some(&invitation_id) {
+                issue = Some(committed);
+                break;
+            }
+        }
+        let issue = issue.ok_or(Error::Invalid("invitation issue missing"))?;
+        let Value::Map(parts) = cbor::decode(&issue)? else {
+            return Err(Error::Invalid("invitation issue not map"));
+        };
+        let signed = cbor::encode(&Value::Array(vec![parts[0].1.clone(), parts[1].1.clone()]))?;
+        let issue_hash = crypto::hash("control-signed", &signed)?;
+        let body = cbor::encode(&Value::Array(vec![
+            Value::Integer(1),
+            Value::Bytes(family_id.to_vec()),
+            Value::Bytes(ledger.relay_id().to_vec()),
+            Value::Bytes(invitation_id.to_vec()),
+            Value::Integer(reason.into()),
+            Value::Integer(cursor.into()),
+            Value::Bytes(ledger.head().to_vec()),
+            Value::Integer(observed_ms.into()),
+            Value::Bytes(issue_hash.to_vec()),
+        ]))?;
+        let signature = crypto::sign_cbor("invitation-status", &body, &self.relay_seed)?;
+        Ok(cbor::encode(&Value::Map(vec![
+            (1, Value::Integer(1)),
+            (2, Value::Bytes(body)),
+            (3, Value::Bytes(signature.to_vec())),
+        ]))?)
+    }
+
     pub fn log_page_authenticated(
         &mut self,
         family_id: [u8; 16],
@@ -3882,6 +3961,71 @@ mod tests {
         };
         let invitation_id = fixed::<16>(&issue_delta[0].1).unwrap();
         assert!(after_cancel.reader(invitation_id).unwrap().is_none());
+        let invitation_seed: [u8; 32] = hex(chain["test_only_inputs"]["invitation_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let status_path = format!(
+            "/v1/families/{}/invitation-status/{}",
+            lower_hex(&family),
+            lower_hex(&invitation_id)
+        );
+        let status_read = signed_get(
+            family,
+            after_cancel.relay_id(),
+            invitation_id,
+            invitation_seed,
+            &status_path,
+            [0xd1; 16],
+        );
+        let status_response = store
+            .invitation_status_authenticated(
+                family,
+                invitation_id,
+                &status_path,
+                &status_read,
+                genesis_ms + 2_001,
+            )
+            .unwrap();
+        let Value::Map(status_fields) = cbor::decode(&status_response).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(status_body) = &status_fields[1].1 else {
+            panic!()
+        };
+        let Value::Bytes(status_signature) = &status_fields[2].1 else {
+            panic!()
+        };
+        crypto::verify_cbor(
+            "invitation-status",
+            status_body,
+            &store.relay_public,
+            &status_signature.as_slice().try_into().unwrap(),
+        )
+        .unwrap();
+        let Value::Array(status_parts) = cbor::decode(status_body).unwrap() else {
+            panic!()
+        };
+        assert_eq!(status_parts[4], Value::Integer(3));
+        assert_eq!(status_parts[5], Value::Integer(4));
+        assert!(
+            store
+                .control_page_authenticated(
+                    family,
+                    0,
+                    &format!("/v1/families/{}/control?after=0", lower_hex(&family)),
+                    &signed_get(
+                        family,
+                        after_cancel.relay_id(),
+                        invitation_id,
+                        invitation_seed,
+                        &format!("/v1/families/{}/control?after=0", lower_hex(&family)),
+                        [0xd2; 16],
+                    )
+                )
+                .is_err()
+        );
         let cursor: i64 = store
             .db
             .query_row(

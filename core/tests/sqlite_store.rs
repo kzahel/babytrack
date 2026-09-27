@@ -96,6 +96,30 @@ fn second_connection_waits_for_background_writer() {
 }
 
 #[test]
+fn opening_initialized_store_does_not_write_while_another_writer_is_active() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("read-during-write.db");
+    SqliteStore::open(&path).unwrap();
+    let mut writer = rusqlite::Connection::open(&path).unwrap();
+    let transaction = writer
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let opening = std::thread::spawn(move || {
+        let result = SqliteStore::open(path).and_then(|store| store.families());
+        sender.send(result).unwrap();
+    });
+    let result = receiver.recv_timeout(Duration::from_secs(2));
+    transaction.commit().unwrap();
+    opening.join().unwrap();
+    assert!(
+        result
+            .expect("opening an initialized store waited for a writer")
+            .is_ok()
+    );
+}
+
+#[test]
 fn committed_local_edits_rebuild_after_reopen_and_failed_edits_leave_no_gap() {
     let path = temp_db();
     let first = FamilyHandle {

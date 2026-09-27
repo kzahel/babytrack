@@ -39,7 +39,7 @@ one through the text share target, prefilled for an explicit join action.
 | Next dependent slice | The first-cohort recheck passed. Relay restart replays public controls and accepted batch authority; a signed private checkpoint covers rejected-result and staging-reservation sets. Signed GETs, batch POSTs, manager controls, and later control HTTP writes use that ledger under a SQLite writer lock. A published repair and rotation pass through HTTP. Add later-device negative role, epoch, collision, and race cases, then an independent general-authority review. Android later-device preparation, browser outbox, and M0 exit review remain. |
 | Next independent review | The [public-ledger restart advisory at `bdbed9e`](003-m0-foundation.md#advisory-public-ledger-restart-review-at-bdbed9e) returned a focused first-cohort PASS with two medium durability findings. The broader end-of-M0 recovery and mixed-client gate remains. |
 | Open advisory | The [Android sync recheck](003-m0-foundation.md#advisory-android-sync-recheck-at-00e827b) passed its two prior high findings. The [public-ledger advisory](003-m0-foundation.md#advisory-public-ledger-restart-review-at-bdbed9e) passed for the first cohort; its two medium private-row findings now have a signed checkpoint and deletion regressions, with full snapshot rollback still outside v1. General authority and full M0 review remain open. |
-| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Runs through `36312097144` at `efc7b07` passed all jobs. The private-checkpoint and ledger-derived GET runs are pending; ledger-derived batch POST passed workspace tests and the two-emulator flow locally. |
+| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Run `36314404419` at `0b0c1f5` passed all jobs. A later emulator run exposed a second SQLite open/contention race during activity recreation; the initialized-store open now avoids schema writes, with a targeted Rust regression and all seven emulator instrumentation cases passing locally. Remote confirmation remains pending. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.
@@ -133,7 +133,17 @@ scheduled Android instrumentation case opened the app database repeatedly
 while the background job was still using it, producing `DatabaseBusy`. The
 test now waits for the job's completion marker before inspecting its saved
 claim. The seven-case real-relay instrumentation suite passes locally with
-that ordering; the next remote run must confirm it on CI.
+that ordering. Runs `36314170105` at `2461763` and `36314404419` at
+`0b0c1f5` passed every required job.
+
+Run `36314729319` at `99d2e75` exposed a different `DatabaseBusy` during
+activity recreation while a separate shared-store connection was opening.
+The local store had been running schema setup and an `INSERT OR IGNORE` on
+every open. It now initializes an unversioned database once under a write
+transaction and opens an initialized database without schema writes. A Rust
+test holds a separate SQLite writer while the initialized store opens and
+reads; all seven real-relay Android instrumentation cases pass locally with
+the change. The next remote run must confirm this contention repair.
 
 Remote runs `36309186029` at `88380d8`, `36309474621` at `148d53b`,
 `36309921404` at `26227ca`, `36310142071` at `654f553`, and

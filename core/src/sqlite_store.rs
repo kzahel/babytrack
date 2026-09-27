@@ -414,9 +414,18 @@ impl SqliteStore {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
         let connection = Connection::open(path)?;
         connection.busy_timeout(std::time::Duration::from_secs(10))?;
+        connection.execute_batch("PRAGMA foreign_keys = ON;")?;
+        let schema_version: u32 =
+            connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if schema_version == 1 {
+            return Ok(Self { connection });
+        }
+        if schema_version != 0 {
+            return Err(Error::CorruptState);
+        }
+        connection.execute_batch("PRAGMA journal_mode = WAL;")?;
         connection.execute_batch(
-            "PRAGMA foreign_keys = ON;
-             PRAGMA journal_mode = WAL;
+            "BEGIN IMMEDIATE;
              CREATE TABLE IF NOT EXISTS families (
                family_id BLOB PRIMARY KEY CHECK(length(family_id) = 16),
                device_id BLOB NOT NULL CHECK(length(device_id) = 16),
@@ -609,7 +618,9 @@ impl SqliteStore {
                FOREIGN KEY (family_id) REFERENCES families(family_id)
              );
              INSERT OR IGNORE INTO local_sync_state(family_id)
-               SELECT family_id FROM families;",
+               SELECT family_id FROM families;
+             PRAGMA user_version = 1;
+             COMMIT;",
         )?;
         Ok(Self { connection })
     }

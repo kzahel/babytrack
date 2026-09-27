@@ -36,6 +36,8 @@ and medication corrections, plus child name and growth-detail, growth-entry,
 and completed sleep corrections, runs
 alongside M0 on emulators; its physical phone gates remain open.
 The diaper form includes wet, dirty, both, and dry logging choices.
+After the first child, its creation fields collapse behind an add-another
+action so common logging begins higher on the screen.
 Running and completed sleep can carry an optional place through the shared
 core, Android timeline, backup, and encrypted relay sync.
 The Android tracker can also correct or clear that place on the same sleep
@@ -68,8 +70,8 @@ restart, with a two-Family emulator UI check. Remote run `36356278973`
 confirmed the concurrent SQLite fresh-open repair and passed the relay and
 general UI paths. Its recovery check reached a protected-file preview, then
 could not find the confirm button below the viewport. The picker test now
-scrolls to that action; the complete local recovery flow passes, and its
-remote rerun remains pending.
+scrolls to that action; the complete local recovery flow and remote run
+`36357854875` at `9f1fcd9` pass.
 
 | Field | Current answer |
 |---|---|
@@ -78,7 +80,7 @@ remote rerun remains pending.
 | Next dependent slice | The first-cohort recheck and [focused general-authority advisory](003-m0-foundation.md#general-authority-advisory-pass-at-98fa0ea) passed. Relay restart replays public controls and accepted batch authority; a signed private checkpoint covers rejected-result and staging-reservation sets. Signed GETs, batch POSTs, manager controls, and later control HTTP writes use that ledger under a SQLite writer lock. Later enrollment after removal and epoch rotation passes on separate emulators. A second admitted manager now invites, grants, and removes a third device with rotation through relay HTTP and Android instrumentation. Later rotations, role changes, cancellation, browser shared outbox, and M0 exit review remain. |
 | Next independent review | Run one broader end-of-M0 recovery and mixed-client gate after its executable coverage closes. Focused advisory findings remain open without serial rechecks during feature development. Prioritize usable tracking and browser shared sync before another review cycle. |
 | Open advisory | The [automatic-status recheck](003-m0-foundation.md#advisory-automatic-status-recheck-at-ad42d78) found an own-claim lost-response ambiguity and a concurrent status-write race. FS37/FS77 regressions and repair remain due before real Family data. Durable streaming of large control history also remains open. |
-| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, local Android UI smoke, and document-picker recovery jobs are required on every push/PR. Run `36356278973` at `7294ce8` passed Rust, native, browser, APK, relay instrumentation, and general UI smoke. Its protected recovery picker step could not find the confirm button below the viewport; the scroll-aware test passes locally and awaits CI. |
+| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, local Android UI smoke, and document-picker recovery jobs are required on every push/PR. Run `36357854875` at `9f1fcd9` passed every required job, including readable and protected document-picker recovery across reinstall. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.

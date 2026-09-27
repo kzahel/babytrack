@@ -306,6 +306,7 @@ def main() -> None:
     adb(target, "shell", "input", "text", "FirstChild")
     dismiss_keyboard(target)
     tap(target, "Add child", scroll=True)
+    tap(target, "Add another child", scroll=True)
     tap(target, "Child’s name", scroll=True)
     adb(target, "shell", "input", "text", "SelectedChild")
     dismiss_keyboard(target)

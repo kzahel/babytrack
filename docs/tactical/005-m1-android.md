@@ -129,6 +129,10 @@ caregiver switched to another child.
 The diaper form now exposes the core's dry kind alongside wet, dirty, and
 both, in two rows that fit larger text. The headed UI smoke logs a dry diaper
 and reads it back from the timeline.
+After the first child exists, the child-creation fields collapse behind an
+explicit add-another-child action so daily logging starts higher on the
+screen. A Family with no children still shows the initial setup form; the
+headed UI smoke creates two children in its second Family.
 
 Two separate emulator installations and a disposable relay pass first-cohort
 join without simultaneous foreground use, reciprocal encrypted edits,
@@ -263,7 +267,7 @@ delivered, and removed access cannot obtain new Family data.
   correct password. Physical phones, corrupt files, and provider failures
   remain open. Remote run `36356278973` reached the protected-file preview
   but its UI script did not scroll to the confirmation button; a scroll-aware
-  local rerun passes, with remote confirmation pending.
+  local rerun and remote run `36357854875` pass.
 - [ ] Add the planned analysis export and Nara import through shared Rust
   import/export, with real sanitized samples and target preview. The
   current-state analysis CSV now exports local and shared Families through

@@ -416,6 +416,7 @@ private fun TrackerScreen(
         }
     }
     var childName by remember { mutableStateOf("") }
+    var showAddChildForm by remember { mutableStateOf(false) }
     var childRename by remember { mutableStateOf<String?>(null) }
     var pendingChildMetadataEdit by remember { mutableStateOf<PendingChildMetadataEdit?>(null) }
     var childBirthDate by remember { mutableStateOf("") }
@@ -507,6 +508,10 @@ private fun TrackerScreen(
         }.orEmpty()
     }
     LaunchedEffect(selectedFamily, selectedChild) {
+        showAddChildForm = false
+        childName = ""
+        childBirthDate = ""
+        childSex = 3u.toUByte()
         amount = ""
         bottleContent = 2u.toUByte()
         breastDraftSegments = emptyList()
@@ -1225,54 +1230,66 @@ private fun TrackerScreen(
                         )
                     }) { Text(stringResource(R.string.edit_child_growth_details)) }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (children.isNotEmpty() && !showAddChildForm) OutlinedButton(onClick = {
+                    showAddChildForm = true
+                }) { Text(stringResource(R.string.add_another_child)) }
+                if (children.isEmpty() || showAddChildForm) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = childName,
+                            onValueChange = { childName = it },
+                            label = { Text(stringResource(R.string.child_name)) },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        Button(enabled = childName.isNotBlank(), onClick = {
+                            val name = childName.trim()
+                            val birthDay = runCatching { childBirthDate.takeIf { it.isNotBlank() }?.let { LocalDate.parse(it).toEpochDay() } }
+                                .getOrElse { message = context.getString(R.string.birth_date_invalid); return@Button }
+                            scope.launch {
+                                runCatching { withContext(Dispatchers.IO) {
+                                    if (activeShared) sharing.addChildWithMetadata(family, name, birthDay, childSex, System.currentTimeMillis())
+                                    else store.addChildWithMetadata(family, name, birthDay, childSex, System.currentTimeMillis())
+                                } }
+                                    .onSuccess { created ->
+                                        selectedChild = created.key()
+                                        showAddChildForm = false
+                                        childName = ""
+                                        childBirthDate = ""
+                                        childSex = 3u.toUByte()
+                                        version++
+                                        message = null
+                                    }.onFailure { message = errorText }
+                            }
+                        }) { Text(stringResource(R.string.add_child)) }
+                    }
                     OutlinedTextField(
-                        value = childName,
-                        onValueChange = { childName = it },
-                        label = { Text(stringResource(R.string.child_name)) },
-                        modifier = Modifier.weight(1f),
+                        value = childBirthDate,
+                        onValueChange = { childBirthDate = it },
+                        label = { Text(stringResource(R.string.birth_date)) },
+                        modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                     )
-                    Button(enabled = childName.isNotBlank(), onClick = {
-                        val name = childName.trim()
-                        val birthDay = runCatching { childBirthDate.takeIf { it.isNotBlank() }?.let { LocalDate.parse(it).toEpochDay() } }
-                            .getOrElse { message = context.getString(R.string.birth_date_invalid); return@Button }
-                        scope.launch {
-                            runCatching { withContext(Dispatchers.IO) {
-                                if (activeShared) sharing.addChildWithMetadata(family, name, birthDay, childSex, System.currentTimeMillis())
-                                else store.addChildWithMetadata(family, name, birthDay, childSex, System.currentTimeMillis())
-                            } }
-                                .onSuccess { created ->
-                                    selectedChild = created.key()
-                                    childName = ""
-                                    childBirthDate = ""
-                                    childSex = 3u.toUByte()
-                                    version++
-                                    message = null
-                                }.onFailure { message = errorText }
+                    Text(stringResource(R.string.growth_chart_sex))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            1u.toUByte() to R.string.sex_female,
+                            2u.toUByte() to R.string.sex_male,
+                            3u.toUByte() to R.string.sex_unspecified,
+                        ).forEach { (code, label) ->
+                            FilterChip(
+                                selected = childSex == code,
+                                onClick = { childSex = code },
+                                label = { Text(stringResource(label)) },
+                            )
                         }
-                    }) { Text(stringResource(R.string.add_child)) }
-                }
-                OutlinedTextField(
-                    value = childBirthDate,
-                    onValueChange = { childBirthDate = it },
-                    label = { Text(stringResource(R.string.birth_date)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-                Text(stringResource(R.string.growth_chart_sex))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(
-                        1u.toUByte() to R.string.sex_female,
-                        2u.toUByte() to R.string.sex_male,
-                        3u.toUByte() to R.string.sex_unspecified,
-                    ).forEach { (code, label) ->
-                        FilterChip(
-                            selected = childSex == code,
-                            onClick = { childSex = code },
-                            label = { Text(stringResource(label)) },
-                        )
                     }
+                    if (children.isNotEmpty()) OutlinedButton(onClick = {
+                        showAddChildForm = false
+                        childName = ""
+                        childBirthDate = ""
+                        childSex = 3u.toUByte()
+                    }) { Text(stringResource(R.string.cancel)) }
                 }
 
                 if (child != null) {

@@ -35,6 +35,7 @@ pub mod operation;
 pub mod portable_file;
 pub mod projection;
 pub mod rotation;
+pub mod rotation_build;
 pub mod session;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod shared_history;

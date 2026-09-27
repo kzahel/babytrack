@@ -45,6 +45,8 @@ Nara sample mapping remain open for their planned features.
 Caregivers can backdate one completed entry at a time. Bottle logging and
 correction expose the four published content codes through the shared core;
 the Android timeline and analysis CSV show that choice.
+Completed whole-minute breast feeds can now be corrected for side and
+duration through an atomic shared-core segment update.
 The selected-child timeline groups activity by local day and filters its
 view. Growth entries now carry optional head circumference through local
 restore, encrypted sync, the Android form, and analysis CSV.
@@ -56,7 +58,7 @@ restore, encrypted sync, the Android form, and analysis CSV.
 | Next dependent slice | The first-cohort recheck and [focused general-authority advisory](003-m0-foundation.md#general-authority-advisory-pass-at-98fa0ea) passed. Relay restart replays public controls and accepted batch authority; a signed private checkpoint covers rejected-result and staging-reservation sets. Signed GETs, batch POSTs, manager controls, and later control HTTP writes use that ledger under a SQLite writer lock. Later enrollment after removal and epoch rotation passes on separate emulators. A second admitted manager now invites, grants, and removes a third device with rotation through relay HTTP and Android instrumentation. Later rotations, role changes, cancellation, browser shared outbox, and M0 exit review remain. |
 | Next independent review | Run one broader end-of-M0 recovery and mixed-client gate after its executable coverage closes. Focused advisory findings remain open without serial rechecks during feature development. Prioritize usable tracking and browser shared sync before another review cycle. |
 | Open advisory | The [automatic-status recheck](003-m0-foundation.md#advisory-automatic-status-recheck-at-ad42d78) found an own-claim lost-response ambiguity and a concurrent status-write race. FS37/FS77 regressions and repair remain due before real Family data. Durable streaming of large control history also remains open. |
-| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Runs through `bba928a` exposed simultaneous SQLite schema migration in the remote Android emulator. Run `36343776749` at `14eff1e` passed every required job after the writer-locked version recheck. Run `36347868348` at `88babbf` passed every required job after the later Android logging and timeline slices. |
+| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Runs through `bba928a` exposed simultaneous SQLite schema migration in the remote Android emulator. Run `36343776749` at `14eff1e` passed every required job after the writer-locked version recheck. Run `36347868348` at `88babbf` passed every required job after the later Android logging and timeline slices. Run `36349395626` at `b27fed8` passed ten relay instrumentation tests but the UI smoke could not find a corrected bottle after scrolling down; the runner now searches back upward and reports visible text on failure. Remote recheck is pending. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.

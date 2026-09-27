@@ -1087,6 +1087,80 @@ fn alternating_breast_segments_survive_restart_and_file_restore() {
 }
 
 #[test]
+fn breast_segment_correction_preserves_start_and_restores() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("breast-edit.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    let child = app.add_child(family, "Baby", 1_790_000_000_001).unwrap();
+    let other = app.add_child(family, "Other", 1_790_000_000_002).unwrap();
+    let start = 1_790_000_000_003;
+    let time = ActivityTime {
+        start_utc_ms: start,
+        offset_minutes: 120,
+        saved_at_ms: start + 13 * 60_000,
+    };
+    let original = vec![
+        BreastSegment {
+            side: 1,
+            start_utc_ms: start,
+            end_utc_ms: start + 5 * 60_000,
+            start_offset_minutes: 120,
+            end_offset_minutes: 120,
+        },
+        BreastSegment {
+            side: 2,
+            start_utc_ms: start + 5 * 60_000,
+            end_utc_ms: start + 13 * 60_000,
+            start_offset_minutes: 120,
+            end_offset_minutes: 120,
+        },
+    ];
+    let id = app
+        .log_breast_feed_segments(family, child, original, time)
+        .unwrap();
+    let corrected = vec![
+        BreastSegment {
+            side: 2,
+            start_utc_ms: start,
+            end_utc_ms: start + 7 * 60_000,
+            start_offset_minutes: 120,
+            end_offset_minutes: 120,
+        },
+        BreastSegment {
+            side: 1,
+            start_utc_ms: start + 7 * 60_000,
+            end_utc_ms: start + 16 * 60_000,
+            start_offset_minutes: 120,
+            end_offset_minutes: 120,
+        },
+    ];
+    let mut broken = corrected.clone();
+    broken[1].start_utc_ms += 1;
+    assert!(
+        app.edit_breast_feed_segments(family, child, id, broken, start + 20 * 60_000)
+            .is_err()
+    );
+    assert!(
+        app.edit_breast_feed_segments(family, other, id, corrected.clone(), start + 20 * 60_000)
+            .is_err()
+    );
+    app.edit_breast_feed_segments(family, child, id, corrected.clone(), start + 20 * 60_000)
+        .unwrap();
+    let before = app.timeline(family, child).unwrap();
+    let row = before.iter().find(|row| row.id == id).unwrap();
+    assert_eq!(row.start_utc_ms, start);
+    assert_eq!(row.end_utc_ms, Some(start + 16 * 60_000));
+    assert_eq!(row.breast_segments.as_deref(), Some(corrected.as_slice()));
+    let backup = app.backup(family, start + 21 * 60_000).unwrap();
+    drop(app);
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.timeline(family, child).unwrap(), before);
+    let restored = app.restore(&backup, start + 22 * 60_000).unwrap();
+    assert_eq!(app.timeline(restored, child).unwrap(), before);
+}
+
+#[test]
 fn pump_sides_or_total_survive_restart_and_file_restore() {
     let amounts = |left_ml, right_ml, total_ml| PumpAmounts {
         left_ml,

@@ -1905,6 +1905,44 @@ impl NativeSharedStore {
         Ok(id.to_vec())
     }
 
+    pub fn edit_shared_breast_feed_segments(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        segments: Vec<BreastSegmentRow>,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let projection = ready.projection_with_pending(&store).map_err(rejected)?;
+        let child_id = fixed(&child_id)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(BindingError::InvalidBytes)?;
+        if child.scope != operation::Scope::Child || child.deleted {
+            return Err(BindingError::InvalidBytes);
+        }
+        let activity = projection
+            .record(&fixed(&activity_id)?)
+            .ok_or(BindingError::InvalidBytes)?;
+        let segments = segments.into_iter().map(Into::into).collect::<Vec<_>>();
+        let operation = local_api::edit_breast_feed_segments_operation(
+            handle,
+            child_id,
+            activity,
+            &segments,
+            saved_at_ms,
+        )
+        .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map(|_| ())
+            .map_err(rejected)
+    }
+
     pub fn log_shared_pump(
         &self,
         family: FamilyRef,
@@ -3174,6 +3212,27 @@ impl NativeLocalStore {
             )
             .map_err(rejected)?
             .to_vec())
+    }
+
+    pub fn edit_breast_feed_segments(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        segments: Vec<BreastSegmentRow>,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        self.repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .edit_breast_feed_segments(
+                family.handle()?,
+                fixed(&child_id)?,
+                fixed(&activity_id)?,
+                segments.into_iter().map(Into::into).collect(),
+                saved_at_ms,
+            )
+            .map_err(rejected)
     }
 
     pub fn log_pump(

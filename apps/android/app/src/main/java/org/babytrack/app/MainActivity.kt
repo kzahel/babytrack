@@ -194,6 +194,15 @@ private data class PendingBottleEdit(
     val amount: String,
     val content: UByte,
 )
+private data class PendingBreastEdit(
+    val family: FamilyRef,
+    val childId: ByteArray,
+    val activityId: ByteArray,
+    val shared: Boolean,
+    val startUtcMs: Long,
+    val startOffsetMinutes: Short,
+    val segments: List<Pair<UByte, String>>,
+)
 private data class PendingDiaperEdit(
     val family: FamilyRef,
     val childId: ByteArray,
@@ -438,6 +447,7 @@ private fun TrackerScreen(
     var pendingDelete by remember { mutableStateOf<PendingActivityDelete?>(null) }
     var pendingNoteEdit by remember { mutableStateOf<PendingNoteEdit?>(null) }
     var pendingBottleEdit by remember { mutableStateOf<PendingBottleEdit?>(null) }
+    var pendingBreastEdit by remember { mutableStateOf<PendingBreastEdit?>(null) }
     var pendingDiaperEdit by remember { mutableStateOf<PendingDiaperEdit?>(null) }
     var pendingSolidsEdit by remember { mutableStateOf<PendingSolidsEdit?>(null) }
     var pendingGrowthEdit by remember { mutableStateOf<PendingGrowthEdit?>(null) }
@@ -506,6 +516,7 @@ private fun TrackerScreen(
         pendingDelete = null
         pendingNoteEdit = null
         pendingBottleEdit = null
+        pendingBreastEdit = null
         pendingDiaperEdit = null
         pendingSolidsEdit = null
         pendingGrowthEdit = null
@@ -1822,6 +1833,19 @@ private fun TrackerScreen(
                                         )
                                     }) { Text(stringResource(R.string.edit_bottle)) }
                                 }
+                                if (entry.kind == "feed.breast" && entry.breastSegments?.all {
+                                    (it.endUtcMs - it.startUtcMs) % 60_000L == 0L
+                                } == true) {
+                                    OutlinedButton(onClick = {
+                                        pendingBreastEdit = PendingBreastEdit(
+                                            family, entry.childId.copyOf(), entry.id.copyOf(), activeShared,
+                                            entry.startUtcMs, entry.offsetMinutes,
+                                            entry.breastSegments!!.map {
+                                                it.side to ((it.endUtcMs - it.startUtcMs) / 60_000L).toString()
+                                            },
+                                        )
+                                    }) { Text(stringResource(R.string.edit_breast)) }
+                                }
                                 if (entry.kind == "diaper" && entry.diaperKind != null) {
                                     OutlinedButton(onClick = {
                                         pendingDiaperEdit = PendingDiaperEdit(
@@ -2102,6 +2126,78 @@ private fun TrackerScreen(
                 OutlinedButton(onClick = { pendingBottleEdit = null }) {
                     Text(stringResource(R.string.cancel))
                 }
+            },
+        )
+    }
+    pendingBreastEdit?.let { target ->
+        val durations = target.segments.map { it.second.toLongOrNull() }
+        val valid = durations.all { it != null && it in 1L..240L } &&
+            durations.filterNotNull().sum() <= 240L && target.segments.isNotEmpty()
+        AlertDialog(
+            onDismissRequest = { pendingBreastEdit = null },
+            title = { Text(stringResource(R.string.edit_breast)) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    target.segments.forEachIndexed { index, segment ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(1u.toUByte() to R.string.breast_left,
+                                2u.toUByte() to R.string.breast_right).forEach { (side, label) ->
+                                FilterChip(selected = segment.first == side,
+                                    onClick = {
+                                        pendingBreastEdit = target.copy(segments = target.segments.mapIndexed { i, value ->
+                                            if (i == index) side to value.second else value
+                                        })
+                                    }, label = { Text(stringResource(label)) })
+                            }
+                        }
+                        OutlinedTextField(
+                            value = segment.second,
+                            onValueChange = { minutes ->
+                                pendingBreastEdit = target.copy(segments = target.segments.mapIndexed { i, value ->
+                                    if (i == index) value.first to minutes.filter(Char::isDigit).take(3) else value
+                                })
+                            },
+                            label = { Text(stringResource(R.string.breast_minutes)) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                        )
+                    }
+                    if (target.segments.size > 1) {
+                        OutlinedButton(onClick = { pendingBreastEdit = target.copy(segments = target.segments.dropLast(1)) }) {
+                            Text(stringResource(R.string.remove_last_segment))
+                        }
+                    }
+                    if (target.segments.size < 8) {
+                        OutlinedButton(onClick = {
+                            val nextSide = if (target.segments.last().first == 1u.toUByte()) 2u.toUByte() else 1u.toUByte()
+                            pendingBreastEdit = target.copy(segments = target.segments + (nextSide to "5"))
+                        }) { Text(stringResource(R.string.add_breast_segment)) }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(enabled = valid, onClick = {
+                    val savedAtMs = System.currentTimeMillis()
+                    var cursor = target.startUtcMs
+                    val zone = TimeZone.getDefault()
+                    val segments = target.segments.mapIndexed { index, (side, minutes) ->
+                        val next = cursor + (durations[index] ?: error("Missing duration")) * 60_000L
+                        BreastSegmentRow(side, cursor, next,
+                            if (index == 0) target.startOffsetMinutes else (zone.getOffset(cursor) / 60_000).toShort(),
+                            (zone.getOffset(next) / 60_000).toShort()).also { cursor = next }
+                    }
+                    pendingBreastEdit = null
+                    change {
+                        if (target.shared) sharing.editBreastFeedSegments(
+                            target.family, target.childId, target.activityId, segments, savedAtMs,
+                        ) else store.editBreastFeedSegments(
+                            target.family, target.childId, target.activityId, segments, savedAtMs,
+                        )
+                    }
+                }) { Text(stringResource(R.string.save_changes)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingBreastEdit = null }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }

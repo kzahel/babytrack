@@ -48,12 +48,14 @@ def find(target: str, label: str, *, scroll: bool = False, occurrence: int = 0,
          contains: bool = False, actionable: bool = False) -> ET.Element:
     deadline = time.monotonic() + (100 if scroll else 20)
     scroll_count = 0
+    visible: list[str] = []
     size = re.search(r"(\d+)x(\d+)", adb(target, "shell", "wm", "size"))
     if size is None:
         raise RuntimeError("Android display size unavailable")
     width, height = map(int, size.groups())
     while time.monotonic() < deadline:
         root = nodes(target)
+        visible = [node.attrib["text"] for node in root.iter("node") if node.attrib.get("text")]
         matches = [
             node for node in root.iter("node")
             if (label in node.attrib.get("text", "") if contains else node.attrib.get("text") == label)
@@ -69,15 +71,17 @@ def find(target: str, label: str, *, scroll: bool = False, occurrence: int = 0,
             matches = actions
         if len(matches) > occurrence:
             return matches[occurrence]
-        if scroll and scroll_count < 40:
+        if scroll and scroll_count < 50:
+            down = scroll_count < 25
             adb(
                 target, "shell", "input", "swipe", str(width // 2),
-                str(height * 4 // 5), str(width // 2), str(height * 3 // 10), "360",
+                str(height * 4 // 5 if down else height * 3 // 10), str(width // 2),
+                str(height * 3 // 10 if down else height * 4 // 5), "360",
             )
             scroll_count += 1
         else:
             time.sleep(0.4)
-    raise AssertionError(f"Android UI did not show {label!r}")
+    raise AssertionError(f"Android UI did not show {label!r}; last visible text: {visible!r}")
 
 
 def tap(target: str, label: str, *, scroll: bool = False, occurrence: int = 0,
@@ -193,9 +197,13 @@ def main() -> None:
     dismiss_keyboard(target)
     tap(target, "Save breast feed", scroll=True)
     find(target, "Breast · Left 5 min → Right 8 min", scroll=True)
+    tap(target, "Edit breast feed", scroll=True)
+    tap(target, "Right")
+    tap(target, "Save changes")
+    find(target, "Breast · Right 5 min → Right 8 min", scroll=True)
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
-    find(target, "Breast · Left 5 min → Right 8 min", scroll=True)
+    find(target, "Breast · Right 5 min → Right 8 min", scroll=True)
     scroll_up(target)
     find(target, "Bottle · 120 mL · Formula", scroll=True)
     adb(target, "shell", "am", "force-stop", PACKAGE)

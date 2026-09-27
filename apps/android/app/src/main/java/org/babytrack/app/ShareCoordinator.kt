@@ -370,6 +370,10 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
                    amountMl: Long, content: UByte, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedBottle(family, wrapping, childId, activityId, amountMl, content, savedAtMs) }
 
+    fun editBreastFeedSegments(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+                               segments: List<uniffi.babytrack_core_ffi.BreastSegmentRow>, savedAtMs: Long): Unit =
+        withWrapping { wrapping -> core.editSharedBreastFeedSegments(family, wrapping, childId, activityId, segments, savedAtMs) }
+
     fun editDiaperKind(family: FamilyRef, childId: ByteArray, activityId: ByteArray, kind: UByte, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedDiaperKind(family, wrapping, childId, activityId, kind, savedAtMs) }
 

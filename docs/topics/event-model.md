@@ -79,6 +79,12 @@ the core checks contiguous intervals, side values, offsets, and a total
 duration of at most four hours. Each segment keeps its start and end UTC
 offsets, including across a daylight-saving transition. Local files and
 encrypted shared sync preserve the segment sequence.
+Correcting a completed breast feed replaces its segment list and derived end
+instant in one set operation while retaining its activity ID, original start,
+and unrelated or unknown fields. The core applies the same interval, side,
+offset, and four-hour checks as creation. Android offers whole-minute side
+and duration correction for entries whose existing segments are whole
+minutes; other clients' finer-grained entries remain readable and deletable.
 The Android timeline can delete one activity. The shared core checks its
 Family and child target and records a tombstone operation; the entry leaves
 the current timeline locally and on devices that later sync. Deletion does

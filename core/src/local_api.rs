@@ -276,6 +276,36 @@ impl LocalRepository {
         Ok(activity_id)
     }
 
+    pub fn edit_breast_feed_segments(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        segments: Vec<BreastSegment>,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        if child.scope != Scope::Child || child.deleted {
+            return Err(Error::Invalid("target child unavailable"));
+        }
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("activity unavailable"))?;
+        let operation = edit_breast_feed_segments_operation(
+            family,
+            child_id,
+            activity,
+            &segments,
+            saved_at_ms,
+        )?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn log_pump(
         &mut self,
         family: FamilyHandle,
@@ -1079,6 +1109,14 @@ pub fn breast_feed_segments_operation(
     segments: &[BreastSegment],
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
+    let fields = breast_segment_fields(segments, time)?;
+    activity_operation(family, child_id, "feed.breast", fields, time)
+}
+
+fn breast_segment_fields(
+    segments: &[BreastSegment],
+    time: ActivityTime,
+) -> Result<Vec<(u64, Value)>, Error> {
     if segments.is_empty()
         || segments.len() > 8
         || segments[0].start_utc_ms != time.start_utc_ms
@@ -1123,13 +1161,49 @@ pub fn breast_feed_segments_operation(
         Value::Integer(previous_end.into()),
         Value::Integer(segments.last().unwrap().end_offset_minutes.into()),
     ]);
-    activity_operation(
-        family,
-        child_id,
-        "feed.breast",
-        vec![(2, end), (100, Value::Array(encoded))],
-        time,
-    )
+    Ok(vec![(2, end), (100, Value::Array(encoded))])
+}
+
+pub fn edit_breast_feed_segments_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    segments: &[BreastSegment],
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    if activity.scope != Scope::Activity
+        || activity.child_id != Some(child_id)
+        || activity.record_type != "feed.breast"
+        || activity.deleted
+    {
+        return Err(Error::Invalid("breast feed target unavailable"));
+    }
+    check_time(saved_at_ms)?;
+    let Some(Value::Array(start)) = activity.field(1).map(|field| &field.value) else {
+        return Err(Error::Invalid("breast feed start unavailable"));
+    };
+    let [Value::Integer(start_ms), Value::Integer(offset)] = start.as_slice() else {
+        return Err(Error::Invalid("breast feed start unavailable"));
+    };
+    let time = ActivityTime {
+        start_utc_ms: i64::try_from(*start_ms)
+            .map_err(|_| Error::Invalid("breast feed start unavailable"))?,
+        offset_minutes: i16::try_from(*offset)
+            .map_err(|_| Error::Invalid("breast feed start unavailable"))?,
+        saved_at_ms,
+    };
+    Ok(NewOperation {
+        family_id: family.family_id,
+        operation_id: ids::random_v7(saved_at_ms)?,
+        record_id: activity.id,
+        scope: Scope::Activity,
+        kind: Kind::Set,
+        author_device_id: family.device_id,
+        hlc: placeholder_hlc(family),
+        record_type: None,
+        child_id: None,
+        fields: Some(breast_segment_fields(segments, time)?),
+    })
 }
 
 pub fn pump_operation(

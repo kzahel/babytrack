@@ -90,6 +90,12 @@ Action results now also appear in a transient snackbar, so a failed log is
 visible beside the current form without scrolling to the page's status text.
 The oversized-bottle rejection showed that message while retaining its input
 at 1.5× text size.
+Completed whole-minute breast feeds now offer side and duration correction
+for up to eight contiguous segments. The shared Rust core validates the
+replacement as one atomic update and keeps the original start and activity
+identity. A local restart/file-restore regression and a two-device relay
+assertion cover the corrected projection; the Android headed UI smoke opens
+and saves the correction dialog.
 The full headed emulator UI smoke then passed creation, filtering, logging,
 editing, deletion, and restart after the timeline and feedback changes. Its
 keyboard helper now sends Back only while Android reports the keyboard open,

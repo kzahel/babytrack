@@ -96,6 +96,7 @@
     <string name="edit_note">Edit note</string>
     <string name="save_changes">Save changes</string>
     <string name="edit_bottle">Edit bottle</string>
+    <string name="edit_breast">Edit breast feed</string>
     <string name="edit_diaper">Edit diaper type</string>
     <string name="edit_solids">Edit solids</string>
     <string name="edit_growth">Edit growth</string>

@@ -250,6 +250,22 @@ class TwoDeviceRelayTest {
                     listOf(1u.toUByte(), 2u.toUByte(), 1u.toUByte()) &&
                     it.endUtcMs != null && it.endUtcMs!! - it.startUtcMs == 16 * 60_000L
             })
+            val breast = sharing.snapshot(family).activities.single {
+                it.kind == "feed.breast" && it.breastSegments?.size == 3
+            }
+            val correctedSegments = listOf(
+                BreastSegmentRow(2u.toUByte(), breast.startUtcMs, breast.startUtcMs + 6 * 60_000L, 0, 0),
+                BreastSegmentRow(1u.toUByte(), breast.startUtcMs + 6 * 60_000L,
+                    breast.startUtcMs + 13 * 60_000L, 0, 0),
+                BreastSegmentRow(2u.toUByte(), breast.startUtcMs + 13 * 60_000L,
+                    breast.startUtcMs + 16 * 60_000L, 0, 0),
+            )
+            sharing.editBreastFeedSegments(family, breast.childId, breast.id,
+                correctedSegments, System.currentTimeMillis())
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.id.contentEquals(breast.id) && it.breastSegments?.map { segment -> segment.side } ==
+                    listOf(2u.toUByte(), 1u.toUByte(), 2u.toUByte())
+            })
             val pump = sharing.snapshot(family).activities.single {
                 it.kind == "pump" && it.pumpLeftMl == 20L && it.pumpRightMl == 15L &&
                     it.pumpTotalMl == null
@@ -323,6 +339,11 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "feed.solids" && it.solidsFoods == listOf("Apple", "Rice") &&
                     it.solidsAmount == "half bowl"
+            })
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.kind == "feed.breast" && it.breastSegments?.map { segment -> segment.side } ==
+                    listOf(2u.toUByte(), 1u.toUByte(), 2u.toUByte()) &&
+                    it.breastSegments?.first()?.endUtcMs == it.startUtcMs + 6 * 60_000L
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "pump" && it.pumpTotalMl == 40L &&

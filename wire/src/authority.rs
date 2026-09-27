@@ -141,6 +141,46 @@ pub struct PreparedRepair {
     pub manifest: Vec<ManifestEntry>,
 }
 
+/// Check only the public envelope of an HPKE grant. Ciphertext validity and
+/// the epoch key inside remain the recipient client's readiness checks.
+pub fn validate_public_grant(
+    object_bytes: &[u8],
+    grant_id: [u8; 16],
+    purpose: u64,
+    recipient_id: [u8; 16],
+    key_version: u32,
+    core_hash: [u8; 32],
+) -> Result<(), Error> {
+    let value = cbor::decode_with_limits(
+        object_bytes,
+        cbor::Limits {
+            max_bytes: 1024 * 1024,
+            max_depth: 16,
+        },
+    )?;
+    let fields = exact_map(&value, 9)?;
+    if number(&fields[0].1)? != 1
+        || fixed::<16>(&fields[1].1)? != grant_id
+        || number(&fields[2].1)? != purpose
+        || fixed::<16>(&fields[3].1)? != recipient_id
+        || number(&fields[4].1)? != u64::from(key_version)
+        || fixed::<32>(&fields[6].1)? != core_hash
+    {
+        return Err(Error::Invalid("grant public context"));
+    }
+    if array(&fields[5].1, 3)? != [Value::Integer(32), Value::Integer(1), Value::Integer(3)] {
+        return Err(Error::Invalid("grant HPKE suite"));
+    }
+    fixed::<32>(&fields[7].1)?;
+    let Value::Bytes(ciphertext) = &fields[8].1 else {
+        return Err(Error::Invalid("grant ciphertext not bytes"));
+    };
+    if ciphertext.len() < 16 {
+        return Err(Error::Invalid("grant ciphertext too short"));
+    }
+    Ok(())
+}
+
 /// A repair preserves authority state and targets the verified admission for
 /// an active device at the current epoch. The admission ID and commitment
 /// must come from authenticated historical ledger facts, never a candidate.

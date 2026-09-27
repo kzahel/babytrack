@@ -959,6 +959,9 @@ impl RelayStore {
         if prefix.join.controls != 5 || prefix.join.head != prefix.proof_head {
             return Err(Error::Invalid("admission head stale"));
         }
+        if kind == 4 {
+            authority::validate_first_admission_grant(&admission, object_id, &object_bytes)?;
+        }
         let tx = self.db.transaction()?;
         stage_control_object(
             &tx,
@@ -1024,6 +1027,9 @@ impl RelayStore {
                 || crypto::hash("object", &bytes)? != entry.object_hash
             {
                 return Err(Error::Invalid("admission staged bytes changed"));
+            }
+            if entry.kind == 4 {
+                authority::validate_first_admission_grant(&admission, entry.object_id, &bytes)?;
             }
             tx.execute("INSERT INTO committed_objects(family_id,object_id,kind,object_hash,object_bytes,transition_id) VALUES(?1,?2,?3,?4,?5,?6)",
                 params![&path_family[..],&entry.object_id[..],kind,&hash,&bytes,&admission.transition_id[..]])?;

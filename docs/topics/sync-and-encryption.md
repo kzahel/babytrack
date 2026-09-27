@@ -415,6 +415,10 @@ never accepts an epoch key, decrypts an object, or interprets event data.
 
 The client continues to verify relay receipts, pin the committed head,
 open addressed grants and membership objects, and project encrypted data.
+The first-cohort relay checks admission grant public envelope bindings at
+stage and commit, while only the client can open its ciphertext and confirm
+the epoch key; a signed admission may still need grant repair if that
+ciphertext is unusable.
 The relay resolves exact committed/rejected retries before checking current
 authority. Candidate-scoped staging permits competing proposals at one head;
 staging grants no authority. Inside one SQLite write transaction it reloads

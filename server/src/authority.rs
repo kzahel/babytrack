@@ -428,8 +428,26 @@ pub(crate) fn verify_first_proof(
 pub(crate) struct AdmissionCandidate {
     pub transition_id: [u8; 16],
     pub recipient_id: [u8; 16],
+    pub key_version: u32,
+    pub core_hash: [u8; 32],
     pub manifest: Vec<ManifestEntry>,
     pub next_state: Value,
+}
+
+pub(crate) fn validate_first_admission_grant(
+    admission: &AdmissionCandidate,
+    object_id: [u8; 16],
+    object_bytes: &[u8],
+) -> Result<(), Error> {
+    public_authority::validate_public_grant(
+        object_bytes,
+        object_id,
+        1,
+        admission.recipient_id,
+        admission.key_version,
+        admission.core_hash,
+    )?;
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -526,6 +544,8 @@ pub(crate) fn verify_first_admission(
     Ok(AdmissionCandidate {
         transition_id: prepared.transition_id,
         recipient_id: prepared.device_id,
+        key_version: prepared.key_version,
+        core_hash: prepared.core_hash,
         next_state: prepared.next_state,
         manifest: prepared
             .manifest
@@ -591,6 +611,52 @@ mod tests {
             .step_by(2)
             .map(|i| u8::from_str_radix(&value[i..i + 2], 16).unwrap())
             .collect()
+    }
+
+    #[test]
+    fn admission_grant_public_context_rejects_wrong_recipient_purpose_and_core() {
+        let fixture: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/contiguous-chain-v1.json").unwrap(),
+        )
+        .unwrap();
+        let grant = hex(
+            fixture["objects_by_id_hex"]["923e4567e89b42d3a456426614174000"]
+                .as_str()
+                .unwrap(),
+        );
+        let Value::Map(fields) = cbor::decode(&grant).unwrap() else {
+            panic!()
+        };
+        let id = fixed::<16>(&fields[1].1).unwrap();
+        let recipient = fixed::<16>(&fields[3].1).unwrap();
+        let version = number(&fields[4].1).unwrap() as u32;
+        let core = fixed::<32>(&fields[6].1).unwrap();
+        public_authority::validate_public_grant(&grant, id, 1, recipient, version, core).unwrap();
+        for (index, replacement) in [
+            (2, Value::Integer(3)),
+            (3, Value::Bytes(vec![0; 16])),
+            (4, Value::Integer(2)),
+            (6, Value::Bytes(vec![0; 32])),
+        ] {
+            let mut changed = fields.clone();
+            changed[index].1 = replacement;
+            let bytes = cbor::encode(&Value::Map(changed)).unwrap();
+            assert!(
+                public_authority::validate_public_grant(&bytes, id, 1, recipient, version, core)
+                    .is_err()
+            );
+        }
+        let mut opaque_ciphertext = fields;
+        opaque_ciphertext[8].1 = Value::Bytes(vec![0; 16]);
+        public_authority::validate_public_grant(
+            &cbor::encode(&Value::Map(opaque_ciphertext)).unwrap(),
+            id,
+            1,
+            recipient,
+            version,
+            core,
+        )
+        .unwrap();
     }
     #[test]
     fn genesis_candidate_validates_public_state_and_signature() {

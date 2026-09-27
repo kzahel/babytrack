@@ -40,13 +40,13 @@ One Rust core shared by every client, with native UI on each platform.
   naming primitives settles the membership or key-handoff protocol.
 - **Server (Rust, axum).** A dumb relay: an ordered log of encrypted blobs per
   family. Clients pull everything since their last verified cursor. A
-  WebSocket wakes connected clients when new log entries arrive; clients
+  WebSocket can wake connected clients when new log entries arrive; clients
   fetch and verify the log rather than treating the notification as data.
-  Startup, reconnect, foreground return, and a background wake also trigger
-  a fetch. Connected clients use bounded polling/backoff if the WebSocket is
-  unavailable. Empty APNs/FCM pushes wake suspended phone clients from their
-  platform milestones (UnifiedPush in M5); missing pushes delay progress but
-  never determine accepted state.
+  Startup, reconnect, foreground return, and scheduled background work also
+  trigger a fetch. Connected clients use bounded polling/backoff when the
+  WebSocket is unavailable. Empty APNs/FCM pushes are a later latency
+  optimization (UnifiedPush in M5); missing pushes delay progress but never
+  determine accepted state.
   SQLite by default, Postgres optional for the hosted service. The same binary
   serves the static web client, so self-hosting is one container.
 - **iOS and watchOS.** SwiftUI, iOS 17+. WidgetKit, Live Activities for
@@ -114,7 +114,7 @@ those details.
   per-Family/per-IP rate limits. Add App Attest/Play Integrity only if abuse
   appears, never in the F-Droid build.
 
-### Platform service interfaces (from M1)
+### Platform service interfaces
 
 Every vendor service is reached through an interface the app owns, so an
 implementation can be swapped without touching app code. This applies on
@@ -125,16 +125,17 @@ adding implementations rather than refactoring.
   watch link each get a small interface in a module with no vendor
   dependencies. App code depends only on these. Portable file backup uses
   user-chosen storage and never carries original-Family credentials.
-- **Implementations in their own modules.** On Android, M1 ships one
-  implementation per interface: FCM for push and the Data Layer API for the
-  Wear OS link. Each lives in its own Gradle module and is wired in at a
-  single composition point. iOS does the same with APNs and
-  WatchConnectivity.
-- **Server side.** The server's push sender is an interface too, with APNs
-  and FCM implementations first and UnifiedPush added later.
-- **Boundary check.** From M1, CI fails if any module other than the
-  implementation modules depends on Google Play services or Firebase. This
-  keeps the boundary honest long before F-Droid work starts.
+- **Implementations in their own modules.** The first Android sharing flow
+  uses foreground relay polling and scheduled background sync work; FCM is
+  optional later work to reduce suspended-app latency. The Wear OS Data
+  Layer link arrives with its watch milestone. When added, each vendor
+  implementation lives in its own module and is wired at one composition
+  point. iOS follows the same rule for APNs and WatchConnectivity.
+- **Server side.** A future push sender uses an interface with APNs and FCM
+  implementations, and UnifiedPush in M5. No push token is needed to join,
+  grant, or sync.
+- **Boundary check.** CI fails if any module other than an implementation
+  module depends on Google Play services or Firebase once either is added.
 - **Rust built from source.** The core is compiled during the Gradle build
   (cargo-ndk). No prebuilt native libraries are committed. This costs nothing
   now and is required by F-Droid later.

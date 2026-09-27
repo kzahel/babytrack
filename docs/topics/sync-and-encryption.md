@@ -247,10 +247,10 @@ in [sharing v1](../protocol/sharing-v1.md):
 - commit invitation creation/redemption, grant activation, and epoch rotation
   with opaque membership authorization atomically;
 - a WebSocket for live notification of new batches;
-- register a push token and send empty wake pushes on new batches.
+- later, register a push token and send empty wake pushes on new batches.
 
-The push sender is an interface with APNs and FCM implementations first and
-UnifiedPush later (see the plan's service interface requirements). Quotas
+The future push sender is an interface with APNs and FCM implementations
+first and UnifiedPush later (see the plan's service interface requirements). Quotas
 limit storage per family and requests per family and IP.
 
 ### Transport and wake behavior
@@ -267,11 +267,11 @@ clients later reconnect to an honest relay.
 
 M0 proves this with a real relay and separately stored CLI/browser clients,
 including disconnected clients, lost notices and responses, and restarts.
-No vendor push is needed for M0 protocol correctness. From M1, FCM provides
-an empty background wake to Android through the app-owned push interface;
-APNs does the same for iOS later. These improve automatic progress when an
-app is suspended, but a missed push leaves the durable attempt pending for
-the next available run. A wake never proves a batch, admission, or removal
+The first Android sharing flow uses foreground polling and scheduled
+background work. FCM and APNs may later provide empty background wakes through
+app-owned interfaces to reduce latency when an app is suspended. A missed
+push leaves the durable attempt pending for the next available run. A wake
+never proves a batch, admission, or removal
 committed. The client obtains signed acceptance evidence or a verified log
 entry before showing shared success. The UI exposes each pending stage.
 

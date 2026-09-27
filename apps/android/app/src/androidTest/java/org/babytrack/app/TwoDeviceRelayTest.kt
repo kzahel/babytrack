@@ -170,6 +170,14 @@ class TwoDeviceRelayTest {
             sharing.editNote(
                 family, note.childId, retainedNote, "After sync correction", System.currentTimeMillis()
             )
+            val bottleTime = System.currentTimeMillis()
+            val bottle = sharing.logBottleMl(
+                family, note.childId, 90, ActivityWhen(bottleTime, 0, bottleTime)
+            )
+            assertTrue(runCatching {
+                sharing.editBottleMl(family, otherChild.id, bottle, 120, System.currentTimeMillis())
+            }.isFailure)
+            sharing.editBottleMl(family, note.childId, bottle, 120, System.currentTimeMillis())
             val running = sharing.snapshot(family).activities.single {
                 it.kind == "sleep" && it.endUtcMs == null
             }
@@ -187,6 +195,9 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).children.any { it.name == "Manager child" })
             assertTrue(sharing.snapshot(family).activities.none { it.note == "Care note marker 67" })
             assertTrue(sharing.snapshot(family).activities.any { it.note == "After sync correction" })
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.kind == "feed.bottle" && it.bottleMl == 120L
+            })
             assertTrue(sharing.snapshot(family).activities.count { it.kind == "sleep" && it.endUtcMs != null } == 2)
             sharing.addChild(family, "Pending at removal", System.currentTimeMillis())
             assertEquals(1uL, sharing.snapshot(family).unsentCount)

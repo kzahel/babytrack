@@ -86,6 +86,10 @@ The timeline can also edit a note's text. The shared core checks the exact
 Family, child, live note type, and text length, then writes a field-set
 operation on the same activity ID. Its original time and unknown fields
 remain intact; the corrected value survives offline replay and file restore.
+Bottle amount correction similarly replaces only the whole-millilitre
+measurement field on the same activity. The core validates its live
+Family/child target and amount, retaining the original time, content code,
+and unknown fields for replay and sync.
 Pumping records a completed interval with either separate left/right
 millilitres or one total, never both forms in one entry. It does not create a
 freezer inventory balance.

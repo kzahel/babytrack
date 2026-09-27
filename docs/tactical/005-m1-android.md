@@ -27,6 +27,8 @@ emulator check creates a Family and child, logs and deletes a diaper, records
 an alternating breast feed, and verifies both states after restart. The
 timeline can correct a note's text through the shared Rust edit path while
 retaining its Family, child, activity ID, original time, and other fields.
+It can also correct a bottle's whole-millilitre amount on the same event;
+the content code and original time remain intact.
 Child creation can also record a birth date and the sex code needed for
 eventual growth charts. The shared core persists these as child metadata in
 local and shared history; growth percentiles are still pending.
@@ -61,7 +63,8 @@ handoff. This is still a development flow, not a released product flow.
 - [x] Log sleep timers/completed sleep, notes, growth in whole grams and
   millimetres, and entered Celsius decimals through the local/shared core.
 - [ ] Complete the MVP logging set: growth percentile display and practical
-  edits beyond note text. Multi-segment breast feeds, note correction, and
+  edits beyond notes and bottle amount. Multi-segment breast feeds, note and
+  bottle correction, and
   single-activity deletion now pass
   local restart/file restore, two-emulator encrypted sync, and UI tap flows.
   Preserve unknown fields and exact Family/child targets. Keep clinical

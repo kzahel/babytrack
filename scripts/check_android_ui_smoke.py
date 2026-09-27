@@ -44,7 +44,7 @@ def nodes(target: str) -> list[ET.Element]:
     return list(ET.fromstring(adb(target, "exec-out", "cat", "/sdcard/babytrack-ui.xml")).iter("node"))
 
 
-def find(target: str, label: str, *, scroll: bool = False) -> ET.Element:
+def find(target: str, label: str, *, scroll: bool = False, occurrence: int = 0) -> ET.Element:
     deadline = time.monotonic() + 20
     scroll_count = 0
     size = re.search(r"(\d+)x(\d+)", adb(target, "shell", "wm", "size"))
@@ -52,9 +52,9 @@ def find(target: str, label: str, *, scroll: bool = False) -> ET.Element:
         raise RuntimeError("Android display size unavailable")
     width, height = map(int, size.groups())
     while time.monotonic() < deadline:
-        for node in nodes(target):
-            if node.attrib.get("text") == label:
-                return node
+        matches = [node for node in nodes(target) if node.attrib.get("text") == label]
+        if len(matches) > occurrence:
+            return matches[occurrence]
         if scroll and scroll_count < 6:
             adb(
                 target, "shell", "input", "swipe", str(width // 2),
@@ -66,10 +66,20 @@ def find(target: str, label: str, *, scroll: bool = False) -> ET.Element:
     raise AssertionError(f"Android UI did not show {label!r}")
 
 
-def tap(target: str, label: str, *, scroll: bool = False) -> None:
-    bounds = find(target, label, scroll=scroll).attrib["bounds"]
+def tap(target: str, label: str, *, scroll: bool = False, occurrence: int = 0) -> None:
+    bounds = find(target, label, scroll=scroll, occurrence=occurrence).attrib["bounds"]
     x1, y1, x2, y2 = map(int, re.findall(r"\d+", bounds))
     adb(target, "shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
+
+
+def scroll_up(target: str, times: int = 4) -> None:
+    size = re.search(r"(\d+)x(\d+)", adb(target, "shell", "wm", "size"))
+    if size is None:
+        raise RuntimeError("Android display size unavailable")
+    width, height = map(int, size.groups())
+    for _ in range(times):
+        adb(target, "shell", "input", "swipe", str(width // 2),
+            str(height * 3 // 10), str(width // 2), str(height * 4 // 5), "300")
 
 
 def main() -> None:
@@ -103,6 +113,7 @@ def main() -> None:
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     find(target, "UITestChild", scroll=True)
     find(target, "No entries yet.", scroll=True)
+    scroll_up(target)
     tap(target, "What happened?", scroll=True)
     adb(target, "shell", "input", "text", "Before")
     adb(target, "shell", "input", "keyevent", "4")
@@ -117,6 +128,21 @@ def main() -> None:
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     find(target, "Note · BeforeAfter", scroll=True)
+    scroll_up(target)
+    tap(target, "Amount (mL)", scroll=True)
+    adb(target, "shell", "input", "text", "90")
+    adb(target, "shell", "input", "keyevent", "4")
+    tap(target, "Log bottle", scroll=True, occurrence=1)
+    find(target, "Bottle · 90 mL", scroll=True)
+    tap(target, "Edit bottle amount", scroll=True)
+    tap(target, "Amount (mL)")
+    adb(target, "shell", "input", "keyevent", "123")
+    adb(target, "shell", "input", "keyevent", "67")
+    adb(target, "shell", "input", "keyevent", "67")
+    adb(target, "shell", "input", "text", "120")
+    adb(target, "shell", "input", "keyevent", "4")
+    tap(target, "Save changes")
+    find(target, "Bottle · 120 mL", scroll=True)
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     tap(target, "Minutes on selected side", scroll=True)
@@ -132,7 +158,9 @@ def main() -> None:
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     find(target, "Breast · Left 5 min → Right 8 min", scroll=True)
-    print("Android UI Family, diaper deletion, note edit, breast segments, and restart: OK")
+    scroll_up(target)
+    find(target, "Bottle · 120 mL", scroll=True)
+    print("Android UI Family, diaper deletion, note and bottle edits, breast segments, and restart: OK")
 
 
 if __name__ == "__main__":

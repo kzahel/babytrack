@@ -174,6 +174,50 @@ fn note_edit_targets_existing_note_and_survives_restart_and_restore() {
 }
 
 #[test]
+fn bottle_amount_edit_keeps_activity_and_reaches_restored_copy() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("edit-bottle.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    let child = app.add_child(family, "Baby", 1_790_000_000_001).unwrap();
+    let other = app.add_child(family, "Other", 1_790_000_000_002).unwrap();
+    let time = ActivityTime {
+        start_utc_ms: 1_790_000_000_003,
+        offset_minutes: 0,
+        saved_at_ms: 1_790_000_000_004,
+    };
+    let bottle = app.log_bottle_ml(family, child, 90, 2, time).unwrap();
+    assert!(
+        app.edit_bottle_ml(family, other, bottle, 120, time.saved_at_ms + 1)
+            .is_err()
+    );
+    assert!(
+        app.edit_bottle_ml(family, child, bottle, 0, time.saved_at_ms + 1)
+            .is_err()
+    );
+    app.edit_bottle_ml(family, child, bottle, 120, time.saved_at_ms + 1)
+        .unwrap();
+    let row = app
+        .timeline(family, child)
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    assert_eq!(row.id, bottle);
+    assert_eq!(row.bottle_ml, Some(120));
+    assert_eq!(row.start_utc_ms, time.start_utc_ms);
+    let backup = app.backup(family, time.saved_at_ms + 2).unwrap();
+    drop(app);
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.timeline(family, child).unwrap()[0].bottle_ml, Some(120));
+    let restored = app.restore(&backup, time.saved_at_ms + 3).unwrap();
+    assert_eq!(
+        app.timeline(restored, child).unwrap()[0].bottle_ml,
+        Some(120)
+    );
+}
+
+#[test]
 fn local_tracking_targets_explicit_family_and_survives_restart() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("phone.db");

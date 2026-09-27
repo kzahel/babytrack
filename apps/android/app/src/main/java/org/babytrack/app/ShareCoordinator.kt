@@ -266,6 +266,9 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     fun editNote(family: FamilyRef, childId: ByteArray, activityId: ByteArray, note: String, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedNote(family, wrapping, childId, activityId, note, savedAtMs) }
 
+    fun editBottleMl(family: FamilyRef, childId: ByteArray, activityId: ByteArray, amountMl: Long, savedAtMs: Long): Unit =
+        withWrapping { wrapping -> core.editSharedBottleMl(family, wrapping, childId, activityId, amountMl, savedAtMs) }
+
     fun logNote(family: FamilyRef, childId: ByteArray, note: String, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedNote(family, wrapping, childId, note, time) }
 

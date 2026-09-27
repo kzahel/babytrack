@@ -154,6 +154,13 @@ private data class PendingNoteEdit(
     val shared: Boolean,
     val text: String,
 )
+private data class PendingBottleEdit(
+    val family: FamilyRef,
+    val childId: ByteArray,
+    val activityId: ByteArray,
+    val shared: Boolean,
+    val amount: String,
+)
 private data class ScreenData(
     val families: List<FamilyRef>,
     val activeFamilyKey: String?,
@@ -232,6 +239,7 @@ private fun TrackerScreen(
     var removalTarget by remember { mutableStateOf<ByteArray?>(null) }
     var pendingDelete by remember { mutableStateOf<PendingActivityDelete?>(null) }
     var pendingNoteEdit by remember { mutableStateOf<PendingNoteEdit?>(null) }
+    var pendingBottleEdit by remember { mutableStateOf<PendingBottleEdit?>(null) }
     var relayOrigin by remember { mutableStateOf("") }
     var relayPublicKey by remember { mutableStateOf("") }
     var shareStage by remember { mutableStateOf<String?>(null) }
@@ -1304,6 +1312,17 @@ private fun TrackerScreen(
                                         )
                                     }) { Text(stringResource(R.string.edit_note)) }
                                 }
+                                if (entry.kind == "feed.bottle" && entry.bottleMl != null) {
+                                    OutlinedButton(onClick = {
+                                        pendingBottleEdit = PendingBottleEdit(
+                                            family,
+                                            entry.childId.copyOf(),
+                                            entry.id.copyOf(),
+                                            activeShared,
+                                            entry.bottleMl.toString(),
+                                        )
+                                    }) { Text(stringResource(R.string.edit_bottle)) }
+                                }
                                 OutlinedButton(onClick = {
                                     pendingDelete = PendingActivityDelete(
                                         family,
@@ -1471,6 +1490,40 @@ private fun TrackerScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { pendingNoteEdit = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+    pendingBottleEdit?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingBottleEdit = null },
+            title = { Text(stringResource(R.string.edit_bottle)) },
+            text = {
+                OutlinedTextField(
+                    value = target.amount,
+                    onValueChange = { pendingBottleEdit = target.copy(amount = it) },
+                    label = { Text(stringResource(R.string.amount_ml)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+            },
+            confirmButton = {
+                val amount = target.amount.toLongOrNull()
+                Button(enabled = amount != null && amount in 1..1_000_000, onClick = {
+                    pendingBottleEdit = null
+                    val savedAtMs = System.currentTimeMillis()
+                    change {
+                        val ml = amount ?: error("Bottle amount missing")
+                        if (target.shared) sharing.editBottleMl(
+                            target.family, target.childId, target.activityId, ml, savedAtMs,
+                        ) else store.editBottleMl(
+                            target.family, target.childId, target.activityId, ml, savedAtMs,
+                        )
+                    }
+                }) { Text(stringResource(R.string.save_changes)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingBottleEdit = null }) {
                     Text(stringResource(R.string.cancel))
                 }
             },

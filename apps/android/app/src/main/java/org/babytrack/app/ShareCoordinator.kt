@@ -144,6 +144,22 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         }
     }
 
+    fun removeDevice(family: FamilyRef, origin: String, targetDeviceId: ByteArray): SharedSnapshotRow {
+        validateRelayOrigin(origin)
+        check(syncAndUpload(family, origin).ready) { "Shared history is not ready" }
+        val relay = RelayTransport(origin)
+        withWrapping { wrapping ->
+            val prepared = core.prepareFirstRemoval(family, wrapping, targetDeviceId)
+            val prefix = "/v1/families/${family.familyId.hex()}"
+            for (objectRow in prepared.objects) {
+                relay.post("$prefix/objects/${objectRow.objectId.hex()}", objectRow.body)
+            }
+            val response = relay.post("$prefix/control", prepared.candidateBytes)
+            core.confirmFirstRemoval(family, wrapping, response)
+        }
+        return snapshot(family)
+    }
+
     fun syncRecipient(fragment: String): RecipientSyncRow {
         val family = withWrapping { wrapping ->
             core.resumeJoin(fragment, wrapping)?.family ?: error("No durable recipient claim")

@@ -13,6 +13,7 @@ use babytrack_core::{
     first_admission::FirstAdmission,
     first_challenge::FirstChallenge,
     first_proof::FirstProof,
+    first_removal::FirstRemoval,
     issue::FirstInviteIssue,
     local_api::{self, ActivityTime, LocalRepository},
     shared_history::{self, PendingBatchResult, PublicHistorySession},
@@ -182,6 +183,12 @@ pub struct ChallengeReadRow {
 
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct PreparedAdmissionRow {
+    pub candidate_bytes: Vec<u8>,
+    pub objects: Vec<StagedObjectRow>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PreparedRemovalRow {
     pub candidate_bytes: Vec<u8>,
     pub objects: Vec<StagedObjectRow>,
 }
@@ -750,6 +757,53 @@ impl NativeSharedStore {
         let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
             .map_err(rejected)?;
         FirstAdmission::resume(&store, &manager, &fixed(&wrapping_key)?)
+            .map_err(rejected)?
+            .confirm(&mut store, &manager, &committed_control(&commit_response)?)
+            .map_err(rejected)
+    }
+
+    /// Prepare exact durable removal bytes after a verified current sync.
+    /// The target is one device credential, never a person-wide account.
+    pub fn prepare_first_removal(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        target_device_id: Vec<u8>,
+    ) -> Result<PreparedRemovalRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+            .map_err(rejected)?;
+        let removal = FirstRemoval::prepare(
+            &mut store,
+            &manager,
+            &fixed(&wrapping_key)?,
+            fixed(&target_device_id)?,
+        )
+        .map_err(rejected)?;
+        Ok(PreparedRemovalRow {
+            candidate_bytes: removal.candidate_bytes().to_vec(),
+            objects: removal
+                .stage_bodies()
+                .map_err(rejected)?
+                .into_iter()
+                .map(|(object_id, body)| StagedObjectRow {
+                    object_id: object_id.to_vec(),
+                    body,
+                })
+                .collect(),
+        })
+    }
+
+    pub fn confirm_first_removal(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        commit_response: Vec<u8>,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+            .map_err(rejected)?;
+        FirstRemoval::resume(&store, &manager, &fixed(&wrapping_key)?)
             .map_err(rejected)?
             .confirm(&mut store, &manager, &committed_control(&commit_response)?)
             .map_err(rejected)

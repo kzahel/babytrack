@@ -21,8 +21,8 @@ cryptography, durable local/shared journals, signed sync, and a first
 rotating removal. The development relay admits an initial two-device cohort,
 syncs encrypted batches, and atomically removes that first recipient with
 epoch rotation. A real-relay CLI test covers the cutover. The Android debug
-app logs and syncs the first cohort, including scheduled background attempts;
-its removal UI, automatic private copy on removal, later-device admission,
+app logs and syncs the first cohort, includes manager removal and scheduled
+background attempts; automatic private copy on removal, later-device admission,
 and the required security gates remain open.
 `babytrack` is a code name.
 

@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -174,6 +175,7 @@ private fun TrackerScreen(
     var message by remember { mutableStateOf<String?>(null) }
     var automaticSyncDelayed by remember { mutableStateOf(false) }
     var automaticSyncBlocked by remember { mutableStateOf(false) }
+    var removalTarget by remember { mutableStateOf<ByteArray?>(null) }
     var relayOrigin by remember { mutableStateOf("") }
     var relayPublicKey by remember { mutableStateOf("") }
     var shareStage by remember { mutableStateOf<String?>(null) }
@@ -335,7 +337,18 @@ private fun TrackerScreen(
                 stringResource(R.string.shared_upload_blocked),
                 color = MaterialTheme.colorScheme.error,
             )
-            if (activeShared) activeSharedSnapshot?.let { SharedHealth(it) }
+            if (activeShared) activeSharedSnapshot?.let { snapshot ->
+                SharedHealth(snapshot)
+                if (family != null && snapshot.devices.any {
+                    it.deviceId.contentEquals(family.deviceId) && it.role == 2.toUByte()
+                }) {
+                    snapshot.devices.filterNot { it.deviceId.contentEquals(family.deviceId) }.forEach { device ->
+                        OutlinedButton(onClick = { removalTarget = device.deviceId }) {
+                            Text(stringResource(R.string.remove_device, device.deviceId.key()))
+                        }
+                    }
+                }
+            }
             if (activeShared && family != null) OutlinedButton(onClick = {
                 scope.launch {
                     runCatching { withContext(Dispatchers.IO) { sharing.privateCopy(family, System.currentTimeMillis()) } }
@@ -889,6 +902,33 @@ private fun TrackerScreen(
             }
             message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
+    }
+    removalTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { removalTarget = null },
+            title = { Text(stringResource(R.string.remove_device_title)) },
+            text = { Text(stringResource(R.string.remove_device_warning, target.key())) },
+            confirmButton = {
+                Button(onClick = {
+                    removalTarget = null
+                    val chosen = family ?: return@Button
+                    scope.launch {
+                        runCatching { withContext(Dispatchers.IO) {
+                            sharing.removeDevice(chosen, relayOrigin.trim(), target)
+                        } }.onSuccess {
+                            activeSharedSnapshot = it
+                            version++
+                            message = context.getString(R.string.device_removed)
+                        }.onFailure { message = errorText }
+                    }
+                }) { Text(stringResource(R.string.confirm_remove_device)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { removalTarget = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
     }
 }
 

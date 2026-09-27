@@ -380,5 +380,18 @@ class SharingRelayTest {
         ShareCoordinator(context, database.absolutePath).use { sharing ->
             sharing.respondToClaim(family, origin)
         }
+        ShareCoordinator(context, database.absolutePath).use { sharing ->
+            val rotated = sharing.removeDevice(family, origin, first.family.deviceId)
+            assertEquals(1, rotated.devices.size)
+            assertTrue(rotated.devices.single().deviceId.contentEquals(family.deviceId))
+            val child = rotated.children.first()
+            val now = System.currentTimeMillis()
+            sharing.logDiaper(family, child.id, 2u.toUByte(), ActivityWhen(now, 0, now))
+            assertTrue(sharing.syncAndUpload(family, origin).ready)
+            assertEquals(0uL, sharing.snapshot(family).unsentCount)
+        }
+        ShareCoordinator(context, recipient.absolutePath).use { sharing ->
+            assertTrue(runCatching { sharing.syncAndUpload(first.family, origin) }.isFailure)
+        }
     }
 }

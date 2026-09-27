@@ -390,6 +390,15 @@ upload. This is still a first-cohort path. Android UI, automatic private
 copy on verified removal, later-device enrollment, and broader rotation
 remain open.
 
+Android now exposes the first recipient's device credential in a manager
+removal confirmation. The Kotlin coordinator stages the Rust proposal,
+commits through the relay, verifies the new key, and resumes epoch-two
+uploads. The disposable-relay emulator suite passes six tests including
+this path. The runner clears the test app's prior databases before launch,
+so stale Family rows from older relay instances cannot affect scheduled
+job assertions. The removed Android device still lacks a sparse signed
+proof/notice and automatic private-copy path.
+
 - [ ] Implement one ordered Family log, signed control receipts, atomic
   compare-and-swap, object manifests, accepted device sequences, signed
   batch receipts, and authenticated reads. Relay stores opaque bytes and

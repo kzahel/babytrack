@@ -87,6 +87,12 @@
     <string name="history_ready_auto">Shared history verified and ready.</string>
     <string name="shared_children">Verified shared children</string>
     <string name="shared_devices">Devices with verified access</string>
+    <string name="remove_device">Remove device %1$s</string>
+    <string name="remove_device_title">Remove shared access?</string>
+    <string name="remove_device_warning">Device %1$s will stop receiving new Family data after the relay confirms key rotation. It keeps data already stored on that device.</string>
+    <string name="confirm_remove_device">Remove access</string>
+    <string name="device_removed">Device removal and new key verified.</string>
+    <string name="cancel">Cancel</string>
     <string name="this_device">This device</string>
     <string name="another_device">Other device</string>
     <string name="shared_device_row">%1$s · %2$s · ID %3$s</string>

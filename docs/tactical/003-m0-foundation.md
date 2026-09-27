@@ -833,9 +833,34 @@ The reviewer found the prior sequence-conflict recovery, committed-claim
 restart, inert-batch warning, and relay-confirmation wording substantially
 resolved. It requested a real-relay injected hostile-batch warning proof and
 broader FS62 client/relay restart cases as hardening. The focused follow-up
-needs a new fixed-revision check before it can pass; the early M0 gate still
-waits for general authority and rotation. Accepted malicious-relay limits
-remain as described in the trust topic.
+passed a new fixed-revision check below; the early M0 gate still waits for
+general authority and rotation. Accepted malicious-relay limits remain as
+described in the trust topic.
+
+### Advisory Android sync recheck at 00e827b
+
+Daybreak Blue at high thinking reviewed fixed commit
+`00e827b296059f51bea944a05569b1e092f25627` in read-only detached
+checkout through Yep Anywhere session
+`01a0e0de-3e81-7ba3-b459-e9d834df75c6`. The process reached verified
+idle, with no tracked review edits. Result: **focused advisory PASS** for
+the two prior high findings; this is not the early M0 security gate. The
+reviewer ran focused Rust history/enrollment tests and the offline Android
+unit build, but did not run emulator instrumentation.
+
+The signed stale-epoch receipt now binds to its historical rotation prefix
+even after later accepted history, while rebatching uses the latest verified
+sequence. A saved pre-commit claim reopens by Family/device identity and
+retries its exact bytes without the fragment. The recheck requested an
+Activity-recreation regression, a forced recipient background-job regression,
+and correction of BATCH04's scenario label. Activity recreation was already
+covered in `164f0ff`; the job regression and vector label are added in the
+follow-up slice. The real-relay emulator runner passed all six Android
+instrumentation tests, including the forced recipient job. General-claim
+rebase after unrelated control changes remains
+a blocker before later-device enrollment. Full rotation, removal, automatic
+private copy, and malicious-relay withholding limits remain outside this
+focused pass.
 
 ## Advisory Android sync review at 6b10805
 

@@ -112,6 +112,52 @@ class SharingRelayTest {
     }
 
     @Test
+    fun scheduledJobRetriesSavedRecipientClaim() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
+            ?: error("relayPublicKey instrumentation argument required")
+        val origin = "http://localhost:8787"
+        val managerDb = context.filesDir.resolve("job-claim-manager-${System.nanoTime()}.db")
+        val family = NativeLocalStore.open(managerDb.absolutePath).use { it.createFamily(System.currentTimeMillis()) }
+        val fragment = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            sharing.promote(family, origin, publicKey)
+            sharing.invite(family, origin, 1u.toUByte())
+        }
+        val preview = previewInvitation(fragment)
+        val wrapping = DeviceWrappingKey(context).loadOrCreate()
+        val recipient = try {
+            NativeSharedStore.open(context.filesDir.resolve("families.db").absolutePath).use { core ->
+                core.prepareJoin(fragment, RelayTransport(origin).get(preview.controlPath, preview.readAuth), wrapping).family
+            }
+        } finally {
+            wrapping.fill(0)
+        }
+        SharedSyncJobService.schedule(context)
+        val before = context.getSharedPreferences("shared_background_sync", android.content.Context.MODE_PRIVATE)
+            .getLong("last_attempt_ms", 0)
+        val command = instrumentation.uiAutomation.executeShellCommand("cmd jobscheduler run -f org.babytrack.app 3400")
+        ParcelFileDescriptor.AutoCloseInputStream(command).bufferedReader().use { it.readText() }
+        val deadline = System.currentTimeMillis() + 15_000
+        var resumed = false
+        while (System.currentTimeMillis() < deadline) {
+            val newAttempt = context.getSharedPreferences("shared_background_sync", android.content.Context.MODE_PRIVATE)
+                .getLong("last_attempt_ms", 0) > before
+            val key = DeviceWrappingKey(context).loadOrCreate()
+            resumed = try {
+                NativeSharedStore.open(context.filesDir.resolve("families.db").absolutePath).use { core ->
+                    core.recipientFirstJoinAction(recipient, key) == 0u.toUByte()
+                }
+            } finally {
+                key.fill(0)
+            }
+            if (newAttempt && resumed) break
+            Thread.sleep(100)
+        }
+        assertTrue("Background job should confirm the saved claim", resumed)
+    }
+
+    @Test
     fun scheduledJobUploadsSavedManagerEdit() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

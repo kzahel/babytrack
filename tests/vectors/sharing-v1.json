@@ -185,7 +185,7 @@
     },
     {
       "id": "REMOVE04",
-      "scenario": "FS54",
+      "scenario": "FS48",
       "initial": {
         "A_outbox": [
           "op1"

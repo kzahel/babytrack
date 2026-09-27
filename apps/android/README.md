@@ -67,6 +67,12 @@ To exercise the current relay slice on an emulator:
     the recipient's entries on the manager's device. The manager can remove
     that first recipient; pending edits on the removed device become an
     independent private Family copy.
+11. A device granted manager access can create another invitation from its
+    joined-Family debug view. Its foreground and scheduled sync passes answer
+    the next device's claim and proof. The real-relay instrumentation suite
+    checks this with three separate stores and an encrypted edit from the
+    admitted manager. This remains a debug flow; role changes and invitation
+    cancellation are still pending.
 
 The on-device integration test calls the same Keystore and transport adapter
 through a real relay. With an emulator running, build both APKs with

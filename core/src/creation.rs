@@ -252,36 +252,7 @@ impl ManagerCreation {
     /// Select pending join work from the fully verified durable chain.
     /// A proved device is admitted before another pending claim is challenged.
     pub fn join_target(&self, store: &SqliteStore) -> Result<Option<JoinTarget>, Error> {
-        let public = PublicHistorySession::resume(store, self.family)?;
-        let Value::Map(state) = cbor::decode(&public.chain().state_bytes()?)? else {
-            return Err(Error::Invalid("verified authority state not map"));
-        };
-        let Value::Array(pending) = &state[5].1 else {
-            return Err(Error::Invalid("verified pending state not array"));
-        };
-        for action in [2, 1] {
-            for item in pending {
-                let Value::Array(row) = item else {
-                    return Err(Error::Invalid("verified pending row not array"));
-                };
-                if row.len() != 9 {
-                    return Err(Error::Invalid("verified pending row width"));
-                }
-                let chosen = if action == 2 {
-                    matches!(&row[8], Value::Bytes(hash) if hash.len() == 32)
-                } else {
-                    row[7] == Value::Null && row[8] == Value::Null
-                };
-                if chosen {
-                    return Ok(Some(JoinTarget {
-                        action,
-                        invitation_id: fixed(&row[0])?,
-                        device_id: fixed(&row[1])?,
-                    }));
-                }
-            }
-        }
-        Ok(None)
+        verified_join_target(store, self.family)
     }
 
     /// Automatic join work is derived from verified pending state.
@@ -411,6 +382,43 @@ impl ManagerCreation {
         )?;
         Ok(ready)
     }
+}
+
+/// Select pending join work from a fully verified authority chain.
+pub fn verified_join_target(
+    store: &SqliteStore,
+    family: FamilyHandle,
+) -> Result<Option<JoinTarget>, Error> {
+    let public = PublicHistorySession::resume(store, family)?;
+    let Value::Map(state) = cbor::decode(&public.chain().state_bytes()?)? else {
+        return Err(Error::Invalid("verified authority state not map"));
+    };
+    let Value::Array(pending) = &state[5].1 else {
+        return Err(Error::Invalid("verified pending state not array"));
+    };
+    for action in [2, 1] {
+        for item in pending {
+            let Value::Array(row) = item else {
+                return Err(Error::Invalid("verified pending row not array"));
+            };
+            if row.len() != 9 {
+                return Err(Error::Invalid("verified pending row width"));
+            }
+            let chosen = if action == 2 {
+                matches!(&row[8], Value::Bytes(hash) if hash.len() == 32)
+            } else {
+                row[7] == Value::Null && row[8] == Value::Null
+            };
+            if chosen {
+                return Ok(Some(JoinTarget {
+                    action,
+                    invitation_id: fixed(&row[0])?,
+                    device_id: fixed(&row[1])?,
+                }));
+            }
+        }
+    }
+    Ok(None)
 }
 
 fn promotion_chunks(

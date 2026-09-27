@@ -365,6 +365,52 @@ class SharingRelayTest {
     }
 
     @Test
+    fun admittedManagerInvitesAndGrantsAnotherDevice() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
+            ?: error("relayPublicKey instrumentation argument required")
+        val origin = "http://localhost:8787"
+        val suffix = System.nanoTime()
+        val managerDb = context.filesDir.resolve("handoff-manager-$suffix.db")
+        val holderDb = context.filesDir.resolve("handoff-holder-$suffix.db")
+        val thirdDb = context.filesDir.resolve("handoff-third-$suffix.db")
+        val manager = NativeLocalStore.open(managerDb.absolutePath).use { local ->
+            val family = local.createFamily(System.currentTimeMillis())
+            local.addChild(family, "Handoff child", System.currentTimeMillis())
+            family
+        }
+        val holderLink = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            sharing.promote(manager, origin, publicKey)
+            sharing.invite(manager, origin, 2u.toUByte())
+        }
+        val holder = ShareCoordinator(context, holderDb.absolutePath).use { it.claim(holderLink).family }
+        ShareCoordinator(context, managerDb.absolutePath).use { assertTrue(it.advanceManager(manager, origin).ready) }
+        ShareCoordinator(context, holderDb.absolutePath).use { assertTrue(it.advanceRecipient(holder).awaitingGrant) }
+        ShareCoordinator(context, managerDb.absolutePath).use { assertTrue(it.advanceManager(manager, origin).ready) }
+        val thirdLink = ShareCoordinator(context, holderDb.absolutePath).use { sharing ->
+            assertTrue(sharing.advanceRecipient(holder).ready)
+            assertTrue(sharing.isAdmittedManager(holder))
+            sharing.invite(holder, origin, 1u.toUByte())
+        }
+        val third = ShareCoordinator(context, thirdDb.absolutePath).use { it.claim(thirdLink).family }
+        ShareCoordinator(context, holderDb.absolutePath).use { assertTrue(it.advanceManager(holder, origin).ready) }
+        ShareCoordinator(context, thirdDb.absolutePath).use { assertTrue(it.advanceRecipient(third).awaitingGrant) }
+        ShareCoordinator(context, holderDb.absolutePath).use { assertTrue(it.advanceManager(holder, origin).ready) }
+        ShareCoordinator(context, thirdDb.absolutePath).use { sharing ->
+            assertTrue(sharing.advanceRecipient(third).ready)
+            assertEquals("Handoff child", sharing.snapshot(third).children.single().name)
+        }
+        ShareCoordinator(context, holderDb.absolutePath).use { sharing ->
+            sharing.addChild(holder, "Holder child", System.currentTimeMillis())
+            assertTrue(sharing.syncRecipientAndUpload(holder).ready)
+        }
+        ShareCoordinator(context, thirdDb.absolutePath).use { sharing ->
+            assertTrue(sharing.syncRecipientAndUpload(third).ready)
+            assertTrue(sharing.snapshot(third).children.any { it.name == "Holder child" })
+        }
+    }
+
+    @Test
     fun keystoreWrappedPromotionAndInvitationSurviveRestart() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

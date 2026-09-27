@@ -11,8 +11,9 @@ SQLite replay, browser IndexedDB local storage, and signed encrypted sync.
 The development relay admits an initial cohort, accepts encrypted batches,
 and verifies a recipient removal with epoch rotation and revoked data access.
 Real-relay tests admit a later device at the current epoch, hydrate its
-history, and continue encrypted sync. Admitted-manager authority, browser
-shared sync, and broader recovery coverage remain open.
+history, and continue encrypted sync. An admitted manager can also invite
+and grant a third device. Role changes, cancellation, browser shared sync,
+and broader recovery coverage remain open.
 
 The Android debug app logs children, diapers, bottles, sleep timers,
 completed sleep, notes, growth, Celsius, medication, solids, breast-feed
@@ -29,7 +30,9 @@ relay and two separate emulator installations exercise the first-cohort
 join, reciprocal edits, offline pending work, removal, and private copy.
 After relay restart and epoch rotation, the manager issues a later link and
 a fresh recipient installation joins through automatic wake steps, then
-uploads an encrypted event the manager reads. This remains a debug build;
+uploads an encrypted event the manager reads. An Android real-relay test
+also covers an admitted manager inviting and granting another device,
+followed by an encrypted edit. This remains a debug build;
 physical-phone and end-of-M0 security gates have not passed.
 Scenario files still include symbolic expectations.
 

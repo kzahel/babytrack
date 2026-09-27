@@ -782,7 +782,9 @@ pub(crate) fn chain_at_head(
                 return Ok(chain);
             }
         }
-        return Err(Error::Invalid("prepared control prior sparse head absent"));
+        // After enrollment, this same device can manage later invitations.
+        // Their prepared heads occur beyond the saved join-only sparse prefix.
+        // Continue into the fully verified contiguous history below.
     }
     PublicHistorySession::resume(store, family)?;
     let history = store

@@ -450,7 +450,7 @@ impl ReadyFamilySession {
         self.observed_cursor
     }
 
-    pub(crate) fn observed_head(&self) -> [u8; 32] {
+    pub fn observed_head(&self) -> [u8; 32] {
         self.observed_head
     }
 

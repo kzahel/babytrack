@@ -148,17 +148,22 @@ fn resign_batch_result(
 
 #[tokio::test]
 async fn existing_local_family_promotes_and_shares_with_durable_keys() {
-    dynamic_flow(false, false).await;
+    dynamic_flow(false, false, 1).await;
 }
 
 #[tokio::test]
 async fn manager_batch_interleaves_before_invite_and_recipient_joins() {
-    dynamic_flow(true, false).await;
+    dynamic_flow(true, false, 1).await;
 }
 
 #[tokio::test]
 async fn removed_recipient_recovers_accepted_result_after_lost_response() {
-    dynamic_flow(false, true).await;
+    dynamic_flow(false, true, 1).await;
+}
+
+#[tokio::test]
+async fn admitted_manager_issues_and_grants_to_a_third_device() {
+    dynamic_flow(false, false, 2).await;
 }
 
 #[tokio::test]
@@ -639,7 +644,7 @@ async fn later_issue_keeps_exact_candidate_and_commits_after_first_issue() {
     assert_eq!(ready.active_epoch(), 1);
 }
 
-async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
+async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool, recipient_role: u8) {
     let shift = if early_batch { 1 } else { 0 };
     let dir = tempfile::tempdir().unwrap();
     let local_path = dir.path().join("manager.db");
@@ -845,12 +850,13 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
             .unwrap();
     }
 
-    let issue = FirstInviteIssue::prepare(&mut local, &resumed, &wrapping_key, 1).unwrap();
+    let issue =
+        FirstInviteIssue::prepare(&mut local, &resumed, &wrapping_key, recipient_role).unwrap();
     let issue_candidate = issue.candidate_bytes().to_vec();
     let issue_stage = issue.stage_body().unwrap();
     assert_ne!(issue.transition_id(), issue.invitation_id());
     assert_eq!(
-        FirstInviteIssue::prepare(&mut local, &resumed, &wrapping_key, 1)
+        FirstInviteIssue::prepare(&mut local, &resumed, &wrapping_key, recipient_role)
             .unwrap()
             .candidate_bytes(),
         issue_candidate
@@ -1393,15 +1399,17 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
     let recipient_ready =
         ReadyFamilySession::from_enrollment(&recipient_store, &resumed_enrollment).unwrap();
     assert_eq!(recipient_ready.observed_cursor(), 7 + shift);
-    assert!(
-        LaterInviteIssue::prepare_for_admitted_manager(
-            &mut recipient_store,
-            &resumed_enrollment,
-            &recipient_wrap,
-            1,
-        )
-        .is_err()
-    );
+    if recipient_role == 1 {
+        assert!(
+            LaterInviteIssue::prepare_for_admitted_manager(
+                &mut recipient_store,
+                &resumed_enrollment,
+                &recipient_wrap,
+                1,
+            )
+            .is_err()
+        );
+    }
     let batches_path = format!(
         "/v1/families/{}/batches?after={}",
         lower_hex(&family.family_id),
@@ -1562,6 +1570,19 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
             manager_ready.projection().record(&late_child_id),
             recipient_ready.projection().record(&late_child_id)
         );
+    }
+    if recipient_role == 2 {
+        admitted_manager_join_flow(
+            &app,
+            dir.path(),
+            family,
+            &mut local,
+            &mut recipient_store,
+            &resumed_enrollment,
+            &recipient_wrap,
+        )
+        .await;
+        return;
     }
     if let Some((ref mut clone_store, ref clone_manager, ref clone_batch)) = clone {
         assert_eq!(clone_batch.sequence, manager_batch.sequence);
@@ -2576,4 +2597,181 @@ async fn dynamic_flow(early_batch: bool, accepted_before_removal: bool) {
             2
         );
     }
+}
+
+async fn admitted_manager_join_flow(
+    app: &Router,
+    directory: &std::path::Path,
+    family: FamilyHandle,
+    initial_manager_store: &mut SqliteStore,
+    holder_store: &mut SqliteStore,
+    holder: &EnrollmentAttempt,
+    holder_wrap: &[u8; 32],
+) {
+    let later =
+        LaterInviteIssue::prepare_for_admitted_manager(holder_store, holder, holder_wrap, 1)
+            .unwrap();
+    stage_objects(
+        app,
+        family.family_id,
+        &[(later.object_id(), later.stage_body().unwrap())],
+    )
+    .await;
+    let response = commit_control(app, family.family_id, later.candidate_bytes()).await;
+    let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(committed_issue) = &fields[1].1 else {
+        panic!()
+    };
+    let link = later
+        .confirm(holder_store, committed_issue, "http://localhost:3400")
+        .unwrap();
+    PublicHistorySession::resume(initial_manager_store, family)
+        .unwrap()
+        .accept_control(initial_manager_store, committed_issue)
+        .unwrap();
+
+    let control_path = format!(
+        "/v1/families/{}/control?after=0",
+        lower_hex(&family.family_id)
+    );
+    let read = link.sign_get(&control_path).unwrap();
+    let page = ControlPage::decode(
+        &http_bytes(app, Method::GET, &control_path, read.bytes).await,
+        family.family_id,
+        0,
+    )
+    .unwrap();
+    let controls: Vec<_> = page
+        .entries
+        .iter()
+        .map(|entry| (entry.cursor, entry.committed_bytes.clone()))
+        .collect();
+    let mut third_store = SqliteStore::open(directory.join("third-device.db")).unwrap();
+    let third_wrap = [0x56; 32];
+    let third =
+        EnrollmentAttempt::prepare_sparse_prefix(&mut third_store, &link, &controls, &third_wrap)
+            .unwrap();
+    let response = commit_control(app, family.family_id, third.claim_candidate()).await;
+    let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(committed_claim) = &fields[1].1 else {
+        panic!()
+    };
+    third
+        .confirm_sparse_claim(&mut third_store, committed_claim)
+        .unwrap();
+    PublicHistorySession::resume(holder_store, holder.family())
+        .unwrap()
+        .accept_control(holder_store, committed_claim)
+        .unwrap();
+
+    let challenge = FirstChallenge::prepare_for_admitted_manager(
+        holder_store,
+        holder,
+        later.invitation_id(),
+        third.family().device_id,
+        holder_wrap,
+    )
+    .unwrap();
+    let challenge_candidate = challenge.candidate_bytes().to_vec();
+    let staged = challenge.stage_bodies().unwrap();
+    let challenge =
+        FirstChallenge::resume_for_admitted_manager(holder_store, holder, holder_wrap).unwrap();
+    assert_eq!(challenge.candidate_bytes(), challenge_candidate);
+    stage_objects(app, family.family_id, &staged).await;
+    let response = commit_control(app, family.family_id, &challenge_candidate).await;
+    let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(committed_challenge) = &fields[1].1 else {
+        panic!()
+    };
+    challenge
+        .confirm(holder_store, committed_challenge)
+        .unwrap();
+    third
+        .accept_sparse_control(&mut third_store, committed_challenge)
+        .unwrap();
+    let hpke_id = third.pending_challenge_object_id(&third_store).unwrap();
+    let object_path = format!(
+        "/v1/families/{}/objects/{}",
+        lower_hex(&family.family_id),
+        lower_hex(&hpke_id)
+    );
+    let read = third.sign_get(&object_path).unwrap();
+    let object = OpaqueObject::decode(
+        &http_bytes(app, Method::GET, &object_path, read.bytes).await,
+        hpke_id,
+    )
+    .unwrap();
+    third
+        .accept_sparse_object(&mut third_store, hpke_id, &object.object_bytes)
+        .unwrap();
+    let proof = FirstProof::prepare(&mut third_store, &third, &third_wrap).unwrap();
+    let response = commit_control(app, family.family_id, proof.candidate_bytes()).await;
+    let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(committed_proof) = &fields[1].1 else {
+        panic!()
+    };
+    proof.confirm(&mut third_store, committed_proof).unwrap();
+    PublicHistorySession::resume(holder_store, holder.family())
+        .unwrap()
+        .accept_control(holder_store, committed_proof)
+        .unwrap();
+
+    let admission = FirstAdmission::prepare_for_admitted_manager(
+        holder_store,
+        holder,
+        later.invitation_id(),
+        third.family().device_id,
+        holder_wrap,
+    )
+    .unwrap();
+    let admission_candidate = admission.candidate_bytes().to_vec();
+    let staged = admission.stage_bodies().unwrap();
+    let admission =
+        FirstAdmission::resume_for_admitted_manager(holder_store, holder, holder_wrap).unwrap();
+    assert_eq!(admission.candidate_bytes(), admission_candidate);
+    stage_objects(app, family.family_id, &staged).await;
+    let response = commit_control(app, family.family_id, &admission_candidate).await;
+    let Value::Map(fields) = cbor::decode(&response).unwrap() else {
+        panic!()
+    };
+    let Value::Bytes(committed_admission) = &fields[1].1 else {
+        panic!()
+    };
+    admission
+        .confirm_for_admitted_manager(holder_store, committed_admission)
+        .unwrap();
+    third
+        .accept_sparse_control(&mut third_store, committed_admission)
+        .unwrap();
+    assert!(ReadyFamilySession::from_enrollment(&third_store, &third).is_err());
+    active_pull::pull_active_log(&mut third_store, third.family(), 32, |path| {
+        let app = app.clone();
+        let read = third.sign_get(&path).unwrap();
+        async move { Ok::<_, ()>(http_bytes(&app, Method::GET, &path, read.bytes).await) }
+    })
+    .await
+    .unwrap();
+    active_pull::hydrate_manifest_objects(&mut third_store, third.family(), 32, |path| {
+        let app = app.clone();
+        let read = third.sign_get(&path).unwrap();
+        async move { Ok::<_, ()>(http_bytes(&app, Method::GET, &path, read.bytes).await) }
+    })
+    .await
+    .unwrap();
+    let ready = ReadyFamilySession::from_enrollment(&third_store, &third).unwrap();
+    assert_eq!(ready.active_epoch(), 1);
+    assert!(
+        ready
+            .projection()
+            .records()
+            .any(|record| record.scope == Scope::Child)
+    );
 }

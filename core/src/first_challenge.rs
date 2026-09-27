@@ -7,8 +7,11 @@ use crate::{
     control_build,
     control_chain::{self, ControlChain},
     creation::ManagerCreation,
-    crypto, hpke,
+    crypto,
+    enrollment::EnrollmentAttempt,
+    hpke,
     shared_history::{self, PublicHistorySession},
+    shared_ready::ReadyFamilySession,
     sqlite_store::{self, FamilyHandle, PreparedControlRow, SqliteStore},
 };
 
@@ -167,6 +170,42 @@ impl FirstChallenge {
         )
     }
 
+    /// An admitted manager can answer a later verified claim with its own
+    /// signing credential and the epoch key from its complete ready view.
+    pub fn prepare_for_admitted_manager(
+        store: &mut SqliteStore,
+        holder: &EnrollmentAttempt,
+        invitation_id: [u8; 16],
+        pending_device_id: [u8; 16],
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
+        let ready = ReadyFamilySession::from_enrollment(store, holder)
+            .map_err(|_| Error::Invalid("holder not data-ready"))?;
+        let public = PublicHistorySession::resume(store, holder.family())?;
+        if ready.observed_cursor() != public.cursor() || ready.observed_head() != public.head_hash()
+        {
+            return Err(Error::Invalid("holder view behind public authority"));
+        }
+        if !public
+            .chain()
+            .active_devices()?
+            .iter()
+            .any(|device| device.device_id == holder.family().device_id && device.role == 2)
+        {
+            return Err(Error::Invalid("holder is not an active manager"));
+        }
+        Self::prepare_with(
+            store,
+            holder.family(),
+            public.chain(),
+            holder.signing_seed(),
+            ready.current_key().bytes,
+            invitation_id,
+            pending_device_id,
+            local_wrapping_key,
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn prepare_with(
         store: &mut SqliteStore,
@@ -294,6 +333,19 @@ impl FirstChallenge {
             store,
             manager.family(),
             manager.signing_seed(),
+            local_wrapping_key,
+        )
+    }
+
+    pub fn resume_for_admitted_manager(
+        store: &SqliteStore,
+        holder: &EnrollmentAttempt,
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
+        Self::resume_with(
+            store,
+            holder.family(),
+            holder.signing_seed(),
             local_wrapping_key,
         )
     }

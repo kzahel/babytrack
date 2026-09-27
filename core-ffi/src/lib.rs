@@ -8,7 +8,7 @@ use babytrack_core::{
     active_pull,
     bootstrap::InvitationBootstrap,
     cbor::{self, Value},
-    creation::ManagerCreation,
+    creation::{ManagerCreation, verified_join_target},
     enrollment::EnrollmentAttempt,
     first_admission::FirstAdmission,
     first_challenge::FirstChallenge,
@@ -437,6 +437,21 @@ impl NativeSharedStore {
         role: u8,
     ) -> Result<PreparedInviteRow, BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let key = fixed(&wrapping_key)?;
+        if let Some(holder) = admitted_manager(&mut store, handle, &key)? {
+            let issue =
+                LaterInviteIssue::prepare_for_admitted_manager(&mut store, &holder, &key, role)
+                    .map_err(rejected)?;
+            return Ok(PreparedInviteRow {
+                invitation_id: issue.invitation_id().to_vec(),
+                candidate_bytes: issue.candidate_bytes().to_vec(),
+                object: StagedObjectRow {
+                    object_id: issue.object_id().to_vec(),
+                    body: issue.stage_body().map_err(rejected)?,
+                },
+            });
+        }
         let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
             .map_err(rejected)?;
         if has_issued_invitation(&store, family.handle()?)? {
@@ -479,10 +494,10 @@ impl NativeSharedStore {
         relay_origin: String,
     ) -> Result<String, BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
-        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
-            .map_err(rejected)?;
+        let admitted =
+            admitted_manager(&mut store, family.handle()?, &fixed(&wrapping_key)?)?.is_some();
         let committed = committed_control(&commit_response)?;
-        if has_issued_invitation(&store, family.handle()?)? {
+        if admitted || has_issued_invitation(&store, family.handle()?)? {
             LaterInviteIssue::resume(
                 &store,
                 family.handle()?,
@@ -495,6 +510,8 @@ impl NativeSharedStore {
             .to_fragment()
             .map_err(rejected)
         } else {
+            let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+                .map_err(rejected)?;
             let issue = FirstInviteIssue::resume(&store, &manager, &fixed(&wrapping_key)?)
                 .map_err(rejected)?;
             if issue.invitation_id() != fixed(&invitation_id)? {
@@ -812,9 +829,8 @@ impl NativeSharedStore {
         family: FamilyRef,
         wrapping_key: Vec<u8>,
     ) -> Result<SignedReadRow, BindingError> {
-        let store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
-        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
-            .map_err(rejected)?;
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let holder = admitted_manager(&mut store, family.handle()?, &fixed(&wrapping_key)?)?;
         let after = PublicHistorySession::resume(&store, family.handle()?)
             .map_err(rejected)?
             .cursor();
@@ -822,7 +838,13 @@ impl NativeSharedStore {
             "/v1/families/{}/control?after={after}",
             lower_hex(&family.family_id)
         );
-        let read = manager.sign_get(&path).map_err(rejected)?;
+        let read = match holder {
+            Some(holder) => holder.sign_get(&path).map_err(rejected)?,
+            None => ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+                .map_err(rejected)?
+                .sign_get(&path)
+                .map_err(rejected)?,
+        };
         Ok(SignedReadRow {
             path,
             auth: read.bytes,
@@ -840,8 +862,6 @@ impl NativeSharedStore {
         control_page: Vec<u8>,
     ) -> Result<PreparedChallengeRow, BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
-        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
-            .map_err(rejected)?;
         let mut public =
             PublicHistorySession::resume(&store, family.handle()?).map_err(rejected)?;
         if read.after != public.cursor()
@@ -861,19 +881,43 @@ impl NativeSharedStore {
                 .accept_control(&mut store, &entry.committed_bytes)
                 .map_err(rejected)?;
         }
-        let challenge = match manager.join_target(&store).map_err(rejected)? {
-            Some(target) if target.action == 1 => {
-                FirstChallenge::prepare_later_for_initial_manager(
+        let target = verified_join_target(&store, family.handle()?).map_err(rejected)?;
+        let challenge = if let Some(holder) =
+            admitted_manager(&mut store, family.handle()?, &fixed(&wrapping_key)?)?
+        {
+            match target {
+                Some(target) if target.action == 1 => FirstChallenge::prepare_for_admitted_manager(
                     &mut store,
-                    &manager,
+                    &holder,
                     target.invitation_id,
                     target.device_id,
                     &fixed(&wrapping_key)?,
                 )
-                .map_err(rejected)?
-            }
-            _ => FirstChallenge::resume(&store, &manager, &fixed(&wrapping_key)?)
                 .map_err(rejected)?,
+                _ => FirstChallenge::resume_for_admitted_manager(
+                    &store,
+                    &holder,
+                    &fixed(&wrapping_key)?,
+                )
+                .map_err(rejected)?,
+            }
+        } else {
+            let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+                .map_err(rejected)?;
+            match target {
+                Some(target) if target.action == 1 => {
+                    FirstChallenge::prepare_later_for_initial_manager(
+                        &mut store,
+                        &manager,
+                        target.invitation_id,
+                        target.device_id,
+                        &fixed(&wrapping_key)?,
+                    )
+                    .map_err(rejected)?
+                }
+                _ => FirstChallenge::resume(&store, &manager, &fixed(&wrapping_key)?)
+                    .map_err(rejected)?,
+            }
         };
         Ok(PreparedChallengeRow {
             candidate_bytes: challenge.candidate_bytes().to_vec(),
@@ -896,10 +940,17 @@ impl NativeSharedStore {
         commit_response: Vec<u8>,
     ) -> Result<(), BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
-        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
-            .map_err(rejected)?;
-        FirstChallenge::resume(&store, &manager, &fixed(&wrapping_key)?)
-            .map_err(rejected)?
+        let challenge = if let Some(holder) =
+            admitted_manager(&mut store, family.handle()?, &fixed(&wrapping_key)?)?
+        {
+            FirstChallenge::resume_for_admitted_manager(&store, &holder, &fixed(&wrapping_key)?)
+                .map_err(rejected)?
+        } else {
+            let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+                .map_err(rejected)?;
+            FirstChallenge::resume(&store, &manager, &fixed(&wrapping_key)?).map_err(rejected)?
+        };
+        challenge
             .confirm(&mut store, &committed_control(&commit_response)?)
             .map_err(rejected)
     }
@@ -1069,8 +1120,6 @@ impl NativeSharedStore {
         control_page: Vec<u8>,
     ) -> Result<PreparedAdmissionRow, BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
-        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
-            .map_err(rejected)?;
         let mut public =
             PublicHistorySession::resume(&store, family.handle()?).map_err(rejected)?;
         if read.after != public.cursor()
@@ -1090,17 +1139,41 @@ impl NativeSharedStore {
                 .accept_control(&mut store, &entry.committed_bytes)
                 .map_err(rejected)?;
         }
-        let admission = match manager.join_target(&store).map_err(rejected)? {
-            Some(target) if target.action == 2 => FirstAdmission::prepare(
-                &mut store,
-                &manager,
-                target.invitation_id,
-                target.device_id,
-                &fixed(&wrapping_key)?,
-            )
-            .map_err(rejected)?,
-            _ => FirstAdmission::resume(&store, &manager, &fixed(&wrapping_key)?)
+        let target = verified_join_target(&store, family.handle()?).map_err(rejected)?;
+        let admission = if let Some(holder) =
+            admitted_manager(&mut store, family.handle()?, &fixed(&wrapping_key)?)?
+        {
+            match target {
+                Some(target) if target.action == 2 => FirstAdmission::prepare_for_admitted_manager(
+                    &mut store,
+                    &holder,
+                    target.invitation_id,
+                    target.device_id,
+                    &fixed(&wrapping_key)?,
+                )
                 .map_err(rejected)?,
+                _ => FirstAdmission::resume_for_admitted_manager(
+                    &store,
+                    &holder,
+                    &fixed(&wrapping_key)?,
+                )
+                .map_err(rejected)?,
+            }
+        } else {
+            let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+                .map_err(rejected)?;
+            match target {
+                Some(target) if target.action == 2 => FirstAdmission::prepare(
+                    &mut store,
+                    &manager,
+                    target.invitation_id,
+                    target.device_id,
+                    &fixed(&wrapping_key)?,
+                )
+                .map_err(rejected)?,
+                _ => FirstAdmission::resume(&store, &manager, &fixed(&wrapping_key)?)
+                    .map_err(rejected)?,
+            }
         };
         Ok(PreparedAdmissionRow {
             candidate_bytes: admission.candidate_bytes().to_vec(),
@@ -1123,12 +1196,22 @@ impl NativeSharedStore {
         commit_response: Vec<u8>,
     ) -> Result<(), BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
-        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
-            .map_err(rejected)?;
-        FirstAdmission::resume(&store, &manager, &fixed(&wrapping_key)?)
-            .map_err(rejected)?
-            .confirm(&mut store, &manager, &committed_control(&commit_response)?)
-            .map_err(rejected)
+        let committed = committed_control(&commit_response)?;
+        if let Some(holder) =
+            admitted_manager(&mut store, family.handle()?, &fixed(&wrapping_key)?)?
+        {
+            FirstAdmission::resume_for_admitted_manager(&store, &holder, &fixed(&wrapping_key)?)
+                .map_err(rejected)?
+                .confirm_for_admitted_manager(&mut store, &committed)
+                .map_err(rejected)
+        } else {
+            let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+                .map_err(rejected)?;
+            FirstAdmission::resume(&store, &manager, &fixed(&wrapping_key)?)
+                .map_err(rejected)?
+                .confirm(&mut store, &manager, &committed)
+                .map_err(rejected)
+        }
     }
 
     /// Prepare exact durable removal bytes after a verified current sync.
@@ -1571,10 +1654,32 @@ impl NativeSharedStore {
         family: FamilyRef,
         wrapping_key: Vec<u8>,
     ) -> Result<u8, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        if admitted_manager(&mut store, family.handle()?, &fixed(&wrapping_key)?)?.is_none() {
+            ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
+                .map_err(rejected)?;
+        }
+        Ok(verified_join_target(&store, family.handle()?)
+            .map_err(rejected)?
+            .map_or(0, |target| target.action))
+    }
+
+    pub fn is_admitted_manager(&self, family: FamilyRef) -> Result<bool, BindingError> {
         let store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
-        let manager = ManagerCreation::resume(&store, family.handle()?, &fixed(&wrapping_key)?)
-            .map_err(rejected)?;
-        manager.first_join_action(&store).map_err(rejected)
+        let handle = family.handle()?;
+        if !store
+            .has_enrollment_attempt(handle.family_id)
+            .map_err(rejected)?
+        {
+            return Ok(false);
+        }
+        let public = PublicHistorySession::resume(&store, handle).map_err(rejected)?;
+        Ok(public
+            .chain()
+            .active_devices()
+            .map_err(rejected)?
+            .iter()
+            .any(|device| device.device_id == handle.device_id && device.role == 2))
     }
 
     pub fn recipient_first_join_action(
@@ -3428,6 +3533,40 @@ fn has_issued_invitation(store: &SqliteStore, family: FamilyHandle) -> Result<bo
         return Err(BindingError::InvalidBytes);
     };
     Ok(!invitations.is_empty())
+}
+
+fn admitted_manager(
+    store: &mut SqliteStore,
+    family: FamilyHandle,
+    wrapping_key: &[u8; 32],
+) -> Result<Option<EnrollmentAttempt>, BindingError> {
+    if !store
+        .has_enrollment_attempt(family.family_id)
+        .map_err(rejected)?
+    {
+        return Ok(None);
+    }
+    let holder =
+        EnrollmentAttempt::resume(store, family.family_id, wrapping_key).map_err(rejected)?;
+    if holder.family() != family {
+        return Err(BindingError::InvalidBytes);
+    }
+    let ready = ReadyFamilySession::from_enrollment(store, &holder).map_err(rejected)?;
+    let public = PublicHistorySession::resume(store, family).map_err(rejected)?;
+    if ready.observed_cursor() != public.cursor()
+        || ready.observed_head() != public.head_hash()
+        || !public
+            .chain()
+            .active_devices()
+            .map_err(rejected)?
+            .iter()
+            .any(|device| device.device_id == family.device_id && device.role == 2)
+    {
+        return Err(BindingError::Rejected(
+            "Device is not a current ready manager".into(),
+        ));
+    }
+    Ok(Some(holder))
 }
 
 fn fixed<const N: usize>(bytes: &[u8]) -> Result<[u8; N], BindingError> {

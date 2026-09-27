@@ -665,6 +665,54 @@ private fun TrackerScreen(
                             Text(stringResource(R.string.shared_children), style = MaterialTheme.typography.titleMedium)
                             Text(stringResource(R.string.shared_manual_sync))
                             SharedHealth(snapshot)
+                            if (snapshot.family.familyId.key() == selectedRecipient &&
+                                sharing.isAdmittedManager(snapshot.family)) {
+                                Text(stringResource(R.string.invite_manager), style = MaterialTheme.typography.titleMedium)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(
+                                        selected = !inviteAsManager,
+                                        onClick = { inviteAsManager = false },
+                                        label = { Text(stringResource(R.string.invite_member)) },
+                                    )
+                                    FilterChip(
+                                        selected = inviteAsManager,
+                                        onClick = { inviteAsManager = true },
+                                        label = { Text(stringResource(R.string.invite_manager)) },
+                                    )
+                                }
+                                OutlinedButton(onClick = {
+                                    shareStage = context.getString(R.string.invite_preparing)
+                                    scope.launch {
+                                        runCatching { withContext(Dispatchers.IO) {
+                                            sharing.invite(
+                                                snapshot.family,
+                                                sharing.recipientOrigin(snapshot.family),
+                                                if (inviteAsManager) 2u.toUByte() else 1u.toUByte(),
+                                            )
+                                        } }.onSuccess { fragment ->
+                                            invitationFragment = fragment
+                                            shareStage = context.getString(R.string.invite_confirmed)
+                                            message = null
+                                        }.onFailure {
+                                            shareStage = context.getString(R.string.share_retry)
+                                            message = errorText
+                                        }
+                                    }
+                                }) { Text(stringResource(R.string.create_invite)) }
+                                shareStage?.let { Text(it) }
+                                invitationFragment?.let { fragment ->
+                                    SelectionContainer { Text(fragment) }
+                                    OutlinedButton(onClick = {
+                                        val send = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_TEXT, fragment)
+                                        }
+                                        context.startActivity(Intent.createChooser(
+                                            send, context.getString(R.string.share_invitation),
+                                        ))
+                                    }) { Text(stringResource(R.string.share_invitation)) }
+                                }
+                            }
                             OutlinedButton(onClick = {
                                 scope.launch {
                                     runCatching { withContext(Dispatchers.IO) {

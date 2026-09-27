@@ -453,9 +453,9 @@ checks each signed global cursor, and saves the complete sparse prefix with
 its encrypted credentials and exact claim in one transaction. Android fetches
 bounded control pages before calling that verifier. The existing two-emulator
 first-cohort flow passes with the paged join path. A real multi-page relay
-scenario, later key handoff, a second manager acting as issuer, and Android
-later-issue controls remain open. The CLI commits and retries the later
-recipient's exact claim through HTTP after a simulated page boundary; it
+scenario and later key handoff were still open at that stage. The CLI
+commits and retries the later recipient's exact claim through HTTP after a
+simulated page boundary; it
 remains keyless pending admission.
 
 The next general-device pass follows these ordered implementation proofs:
@@ -1363,14 +1363,21 @@ Android now uses verified pending state to choose a manager action and can
 issue a later invitation. A separate-emulator relay flow creates and removes
 the first recipient, restarts the relay, then takes a new device through a
 later invitation, claim, challenge, proof, grant, hydration, encrypted upload,
-and manager readback at epoch two. Challenge by an admitted manager remains
-open.
+and manager readback at epoch two. A second manager can now issue a later
+invitation, challenge and grant a third device using its own credential and
+verified epoch key. The CLI proves that path through relay HTTP; Android's
+real-relay instrumentation covers the same three-device handoff and a later
+encrypted edit. Prepared-control replay now checks the saved sparse join
+prefix and then the fully verified log, since a manager can act after its
+own enrollment. Role changes, cancellation, and broader recovery cases
+remain open.
 Ready replay can now start from a later recipient's admission grant at a
 rotated epoch: it verifies that epoch's committed keyring and membership,
 recovers earlier keys, then applies subsequent addressed rotations. A fixed
 rotation fixture proves known-key history replay without an impossible old
-rotation grant and rejects a tampered keyring or key. Complete third-device
-admission and hydration through the relay remains open (FS72).
+rotation grant and rejects a tampered keyring or key. The admitted-manager
+third-device case now covers admission and hydration at epoch one; later
+rotations and recovery variants remain open (FS72).
 
 The relay page selector now stops before the four-MiB encoded response cap
 instead of blindly taking 256 entries and failing the entire read. FS75

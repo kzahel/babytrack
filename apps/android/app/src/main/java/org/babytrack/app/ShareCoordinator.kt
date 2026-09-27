@@ -301,6 +301,8 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
 
     fun recipientFamilies(): List<FamilyRef> = core.recipientFamilies()
 
+    fun isAdmittedManager(family: FamilyRef): Boolean = core.isAdmittedManager(family)
+
     fun recipientOrigin(family: FamilyRef): String = withWrapping { wrapping ->
         core.recipientRelayOrigin(family, wrapping)
     }
@@ -443,7 +445,12 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
             proveChallenge(family)
             progress = syncRecipient(family)
         }
-        if (progress.ready) syncRecipientAndUpload(family)
+        if (progress.ready) {
+            syncRecipientAndUpload(family)
+            if (core.isAdmittedManager(family)) {
+                advanceManager(family, recipientOrigin(family))
+            }
+        }
         return progress
     }
 

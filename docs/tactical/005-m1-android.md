@@ -77,6 +77,13 @@ before tapping Invite.
 The join screen now names the verified stage: waiting for a holder challenge,
 preparing the recipient proof, waiting for a holder grant, or loading history.
 The later-device emulator flow checks the pending and proved phases.
+An admitted manager now exposes an invitation action in the joined-Family
+debug view and uses the same foreground and scheduled coordinator to answer
+claims and proofs. A real-relay instrumentation case uses three independent
+stores: the first manager admits a second manager, that manager invites and
+grants a third device, then uploads an encrypted child the third device
+reads. This is an emulator flow with one app installation and separate
+Family credentials; distinct physical phones remain untested.
 The early independent authority recheck passed for that implemented cohort
 at `82c0f4c`; [003](003-m0-foundation.md#early-m0-authority-recheck-at-82c0f4c)
 records its limits. No physical two-phone or full M0 exit gate has passed.
@@ -116,7 +123,9 @@ intended Family and child, and remains usable after process death.
   passes, scheduled work, and first recipient removal/private copy.
 - [ ] Complete admitted-manager membership actions, manager/role changes,
   invite cancellation, and key rotation in [003](003-m0-foundation.md) before
-  exposing those actions as ordinary Android sharing controls.
+  exposing those actions as ordinary Android sharing controls. An admitted
+  manager can now issue an invitation and complete challenge and grant in
+  the debug flow; other actions remain open.
 - [ ] Make invitation handoff usable through a share/link flow with trusted
   relay pinning and clear pending, accepted, blocked, and removed states.
   The share-sheet receive path now prefills without auto-claiming. Remove

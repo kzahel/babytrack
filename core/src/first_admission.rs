@@ -7,9 +7,12 @@ use crate::{
     control_build,
     control_chain::{self, ControlChain},
     creation::ManagerCreation,
-    crypto, hpke,
+    crypto,
+    enrollment::EnrollmentAttempt,
+    hpke,
     projection::VerifiedEpochKey,
     shared_history::{self, PublicHistorySession},
+    shared_ready::ReadyFamilySession,
     sqlite_store::{self, FamilyHandle, PreparedControlRow, SqliteStore},
 };
 
@@ -107,7 +110,50 @@ impl FirstAdmission {
         recipient_id: [u8; 16],
         local_wrapping_key: &[u8; 32],
     ) -> Result<Self, Error> {
-        let family = manager.family();
+        let ready = manager
+            .ready_session(store)
+            .map_err(|_| Error::Invalid("manager not data-ready"))?;
+        Self::prepare_with(
+            store,
+            manager.family(),
+            manager.signing_seed(),
+            &ready,
+            invitation_id,
+            recipient_id,
+            local_wrapping_key,
+        )
+    }
+
+    pub fn prepare_for_admitted_manager(
+        store: &mut SqliteStore,
+        holder: &EnrollmentAttempt,
+        invitation_id: [u8; 16],
+        recipient_id: [u8; 16],
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
+        let ready = ReadyFamilySession::from_enrollment(store, holder)
+            .map_err(|_| Error::Invalid("holder not data-ready"))?;
+        Self::prepare_with(
+            store,
+            holder.family(),
+            holder.signing_seed(),
+            &ready,
+            invitation_id,
+            recipient_id,
+            local_wrapping_key,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn prepare_with(
+        store: &mut SqliteStore,
+        family: FamilyHandle,
+        signing_seed: [u8; 32],
+        ready: &ReadyFamilySession,
+        invitation_id: [u8; 16],
+        recipient_id: [u8; 16],
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
         if let Some(row) = store.prepared_control(family, 6)? {
             let history = store
                 .shared_history(family)?
@@ -120,7 +166,8 @@ impl FirstAdmission {
             if committed {
                 store.delete_prepared_control(family, 6, row.transition_id)?;
             } else {
-                let existing = Self::resume(store, manager, local_wrapping_key)?;
+                let existing =
+                    Self::resume_with(store, family, signing_seed, ready, local_wrapping_key)?;
                 if existing.invitation_id != invitation_id || existing.recipient_id != recipient_id
                 {
                     return Err(Error::Invalid("another admission already prepared"));
@@ -128,9 +175,6 @@ impl FirstAdmission {
                 return Ok(existing);
             }
         }
-        let ready = manager
-            .ready_session(store)
-            .map_err(|_| Error::Invalid("manager not data-ready"))?;
         let public_session = PublicHistorySession::resume(store, family)?;
         if ready.observed_cursor() != public_session.cursor()
             || ready.observed_head() != public_session.head_hash()
@@ -138,6 +182,13 @@ impl FirstAdmission {
             return Err(Error::Invalid("holder view behind public authority"));
         }
         let public = public_session.chain();
+        if !public
+            .active_devices()?
+            .iter()
+            .any(|device| device.device_id == family.device_id && device.role == 2)
+        {
+            return Err(Error::Invalid("holder is not an active manager"));
+        }
         let epoch = public.epoch()?;
         let epoch_key = ready.current_key().bytes;
         verify_committed_proof(
@@ -250,7 +301,7 @@ impl FirstAdmission {
             next_state,
             epoch,
             &objects,
-            &manager.signing_seed(),
+            &signing_seed,
         )?;
         let objects_bytes = objects_bytes(&objects)?;
         let secret_nonce = random::<24>()?;
@@ -272,7 +323,7 @@ impl FirstAdmission {
             secret_nonce,
             secret_ciphertext,
         })?;
-        Self::resume(store, manager, local_wrapping_key)
+        Self::resume_with(store, family, signing_seed, ready, local_wrapping_key)
     }
 
     pub fn resume(
@@ -280,7 +331,41 @@ impl FirstAdmission {
         manager: &ManagerCreation,
         local_wrapping_key: &[u8; 32],
     ) -> Result<Self, Error> {
-        let family = manager.family();
+        let ready = manager
+            .ready_session(store)
+            .map_err(|_| Error::Invalid("manager not data-ready"))?;
+        Self::resume_with(
+            store,
+            manager.family(),
+            manager.signing_seed(),
+            &ready,
+            local_wrapping_key,
+        )
+    }
+
+    pub fn resume_for_admitted_manager(
+        store: &SqliteStore,
+        holder: &EnrollmentAttempt,
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
+        let ready = ReadyFamilySession::from_enrollment(store, holder)
+            .map_err(|_| Error::Invalid("holder not data-ready"))?;
+        Self::resume_with(
+            store,
+            holder.family(),
+            holder.signing_seed(),
+            &ready,
+            local_wrapping_key,
+        )
+    }
+
+    fn resume_with(
+        store: &SqliteStore,
+        family: FamilyHandle,
+        signing_seed: [u8; 32],
+        ready: &ReadyFamilySession,
+        local_wrapping_key: &[u8; 32],
+    ) -> Result<Self, Error> {
         let row = store
             .prepared_control(family, 6)?
             .ok_or(Error::Invalid("no durable admission"))?;
@@ -315,9 +400,6 @@ impl FirstAdmission {
         }
         let prior_head = fixed::<32>(&unsigned[3].1)?;
         let chain = shared_history::chain_at_head(store, family, prior_head)?;
-        let ready = manager
-            .ready_session(store)
-            .map_err(|_| Error::Invalid("manager not data-ready"))?;
         if ready.active_epoch() != chain.epoch()? {
             return Err(Error::Invalid("prepared admission epoch changed"));
         }
@@ -341,7 +423,7 @@ impl FirstAdmission {
             next_state,
             chain.epoch()?,
             &objects,
-            &manager.signing_seed(),
+            &signing_seed,
         )?;
         if rebuilt != row.candidate_bytes {
             return Err(Error::Invalid("admission differs from durable authority"));
@@ -379,6 +461,23 @@ impl FirstAdmission {
         manager: &ManagerCreation,
         committed: &[u8],
     ) -> Result<(), Error> {
+        self.confirm_with(store, committed)?;
+        let history = store
+            .shared_history(self.family)?
+            .ok_or(Error::Invalid("shared history absent"))?;
+        manager.confirm(store, &history.genesis_bytes)?;
+        Ok(())
+    }
+
+    pub fn confirm_for_admitted_manager(
+        &self,
+        store: &mut SqliteStore,
+        committed: &[u8],
+    ) -> Result<(), Error> {
+        self.confirm_with(store, committed)
+    }
+
+    fn confirm_with(&self, store: &mut SqliteStore, committed: &[u8]) -> Result<(), Error> {
         let candidate = candidate_from_committed(committed)?;
         if candidate != self.candidate_bytes {
             return Err(Error::Invalid("admission candidate mismatch"));
@@ -397,7 +496,6 @@ impl FirstAdmission {
         for (_, id, bytes) in &self.objects {
             public.accept_object(store, *id, bytes)?;
         }
-        manager.confirm(store, &history.genesis_bytes)?;
         Ok(())
     }
 }

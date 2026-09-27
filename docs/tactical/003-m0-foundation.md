@@ -1120,7 +1120,12 @@ update. Two separate relay connections racing the same signed envelope get
 one log entry and the same result; the HTTP retry agrees. This covers the
 exact-retry and same-envelope cursor portion of FS69-FS70. Distinct control
 versus batch and rotation races, later-role-loss retries, and crash points
-remain open for general authority.
+remain open for general authority. The five first-cohort post-genesis
+control commits now acquire that same immediate write transaction before
+reading control history, head, or cursor. A separate-connection race between
+a signed initial-manager batch and invitation issue produces exactly one of
+each log entry at consecutive cursors. This covers the first-cohort
+control-versus-batch part of FS70; general rotation and crash points remain.
 
 First-cohort control objects now stage under their signed transition ID.
 An interrupted single-slot relay database migrates its staged candidate on

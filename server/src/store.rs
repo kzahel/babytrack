@@ -514,19 +514,22 @@ impl RelayStore {
         candidate_bytes: &[u8],
         committed_ms: i64,
     ) -> Result<Vec<u8>, Error> {
-        let (genesis_bytes,cursor,head,genesis_committed) = self.db.query_row(
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (genesis_bytes,cursor,head,genesis_committed) = tx.query_row(
             "SELECT candidate_bytes,cursor,head_hash,committed_bytes FROM families WHERE family_id=?1 AND active=1",
             params![&path_family[..]], |r| Ok((r.get::<_,Vec<u8>>(0)?,r.get::<_,i64>(1)?,r.get::<_,Vec<u8>>(2)?,r.get::<_,Vec<u8>>(3)?)),
         )?;
         let genesis = authority::verify_genesis_candidate(&genesis_bytes, &self.relay_public)?;
-        let controls = control_count(&self.db, path_family)?;
+        let controls = control_count(&tx, path_family)?;
         let genesis_head = crypto::hash("control-head", &genesis_committed)?;
         let issue = authority::verify_first_invite_issue(candidate_bytes, &genesis, genesis_head)?;
         if issue.family_id != path_family {
             return Err(Error::Invalid("issue path Family mismatch"));
         }
         if controls >= 2 {
-            let committed = control_at(&self.db, path_family, 1)?;
+            let committed = control_at(&tx, path_family, 1)?;
             if control_candidate(&committed)? == candidate_bytes {
                 return Ok(receipt::control_commit_response(&committed)?);
             }
@@ -539,7 +542,6 @@ impl RelayStore {
         if committed_ms < genesis_time {
             return Err(Error::Invalid("relay time moved backward"));
         }
-        let tx = self.db.transaction()?;
         ensure_control_ids(&tx, path_family, candidate_bytes)?;
         let staged_candidate: Option<Vec<u8>> = tx
             .query_row(
@@ -736,7 +738,10 @@ impl RelayStore {
         candidate_bytes: &[u8],
         committed_ms: i64,
     ) -> Result<Vec<u8>, Error> {
-        let prefix = load_join_prefix(&self.db, self.relay_public, path_family)?;
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let prefix = load_join_prefix(&tx, self.relay_public, path_family)?;
         let challenge = authority::verify_first_challenge(
             candidate_bytes,
             &prefix.genesis,
@@ -745,7 +750,7 @@ impl RelayStore {
             prefix.claim_head,
         )?;
         if prefix.controls >= 4 {
-            let committed = control_at(&self.db, path_family, 3)?;
+            let committed = control_at(&tx, path_family, 3)?;
             if control_candidate(&committed)? == candidate_bytes {
                 return Ok(receipt::control_commit_response(&committed)?);
             }
@@ -757,7 +762,6 @@ impl RelayStore {
         {
             return Err(Error::Invalid("challenge head or relay time invalid"));
         }
-        let tx = self.db.transaction()?;
         ensure_control_ids(&tx, path_family, candidate_bytes)?;
         let staged:Option<Vec<u8>>=tx.query_row("SELECT candidate_bytes FROM staged_controls WHERE family_id=?1 AND transition_id=?2",
             params![&path_family[..],&challenge.transition_id[..]],|r|r.get(0)).optional()?;
@@ -820,11 +824,14 @@ impl RelayStore {
         candidate_bytes: &[u8],
         committed_ms: i64,
     ) -> Result<Vec<u8>, Error> {
-        let prefix = load_join_prefix(&self.db, self.relay_public, path_family)?;
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let prefix = load_join_prefix(&tx, self.relay_public, path_family)?;
         if prefix.controls < 4 {
             return Err(Error::Invalid("challenge not committed"));
         }
-        let challenge_committed = control_at(&self.db, path_family, 3)?;
+        let challenge_committed = control_at(&tx, path_family, 3)?;
         let challenge = authority::verify_first_challenge(
             &control_candidate(&challenge_committed)?,
             &prefix.genesis,
@@ -842,7 +849,7 @@ impl RelayStore {
             challenge_head,
         )?;
         if prefix.controls >= 5 {
-            let committed = control_at(&self.db, path_family, 4)?;
+            let committed = control_at(&tx, path_family, 4)?;
             if control_candidate(&committed)? == candidate_bytes {
                 return Ok(receipt::control_commit_response(&committed)?);
             }
@@ -865,7 +872,6 @@ impl RelayStore {
             committed_ms,
         )?;
         let next_head = crypto::hash("control-head", &committed)?;
-        let tx = self.db.transaction()?;
         ensure_control_ids(&tx, path_family, candidate_bytes)?;
         tx.execute(
             "INSERT INTO entries(family_id,cursor,kind,committed_bytes) VALUES(?1,?2,1,?3)",
@@ -943,7 +949,10 @@ impl RelayStore {
         candidate_bytes: &[u8],
         committed_ms: i64,
     ) -> Result<Vec<u8>, Error> {
-        let prefix = load_proved_prefix(&self.db, self.relay_public, path_family)?;
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let prefix = load_proved_prefix(&tx, self.relay_public, path_family)?;
         let admission = authority::verify_first_admission(
             candidate_bytes,
             &prefix.join.genesis,
@@ -954,7 +963,7 @@ impl RelayStore {
             prefix.proof_head,
         )?;
         if prefix.join.controls >= 6 {
-            let committed = control_at(&self.db, path_family, 5)?;
+            let committed = control_at(&tx, path_family, 5)?;
             if control_candidate(&committed)? == candidate_bytes {
                 return Ok(receipt::control_commit_response(&committed)?);
             }
@@ -966,7 +975,6 @@ impl RelayStore {
         {
             return Err(Error::Invalid("admission head or relay time invalid"));
         }
-        let tx = self.db.transaction()?;
         ensure_control_ids(&tx, path_family, candidate_bytes)?;
         let staged:Option<Vec<u8>>=tx.query_row("SELECT candidate_bytes FROM staged_controls WHERE family_id=?1 AND transition_id=?2",
             params![&path_family[..],&admission.transition_id[..]],|r|r.get(0)).optional()?;
@@ -1094,7 +1102,10 @@ impl RelayStore {
         candidate_bytes: &[u8],
         committed_ms: i64,
     ) -> Result<Vec<u8>, Error> {
-        let prefix = load_admitted_prefix(&self.db, self.relay_public, path_family)?;
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let prefix = load_admitted_prefix(&tx, self.relay_public, path_family)?;
         let removal = authority::verify_first_removal(
             candidate_bytes,
             &prefix.proved.join.genesis,
@@ -1104,7 +1115,7 @@ impl RelayStore {
             prefix.admission_head,
         )?;
         if prefix.proved.join.controls >= 7 {
-            let committed = control_at(&self.db, path_family, 6)?;
+            let committed = control_at(&tx, path_family, 6)?;
             if control_candidate(&committed)? == candidate_bytes {
                 return Ok(receipt::control_commit_response(&committed)?);
             }
@@ -1116,8 +1127,7 @@ impl RelayStore {
         {
             return Err(Error::Invalid("removal head or relay time invalid"));
         }
-        ensure_first_removal_ids_unused(&self.db, path_family, &removal)?;
-        let tx = self.db.transaction()?;
+        ensure_first_removal_ids_unused(&tx, path_family, &removal)?;
         ensure_control_ids(&tx, path_family, candidate_bytes)?;
         let saved: Option<Vec<u8>> = tx.query_row(
             "SELECT candidate_bytes FROM staged_controls WHERE family_id=?1 AND transition_id=?2",
@@ -2516,6 +2526,153 @@ mod tests {
             cbor::encode(&Value::Map(root)).unwrap(),
             cbor::encode(&Value::Map(stage)).unwrap(),
         )
+    }
+
+    fn signed_manager_batch(
+        genesis_committed: &[u8],
+        genesis: &authority::GenesisCandidate,
+        manager_seed: [u8; 32],
+    ) -> Vec<u8> {
+        let mut batch_id = [0x91; 16];
+        batch_id[6] = 0x40;
+        batch_id[8] = 0x80;
+        let ciphertext = vec![0x42; 17];
+        let header = Value::Map(vec![
+            (1, Value::Array(vec![Value::Integer(1), Value::Integer(0)])),
+            (2, Value::Bytes(genesis.family_id.to_vec())),
+            (3, Value::Bytes(genesis.relay_id.to_vec())),
+            (
+                4,
+                Value::Bytes(
+                    crypto::hash("control-head", genesis_committed)
+                        .unwrap()
+                        .to_vec(),
+                ),
+            ),
+            (5, Value::Integer(1)),
+            (6, Value::Bytes(batch_id.to_vec())),
+            (7, Value::Bytes(genesis.manager_id.to_vec())),
+            (8, Value::Integer(1)),
+            (9, Value::Bytes(vec![0x55; 24])),
+            (10, Value::Integer(1)),
+        ]);
+        let signed = cbor::encode(&Value::Array(vec![
+            header.clone(),
+            Value::Bytes(
+                crypto::hash("batch-ciphertext", &ciphertext)
+                    .unwrap()
+                    .to_vec(),
+            ),
+        ]))
+        .unwrap();
+        let signature = crypto::sign_cbor("batch-envelope", &signed, &manager_seed).unwrap();
+        cbor::encode(&Value::Map(vec![
+            (1, header),
+            (2, Value::Bytes(ciphertext)),
+            (3, Value::Bytes(signature.to_vec())),
+        ]))
+        .unwrap()
+    }
+
+    #[test]
+    fn control_and_batch_writers_share_one_family_cursor() {
+        let genesis: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/api-genesis-v1.json").unwrap(),
+        )
+        .unwrap();
+        let issue: Json =
+            serde_json::from_str(&std::fs::read_to_string("../tests/vectors/api-v1.json").unwrap())
+                .unwrap();
+        let chain: Json = serde_json::from_str(
+            &std::fs::read_to_string("../tests/vectors/contiguous-chain-v1.json").unwrap(),
+        )
+        .unwrap();
+        let seed: [u8; 32] = hex(chain["test_only_inputs"]["relay_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let manager_seed: [u8; 32] = hex(chain["test_only_inputs"]["manager_sign_seed_hex"]
+            .as_str()
+            .unwrap())
+        .try_into()
+        .unwrap();
+        let family: [u8; 16] = hex(genesis["inputs"]["family_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let promotion: [u8; 16] = hex(genesis["inputs"]["promotion_id_hex"].as_str().unwrap())
+            .try_into()
+            .unwrap();
+        let issue_object: [u8; 16] = hex("083e4567e89b42d3a456426614174000").try_into().unwrap();
+        let genesis_stage = hex(genesis["inputs"]["stage_body_cbor_hex"].as_str().unwrap());
+        let genesis_candidate = hex(genesis["inputs"]["commit_candidate_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let issue_stage = hex(issue["inputs"]["stage_body_cbor_hex"].as_str().unwrap());
+        let issue_candidate = hex(issue["inputs"]["commit_body_cbor_hex"].as_str().unwrap());
+        let genesis_commit = hex(genesis["expect"]["commit_response_cbor_hex"]
+            .as_str()
+            .unwrap());
+        let Value::Map(response) = cbor::decode(&genesis_commit).unwrap() else {
+            panic!()
+        };
+        let Value::Bytes(genesis_committed) = &response[1].1 else {
+            panic!()
+        };
+        let time = control_commit_time(genesis_committed).unwrap();
+        let parsed = authority::verify_genesis_candidate(
+            &genesis_candidate,
+            &crypto::signing_public_key(&seed),
+        )
+        .unwrap();
+        let batch = signed_manager_batch(genesis_committed, &parsed, manager_seed);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("relay.sqlite");
+        let mut setup = RelayStore::open(&path, seed).unwrap();
+        setup
+            .stage_genesis_object(family, promotion, &genesis_stage)
+            .unwrap();
+        setup
+            .commit_genesis(family, &genesis_candidate, time)
+            .unwrap();
+        setup
+            .stage_first_issue_object(family, issue_object, &issue_stage)
+            .unwrap();
+        drop(setup);
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+        let writers = [true, false].map(|control| {
+            let path = path.clone();
+            let barrier = barrier.clone();
+            let issue_candidate = issue_candidate.clone();
+            let batch = batch.clone();
+            std::thread::spawn(move || {
+                let mut store = RelayStore::open(&path, seed).unwrap();
+                barrier.wait();
+                for _ in 0..100 {
+                    let result = if control {
+                        store.commit_first_issue(family, &issue_candidate, time)
+                    } else {
+                        store.commit_initial_cohort_batch(family, &batch)
+                    };
+                    if let Ok(result) = result {
+                        return result;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                panic!("concurrent writer did not resolve");
+            })
+        });
+        barrier.wait();
+        for writer in writers {
+            assert!(!writer.join().unwrap().is_empty());
+        }
+        let db = Connection::open(path).unwrap();
+        let (cursor, controls, batches): (i64, i64, i64) = db.query_row(
+            "SELECT f.cursor, (SELECT COUNT(*) FROM entries WHERE family_id=f.family_id AND kind=1), (SELECT COUNT(*) FROM entries WHERE family_id=f.family_id AND kind=2) FROM families f WHERE f.family_id=?1",
+            params![&family[..]],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        ).unwrap();
+        assert_eq!((cursor, controls, batches), (3, 2, 1));
     }
 
     #[test]

@@ -422,7 +422,12 @@ impl PublicLedger {
                 let expires = issued
                     .checked_add(604_800_000)
                     .ok_or(Error::Invalid("invitation expiry overflow"))?;
-                if fields[5] != Value::Integer(1) || self.last_commit_ms >= expires {
+                if fields[5] != Value::Integer(1)
+                    || self.last_commit_ms >= expires
+                    || self
+                        .invitation_status(signer_id, self.last_commit_ms)?
+                        .is_none_or(|(_, reason)| reason != 1)
+                {
                     return Ok(None);
                 }
                 return Ok(Some(PublicReader::Invitation {

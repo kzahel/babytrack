@@ -64,12 +64,18 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         val wrapping = keys.loadOrCreate()
         try {
             val saved = core.resumeJoin(fragment, wrapping)
-            val pages = joinControlPages(relay, preview.familyId, wrapping, fragment, saved?.family)
-            val prepared = core.prepareJoinPages(fragment, pages, wrapping)
-            val path = "/v1/families/${prepared.family.familyId.hex()}/control"
-            val response = relay.post(path, prepared.candidateBytes)
-            core.confirmJoinClaim(prepared.family, wrapping, response)
-            return prepared
+            try {
+                val pages = joinControlPages(relay, preview.familyId, wrapping, fragment, saved?.family)
+                val prepared = core.prepareJoinPages(fragment, pages, wrapping)
+                val path = "/v1/families/${prepared.family.familyId.hex()}/control"
+                val response = relay.post(path, prepared.candidateBytes)
+                core.confirmJoinClaim(prepared.family, wrapping, response)
+                return prepared
+            } catch (failure: Exception) {
+                val terminal = verifiedTerminalInvitationMessage(relay, fragment, saved?.family, wrapping)
+                if (terminal != null) throw IllegalStateException(terminal, failure)
+                throw failure
+            }
         } finally {
             wrapping.fill(0)
         }
@@ -78,11 +84,41 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     fun retryClaim(family: FamilyRef): PreparedJoinRow {
         val relay = RelayTransport(recipientOrigin(family))
         return withWrapping { wrapping ->
-            val pages = joinControlPages(relay, family.familyId, wrapping, null, family)
-            val prepared = core.refreshJoinPages(family, wrapping, pages)
-            val response = relay.post("/v1/families/${family.familyId.hex()}/control", prepared.candidateBytes)
-            core.confirmJoinClaim(family, wrapping, response)
-            prepared
+            try {
+                val pages = joinControlPages(relay, family.familyId, wrapping, null, family)
+                val prepared = core.refreshJoinPages(family, wrapping, pages)
+                val response = relay.post("/v1/families/${family.familyId.hex()}/control", prepared.candidateBytes)
+                core.confirmJoinClaim(family, wrapping, response)
+                prepared
+            } catch (failure: Exception) {
+                val terminal = verifiedTerminalInvitationMessage(relay, null, family, wrapping)
+                if (terminal != null) throw IllegalStateException(terminal, failure)
+                throw failure
+            }
+        }
+    }
+
+    private fun verifiedTerminalInvitationMessage(
+        relay: RelayTransport,
+        fragment: String?,
+        saved: FamilyRef?,
+        wrapping: ByteArray,
+    ): String? {
+        val status = try {
+            val read = if (fragment != null) invitationStatusRead(fragment)
+                else core.savedInvitationStatusRead(saved ?: return null, wrapping)
+            val response = relay.get(read.path, read.auth)
+            if (fragment != null) verifyInvitationStatus(fragment, response)
+                else core.verifySavedInvitationStatus(saved ?: return null, wrapping, response)
+        } catch (_: Exception) {
+            return null
+        }
+        return when (status.reason) {
+            2u.toUByte() -> "Invitation already claimed"
+            3u.toUByte() -> "Invitation canceled"
+            4u.toUByte() -> "Invitation expired"
+            5u.toUByte() -> "Invitation issuer is no longer a manager"
+            else -> null
         }
     }
 
@@ -108,22 +144,7 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
                     val pending = core.savedJoinControlRead(saved, wrapping, after, true)
                     relay.get(pending.path, pending.auth)
                 } catch (pendingFailure: IllegalStateException) {
-                    val status = try {
-                        val statusRead = if (fragment != null) invitationStatusRead(fragment)
-                            else core.savedInvitationStatusRead(saved ?: throw pendingFailure, wrapping)
-                        val response = relay.get(statusRead.path, statusRead.auth)
-                        if (fragment != null) verifyInvitationStatus(fragment, response)
-                            else core.verifySavedInvitationStatus(saved ?: throw pendingFailure, wrapping, response)
-                    } catch (_: Exception) {
-                        null
-                    }
-                    val terminal = when (status?.reason) {
-                        2u.toUByte() -> "Invitation already claimed"
-                        3u.toUByte() -> "Invitation canceled"
-                        4u.toUByte() -> "Invitation expired"
-                        5u.toUByte() -> "Invitation issuer is no longer a manager"
-                        else -> null
-                    }
+                    val terminal = verifiedTerminalInvitationMessage(relay, fragment, saved, wrapping)
                     if (terminal != null) throw IllegalStateException(terminal)
                     throw IllegalStateException("Invitation status cannot be verified yet", pendingFailure)
                 }

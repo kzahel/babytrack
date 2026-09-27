@@ -116,9 +116,9 @@ if [[ ! "$later_fragment" =~ ^#bt-invite=v1\.[A-Za-z0-9_-]+$ ]]; then
 fi
 adb -s "$recipient" shell pm clear org.babytrack.app >/dev/null
 run_step "$recipient" recipientClaim -e fragment "'$later_fragment'"
-run_step "$manager" managerRespond
-run_step "$recipient" recipientProve
-run_step "$manager" managerAdmit
+run_step "$manager" managerAdvanceJoin
+run_step "$recipient" recipientAdvanceJoin
+run_step "$manager" managerAdvanceJoin
 run_step "$recipient" recipientLaterReadyAndUpload
 run_step "$manager" managerReadsLaterRecipient
 if rg --text -q 'Care note marker 67' "$scratch/relay.db" "$scratch/relay.log"; then

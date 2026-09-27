@@ -91,9 +91,23 @@ class TwoDeviceRelayTest {
         }
     }
 
+    @Test fun managerAdvanceJoin() {
+        ShareCoordinator(context, db.absolutePath).use { sharing ->
+            assertTrue(sharing.advanceManager(family(), origin).ready)
+        }
+    }
+
     @Test fun recipientProve() {
         ShareCoordinator(context, db.absolutePath).use { sharing ->
             sharing.proveChallenge(sharing.recipientFamilies().single())
+        }
+    }
+
+    @Test fun recipientAdvanceJoin() {
+        ShareCoordinator(context, db.absolutePath).use { sharing ->
+            val family = sharing.recipientFamilies().single()
+            val progress = sharing.advanceRecipient(family)
+            assertTrue(progress.awaitingGrant || progress.ready)
         }
     }
 

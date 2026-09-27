@@ -68,7 +68,9 @@ The same local flow then clears the recipient installation, issues a new
 invitation from the manager at epoch two, and verifies later-device claim,
 challenge, proof, grant, hydration, encrypted upload, and manager readback.
 Android chooses the next manager join action from verified pending state,
-and its invitation control selects a later issue after the first one.
+and its invitation control selects a later issue after the first one. The
+later-device emulator path uses the automatic manager and recipient advance
+calls for challenge, proof, and grant, with separate instrumented wake steps.
 The early independent authority recheck passed for that implemented cohort
 at `82c0f4c`; [003](003-m0-foundation.md#early-m0-authority-recheck-at-82c0f4c)
 records its limits. No physical two-phone or full M0 exit gate has passed.

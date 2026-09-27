@@ -236,6 +236,14 @@ impl ManagerCreation {
     pub fn signing_public_key(&self) -> [u8; 32] {
         crypto::signing_public_key(&self.signing_seed)
     }
+    pub fn ready_session(&self, store: &SqliteStore) -> Result<ReadyFamilySession, Error> {
+        Ok(ReadyFamilySession::from_store(
+            store,
+            self.family,
+            self.epoch_key,
+            self.agreement_private,
+        )?)
+    }
     pub(crate) fn signing_seed(&self) -> [u8; 32] {
         self.signing_seed
     }

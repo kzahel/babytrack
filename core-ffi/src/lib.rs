@@ -14,7 +14,7 @@ use babytrack_core::{
     first_challenge::FirstChallenge,
     first_proof::FirstProof,
     issue::FirstInviteIssue,
-    local_api::{ActivityTime, LocalRepository},
+    local_api::{self, ActivityTime, LocalRepository},
     shared_history::{self, PublicHistorySession},
     shared_ready::ReadyFamilySession,
     sqlite_store::{FamilyHandle, SqliteStore},
@@ -195,6 +195,14 @@ pub struct RecipientSyncRow {
     pub remaining_objects: bool,
     pub ready: bool,
     pub child_count: u64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct SharedSnapshotRow {
+    pub family: FamilyRef,
+    pub verified_cursor: u64,
+    pub children: Vec<ChildRow>,
+    pub activities: Vec<ActivityRow>,
 }
 
 #[uniffi::export(callback_interface)]
@@ -799,6 +807,60 @@ impl NativeSharedStore {
             remaining_objects: false,
             ready: true,
             child_count: children as u64,
+        })
+    }
+
+    /// A usable view requires a locally held key and complete verified
+    /// history. Include durable offline operations without publishing them.
+    pub fn shared_snapshot(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+    ) -> Result<SharedSnapshotRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let wrapping = fixed(&wrapping_key)?;
+        let ready = if store
+            .has_enrollment_attempt(handle.family_id)
+            .map_err(rejected)?
+        {
+            let attempt = EnrollmentAttempt::resume(&mut store, handle.family_id, &wrapping)
+                .map_err(rejected)?;
+            if attempt.family() != handle {
+                return Err(BindingError::InvalidBytes);
+            }
+            ReadyFamilySession::from_enrollment(&store, &attempt).map_err(rejected)?
+        } else {
+            ManagerCreation::resume(&store, handle, &wrapping)
+                .map_err(rejected)?
+                .ready_session(&store)
+                .map_err(rejected)?
+        };
+        let projection = ready.projection_with_pending(&store).map_err(rejected)?;
+        let children = local_api::children_from_records(projection.records())
+            .into_iter()
+            .map(|child| ChildRow {
+                id: child.id.to_vec(),
+                name: child.name,
+            })
+            .collect();
+        let activities = local_api::activities_from_records(projection.records())
+            .into_iter()
+            .map(|row| ActivityRow {
+                id: row.id.to_vec(),
+                child_id: row.child_id.to_vec(),
+                kind: row.kind,
+                start_utc_ms: row.start_utc_ms,
+                offset_minutes: row.offset_minutes,
+                diaper_kind: row.diaper_kind,
+                bottle_ml: row.bottle_ml,
+            })
+            .collect();
+        Ok(SharedSnapshotRow {
+            family,
+            verified_cursor: ready.observed_cursor(),
+            children,
+            activities,
         })
     }
 }

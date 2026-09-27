@@ -120,6 +120,13 @@ reopens the store, and verifies readiness again. Retrying the exact saved
 proof after a later admission now recognizes its already verified sparse
 control even when it is no longer the last control. This does not yet expose
 a shared tracking view or schedule automatic sync.
+The first shared read snapshot now uses the same Rust record summaries as
+local tracking. It opens a manager's durable keys or a recipient's verified
+admission grant, overlays unsent local operations, and rejects a keyless
+pending recipient. The Android join preview shows shared children and entries
+after the bounded sync pass. Its real-relay emulator test checks the pending
+denial, manager snapshot, recipient child after hydration, and restart. Shared
+editing and automatic refresh are still open.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

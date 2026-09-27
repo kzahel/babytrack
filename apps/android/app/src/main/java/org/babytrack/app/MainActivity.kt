@@ -55,6 +55,7 @@ import uniffi.babytrack_core_ffi.ChildRow
 import uniffi.babytrack_core_ffi.FamilyRef
 import uniffi.babytrack_core_ffi.NativeLocalStore
 import uniffi.babytrack_core_ffi.RestoredOriginRow
+import uniffi.babytrack_core_ffi.SharedSnapshotRow
 import java.text.DateFormat
 import java.util.Date
 import java.util.TimeZone
@@ -145,6 +146,8 @@ private fun TrackerScreen(
     var invitationFragment by remember { mutableStateOf<String?>(null) }
     var receivedFragment by remember { mutableStateOf("") }
     var joinStage by remember { mutableStateOf<String?>(null) }
+    var sharedSnapshot by remember { mutableStateOf<SharedSnapshotRow?>(null) }
+    var sharedSelectedChild by remember { mutableStateOf<String?>(null) }
     var inviteAsManager by remember { mutableStateOf(false) }
     val errorText = stringResource(R.string.error)
     val savedText = stringResource(R.string.saved)
@@ -299,8 +302,12 @@ private fun TrackerScreen(
                             joinStage = context.getString(R.string.history_loading)
                             scope.launch {
                                 runCatching {
-                                    withContext(Dispatchers.IO) { sharing.syncRecipient(receivedFragment.trim()) }
-                                }.onSuccess { progress ->
+                                    withContext(Dispatchers.IO) {
+                                        val progress = sharing.syncRecipient(receivedFragment.trim())
+                                        progress to if (progress.ready) sharing.snapshotForFragment(receivedFragment.trim()) else null
+                                    }
+                                }.onSuccess { (progress, snapshot) ->
+                                    sharedSnapshot = snapshot
                                     joinStage = if (progress.ready) {
                                         context.getString(R.string.history_ready, progress.childCount.toLong())
                                     } else if (progress.awaitingGrant) {
@@ -316,6 +323,29 @@ private fun TrackerScreen(
                             }
                         }) { Text(stringResource(R.string.load_shared_history)) }
                         joinStage?.let { Text(it) }
+                        sharedSnapshot?.let { snapshot ->
+                            Text(stringResource(R.string.shared_children), style = MaterialTheme.typography.titleMedium)
+                            snapshot.children.forEach { item ->
+                                FilterChip(
+                                    selected = item.id.key() == sharedSelectedChild,
+                                    onClick = { sharedSelectedChild = item.id.key() },
+                                    label = { Text(item.name) },
+                                )
+                            }
+                            val target = sharedSelectedChild ?: snapshot.children.firstOrNull()?.id?.key()
+                            snapshot.activities.filter { it.childId.key() == target }.forEach { entry ->
+                                Card(Modifier.fillMaxWidth()) {
+                                    Text(
+                                        stringResource(
+                                            R.string.shared_entry,
+                                            entry.kind,
+                                            DateFormat.getDateTimeInstance().format(Date(entry.startUtcMs)),
+                                        ),
+                                        modifier = Modifier.padding(12.dp),
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -20,7 +20,8 @@ password-protected file backup. Its debug sharing preview can promote a
 Family, issue an invitation, and submit a recipient's keyless claim through a
 development relay. The debug flow also commits the challenge, proof, and
 encrypted admission grant. The recipient can then verify and open the full
-shared history through a bounded manual sync pass; shared tracking and
+shared history through a bounded manual sync pass. A verified shared snapshot
+can list children and entries in the Android join preview; shared editing and
 automatic sync remain open. Scenario
 files still include symbolic expectations.
 

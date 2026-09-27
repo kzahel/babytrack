@@ -32,6 +32,7 @@ class SharingRelayTest {
         }
         val fragment = ShareCoordinator(context, database.absolutePath).use { sharing ->
             assertEquals(1uL, sharing.promote(family, origin, publicKey))
+            assertEquals("Relay test child", sharing.snapshot(family).children.single().name)
             val fragment = sharing.invite(family, origin, 1u.toUByte())
             assertTrue(fragment.startsWith("#bt-invite=v1."))
             fragment
@@ -68,6 +69,7 @@ class SharingRelayTest {
             val pending = sharing.syncRecipient(fragment)
             assertTrue(pending.awaitingGrant)
             assertTrue(!pending.ready)
+            assertTrue(runCatching { sharing.snapshot(first.family) }.isFailure)
         }
         ShareCoordinator(context, database.absolutePath).use { sharing ->
             sharing.admitProvedDevice(family, origin)
@@ -76,9 +78,11 @@ class SharingRelayTest {
             val synced = sharing.syncRecipient(fragment)
             assertTrue(synced.ready)
             assertEquals(1uL, synced.childCount)
+            assertEquals("Relay test child", sharing.snapshot(first.family).children.single().name)
         }
         ShareCoordinator(context, recipient.absolutePath).use { sharing ->
             assertTrue(sharing.syncRecipient(fragment).ready)
+            assertEquals("Relay test child", sharing.snapshot(first.family).children.single().name)
         }
         ShareCoordinator(context, database.absolutePath).use { sharing ->
             sharing.admitProvedDevice(family, origin)

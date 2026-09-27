@@ -6,6 +6,7 @@ import uniffi.babytrack_core_ffi.NativeSharedStore
 import uniffi.babytrack_core_ffi.PreparedJoinRow
 import uniffi.babytrack_core_ffi.RecipientSyncRow
 import uniffi.babytrack_core_ffi.RelayReadTransport
+import uniffi.babytrack_core_ffi.SharedSnapshotRow
 import uniffi.babytrack_core_ffi.previewInvitation
 import uniffi.babytrack_core_ffi.validateRelayOrigin
 
@@ -134,6 +135,26 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
             return core.syncRecipient(family, wrapping, object : RelayReadTransport {
                 override fun get(path: String, auth: ByteArray): ByteArray = relay.get(path, auth)
             })
+        } finally {
+            wrapping.fill(0)
+        }
+    }
+
+    fun snapshot(family: FamilyRef): SharedSnapshotRow {
+        val wrapping = keys.loadOrCreate()
+        try {
+            return core.sharedSnapshot(family, wrapping)
+        } finally {
+            wrapping.fill(0)
+        }
+    }
+
+    fun snapshotForFragment(fragment: String): SharedSnapshotRow {
+        val wrapping = keys.loadOrCreate()
+        try {
+            val family = core.resumeJoin(fragment, wrapping)?.family
+                ?: error("No durable recipient claim")
+            return core.sharedSnapshot(family, wrapping)
         } finally {
             wrapping.fill(0)
         }

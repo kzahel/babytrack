@@ -123,21 +123,7 @@ impl LocalRepository {
     pub fn children(&self, family: FamilyHandle) -> Result<Vec<Child>, Error> {
         self.ensure_local_surface(family)?;
         let projection = self.store.load_local(family)?;
-        let mut children = Vec::new();
-        for record in projection.records() {
-            if record.scope != Scope::Child || record.deleted {
-                continue;
-            }
-            let Some(Value::Text(name)) = record.field(1).map(|field| &field.value) else {
-                continue;
-            };
-            children.push(Child {
-                id: record.id,
-                name: name.clone(),
-            });
-        }
-        children.sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
-        Ok(children)
+        Ok(children_from_records(projection.records()))
     }
 
     pub fn add_child(
@@ -281,17 +267,10 @@ impl LocalRepository {
         {
             return Err(Error::Invalid("target child is unavailable"));
         }
-        let mut activities = projection
-            .records()
-            .filter(|record| {
-                record.scope == Scope::Activity
-                    && record.child_id == Some(child_id)
-                    && !record.deleted
-            })
-            .filter_map(activity_summary)
-            .collect::<Vec<_>>();
-        activities.sort_by(|a, b| b.start_utc_ms.cmp(&a.start_utc_ms).then(b.id.cmp(&a.id)));
-        Ok(activities)
+        Ok(activities_from_records(projection.records())
+            .into_iter()
+            .filter(|activity| activity.child_id == child_id)
+            .collect())
     }
 
     pub fn backup(&self, family: FamilyHandle, now_ms: i64) -> Result<Vec<u8>, Error> {
@@ -396,6 +375,32 @@ impl LocalRepository {
             now_ms,
         )?)
     }
+}
+
+pub fn children_from_records<'a>(records: impl Iterator<Item = &'a Record>) -> Vec<Child> {
+    let mut children = records
+        .filter(|record| record.scope == Scope::Child && !record.deleted)
+        .filter_map(|record| {
+            let Value::Text(name) = &record.field(1)?.value else {
+                return None;
+            };
+            Some(Child {
+                id: record.id,
+                name: name.clone(),
+            })
+        })
+        .collect::<Vec<_>>();
+    children.sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
+    children
+}
+
+pub fn activities_from_records<'a>(records: impl Iterator<Item = &'a Record>) -> Vec<Activity> {
+    let mut activities = records
+        .filter(|record| record.scope == Scope::Activity && !record.deleted)
+        .filter_map(activity_summary)
+        .collect::<Vec<_>>();
+    activities.sort_by(|a, b| b.start_utc_ms.cmp(&a.start_utc_ms).then(b.id.cmp(&a.id)));
+    activities
 }
 
 fn activity_summary(record: &Record) -> Option<Activity> {

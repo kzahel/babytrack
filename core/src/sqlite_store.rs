@@ -1632,7 +1632,7 @@ impl SqliteStore {
             .transpose()
     }
 
-    pub(crate) fn has_enrollment_attempt(&self, family_id: [u8; 16]) -> Result<bool, Error> {
+    pub fn has_enrollment_attempt(&self, family_id: [u8; 16]) -> Result<bool, Error> {
         Ok(self
             .connection
             .query_row(

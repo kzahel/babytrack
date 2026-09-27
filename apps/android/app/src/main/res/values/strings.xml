@@ -77,5 +77,7 @@
     <string name="history_loading">Fetching and verifying the full Family history…</string>
     <string name="history_awaiting_grant">Waiting for the holder to grant access. Public control stage %1$d; Family data is not ready.</string>
     <string name="history_pending">Verified through cursor %1$d. Waiting for more history or objects; retry on the next sync opportunity.</string>
-    <string name="history_ready">Shared history verified. %1$d children loaded; the shared tracking screen is still in progress.</string>
+    <string name="history_ready">Shared history verified. %1$d children loaded.</string>
+    <string name="shared_children">Verified shared children</string>
+    <string name="shared_entry">%1$s · %2$s</string>
 </resources>

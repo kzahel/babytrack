@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 use crate::{
     batch::{self, Header},
@@ -422,36 +422,31 @@ pub struct SqliteStore {
 
 impl SqliteStore {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
-        let connection = Connection::open(path)?;
+        let mut connection = Connection::open(path)?;
         connection.busy_timeout(std::time::Duration::from_secs(10))?;
         connection.execute_batch("PRAGMA foreign_keys = ON;")?;
-        let schema_version: u32 =
+        let observed_version: u32 =
             connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if schema_version == 4 {
+        if observed_version == 4 {
             return Ok(Self { connection });
         }
-        if schema_version == 3 {
-            migrate_enrollment_terminal_status(&connection)?;
-            return Ok(Self { connection });
-        }
-        if schema_version == 2 {
-            migrate_claim_candidates(&connection)?;
-            migrate_enrollment_terminal_status(&connection)?;
-            return Ok(Self { connection });
-        }
-        if schema_version == 1 {
-            migrate_invite_issues(&connection)?;
-            migrate_claim_candidates(&connection)?;
-            migrate_enrollment_terminal_status(&connection)?;
-            return Ok(Self { connection });
-        }
-        if schema_version != 0 {
+        if observed_version > 4 {
             return Err(Error::CorruptState);
         }
-        connection.execute_batch("PRAGMA journal_mode = WAL;")?;
-        connection.execute_batch(
-            "BEGIN IMMEDIATE;
-             CREATE TABLE IF NOT EXISTS families (
+        if observed_version == 0 {
+            connection.execute_batch("PRAGMA journal_mode = WAL;")?;
+        }
+        // Recheck under the writer lock: another opener may have completed a
+        // migration after our first version read.
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let schema_version: u32 =
+            transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if schema_version > 4 {
+            return Err(Error::CorruptState);
+        }
+        if schema_version == 0 {
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS families (
                family_id BLOB PRIMARY KEY CHECK(length(family_id) = 16),
                device_id BLOB NOT NULL CHECK(length(device_id) = 16),
                last_index INTEGER NOT NULL DEFAULT 0 CHECK(last_index >= 0),
@@ -644,12 +639,19 @@ impl SqliteStore {
              );
              INSERT OR IGNORE INTO local_sync_state(family_id)
                SELECT family_id FROM families;
-             PRAGMA user_version = 1;
-             COMMIT;",
-        )?;
-        migrate_invite_issues(&connection)?;
-        migrate_claim_candidates(&connection)?;
-        migrate_enrollment_terminal_status(&connection)?;
+             PRAGMA user_version = 1;",
+            )?;
+        }
+        if schema_version <= 1 {
+            migrate_invite_issues(&transaction)?;
+        }
+        if schema_version <= 2 {
+            migrate_claim_candidates(&transaction)?;
+        }
+        if schema_version <= 3 {
+            migrate_enrollment_terminal_status(&transaction)?;
+        }
+        transaction.commit()?;
         Ok(Self { connection })
     }
 
@@ -2337,8 +2339,7 @@ impl SqliteStore {
 /// bearer-link reconstruction after an upgrade.
 fn migrate_invite_issues(connection: &Connection) -> Result<(), Error> {
     connection.execute_batch(
-        "BEGIN IMMEDIATE;
-         CREATE TABLE invite_issues (
+        "CREATE TABLE invite_issues (
            family_id BLOB NOT NULL CHECK(length(family_id) = 16),
            device_id BLOB NOT NULL CHECK(length(device_id) = 16),
            invitation_id BLOB NOT NULL CHECK(length(invitation_id) = 16),
@@ -2362,38 +2363,33 @@ fn migrate_invite_issues(connection: &Connection) -> Result<(), Error> {
            SELECT family_id,device_id,invitation_id,transition_id,object_id,
                   object_bytes,candidate_bytes,secret_nonce,secret_ciphertext,1
            FROM first_invite_issues;
-         PRAGMA user_version = 2;
-         COMMIT;",
+         PRAGMA user_version = 2;",
     )?;
     Ok(())
 }
 
 fn migrate_claim_candidates(connection: &Connection) -> Result<(), Error> {
     connection.execute_batch(
-        "BEGIN IMMEDIATE;
-         CREATE TABLE enrollment_claim_candidates (
+        "CREATE TABLE enrollment_claim_candidates (
            family_id BLOB NOT NULL CHECK(length(family_id) = 16),
            transition_id BLOB NOT NULL CHECK(length(transition_id) = 16),
            candidate_bytes BLOB NOT NULL,
            PRIMARY KEY (family_id, transition_id),
            FOREIGN KEY (family_id) REFERENCES enrollment_attempts(family_id)
          );
-         PRAGMA user_version = 3;
-         COMMIT;",
+         PRAGMA user_version = 3;",
     )?;
     Ok(())
 }
 
 fn migrate_enrollment_terminal_status(connection: &Connection) -> Result<(), Error> {
     connection.execute_batch(
-        "BEGIN IMMEDIATE;
-         CREATE TABLE enrollment_terminal_status (
+        "CREATE TABLE enrollment_terminal_status (
            family_id BLOB PRIMARY KEY CHECK(length(family_id) = 16),
            response_bytes BLOB NOT NULL,
            FOREIGN KEY (family_id) REFERENCES enrollment_attempts(family_id)
          );
-         PRAGMA user_version = 4;
-         COMMIT;",
+         PRAGMA user_version = 4;",
     )?;
     Ok(())
 }
@@ -2401,6 +2397,43 @@ fn migrate_enrollment_terminal_status(connection: &Connection) -> Result<(), Err
 #[cfg(test)]
 mod invite_migration_tests {
     use super::*;
+
+    #[test]
+    fn simultaneous_legacy_openers_apply_each_migration_once() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("concurrent-legacy.db");
+        let store = SqliteStore::open(&path).unwrap();
+        store
+            .connection
+            .execute_batch(
+                "DROP TABLE enrollment_terminal_status;
+             DROP TABLE enrollment_claim_candidates;
+             DROP TABLE invite_issues;
+             PRAGMA user_version = 1;",
+            )
+            .unwrap();
+        drop(store);
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let openings: Vec<_> = (0..8)
+            .map(|_| {
+                let path = path.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    SqliteStore::open(path)
+                })
+            })
+            .collect();
+        for opening in openings {
+            assert!(opening.join().unwrap().is_ok());
+        }
+        let store = SqliteStore::open(&path).unwrap();
+        let version: u32 = store
+            .connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 4);
+    }
 
     #[test]
     fn version_three_store_adds_terminal_receipt_table() {

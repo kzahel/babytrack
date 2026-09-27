@@ -39,6 +39,31 @@ fn temp_db() -> PathBuf {
     ))
 }
 
+#[test]
+fn concurrent_first_open_initializes_one_complete_schema() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("fresh.db");
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+    let openings: Vec<_> = (0..8)
+        .map(|_| {
+            let path = path.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                SqliteStore::open(path).and_then(|store| store.families())
+            })
+        })
+        .collect();
+    for opening in openings {
+        assert!(opening.join().unwrap().is_ok());
+    }
+    let connection = rusqlite::Connection::open(path).unwrap();
+    let version: u32 = connection
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 4);
+}
+
 fn child_operation(
     family: FamilyHandle,
     op: u8,

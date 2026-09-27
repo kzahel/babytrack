@@ -242,8 +242,16 @@ The shared view now lists the verified active device credentials and roles
 from the Rust public authority chain. It labels this installation separately
 and shows the full Family-scoped device ID, without implying a person-level
 account. The emulator checks the manager-only list before admission and both
-manager/member credentials afterward. Removal controls and an action UI are
-still needed before device management is usable.
+manager/member credentials afterward. The tracker now exposes manager
+removal controls and phone-local labels for each verified device; broader
+role changes and invitation cancellation remain open.
+Remote emulator runs through `bba928a` exposed concurrent SQLite schema
+initialization: independent Android components could both observe version
+one and attempt the same invitation-table migration. Initialization and
+migration now recheck the version under one immediate writer transaction.
+Rust regressions open both a fresh store and a version-one store from eight
+threads at once. Local Android relay instrumentation passes with the repair;
+remote CI at the repair commit remains to be observed.
 
 Gate: no crash loses a committed local operation or publishes a partial
 copy/restore; no Family handle reaches another Family's rows, keys, or file.

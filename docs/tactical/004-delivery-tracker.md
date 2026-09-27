@@ -49,7 +49,7 @@ Nara sample mapping remain open for their planned features.
 | Next dependent slice | The first-cohort recheck and [focused general-authority advisory](003-m0-foundation.md#general-authority-advisory-pass-at-98fa0ea) passed. Relay restart replays public controls and accepted batch authority; a signed private checkpoint covers rejected-result and staging-reservation sets. Signed GETs, batch POSTs, manager controls, and later control HTTP writes use that ledger under a SQLite writer lock. Later enrollment after removal and epoch rotation passes on separate emulators. A second admitted manager now invites, grants, and removes a third device with rotation through relay HTTP and Android instrumentation. Later rotations, role changes, cancellation, browser shared outbox, and M0 exit review remain. |
 | Next independent review | Run the broader end-of-M0 recovery and mixed-client gate after its executable coverage closes. Focused advisory findings remain open without serial rechecks during feature development. Prioritize usable tracking, later-device enrollment, and browser shared sync before another review cycle. |
 | Open advisory | The [automatic-status recheck](003-m0-foundation.md#advisory-automatic-status-recheck-at-ad42d78) found an own-claim lost-response ambiguity and a concurrent status-write race. FS37/FS77 regressions and repair remain due before real Family data. Durable streaming of large control history also remains open. |
-| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Run `36337608774` at `43c202e` passed all required jobs after the exact admission retry fix and verified join-stage UI. The extended two-emulator later-join flow and local UI smoke also pass. Run `36335464715` at `3832881` caught the admission retry regression; later superseded runs were canceled so the current revision could complete. |
+| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, and local Android UI smoke jobs are required on every push/PR. Runs through `bba928a` passed compile and core gates but exposed simultaneous SQLite schema migration in the remote Android emulator. A writer-locked version recheck and concurrent-open regressions now pass locally; the repair still needs remote confirmation. The two-emulator sharing flow and local UI smoke also pass locally. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.
@@ -82,8 +82,8 @@ evidence and completed checkboxes close an implementation gate.
 Use the [runbook](../security-review-runbook.md) with Daybreak Blue at high
 thinking through Yep Anywhere. Commit the target first, review a fixed SHA,
 record the session and findings in the owning tactical, add scenario/vector
-regressions for substantive findings, and rerun after fixes. A focused
-preflight can reduce rework but never substitutes for a named gate.
+regressions for substantive blockers, and recheck blockers at the named gate.
+Focused advisories may be tracked to that gate without serial review loops.
 
 | When | Review question | Gate owner |
 |---|---|---|

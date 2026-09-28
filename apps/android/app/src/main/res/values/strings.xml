@@ -187,7 +187,7 @@
     <string name="confirm_delete_entry">Delete</string>
     <string name="dev_join_title">Join preview</string>
     <string name="joined_family_number">Joined Family %1$d</string>
-    <string name="dev_join_description">Paste a one-device invitation fragment. The joining device stays pending until a key holder responds and full history loads. Use Sync shared Family after joining.</string>
+    <string name="dev_join_description">Open a one-device invitation link or paste its fragment. The joining device stays pending until a key holder responds and full history loads. Use Sync shared Family after joining.</string>
     <string name="received_fragment">Invitation fragment</string>
     <string name="join_preparing">Checking invitation and submitting a keyless claim…</string>
     <string name="join_pending">Claim committed. Waiting for a Family key holder; shared data is not available yet.</string>

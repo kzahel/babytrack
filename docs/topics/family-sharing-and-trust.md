@@ -1,7 +1,8 @@
 # Family sharing and trust
 
-Status: M-1 product decisions agreed, September 2026. Scenarios are
-specifications, not passing tests; no product implementation exists yet.
+Status: M-1 product decisions agreed, September 2026. M0 and Android
+implementation are in progress; the scenario catalog includes cases that
+still need executable proof.
 
 Owns the user-visible meaning of local work, sharing, access changes,
 independent copies, and recovery. The [sync topic](sync-and-encryption.md)
@@ -95,6 +96,13 @@ device retains that device's access, and a manager can invite a replacement.
 No login is required for local logging, sharing, or Family access. A future
 account for licensing or paid services is separate from Family membership:
 it cannot authorize a device, restore a role, or decrypt Family data.
+
+The Android developer build shares one-use invitations as
+`babytrack://join#bt-invite=...` links. Opening one prepopulates the join
+screen but leaves the recipient keyless until they explicitly claim it and
+the manager completes the grant. The link carries the invitation bootstrap
+secret and should be sent privately; it does not grant Family data access
+by itself. The join screen also accepts the raw fragment for testing.
 
 ## Family and child targeting
 

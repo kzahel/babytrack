@@ -149,10 +149,24 @@ class MainActivity : ComponentActivity() {
 }
 
 private fun invitationFrom(intent: Intent?): String? {
-    if (intent?.action != Intent.ACTION_SEND || intent.type != "text/plain") return null
-    val fragment = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim() ?: return null
+    val text = when (intent?.action) {
+        Intent.ACTION_SEND -> if (intent.type == "text/plain") {
+            intent.getStringExtra(Intent.EXTRA_TEXT)?.trim()
+        } else null
+        Intent.ACTION_VIEW -> intent.data?.toString()
+        else -> null
+    } ?: return null
+    val fragment = if (text.startsWith("#")) text else {
+        val uri = runCatching { android.net.Uri.parse(text) }.getOrNull() ?: return null
+        if (uri.scheme != "babytrack" || uri.host != "join" ||
+            !uri.path.isNullOrEmpty() || uri.port != -1 || uri.userInfo != null ||
+            uri.query != null) return null
+        "#${uri.encodedFragment ?: return null}"
+    }
     return fragment.takeIf { it.length <= 2048 && it.startsWith("#bt-invite=v1.") }
 }
+
+private fun invitationLink(fragment: String): String = "babytrack://join$fragment"
 
 private fun ByteArray.key(): String = joinToString("") { "%02x".format(it) }
 
@@ -925,7 +939,7 @@ private fun TrackerScreen(
                                     OutlinedButton(onClick = {
                                         val send = Intent(Intent.ACTION_SEND).apply {
                                             type = "text/plain"
-                                            putExtra(Intent.EXTRA_TEXT, fragment)
+                                            putExtra(Intent.EXTRA_TEXT, invitationLink(fragment))
                                         }
                                         context.startActivity(Intent.createChooser(
                                             send, context.getString(R.string.share_invitation),
@@ -1136,7 +1150,7 @@ private fun TrackerScreen(
                                 OutlinedButton(onClick = {
                                     val send = Intent(Intent.ACTION_SEND).apply {
                                         type = "text/plain"
-                                        putExtra(Intent.EXTRA_TEXT, fragment)
+                                        putExtra(Intent.EXTRA_TEXT, invitationLink(fragment))
                                     }
                                     context.startActivity(Intent.createChooser(
                                         send,

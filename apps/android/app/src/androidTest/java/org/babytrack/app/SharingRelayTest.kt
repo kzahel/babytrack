@@ -152,6 +152,28 @@ class SharingRelayTest {
                 assertEquals("Receiving an invitation must not claim it", previousRecipients, sharing.recipientFamilies().size)
             }
         }
+        val link = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("babytrack://join$fragment")).apply {
+            addCategory(Intent.CATEGORY_BROWSABLE)
+            setPackage(context.packageName)
+        }
+        assertEquals(MainActivity::class.java.name,
+            link.resolveActivity(context.packageManager)?.className)
+        ActivityScenario.launch<MainActivity>(link).use {
+            val deadline = System.currentTimeMillis() + 15_000
+            var visible = false
+            while (System.currentTimeMillis() < deadline) {
+                val root = instrumentation.uiAutomation.rootInActiveWindow
+                visible = root?.containsText(fragment) == true
+                if (visible) break
+                root?.scrollForward()
+                Thread.sleep(250)
+            }
+            assertTrue("Invitation link should prefill the join form", visible)
+            ShareCoordinator(context, context.filesDir.resolve("families.db").absolutePath).use { sharing ->
+                assertEquals("Opening an invitation link must not claim it",
+                    previousRecipients, sharing.recipientFamilies().size)
+            }
+        }
     }
 
     @Test

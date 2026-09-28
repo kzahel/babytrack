@@ -8,9 +8,30 @@ const generatedDir = process.argv[2];
 if (!generatedDir) throw new Error('pass wasm-bindgen web output directory');
 const fixtures = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/negative-batch-v1.json')));
 const full = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/full-wire-v1.json')));
+const chain = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/contiguous-chain-v1.json')));
 const minor = fixtures.cases.find((entry) => entry.id === 'CROSSMINORBYTE01').input;
 const genesis = full.cases.find((entry) => entry.id === 'GENESIS01');
 const acceptedBatch = full.cases.find((entry) => entry.id === 'BATCHBYTE01');
+const cborBytes = (value) => {
+  if (value.length < 256) return Buffer.concat([Buffer.from([0x58, value.length]), value]);
+  const length = Buffer.alloc(3);
+  length[0] = 0x59;
+  length.writeUInt16BE(value.length, 1);
+  return Buffer.concat([length, value]);
+};
+const oneEntryPage = (familyHex, kind, committed) => Buffer.concat([
+  Buffer.from([0xa6, 1, 1, 2, 0x50]), Buffer.from(familyHex, 'hex'),
+  Buffer.from([3, 1, 4, 0x81, 0x83, 2, kind]), cborBytes(committed),
+  Buffer.from([5, 2, 6, 0xf4]),
+]);
+const issueBytes = Buffer.from(chain.transitions[1].committed_cbor_hex, 'hex');
+const controlPage = oneEntryPage(chain.test_only_inputs.family_id_hex, 1, issueBytes);
+const batchPage = oneEntryPage(genesis.inputs.family_id_hex, 2,
+  Buffer.from(acceptedBatch.expect.envelope_cbor_hex, 'hex'));
+const batchResult = Buffer.concat([
+  Buffer.from([0xa2, 1, 1, 2]),
+  cborBytes(Buffer.from(acceptedBatch.expect.accepted_receipt_cbor_hex, 'hex')),
+]);
 const input = {
   familyHex: fixtures.base.family_id_hex,
   otherFamilyHex: `ff${fixtures.base.family_id_hex.slice(2)}`,
@@ -26,6 +47,13 @@ const input = {
   relayPublicHex: genesis.expect.relay_public_key_hex,
   acceptedEnvelopeHex: acceptedBatch.expect.envelope_cbor_hex,
   acceptedReceiptHex: acceptedBatch.expect.accepted_receipt_cbor_hex,
+  controlGenesisHex: chain.transitions[0].committed_cbor_hex,
+  controlPageHex: controlPage.toString('hex'),
+  controlHeadHex: chain.transitions[1].head_hash_hex,
+  batchPageHex: batchPage.toString('hex'),
+  batchResultHex: batchResult.toString('hex'),
+  managerDeviceHex: chain.test_only_inputs.manager_device_id_hex,
+  managerSeedHex: chain.test_only_inputs.manager_sign_seed_hex,
 };
 
 const server = http.createServer((request, response) => {
@@ -275,8 +303,63 @@ async function run() {
     assert.deepEqual(publicReload, {
       cursor: '2', head: genesis.expect.control_head_hex, otherAbsent: true,
     });
+
+    const pulled = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+      const store = await PublicStore.open(wasm, 'babytrack-public-pull-smoke');
+      const family = await store.begin(bytes(data.controlGenesisHex), bytes(data.relayPublicHex));
+      const expected = `/v1/families/${family}/log?after=1`;
+      const progress = await store.pull(family, bytes(data.managerDeviceHex),
+        bytes(data.managerSeedHex), async (path, auth) => {
+          if (path !== expected || auth.length < 64) throw new Error('Unexpected signed read');
+          return bytes(data.controlPageHex);
+        });
+      store.close();
+      return { ...progress, family };
+    }, input);
+    assert.deepEqual(pulled, { cursor: 2, noMoreVisible: true, family: input.familyHex });
+    await page.reload();
+    const pulledReload = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const store = await PublicStore.open(wasm, 'babytrack-public-pull-smoke');
+      const verifier = await store.load(data.familyHex);
+      const result = { cursor: verifier.last_cursor().toString(),
+        head: Array.from(verifier.head_hash(), (byte) => byte.toString(16).padStart(2, '0')).join('') };
+      verifier.free();
+      store.close();
+      return result;
+    }, input);
+    assert.deepEqual(pulledReload, { cursor: '2', head: input.controlHeadHex });
+
+    const batchPulled = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+      const store = await PublicStore.open(wasm, 'babytrack-public-batch-pull-smoke');
+      const family = await store.begin(bytes(data.publicGenesisHex), bytes(data.relayPublicHex));
+      let resultRead = false;
+      const progress = await store.pull(family, bytes(data.managerDeviceHex),
+        bytes(data.managerSeedHex), async (path, auth) => {
+          if (auth.length < 64) throw new Error('Unsigned read');
+          if (path === `/v1/families/${family}/log?after=1`) return bytes(data.batchPageHex);
+          if (path.startsWith(`/v1/families/${family}/batch-results/`)) {
+            resultRead = true;
+            return bytes(data.batchResultHex);
+          }
+          throw new Error('Unexpected path');
+        });
+      store.close();
+      return { ...progress, resultRead };
+    }, input);
+    assert.deepEqual(batchPulled, { cursor: 2, noMoreVisible: true, resultRead: true });
     await context.close();
-    console.log('browser wasm + IndexedDB local journal and public authority reload, rollback, and Family isolation: OK');
+    console.log('browser wasm + IndexedDB local journal, signed public pull, reload, rollback, and Family isolation: OK');
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));

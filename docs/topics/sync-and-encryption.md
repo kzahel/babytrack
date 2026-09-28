@@ -275,9 +275,11 @@ including disconnected clients, lost notices and responses, and restarts.
 The browser harness now has a production wasm public-authority verifier backed
 by the shared Rust `ControlChain`. IndexedDB saves each verified signed
 control or accepted batch with its cursor and head in one transaction, then
-replays those bytes after reload. The current browser proof covers public
-authority only; encrypted record projection, local shared outbox, and a
-real-relay mixed-client exchange remain M0 work.
+replays those bytes after reload. The browser adapter can sign exact relay
+reads with Web Crypto request IDs, decode bounded log pages and accepted
+batch results through Rust, and persist a verified fetched prefix. Fixture
+transport tests cover controls and batches. Encrypted record projection,
+local shared outbox, and a real-relay mixed-client exchange remain M0 work.
 The first Android sharing flow uses foreground polling and scheduled
 background work. FCM and APNs may later provide empty background wakes through
 app-owned interfaces to reduce latency when an app is suspended. A missed

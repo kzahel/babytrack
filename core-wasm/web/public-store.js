@@ -3,6 +3,7 @@
 // exact bytes, cursor, and head together so reload always replays the proof.
 
 const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
+const bytes = (value) => Uint8Array.from(value.match(/../g) || [], (pair) => parseInt(pair, 16));
 const requestResult = (request) => new Promise((resolve, reject) => {
   request.onsuccess = () => resolve(request.result);
   request.onerror = () => reject(request.error);
@@ -130,5 +131,52 @@ export class PublicStore {
         };
       };
     });
+  }
+
+  // Fetch a bounded contiguous public prefix. `get` supplies response bytes
+  // for an exact signed path; the Rust binding decodes each page and receipt.
+  // Every accepted entry commits separately, so a later transport failure
+  // leaves the verified prefix available after reload.
+  async pull(family, deviceId, signingSeed, get, maxPages = 4) {
+    if (!Number.isSafeInteger(maxPages) || maxPages < 1) throw new Error('Invalid page budget');
+    const verifier = await this.load(family);
+    let noMoreVisible = false;
+    try {
+      const read = (path) => get(path, verifier.sign_get(
+        deviceId, signingSeed, path, crypto.getRandomValues(new Uint8Array(16)),
+      ));
+      for (let pageNumber = 0; pageNumber < maxPages; pageNumber++) {
+        const after = verifier.last_cursor();
+        const path = `/v1/families/${family}/log?after=${after}`;
+        const page = new this.wasm.WasmLogPage(await read(path), bytes(family), after);
+        try {
+          if (page.has_more() && page.is_empty()) throw new Error('Relay claims more after an empty page');
+          for (let index = 0; index < page.len(); index++) {
+            const entry = page.entry_bytes(index);
+            const kind = page.entry_kind(index);
+            let receipt = null;
+            if (kind === 2) {
+              const id = hex(verifier.batch_id(entry));
+              const resultPath = `/v1/families/${family}/batch-results/${id}`;
+              receipt = this.wasm.accepted_batch_receipt(await read(resultPath));
+            }
+            const cursor = await this.append(family, kind === 1 ? 'control' : 'batch', entry, receipt);
+            if (BigInt(cursor) !== page.entry_cursor(index)) throw new Error('Saved cursor differs from page');
+            if (kind === 1) verifier.apply_control(entry);
+            else verifier.apply_batch(entry, receipt);
+          }
+          if (verifier.last_cursor() !== page.next_after()) {
+            throw new Error('Saved cursor differs from page end');
+          }
+          noMoreVisible = !page.has_more();
+          if (noMoreVisible) break;
+        } finally {
+          page.free();
+        }
+      }
+      return { cursor: Number(verifier.last_cursor()), noMoreVisible };
+    } finally {
+      verifier.free();
+    }
   }
 }

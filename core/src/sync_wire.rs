@@ -53,7 +53,9 @@ pub fn sign_get(
     })
 }
 
-fn sign_get_with_id(
+/// Sign an exact GET with a caller-generated unique request ID. Browser
+/// callers supply this ID from Web Crypto; native callers use `sign_get`.
+pub fn sign_get_with_id(
     family_id: [u8; 16],
     relay_id: [u8; 32],
     signer_id: [u8; 16],

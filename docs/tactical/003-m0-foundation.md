@@ -628,7 +628,11 @@ verifier uses the Rust control chain for signed genesis, controls, and batch
 acceptance; IndexedDB stores exact bytes with cursor/head atomically and
 rebuilds the verifier after reload. The Chromium smoke rejects a forged
 receipt and duplicate batch without advancing the durable pin. It does not
-yet decrypt/project shared records or stage a browser outbox.
+yet decrypt/project shared records or stage a browser outbox. A bounded
+browser pull now signs exact GET paths with caller-held manager credentials,
+decodes log pages and batch results in Rust, and commits each verified entry.
+The Chromium fixture transport exercises a control and an accepted batch;
+the real-relay browser exchange remains open.
 An uncertain retry returns those bytes after reopen even if the caller's
 current head/key has changed. The initial `FamilySession` stages through
 that path only with its verified manager identity, head, epoch key, and

@@ -4,9 +4,11 @@ const path = require('node:path');
 
 const bindingPath = process.argv[2];
 if (!bindingPath) throw new Error('pass generated wasm-bindgen Node module path');
-const { WasmFamily, WasmPublicFamily, ed25519_public_key, seal_one } = require(path.resolve(bindingPath));
+const { WasmFamily, WasmPublicFamily, WasmLogPage, ed25519_public_key, seal_one } = require(path.resolve(bindingPath));
 const vectors = JSON.parse(fs.readFileSync(path.join(__dirname, '../../tests/vectors/negative-batch-v1.json')));
 const full = JSON.parse(fs.readFileSync(path.join(__dirname, '../../tests/vectors/full-wire-v1.json')));
+const api = JSON.parse(fs.readFileSync(path.join(__dirname, '../../tests/vectors/api-v1.json')));
+const chain = JSON.parse(fs.readFileSync(path.join(__dirname, '../../tests/vectors/contiguous-chain-v1.json')));
 const hex = (value) => Buffer.from(value, 'hex');
 const familyId = hex(vectors.base.family_id_hex);
 const relayId = hex('03396219237f75a64f12aeb7f39723abf400b160c364980a765dac24aeba2464');
@@ -86,6 +88,37 @@ const alteredReceipt = hex(fixedBatch.expect.accepted_receipt_cbor_hex);
 alteredReceipt[alteredReceipt.length - 1] ^= 1;
 assert.throws(() => denied.apply_batch(sealed, alteredReceipt));
 assert.equal(denied.last_cursor(), 1n);
+const issue = hex(chain.transitions[1].committed_cbor_hex);
+const issueLength = Buffer.alloc(3);
+issueLength[0] = 0x59;
+issueLength.writeUInt16BE(issue.length, 1);
+const pageBytes = Buffer.concat([
+  Buffer.from([0xa6, 1, 1, 2, 0x50]), hex(chain.test_only_inputs.family_id_hex),
+  Buffer.from([3, 1, 4, 0x81, 0x83, 2, 1]), issueLength, issue,
+  Buffer.from([5, 2, 6, 0xf4]),
+]);
+const page = new WasmLogPage(pageBytes,
+  hex(chain.test_only_inputs.family_id_hex), 1n);
+assert.equal(page.len(), 1);
+assert.equal(page.entry_kind(0), 1);
+assert.equal(page.entry_cursor(0), 2n);
+const controlFamily = new WasmPublicFamily(
+  hex(chain.transitions[0].committed_cbor_hex), hex(genesis.expect.relay_public_key_hex),
+);
+const readAuth = controlFamily.sign_get(
+  hex(chain.test_only_inputs.manager_device_id_hex), hex(chain.test_only_inputs.manager_sign_seed_hex),
+  api.inputs.read_control_path, hex('0102030405060708090a0b0c0d0e0f10'),
+);
+assert.ok(readAuth.length > 64);
+assert.throws(() => controlFamily.sign_get(
+  hex(chain.test_only_inputs.manager_device_id_hex), hex(chain.test_only_inputs.manager_sign_seed_hex),
+  '/v1/families/ffffffffffffffffffffffffffffffff/log?after=1',
+  hex('0102030405060708090a0b0c0d0e0f10'),
+));
+controlFamily.apply_control(page.entry_bytes(0));
+assert.equal(controlFamily.last_cursor(), 2n);
+page.free();
+controlFamily.free();
 publicFamily.free();
 denied.free();
 const afterControl = new WasmFamily(familyId);

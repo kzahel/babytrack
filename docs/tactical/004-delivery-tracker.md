@@ -32,7 +32,9 @@ Role changes, cancellation, browser shared
 outbox, complete vector coverage, and the M0 exit review remain open.
 The browser now persists a Rust-verified public control and accepted-batch
 history in IndexedDB, with reload and forged-receipt rollback checks. It
-still needs encrypted record projection and a shared outbox.
+also signs and decodes a bounded public pull with fixture transport. It
+still needs a real-relay exchange, encrypted record projection, and a shared
+outbox.
 Android local and first-cohort UI work, including solids, completed
 multi-segment breast-feed, pumping logs, and note, bottle, diaper, pumping,
 and medication corrections, plus child name and growth-detail, growth-entry,

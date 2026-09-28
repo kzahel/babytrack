@@ -3,12 +3,15 @@
 #![forbid(unsafe_code)]
 
 #[cfg(feature = "fixture-api")]
+use babytrack_core::projection::{Outcome, Projection};
 use babytrack_core::{
-    batch, crypto,
-    projection::{Outcome, Projection},
-};
-use babytrack_core::{
-    control_chain::ControlChain, operation::Operation, projection::LocalProjection,
+    batch,
+    cbor::{self, Value},
+    control_chain::ControlChain,
+    crypto,
+    operation::Operation,
+    projection::LocalProjection,
+    sync_wire::{self, LogPage},
 };
 use wasm_bindgen::prelude::*;
 
@@ -31,6 +34,59 @@ pub struct WasmLocalFamily {
 #[wasm_bindgen]
 pub struct WasmPublicFamily {
     chain: ControlChain,
+}
+
+/// Bounded core-decoded relay log page. JavaScript handles transport and
+/// persistence but never parses or interprets protocol CBOR.
+#[wasm_bindgen]
+pub struct WasmLogPage {
+    page: LogPage,
+}
+
+#[wasm_bindgen]
+impl WasmLogPage {
+    #[wasm_bindgen(constructor)]
+    pub fn new(bytes: &[u8], family_id: &[u8], after: u64) -> Result<Self, JsError> {
+        Ok(Self {
+            page: LogPage::decode(bytes, fixed(family_id, "Family ID")?, after)
+                .map_err(debug_error)?,
+        })
+    }
+
+    pub fn len(&self) -> usize {
+        self.page.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.page.entries.is_empty()
+    }
+
+    pub fn has_more(&self) -> bool {
+        self.page.has_more
+    }
+
+    pub fn next_after(&self) -> u64 {
+        self.page.next_after
+    }
+
+    pub fn entry_cursor(&self, index: usize) -> Result<u64, JsError> {
+        Ok(self.entry(index)?.cursor)
+    }
+
+    pub fn entry_kind(&self, index: usize) -> Result<u8, JsError> {
+        Ok(self.entry(index)?.kind)
+    }
+
+    pub fn entry_bytes(&self, index: usize) -> Result<Vec<u8>, JsError> {
+        Ok(self.entry(index)?.committed_bytes.clone())
+    }
+
+    fn entry(&self, index: usize) -> Result<&sync_wire::LogEntry, JsError> {
+        self.page
+            .entries
+            .get(index)
+            .ok_or_else(|| JsError::new("log entry index outside page"))
+    }
 }
 
 #[wasm_bindgen]
@@ -75,6 +131,74 @@ impl WasmPublicFamily {
     pub fn head_hash(&self) -> Vec<u8> {
         self.chain.head_hash().to_vec()
     }
+
+    pub fn sign_get(
+        &self,
+        device_id: &[u8],
+        signing_seed: &[u8],
+        exact_path: &str,
+        request_id: &[u8],
+    ) -> Result<Vec<u8>, JsError> {
+        let device_id = fixed(device_id, "device ID")?;
+        let signing_seed = fixed(signing_seed, "signing seed")?;
+        if self
+            .chain
+            .active_signing_public(device_id)
+            .map_err(debug_error)?
+            != crypto::signing_public_key(&signing_seed)
+        {
+            return Err(JsError::new("signing seed differs from active device"));
+        }
+        let family_hex: String = self
+            .chain
+            .family_id()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        if !exact_path.starts_with(&format!("/v1/families/{family_hex}/")) {
+            return Err(JsError::new("read path belongs to another Family"));
+        }
+        sync_wire::sign_get_with_id(
+            self.chain.family_id(),
+            self.chain.relay_id(),
+            device_id,
+            &signing_seed,
+            exact_path,
+            fixed(request_id, "request ID")?,
+        )
+        .map_err(debug_error)
+    }
+
+    pub fn batch_id(&self, envelope: &[u8]) -> Result<Vec<u8>, JsError> {
+        let value = cbor::decode_with_limits(
+            envelope,
+            cbor::Limits {
+                max_bytes: 1024 * 1024,
+                max_depth: 16,
+            },
+        )
+        .map_err(debug_error)?;
+        let Value::Map(fields) = value else {
+            return Err(JsError::new("batch envelope not map"));
+        };
+        let Some((1, header)) = fields.first() else {
+            return Err(JsError::new("batch header absent"));
+        };
+        Ok(
+            batch::Header::decode(&cbor::encode(header).map_err(debug_error)?)
+                .map_err(debug_error)?
+                .batch_id
+                .to_vec(),
+        )
+    }
+}
+
+#[wasm_bindgen]
+pub fn accepted_batch_receipt(result_bytes: &[u8]) -> Result<Vec<u8>, JsError> {
+    sync_wire::BatchResult::decode(result_bytes)
+        .map_err(debug_error)?
+        .receipt_bytes
+        .ok_or_else(|| JsError::new("committed batch receipt unavailable"))
 }
 
 #[wasm_bindgen]

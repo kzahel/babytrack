@@ -299,6 +299,12 @@ verify the epoch-one key, decrypt the accepted batch, and rebuild its record
 projection after reload. The pending operation and later queued edits overlay
 the verified projection through Rust before acceptance, without advancing
 the public cursor. Rust validates each queued edit against its predecessors.
+The browser invitation adapter separately signs a public-control read with
+the link's invitation credential, checks that the linked genesis and issue
+appear in the Rust sparse chain, and persists exact pages with a head pin.
+It replays those pages after reload before preparing any claim. The fragment
+origin must match the browser app origin. Browser claim and proof transport
+are still open.
 IndexedDB keeps one exact sealed batch and an ordered draft queue. After
 signed acceptance, Rust seals the next draft against the new verified head;
 one IndexedDB transaction saves those exact bytes and removes the draft.

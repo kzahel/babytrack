@@ -241,6 +241,23 @@ impl InvitationBootstrap {
     pub fn relay_public_key(&self) -> [u8; 32] {
         self.relay_public_key
     }
+    /// Browser callers supply a fresh Web Crypto request ID before any read.
+    pub fn sign_get_with_id(
+        &self,
+        exact_path: &str,
+        request_id: [u8; 16],
+    ) -> Result<Vec<u8>, crate::sync_wire::Error> {
+        use sha2::{Digest, Sha256};
+        let relay_id: [u8; 32] = Sha256::digest(self.relay_public_key).into();
+        crate::sync_wire::sign_get_with_id(
+            self.family_id,
+            relay_id,
+            self.invitation_id,
+            &self.invitation_sign_seed,
+            exact_path,
+            request_id,
+        )
+    }
     #[cfg(not(target_arch = "wasm32"))]
     pub fn sign_get(
         &self,
@@ -330,6 +347,33 @@ impl InvitationBootstrap {
     pub fn fixed_role(&self) -> u8 {
         self.fixed_role
     }
+    pub fn verify_genesis(&self, genesis_bytes: &[u8]) -> Result<ControlChain, Error> {
+        let genesis = control::verify_genesis(genesis_bytes, &self.relay_public_key)?;
+        if genesis.family_id() != self.family_id || genesis.head_hash() != self.genesis_head {
+            return Err(Error::Invalid("linked genesis differs from verified bytes"));
+        }
+        Ok(ControlChain::from_genesis(
+            genesis_bytes,
+            self.relay_public_key,
+        )?)
+    }
+    pub fn matches_issue_signed_hash(&self, issue_bytes: &[u8]) -> Result<bool, Error> {
+        let issue = cbor::decode_with_limits(
+            issue_bytes,
+            cbor::Limits {
+                max_bytes: 1024 * 1024,
+                max_depth: 16,
+            },
+        )?;
+        let Value::Map(root) = issue else {
+            return Err(Error::Invalid("issue control not map"));
+        };
+        if root.len() != 4 {
+            return Err(Error::Invalid("issue control width invalid"));
+        }
+        let signed = Value::Array(vec![root[0].1.clone(), root[1].1.clone()]);
+        Ok(crypto::hash("control-signed", &cbor::encode(&signed)?)? == self.issue_signed_hash)
+    }
     pub(crate) fn invitation_sign_seed(&self) -> [u8; 32] {
         self.invitation_sign_seed
     }
@@ -382,11 +426,7 @@ impl InvitationBootstrap {
         prior_controls: &[&[u8]],
         sparse: bool,
     ) -> Result<ControlChain, Error> {
-        let genesis = control::verify_genesis(genesis_bytes, &self.relay_public_key)?;
-        if genesis.family_id() != self.family_id || genesis.head_hash() != self.genesis_head {
-            return Err(Error::Invalid("linked genesis differs from verified bytes"));
-        }
-        let mut chain = ControlChain::from_genesis(genesis_bytes, self.relay_public_key)?;
+        let mut chain = self.verify_genesis(genesis_bytes)?;
         for (envelope, receipt) in prior_batches {
             chain.apply_public_batch(envelope, receipt)?;
         }
@@ -406,8 +446,7 @@ impl InvitationBootstrap {
         if root.len() != 4 {
             return Err(Error::Invalid("issue control width invalid"));
         }
-        let signed = Value::Array(vec![root[0].1.clone(), root[1].1.clone()]);
-        if crypto::hash("control-signed", &cbor::encode(&signed)?)? != self.issue_signed_hash {
+        if !self.matches_issue_signed_hash(issue_bytes)? {
             return Err(Error::Invalid("issue signed hash differs from link"));
         }
         let Value::Map(unsigned) = &root[0].1 else {

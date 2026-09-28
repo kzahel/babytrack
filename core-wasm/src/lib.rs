@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use babytrack_core::projection::{Outcome, Projection, VerifiedEpochKey};
 use babytrack_core::{
     batch,
+    bootstrap::InvitationBootstrap,
     cbor::{self, Value},
     control_chain::ControlChain,
     crypto,
@@ -36,6 +37,162 @@ pub struct WasmLocalFamily {
 #[wasm_bindgen]
 pub struct WasmPublicFamily {
     chain: ControlChain,
+}
+
+/// Keyless browser invitation control replay. Each page is checked by the
+/// shared Rust authority chain before a browser may prepare a claim.
+#[wasm_bindgen]
+pub struct WasmInvitation {
+    bootstrap: InvitationBootstrap,
+    genesis: Option<Vec<u8>>,
+    chain: Option<ControlChain>,
+    controls: Vec<Vec<u8>>,
+    control_cursor: u64,
+    linked_issue: bool,
+    page_count: usize,
+    total_bytes: usize,
+}
+
+#[wasm_bindgen]
+impl WasmInvitation {
+    #[wasm_bindgen(constructor)]
+    pub fn new(fragment: &str) -> Result<Self, JsError> {
+        Ok(Self {
+            bootstrap: InvitationBootstrap::from_fragment(fragment).map_err(debug_error)?,
+            genesis: None,
+            chain: None,
+            controls: Vec::new(),
+            control_cursor: 0,
+            linked_issue: false,
+            page_count: 0,
+            total_bytes: 0,
+        })
+    }
+
+    pub fn family_id(&self) -> Vec<u8> {
+        self.bootstrap.family_id().to_vec()
+    }
+
+    pub fn relay_origin(&self) -> String {
+        self.bootstrap.relay_origin().to_owned()
+    }
+
+    pub fn role(&self) -> u8 {
+        self.bootstrap.fixed_role()
+    }
+
+    pub fn control_cursor(&self) -> u64 {
+        self.control_cursor
+    }
+
+    pub fn linked_issue(&self) -> bool {
+        self.linked_issue
+    }
+
+    pub fn head_hash(&self) -> Result<Vec<u8>, JsError> {
+        Ok(self
+            .chain
+            .as_ref()
+            .ok_or_else(|| JsError::new("invitation genesis not yet verified"))?
+            .head_hash()
+            .to_vec())
+    }
+
+    pub fn control_read_path(&self, after: u64) -> Result<String, JsError> {
+        if after != self.control_cursor {
+            return Err(JsError::new("invitation control read skips saved prefix"));
+        }
+        let family: String = self
+            .bootstrap
+            .family_id()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        Ok(format!("/v1/families/{family}/control?after={after}"))
+    }
+
+    pub fn sign_control_read(&self, after: u64, request_id: &[u8]) -> Result<Vec<u8>, JsError> {
+        let path = self.control_read_path(after)?;
+        self.bootstrap
+            .sign_get_with_id(&path, fixed(request_id, "request ID")?)
+            .map_err(debug_error)
+    }
+
+    /// Apply one bounded sparse control page atomically. Data-batch cursor
+    /// gaps are allowed; unsigned gaps, forks, and another invitation's issue
+    /// cannot establish this link's authority.
+    pub fn accept_control_page(&mut self, bytes: &[u8], after: u64) -> Result<bool, JsError> {
+        if after != self.control_cursor || self.page_count >= 64 {
+            return Err(JsError::new(
+                "invitation control page order or limit invalid",
+            ));
+        }
+        let total_bytes = self
+            .total_bytes
+            .checked_add(bytes.len())
+            .filter(|total| *total <= 16 * 1024 * 1024)
+            .ok_or_else(|| JsError::new("invitation control history exceeds size limit"))?;
+        let page = sync_wire::ControlPage::decode(bytes, self.bootstrap.family_id(), after)
+            .map_err(debug_error)?;
+        if page.has_more && page.entries.is_empty() {
+            return Err(JsError::new(
+                "relay claims more after empty invitation page",
+            ));
+        }
+        let mut genesis = self.genesis.clone();
+        let mut chain = self.chain.clone();
+        let mut controls = self.controls.clone();
+        let mut linked_issue = self.linked_issue;
+        for entry in &page.entries {
+            if genesis.is_none() {
+                if entry.cursor != 1 {
+                    return Err(JsError::new("invitation genesis cursor invalid"));
+                }
+                let verified = self
+                    .bootstrap
+                    .verify_genesis(&entry.committed_bytes)
+                    .map_err(debug_error)?;
+                if verified.last_global_cursor() != entry.cursor {
+                    return Err(JsError::new("invitation genesis cursor differs"));
+                }
+                genesis = Some(entry.committed_bytes.clone());
+                chain = Some(verified);
+                continue;
+            }
+            if !linked_issue
+                && self
+                    .bootstrap
+                    .matches_issue_signed_hash(&entry.committed_bytes)
+                    .map_err(debug_error)?
+            {
+                let prior: Vec<&[u8]> = controls.iter().map(Vec::as_slice).collect();
+                self.bootstrap
+                    .verify_issue_sparse_with_controls(
+                        genesis.as_ref().expect("genesis checked"),
+                        &entry.committed_bytes,
+                        &prior,
+                    )
+                    .map_err(debug_error)?;
+                linked_issue = true;
+            }
+            let verified = chain.as_mut().expect("genesis checked");
+            verified
+                .apply_sparse_control(&entry.committed_bytes)
+                .map_err(debug_error)?;
+            if verified.last_global_cursor() != entry.cursor {
+                return Err(JsError::new("invitation control cursor differs"));
+            }
+            controls.push(entry.committed_bytes.clone());
+        }
+        self.genesis = genesis;
+        self.chain = chain;
+        self.controls = controls;
+        self.linked_issue = linked_issue;
+        self.control_cursor = page.next_after;
+        self.page_count += 1;
+        self.total_bytes = total_bytes;
+        Ok(page.has_more)
+    }
 }
 
 /// Epoch-one initial manager data view. The signed genesis, committed

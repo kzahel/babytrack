@@ -261,7 +261,7 @@ impl ControlChain {
     /// cursor and full authority transition, but never establishes data
     /// readiness or authorizes batch writes. Complete history is replayed
     /// separately after admission.
-    pub(crate) fn apply_sparse_control(&mut self, bytes: &[u8]) -> Result<(), Error> {
+    pub fn apply_sparse_control(&mut self, bytes: &[u8]) -> Result<(), Error> {
         let value = cbor::decode_with_limits(
             bytes,
             cbor::Limits {

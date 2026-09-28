@@ -3,6 +3,7 @@
 
 use std::env;
 
+use babytrack_core::bootstrap::InvitationBootstrap;
 use babytrack_core::cbor::{self, Value};
 use babytrack_server::RelayStore;
 use serde_json::Value as Json;
@@ -52,6 +53,13 @@ fn commit_time(transition: &Json) -> i64 {
 
 fn main() {
     let path = env::args().nth(1).expect("pass disposable relay DB path");
+    let origin = env::args().nth(2).expect("pass browser relay origin");
+    let transitions: usize = env::args()
+        .nth(3)
+        .unwrap_or_else(|| "6".to_owned())
+        .parse()
+        .unwrap();
+    assert!((2..=6).contains(&transitions));
     let fixture: Json =
         serde_json::from_str(include_str!("../../tests/vectors/contiguous-chain-v1.json")).unwrap();
     let inputs = &fixture["test_only_inputs"];
@@ -59,7 +67,7 @@ fn main() {
     let relay_seed = fixed::<32>(inputs["relay_sign_seed_hex"].as_str().unwrap());
     let mut relay = RelayStore::open(path, relay_seed).unwrap();
 
-    for index in 0..6 {
+    for index in 0..transitions {
         let transition = &fixture["transitions"][index];
         let body = candidate(transition);
         let Value::Map(parts) = cbor::decode(&body).unwrap() else {
@@ -123,4 +131,19 @@ fn main() {
             Value::Bytes(hex(transition["committed_cbor_hex"].as_str().unwrap()))
         );
     }
+    let fragment = InvitationBootstrap::from_committed_issue(
+        &origin,
+        babytrack_core::crypto::signing_public_key(&relay_seed),
+        &hex(fixture["transitions"][0]["committed_cbor_hex"]
+            .as_str()
+            .unwrap()),
+        &hex(fixture["transitions"][1]["committed_cbor_hex"]
+            .as_str()
+            .unwrap()),
+        fixed::<32>(inputs["invitation_sign_seed_hex"].as_str().unwrap()),
+    )
+    .unwrap()
+    .to_fragment()
+    .unwrap();
+    println!("{fragment}");
 }

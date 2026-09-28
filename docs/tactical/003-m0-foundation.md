@@ -693,6 +693,14 @@ admitted browser recipient credential for a signed grant fetch and encrypted
 upload after reload. Its admission controls are fixture-fed, so browser
 claim/proof transport, rotations, queued-edit repair after rejection, and
 durable independent CLI/browser convergence remain open.
+The browser now also opens a real invitation fragment, signs a bounded
+public-control GET with its invitation credential, and verifies the linked
+genesis and issue through the Rust sparse authority chain before saving
+the exact page and head pin in IndexedDB. A disposable relay stopped after
+issue supplies those bytes; Chromium replays them after reload and rejects
+a changed relay origin or tampered saved page. This is the pre-claim step.
+Browser claim/proof transport and handoff into an admitted data view remain
+open; the admitted recipient case still starts from fixture-fed controls.
 The first manager's signing and epoch keys persist in IndexedDB and are
 reloaded for this narrow proof.
 An uncertain retry returns those bytes after reopen even if the caller's

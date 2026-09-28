@@ -102,6 +102,7 @@ const server = http.createServer((request, response) => {
   }
   const name = request.url.slice(1);
   if (name === 'local-store.js' || name === 'public-store.js' ||
+      name === 'invitation-store.js' ||
       name === 'relay-get.js' || name === 'relay-post.js') {
     response.writeHead(200, { 'Content-Type': 'text/javascript' });
     fs.createReadStream(path.join(__dirname, '../../core-wasm/web', name)).pipe(response);
@@ -117,19 +118,23 @@ const server = http.createServer((request, response) => {
   fs.createReadStream(path.join(generatedDir, name)).pipe(response);
 });
 
-async function startRelay(recipient = false) {
+async function startRelay(recipient = false, transitions = 6) {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'babytrack-browser-relay-'));
   const seedPath = path.join(temporary, 'seed');
   fs.writeFileSync(seedPath, Buffer.from(genesis.inputs.relay_sign_seed_hex, 'hex'));
-  if (recipient) {
-    const seeded = spawnSync(path.resolve(seedRecipientBin), [path.join(temporary, 'relay.db')],
-      { encoding: 'utf8' });
-    assert.equal(seeded.status, 0, `Could not seed recipient relay: ${seeded.stderr}`);
-  }
   const reservation = http.createServer();
   await new Promise((resolve) => reservation.listen(0, '127.0.0.1', resolve));
   const port = reservation.address().port;
   await new Promise((resolve) => reservation.close(resolve));
+  let fragment;
+  if (recipient) {
+    const origin = `http://localhost:${server.address().port}`;
+    const seeded = spawnSync(path.resolve(seedRecipientBin),
+      [path.join(temporary, 'relay.db'), origin, String(transitions)],
+      { encoding: 'utf8' });
+    assert.equal(seeded.status, 0, `Could not seed recipient relay: ${seeded.stderr}`);
+    fragment = seeded.stdout.trim();
+  }
   const child = spawn(path.resolve(relayBin), [path.join(temporary, 'relay.db'), seedPath,
     `127.0.0.1:${port}`], { stdio: 'ignore' });
   const base = `http://127.0.0.1:${port}`;
@@ -141,7 +146,7 @@ async function startRelay(recipient = false) {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     if (!ready) throw new Error('Disposable relay did not start');
-    if (recipient) return { child, temporary, port,
+    if (recipient) return { child, temporary, port, fragment,
       genesisHex: chain.transitions[0].committed_cbor_hex };
     const post = async (url, hexBody) => {
       const response = await fetch(base + url, {
@@ -167,10 +172,11 @@ async function startRelay(recipient = false) {
 }
 
 async function run() {
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise((resolve) => server.listen(0, 'localhost', resolve));
   let browser;
   let relay;
   let recipientRelay;
+  let invitationRelay;
   try {
     relay = await startRelay();
     relayPort = relay.port;
@@ -178,7 +184,7 @@ async function run() {
     const context = await browser.newContext();
     const page = await context.newPage();
     page.on('pageerror', (error) => { throw error; });
-    const url = `http://127.0.0.1:${server.address().port}/`;
+    const url = `http://localhost:${server.address().port}/`;
     await page.goto(url);
 
     const saved = await page.evaluate(async (data) => {
@@ -460,6 +466,58 @@ async function run() {
     assert.deepEqual(sameEpochReady,
       { cursor: 2, head: input.controlHeadHex, staged: true, localRecordType: 'family' });
 
+    invitationRelay = await startRelay(true, 2);
+    relayPort = invitationRelay.port;
+    const invitationPull = await page.evaluate(async (fragment) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const store = await InvitationStore.open(wasm, fragment, 'babytrack-invitation-smoke');
+      const pulled = await store.pull(relayGet);
+      const polled = await store.pull(relayGet);
+      store.close();
+      return { pulled, polled };
+    }, invitationRelay.fragment);
+    assert.deepEqual(invitationPull, {
+      pulled: { cursor: 2, linkedIssue: true, hasMore: false },
+      polled: { cursor: 2, linkedIssue: true, hasMore: false },
+    });
+    await page.reload();
+    const invitationReload = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const store = await InvitationStore.open(wasm, data.fragment, 'babytrack-invitation-smoke');
+      const verifier = await store.load();
+      const result = { cursor: Number(verifier.control_cursor()),
+        linkedIssue: verifier.linked_issue() };
+      verifier.free();
+      let wrongOriginRejected = false;
+      try {
+        await InvitationStore.open(wasm, data.wrongOrigin, 'babytrack-wrong-origin-smoke');
+      } catch { wrongOriginRejected = true; }
+      const write = store.database.transaction('pages', 'readwrite');
+      const pages = write.objectStore('pages');
+      const row = await new Promise((resolve, reject) => {
+        const request = pages.get([data.fragment, 0]);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      row.bytes[0] ^= 1;
+      pages.put(row);
+      await new Promise((resolve, reject) => {
+        write.oncomplete = resolve;
+        write.onerror = () => reject(write.error);
+        write.onabort = () => reject(write.error);
+      });
+      let tamperRejected = false;
+      try { (await store.load()).free(); } catch { tamperRejected = true; }
+      store.close();
+      return { ...result, wrongOriginRejected, tamperRejected };
+    }, { fragment: invitationRelay.fragment, wrongOrigin: chain.bootstrap.fragment });
+    assert.deepEqual(invitationReload, { cursor: 2, linkedIssue: true,
+      wrongOriginRejected: true, tamperRejected: true });
     recipientRelay = await startRelay(true);
     relayPort = recipientRelay.port;
     const admittedBrowser = await page.evaluate(async (data) => {
@@ -886,7 +944,7 @@ async function run() {
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));
-    for (const instance of [recipientRelay, relay]) {
+    for (const instance of [recipientRelay, invitationRelay, relay]) {
       if (!instance) continue;
       if (instance.child.exitCode == null) {
         const stopped = new Promise((resolve) => instance.child.once('exit', resolve));

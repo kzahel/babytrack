@@ -445,6 +445,12 @@ internal class ShareCoordinator(
     fun editNote(family: FamilyRef, childId: ByteArray, activityId: ByteArray, note: String, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedNote(family, wrapping, childId, activityId, note, savedAtMs) }
 
+    fun editInstantTime(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+                        startUtcMs: Long, offsetMinutes: Short, savedAtMs: Long): Unit =
+        withWrapping { wrapping -> core.editSharedInstantTime(
+            family, wrapping, childId, activityId, ActivityWhen(startUtcMs, offsetMinutes, savedAtMs),
+        ) }
+
     fun editBottleMl(family: FamilyRef, childId: ByteArray, activityId: ByteArray, amountMl: Long, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedBottleMl(family, wrapping, childId, activityId, amountMl, savedAtMs) }
 

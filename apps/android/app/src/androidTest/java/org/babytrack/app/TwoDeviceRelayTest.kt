@@ -325,6 +325,16 @@ class TwoDeviceRelayTest {
             sharing.editBottleEntered(
                 family, note.childId, bottle, "4.5", 2u.toUByte(), 3u.toUByte(), System.currentTimeMillis()
             )
+            assertTrue(runCatching {
+                sharing.editInstantTime(family, otherChild.id, bottle,
+                    bottleTime - 120_000L, 60, System.currentTimeMillis())
+            }.isFailure)
+            sharing.editInstantTime(family, note.childId, bottle,
+                bottleTime - 120_000L, 60, System.currentTimeMillis())
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.id.contentEquals(bottle) && it.startUtcMs == bottleTime - 120_000L &&
+                    it.offsetMinutes == 60.toShort() && it.bottleContent == 3u.toUByte()
+            })
             val diaperTime = System.currentTimeMillis()
             val diaper = sharing.logDiaper(
                 family, note.childId, 1u.toUByte(), ActivityWhen(diaperTime, 0, diaperTime)
@@ -363,7 +373,7 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "feed.bottle" && it.bottleMl == 133L &&
                     it.bottleEntered == "4.5" && it.bottleUnit == 2u.toUByte() &&
-                    it.bottleContent == 3u.toUByte()
+                    it.bottleContent == 3u.toUByte() && it.offsetMinutes == 60.toShort()
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "sleep" && it.endUtcMs != null && it.sleepPlace == 2u.toUByte()

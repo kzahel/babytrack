@@ -2631,6 +2631,43 @@ impl NativeSharedStore {
             .map_err(rejected)
     }
 
+    pub fn edit_shared_instant_time(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        time: ActivityWhen,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let projection = ready.projection_with_pending(&store).map_err(rejected)?;
+        let child_id = fixed(&child_id)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(BindingError::InvalidBytes)?;
+        if child.scope != operation::Scope::Child || child.deleted {
+            return Err(BindingError::InvalidBytes);
+        }
+        let activity = projection
+            .record(&fixed(&activity_id)?)
+            .ok_or(BindingError::InvalidBytes)?;
+        let operation = local_api::edit_instant_time_operation(
+            handle,
+            child_id,
+            activity,
+            time.start_utc_ms,
+            time.offset_minutes,
+            time.saved_at_ms,
+        )
+        .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, time.saved_at_ms)
+            .map(|_| ())
+            .map_err(rejected)
+    }
+
     pub fn edit_shared_bottle_ml(
         &self,
         family: FamilyRef,
@@ -4109,6 +4146,27 @@ impl NativeLocalStore {
                 fixed(&activity_id)?,
                 &note,
                 saved_at_ms,
+            )
+            .map_err(rejected)
+    }
+
+    pub fn edit_instant_time(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        time: ActivityWhen,
+    ) -> Result<(), BindingError> {
+        self.repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .edit_instant_time(
+                family.handle()?,
+                fixed(&child_id)?,
+                fixed(&activity_id)?,
+                time.start_utc_ms,
+                time.offset_minutes,
+                time.saved_at_ms,
             )
             .map_err(rejected)
     }

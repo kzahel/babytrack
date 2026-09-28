@@ -9,6 +9,60 @@ use babytrack_core::{
 };
 
 #[test]
+fn instant_time_correction_keeps_identity_and_survives_backup() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("instant-time.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    let other_family = app.create_family(1_790_000_000_001).unwrap();
+    let child = app.add_child(family, "Baby", 1_790_000_000_002).unwrap();
+    let other_child = app.add_child(family, "Other", 1_790_000_000_003).unwrap();
+    let time = ActivityTime {
+        start_utc_ms: 1_790_000_000_004,
+        offset_minutes: 60,
+        saved_at_ms: 1_790_000_000_005,
+    };
+    let diaper = app.log_diaper(family, child, 1, time).unwrap();
+    let sleep = app
+        .log_sleep(family, child, time, time.start_utc_ms + 1, 60)
+        .unwrap();
+    let saved_at = time.saved_at_ms + 2;
+    for (target_family, target_child, target_activity, start, offset) in [
+        (other_family, child, diaper, time.start_utc_ms - 60_000, 0),
+        (family, other_child, diaper, time.start_utc_ms - 60_000, 0),
+        (family, child, sleep, time.start_utc_ms - 60_000, 0),
+        (family, child, diaper, saved_at + 1, 0),
+        (family, child, diaper, time.start_utc_ms - 60_000, 900),
+    ] {
+        assert!(
+            app.edit_instant_time(
+                target_family,
+                target_child,
+                target_activity,
+                start,
+                offset,
+                saved_at,
+            )
+            .is_err()
+        );
+    }
+    let corrected = time.start_utc_ms - 3_600_000;
+    app.edit_instant_time(family, child, diaper, corrected, -60, saved_at)
+        .unwrap();
+    let rows = app.timeline(family, child).unwrap();
+    let row = rows.iter().find(|row| row.id == diaper).unwrap();
+    assert_eq!(row.start_utc_ms, corrected);
+    assert_eq!(row.offset_minutes, -60);
+    assert_eq!(row.diaper_kind, Some(1));
+    let backup = app.backup(family, saved_at + 1).unwrap();
+    drop(app);
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.timeline(family, child).unwrap(), rows);
+    let restored = app.restore(&backup, saved_at + 2).unwrap();
+    assert_eq!(app.timeline(restored, child).unwrap(), rows);
+}
+
+#[test]
 fn child_birth_day_and_sex_survive_restart_and_file_restore() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("child-metadata.db");

@@ -114,6 +114,9 @@ Nara sample mapping remain open for their planned features.
 Caregivers can backdate one completed entry at a time. Bottle logging and
 correction expose the four published content codes through the shared core;
 the Android timeline and analysis CSV show that choice.
+Caregivers can also correct the time of a saved instantaneous entry without
+replacing its record; the shared-core edit reaches another device through the
+encrypted relay and remains in a restored file.
 Completed whole-minute breast feeds can now be corrected for side and
 duration through an atomic shared-core segment update.
 The selected-child timeline groups activity by local day and filters its

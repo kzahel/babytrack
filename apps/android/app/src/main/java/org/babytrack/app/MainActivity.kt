@@ -226,6 +226,17 @@ private val noteEditableKinds = setOf(
     "note", "feed.breast", "feed.bottle", "feed.solids", "sleep", "pump",
     "diaper", "growth", "medication", "temperature",
 )
+private val instantTimeEditableKinds = setOf(
+    "note", "feed.bottle", "feed.solids", "diaper", "growth", "medication", "temperature",
+)
+private data class PendingInstantTimeEdit(
+    val family: FamilyRef,
+    val childId: ByteArray,
+    val activityId: ByteArray,
+    val shared: Boolean,
+    val startUtcMs: Long,
+    val offsetMinutes: Short,
+)
 private data class PendingBottleEdit(
     val family: FamilyRef,
     val childId: ByteArray,
@@ -631,6 +642,7 @@ private fun TrackerScreen(
     var deviceLabelDraft by remember { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<PendingActivityDelete?>(null) }
     var pendingNoteEdit by remember { mutableStateOf<PendingNoteEdit?>(null) }
+    var pendingInstantTimeEdit by remember { mutableStateOf<PendingInstantTimeEdit?>(null) }
     var pendingBottleEdit by remember { mutableStateOf<PendingBottleEdit?>(null) }
     var pendingBreastEdit by remember { mutableStateOf<PendingBreastEdit?>(null) }
     var pendingDiaperEdit by remember { mutableStateOf<PendingDiaperEdit?>(null) }
@@ -710,6 +722,7 @@ private fun TrackerScreen(
         pendingChildMetadataEdit = null
         pendingDelete = null
         pendingNoteEdit = null
+        pendingInstantTimeEdit = null
         pendingBottleEdit = null
         pendingBreastEdit = null
         pendingDiaperEdit = null
@@ -2121,6 +2134,14 @@ private fun TrackerScreen(
                                     }) { Text(stringResource(if (entry.note == null)
                                         R.string.add_activity_note else R.string.edit_note)) }
                                 }
+                                if (entry.kind in instantTimeEditableKinds) {
+                                    OutlinedButton(onClick = {
+                                        pendingInstantTimeEdit = PendingInstantTimeEdit(
+                                            family, entry.childId.copyOf(), entry.id.copyOf(),
+                                            activeShared, entry.startUtcMs, entry.offsetMinutes,
+                                        )
+                                    }) { Text(stringResource(R.string.edit_entry_time)) }
+                                }
                                 if (entry.kind == "feed.bottle" && entry.bottleMl != null) {
                                     OutlinedButton(onClick = {
                                         pendingBottleEdit = PendingBottleEdit(
@@ -2348,6 +2369,61 @@ private fun TrackerScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { pendingDelete = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+    pendingInstantTimeEdit?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingInstantTimeEdit = null },
+            title = { Text(stringResource(R.string.edit_entry_time)) },
+            text = {
+                Column {
+                    Text(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                        .format(Date(target.startUtcMs)))
+                    OutlinedButton(onClick = {
+                        val current = java.util.Calendar.getInstance().apply { timeInMillis = target.startUtcMs }
+                        DatePickerDialog(context, { _, year, month, day ->
+                            TimePickerDialog(context, { _, hour, minute ->
+                                if (pendingInstantTimeEdit === target) {
+                                    val selected = LocalDateTime.of(year, month + 1, day, hour, minute)
+                                        .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                                    if (selected > System.currentTimeMillis()) {
+                                        message = context.getString(R.string.log_time_future)
+                                    } else {
+                                        pendingInstantTimeEdit = target.copy(
+                                            startUtcMs = selected,
+                                            offsetMinutes = (TimeZone.getDefault().getOffset(selected) / 60_000).toShort(),
+                                        )
+                                        message = null
+                                    }
+                                }
+                            }, current.get(java.util.Calendar.HOUR_OF_DAY),
+                                current.get(java.util.Calendar.MINUTE), false).show()
+                        }, current.get(java.util.Calendar.YEAR), current.get(java.util.Calendar.MONTH),
+                            current.get(java.util.Calendar.DAY_OF_MONTH)).apply {
+                            datePicker.maxDate = System.currentTimeMillis()
+                        }.show()
+                    }) { Text(stringResource(R.string.choose_entry_time)) }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val savedAtMs = System.currentTimeMillis()
+                    change(onSaved = { pendingInstantTimeEdit = null }) {
+                        if (target.shared) sharing.editInstantTime(
+                            target.family, target.childId, target.activityId,
+                            target.startUtcMs, target.offsetMinutes, savedAtMs,
+                        ) else store.editInstantTime(
+                            target.family, target.childId, target.activityId,
+                            ActivityWhen(target.startUtcMs, target.offsetMinutes, savedAtMs),
+                        )
+                    }
+                }) { Text(stringResource(R.string.save_changes)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingInstantTimeEdit = null }) {
                     Text(stringResource(R.string.cancel))
                 }
             },

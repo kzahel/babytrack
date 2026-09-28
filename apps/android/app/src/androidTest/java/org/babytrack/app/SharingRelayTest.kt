@@ -33,6 +33,39 @@ class SharingRelayTest {
     @get:Rule val composeRule = createEmptyComposeRule()
 
     @Test
+    fun savedDiaperTimeEditOpensAndSavesThroughTracker() {
+        wakeEmulatorScreen()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = context.filesDir.resolve("families.db")
+        val now = System.currentTimeMillis()
+        val (family, child, activity) = NativeLocalStore.open(db.absolutePath).use { local ->
+            val family = local.createFamily(now)
+            val child = local.addChild(family, "Time edit child", now)
+            val activity = local.logDiaper(family, child, 1u.toUByte(),
+                ActivityWhen(now - 3_600_000L, 180, now))
+            Triple(family, child, activity)
+        }
+        context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
+            .edit().putString("family", family.familyId.joinToString("") { "%02x".format(it) })
+            .putString("child", child.joinToString("") { "%02x".format(it) }).commit()
+        ActivityScenario.launch(MainActivity::class.java).use {
+            val edit = context.getString(R.string.edit_entry_time)
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText(edit).fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText(edit).performScrollTo().performClick()
+            composeRule.onNodeWithText(context.getString(R.string.choose_entry_time)).assertIsDisplayed()
+            composeRule.onNodeWithText(context.getString(R.string.save_changes)).performClick()
+        }
+        NativeLocalStore.open(db.absolutePath).use { local ->
+            assertTrue(local.timeline(family, child).any {
+                it.id.contentEquals(activity) && it.startUtcMs == now - 3_600_000L &&
+                    it.offsetMinutes == 180.toShort()
+            })
+        }
+    }
+
+    @Test
     fun localTimerNotificationTracksSavedStartAndStop() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

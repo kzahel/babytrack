@@ -542,6 +542,38 @@ impl LocalRepository {
         Ok(())
     }
 
+    pub fn edit_instant_time(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        start_utc_ms: i64,
+        offset_minutes: i16,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        if child.scope != Scope::Child || child.deleted {
+            return Err(Error::Invalid("target child unavailable"));
+        }
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("activity unavailable"))?;
+        let operation = edit_instant_time_operation(
+            family,
+            child_id,
+            activity,
+            start_utc_ms,
+            offset_minutes,
+            saved_at_ms,
+        )?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn edit_bottle_ml(
         &mut self,
         family: FamilyHandle,
@@ -1890,6 +1922,59 @@ pub fn edit_note_operation(
             } else {
                 Value::Text(note.to_owned())
             },
+        )]),
+    })
+}
+
+/// Correct the recorded start of an instantaneous entry. Interval activities
+/// keep their own start/end and segment editing rules.
+pub fn edit_instant_time_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    start_utc_ms: i64,
+    offset_minutes: i16,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    if activity.scope != Scope::Activity
+        || activity.child_id != Some(child_id)
+        || activity.deleted
+        || !matches!(
+            activity.record_type.as_str(),
+            "note"
+                | "feed.bottle"
+                | "feed.solids"
+                | "diaper"
+                | "growth"
+                | "medication"
+                | "temperature"
+        )
+    {
+        return Err(Error::Invalid("instant activity target unavailable"));
+    }
+    check_time(saved_at_ms)?;
+    if start_utc_ms < 0 || start_utc_ms > saved_at_ms {
+        return Err(Error::Invalid("activity time must not be in the future"));
+    }
+    if !(-840..=840).contains(&offset_minutes) {
+        return Err(Error::Invalid("recorded offset outside v1 range"));
+    }
+    Ok(NewOperation {
+        family_id: family.family_id,
+        operation_id: ids::random_v7(saved_at_ms)?,
+        record_id: activity.id,
+        scope: Scope::Activity,
+        kind: Kind::Set,
+        author_device_id: family.device_id,
+        hlc: placeholder_hlc(family),
+        record_type: None,
+        child_id: None,
+        fields: Some(vec![(
+            1,
+            Value::Array(vec![
+                Value::Integer(start_utc_ms.into()),
+                Value::Integer(offset_minutes.into()),
+            ]),
         )]),
     })
 }

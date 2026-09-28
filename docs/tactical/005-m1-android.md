@@ -254,6 +254,12 @@ This is still a development flow, not a released product flow.
   feeds, note, bottle, diaper, and solids correction, and
   single-activity deletion now pass
   local restart/file restore, two-emulator encrypted sync, and UI tap flows.
+  Saved instantaneous entries now offer a timestamp correction through the
+  shared core for notes, bottle and solids feeds, diapers, growth, medication,
+  and temperature. The core check covers target isolation, invalid time and
+  offset, restart, and backup restore; the two-device relay flow checks a
+  corrected bottle time on the recipient, and a Compose tap check exercises
+  the Android edit dialog. Interval edits remain type-specific.
   Preserve unknown fields and exact Family/child targets. Keep clinical
   recommendations out of the UI.
   WHO publishes the growth reference tables, but the terms for bundling those

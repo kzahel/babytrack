@@ -190,6 +190,12 @@ the UI offers to merge them rather than guessing.
   Starting a running sleep timer always uses the current time. The selected
   earlier time clears after a successful completed entry or a child/Family
   switch; a failed save leaves it available for retry.
+  A saved instantaneous entry can have its start instant and recorded offset
+  corrected on the same record through a new operation. This covers notes,
+  bottle and solids feeds, diapers, growth, medication, and temperature.
+  Interval entries keep their separate end and segment rules; this correction
+  does not silently move an interval endpoint. The editor targets the saved
+  Family, child, and activity and rejects future times.
 - Lists and timelines show each event at the local time it was logged, with
   a marker when that offset differs from the viewing device's current one.
 - A day is a calendar day in the viewing device's current time zone. Events

@@ -37,6 +37,40 @@ class SharingRelayTest {
     @get:Rule val composeRule = createEmptyComposeRule()
 
     @Test
+    fun deletedEntryCanBeUndoneFromTheTracker() {
+        wakeEmulatorScreen()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = context.filesDir.resolve("families.db")
+        val now = System.currentTimeMillis()
+        val (family, child, note) = NativeLocalStore.open(db.absolutePath).use { local ->
+            val family = local.createFamily(now)
+            val child = local.addChild(family, "Undo child", now)
+            val note = local.logNote(family, child, "Undo me", ActivityWhen(now, 0, now))
+            Triple(family, child, note)
+        }
+        context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
+            .edit().putString("family", family.familyId.joinToString("") { "%02x".format(it) })
+            .putString("child", child.joinToString("") { "%02x".format(it) }).commit()
+        ActivityScenario.launch(MainActivity::class.java).use {
+            composeRule.onNodeWithText("Note · Undo me").performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithText(context.getString(R.string.delete_entry))
+                .performScrollTo().performClick()
+            composeRule.onNodeWithText(context.getString(R.string.confirm_delete_entry)).performClick()
+            composeRule.waitUntil(15_000) {
+                composeRule.onAllNodesWithText(context.getString(R.string.undo))
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText(context.getString(R.string.undo)).performClick()
+            composeRule.waitUntil(15_000) {
+                composeRule.onAllNodesWithText("Note · Undo me").fetchSemanticsNodes().isNotEmpty()
+            }
+        }
+        NativeLocalStore.open(db.absolutePath).use { local ->
+            assertTrue(local.timeline(family, child).any { it.id.contentEquals(note) })
+        }
+    }
+
+    @Test
     fun selectedChildTodaySummaryUsesSavedLocalEntries() {
         wakeEmulatorScreen()
         val context = InstrumentationRegistry.getInstrumentation().targetContext

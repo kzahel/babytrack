@@ -268,6 +268,9 @@ This is still a development flow, not a released product flow.
   feeds, note, bottle, diaper, and solids correction, and
   single-activity deletion now pass
   local restart/file restore, two-emulator encrypted sync, and UI tap flows.
+  A confirmed deletion now offers a brief Undo action. Rust restores the
+  same tombstoned activity ID, rejecting another Family or child; local
+  restart, the Android UI, and encrypted two-emulator sync check it.
   Saved instantaneous entries now offer a timestamp correction through the
   shared core for notes, bottle and solids feeds, diapers, growth, medication,
   and temperature. The core check covers target isolation, invalid time and

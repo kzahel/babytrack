@@ -40,6 +40,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -665,6 +667,29 @@ private fun TrackerScreen(
     var deviceLabelTarget by remember { mutableStateOf<String?>(null) }
     var deviceLabelDraft by remember { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<PendingActivityDelete?>(null) }
+    var recentlyDeleted by remember { mutableStateOf<PendingActivityDelete?>(null) }
+    LaunchedEffect(recentlyDeleted) {
+        val target = recentlyDeleted ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            context.getString(R.string.entry_deleted),
+            actionLabel = context.getString(R.string.undo),
+            duration = SnackbarDuration.Long,
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            runCatching { withContext(Dispatchers.IO) {
+                val at = System.currentTimeMillis()
+                if (target.shared) sharing.restoreActivity(
+                    target.family, target.childId, target.activityId, at,
+                ) else store.restoreActivity(
+                    target.family, target.childId, target.activityId, at,
+                )
+            } }.onSuccess {
+                version++
+                message = null
+            }.onFailure { message = context.getString(R.string.error) }
+        }
+        recentlyDeleted = null
+    }
     var pendingNoteEdit by remember { mutableStateOf<PendingNoteEdit?>(null) }
     var pendingTimeEdit by remember { mutableStateOf<PendingTimeEdit?>(null) }
     var pendingBottleEdit by remember { mutableStateOf<PendingBottleEdit?>(null) }
@@ -719,6 +744,7 @@ private fun TrackerScreen(
         }.orEmpty()
     }
     LaunchedEffect(selectedFamily, selectedChild) {
+        recentlyDeleted = null
         showAddChildForm = false
         childName = ""
         childBirthDate = ""
@@ -2461,7 +2487,7 @@ private fun TrackerScreen(
                 Button(onClick = {
                     pendingDelete = null
                     val savedAtMs = System.currentTimeMillis()
-                    change {
+                    change(onSaved = { recentlyDeleted = target }) {
                         if (target.shared) sharing.deleteActivity(
                             target.family, target.childId, target.activityId, savedAtMs,
                         ) else store.deleteActivity(

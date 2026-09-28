@@ -233,6 +233,8 @@
     <string name="delete_entry">Delete entry</string>
     <string name="delete_entry_warning">Remove this entry from the Family timeline? Shared devices receive the change when they sync.</string>
     <string name="confirm_delete_entry">Delete</string>
+    <string name="entry_deleted">Entry deleted</string>
+    <string name="undo">Undo</string>
     <string name="dev_join_title">Join preview</string>
     <string name="ready_family_number">Ready Family %1$d</string>
     <string name="joining_family_number">Joining Family %1$d</string>

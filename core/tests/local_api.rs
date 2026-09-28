@@ -618,9 +618,25 @@ fn activity_delete_targets_one_child_and_survives_restart() {
         app.delete_activity(first, child, note, time.saved_at_ms + 2)
             .is_err()
     );
+    assert!(
+        app.restore_activity(second, child, note, time.saved_at_ms + 2)
+            .is_err()
+    );
+    assert!(
+        app.restore_activity(first, other, note, time.saved_at_ms + 2)
+            .is_err()
+    );
+    app.restore_activity(first, child, note, time.saved_at_ms + 2)
+        .unwrap();
+    assert_eq!(app.timeline(first, child).unwrap().len(), 1);
+    assert_eq!(app.timeline(first, child).unwrap()[0].id, note);
+    assert!(
+        app.restore_activity(first, child, note, time.saved_at_ms + 3)
+            .is_err()
+    );
     drop(app);
     let app = LocalRepository::open(&path).unwrap();
-    assert!(app.timeline(first, child).unwrap().is_empty());
+    assert_eq!(app.timeline(first, child).unwrap()[0].id, note);
 }
 
 #[test]

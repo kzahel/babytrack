@@ -318,6 +318,13 @@ class TwoDeviceRelayTest {
             })
             sharing.deleteActivity(family, note.childId, note.id, System.currentTimeMillis())
             assertTrue(sharing.snapshot(family).activities.none { it.id.contentEquals(note.id) })
+            assertTrue(runCatching {
+                sharing.restoreActivity(family, otherChild.id, note.id, System.currentTimeMillis())
+            }.isFailure)
+            sharing.restoreActivity(family, note.childId, note.id, System.currentTimeMillis())
+            assertTrue(sharing.snapshot(family).activities.any {
+                it.id.contentEquals(note.id) && it.note == "Corrected care note"
+            })
             val editTime = System.currentTimeMillis()
             val retainedNote = sharing.logNote(
                 family, note.childId, "Before sync correction", ActivityWhen(editTime, 0, editTime)
@@ -379,6 +386,7 @@ class TwoDeviceRelayTest {
             assertTrue("Recipient children: ${children.map { it.name }}; inert: ${synced.inertCount}; cursor: ${synced.verifiedCursor}",
                 children.any { it.name == "Manager child" })
             assertTrue(sharing.snapshot(family).activities.none { it.note == "Care note marker 67" })
+            assertTrue(sharing.snapshot(family).activities.any { it.note == "Corrected care note" })
             assertTrue(sharing.snapshot(family).activities.any { it.note == "After sync correction" })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "feed.bottle" && it.bottleMl == 133L &&

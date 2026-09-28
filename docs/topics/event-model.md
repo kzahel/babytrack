@@ -105,6 +105,12 @@ The Android timeline can delete one activity. The shared core checks its
 Family and child target and records a tombstone operation; the entry leaves
 the current timeline locally and on devices that later sync. Deletion does
 not erase an already received copy or rewrite the historical operation log.
+Android briefly offers Undo after a confirmed deletion. It appends the v1
+restore operation for the same Family, child, and activity ID, returning its
+saved fields to the timeline locally and after encrypted sync. The core
+rejects a wrong target or a restore of an already visible activity. Undo is
+an in-session convenience; the deleted record remains in the operation log
+after the prompt disappears.
 The timeline can edit a standalone note's text and attach, edit, or clear the
 published optional note field on any known live activity type. The shared
 core checks the exact Family, child, target type, and text length before a

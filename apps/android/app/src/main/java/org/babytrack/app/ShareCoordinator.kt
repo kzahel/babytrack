@@ -447,6 +447,9 @@ internal class ShareCoordinator(
     fun deleteActivity(family: FamilyRef, childId: ByteArray, activityId: ByteArray, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.deleteSharedActivity(family, wrapping, childId, activityId, savedAtMs) }
 
+    fun restoreActivity(family: FamilyRef, childId: ByteArray, activityId: ByteArray, savedAtMs: Long): Unit =
+        withWrapping { wrapping -> core.restoreSharedActivity(family, wrapping, childId, activityId, savedAtMs) }
+
     fun editNote(family: FamilyRef, childId: ByteArray, activityId: ByteArray, note: String, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedNote(family, wrapping, childId, activityId, note, savedAtMs) }
 

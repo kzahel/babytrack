@@ -600,6 +600,29 @@ impl LocalRepository {
         Ok(())
     }
 
+    pub fn restore_activity(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        if child.scope != Scope::Child || child.deleted {
+            return Err(Error::Invalid("target child unavailable"));
+        }
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("activity unavailable"))?;
+        let operation = restore_activity_operation(family, child_id, activity, saved_at_ms)?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn edit_note(
         &mut self,
         family: FamilyHandle,
@@ -1971,6 +1994,31 @@ pub fn delete_activity_operation(
         record_id: activity.id,
         scope: Scope::Activity,
         kind: Kind::Delete,
+        author_device_id: family.device_id,
+        hlc: placeholder_hlc(family),
+        record_type: None,
+        child_id: None,
+        fields: None,
+    })
+}
+
+pub fn restore_activity_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    if activity.scope != Scope::Activity || activity.child_id != Some(child_id) || !activity.deleted
+    {
+        return Err(Error::Invalid("deleted activity target unavailable"));
+    }
+    check_time(saved_at_ms)?;
+    Ok(NewOperation {
+        family_id: family.family_id,
+        operation_id: ids::random_v7(saved_at_ms)?,
+        record_id: activity.id,
+        scope: Scope::Activity,
+        kind: Kind::Restore,
         author_device_id: family.device_id,
         hlc: placeholder_hlc(family),
         record_type: None,

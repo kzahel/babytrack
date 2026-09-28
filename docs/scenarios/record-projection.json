@@ -31,6 +31,18 @@
         "the new operation carries the current merge clock",
         "older operations are not rewritten"
       ]
+    },
+    {
+      "id": "restore-deleted-activity",
+      "given": "a child activity that was deleted and remains in the operation log",
+      "when": "its original Family and child append a restore operation",
+      "expect": [
+        "the same activity ID and saved fields return to the visible timeline",
+        "the delete and restore both remain in the operation log",
+        "another device that verifies the restore sees the same activity",
+        "a wrong Family or child cannot restore the activity",
+        "restoring an activity that is already visible is rejected"
+      ]
     }
   ]
 }

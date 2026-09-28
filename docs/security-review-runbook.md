@@ -6,6 +6,10 @@ through the local Yep Anywhere API. It reviews a fixed repository revision in
 a disposable detached checkout with `bypassPermissions` and an explicitly
 read-only prompt. The implementation agent owns triage, fixes, regression
 cases, and the gate record; a model verdict alone does not close a gate.
+Keep feature work moving between named gates. Use the reviewer for broad
+direction, and track narrower hardening for the gate or a later slice. A
+finding that breaks an agreed Family access or data-retention promise blocks
+real Family data until fixed and rechecked.
 
 ## Prepare the review
 
@@ -136,9 +140,11 @@ curl -fsS "$YEP_URL/api/projects/<projectId>/sessions/<sessionId>"
 ```
 
 Inspect the actual findings, cited files, and claimed test results. Reproduce
-blockers, fix them in the owning topic/protocol/code, add scenario or vector
-regressions in the same change, then review a new fixed revision. In the
-active tactical, record the SHA, session ID, threat assumptions, findings,
+access or data-retention blockers, fix them in the owning topic/protocol/code,
+add scenario or vector regressions in the same change, then request a focused
+recheck of those blockers at the named gate. Record narrower hardening with
+its owner and intended slice without serial advisory rechecks. In the active
+tactical, record the SHA, session ID, threat assumptions, findings,
 dispositions, regression IDs, and gate outcome. Link that record from the
 tactical index or gate as appropriate. The
 [M-1 record](tactical/001-pre-m0-design.md#adversarial-review-record) is an

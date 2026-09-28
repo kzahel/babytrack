@@ -49,10 +49,10 @@ def find(target: str, label: str, *, scroll: bool = False, occurrence: int = 0,
     deadline = time.monotonic() + (100 if scroll else 20)
     scroll_count = 0
     visible: list[str] = []
-    size = re.search(r"(\d+)x(\d+)", adb(target, "shell", "wm", "size"))
-    if size is None:
+    sizes = re.findall(r"(\d+)x(\d+)", adb(target, "shell", "wm", "size"))
+    if not sizes:
         raise RuntimeError("Android display size unavailable")
-    width, height = map(int, size.groups())
+    width, height = map(int, sizes[-1])
     while time.monotonic() < deadline:
         root = nodes(target)
         visible = [node.attrib["text"] for node in root.iter("node") if node.attrib.get("text")]
@@ -75,9 +75,10 @@ def find(target: str, label: str, *, scroll: bool = False, occurrence: int = 0,
             down = scroll_count < 25
             adb(
                 target, "shell", "input", "swipe", str(width // 2),
-                str(height * 4 // 5 if down else height * 3 // 10), str(width // 2),
-                str(height * 3 // 10 if down else height * 4 // 5), "360",
+                str(height * 7 // 10 if down else height * 4 // 10), str(width // 2),
+                str(height * 4 // 10 if down else height * 7 // 10), "360",
             )
+            time.sleep(0.25)
             scroll_count += 1
         else:
             time.sleep(0.4)
@@ -93,13 +94,23 @@ def tap(target: str, label: str, *, scroll: bool = False, occurrence: int = 0,
 
 
 def scroll_up(target: str, times: int = 4) -> None:
-    size = re.search(r"(\d+)x(\d+)", adb(target, "shell", "wm", "size"))
-    if size is None:
+    sizes = re.findall(r"(\d+)x(\d+)", adb(target, "shell", "wm", "size"))
+    if not sizes:
         raise RuntimeError("Android display size unavailable")
-    width, height = map(int, size.groups())
+    width, height = map(int, sizes[-1])
     for _ in range(times):
         adb(target, "shell", "input", "swipe", str(width // 2),
             str(height * 3 // 10), str(width // 2), str(height * 4 // 5), "300")
+
+
+def scroll_dialog_down(target: str, times: int = 2) -> None:
+    sizes = re.findall(r"(\d+)x(\d+)", adb(target, "shell", "wm", "size"))
+    if not sizes:
+        raise RuntimeError("Android display size unavailable")
+    width, height = map(int, sizes[-1])
+    for _ in range(times):
+        adb(target, "shell", "input", "swipe", str(width // 2),
+            str(height * 62 // 100), str(width // 2), str(height * 38 // 100), "350")
 
 
 def dismiss_keyboard(target: str) -> None:
@@ -124,14 +135,14 @@ def main() -> None:
     dismiss_keyboard(target)
     tap(target, "Add child", scroll=True)
     find(target, "UITestChild", scroll=True)
+    tap(target, "View timeline", scroll=True)
+    find(target, "No entries yet.")
+    scroll_up(target, 12)
     tap(target, "Bottle", scroll=True)
     find(target, "Bottle amount")
     scroll_up(target, 12)
     tap(target, "Sleep", scroll=True)
     find(target, "Minutes slept")
-    scroll_up(target, 12)
-    tap(target, "View timeline", scroll=True)
-    find(target, "No entries yet.")
     scroll_up(target, 12)
     tap(target, "Wet now")
     find(target, "Diaper · Wet", scroll=True)
@@ -268,7 +279,8 @@ def main() -> None:
     tap(target, "Save changes", scroll=True)
     find(target, "Growth · 4.3 kg · 54 cm · head 35 cm", scroll=True)
     tap(target, "Edit growth", scroll=True)
-    tap(target, "35", scroll=True)
+    scroll_dialog_down(target)
+    tap(target, "35")
     adb(target, "shell", "input", "keyevent", "123")
     for _ in range(2):
         adb(target, "shell", "input", "keyevent", "67")

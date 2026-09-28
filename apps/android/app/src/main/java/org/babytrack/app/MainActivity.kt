@@ -1317,6 +1317,17 @@ private fun TrackerScreen(
                     )
                 }
                 if (child != null) {
+                    OutlinedButton(onClick = {
+                        scope.launch { scrollState.animateScrollTo(timelineTop) }
+                    }) { Text(stringResource(R.string.view_timeline)) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = {
+                            scope.launch { scrollState.animateScrollTo(bottleTop) }
+                        }) { Text(stringResource(R.string.jump_to_bottle)) }
+                        OutlinedButton(onClick = {
+                            scope.launch { scrollState.animateScrollTo(sleepTop) }
+                        }) { Text(stringResource(R.string.jump_to_sleep)) }
+                    }
                     if (childRename == null) {
                         OutlinedButton(onClick = { childRename = child.name }) {
                             Text(stringResource(R.string.rename_child))
@@ -1415,17 +1426,6 @@ private fun TrackerScreen(
                 }
 
                 if (child != null) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = {
-                            scope.launch { scrollState.animateScrollTo(bottleTop) }
-                        }) { Text(stringResource(R.string.jump_to_bottle)) }
-                        OutlinedButton(onClick = {
-                            scope.launch { scrollState.animateScrollTo(sleepTop) }
-                        }) { Text(stringResource(R.string.jump_to_sleep)) }
-                    }
-                    OutlinedButton(onClick = {
-                        scope.launch { scrollState.animateScrollTo(timelineTop) }
-                    }) { Text(stringResource(R.string.view_timeline)) }
                     Text(stringResource(R.string.log_time_title), style = MaterialTheme.typography.titleMedium)
                     Text(if (logAtMs == null) stringResource(R.string.log_time_now)
                         else stringResource(R.string.log_time_selected,

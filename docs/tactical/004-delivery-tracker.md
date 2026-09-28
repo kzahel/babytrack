@@ -273,6 +273,17 @@ scrolls to it before checking visibility and selection. The complete
 14-case relay suite passes locally with this change. A new remote run is
 still required.
 
+Run `36400724335` at `1afc2fd` passed Rust, browser, native bindings, Android
+APK, and all 14 real-relay Android tests. Its headed tracker smoke stopped
+while searching for a head-circumference value inside the scrollable growth
+edit dialog on the CI emulator. The script now scrolls inside that dialog.
+A shorter local emulator viewport exposed that the script read the physical
+screen size instead of its active override; the helper now uses the effective
+size. A 1080×1600 local replay passed the child shortcuts, growth correction,
+and attached-note checks, then was stopped during later sleep checks already
+covered by the earlier full-height run. The next remote run remains to be
+verified.
+
 For each gate, the owning tactical records the fixed commit, local commands,
 observed CI run, scenario IDs, security session/disposition if applicable,
 and remaining limits. Mark an unobserved remote run as unverified.

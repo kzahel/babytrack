@@ -62,9 +62,14 @@ uploads an encrypted child after reload. Its earlier admission controls are
 fixture-fed. A separate browser invitation path now verifies a live relay
 prefix, saves a Rust-built claim and device keys before POST, retries
 the exact candidate after a lost result, and polls as the pending device.
-Later epochs, browser challenge/proof
-transport, rejection repair,
-and full CLI/browser convergence remain open. A test-only native CLI driver now verifies the browser's accepted
+Later epochs, live browser holder challenge and grant, rejection repair, live
+holder-to-browser handoff, and full CLI/browser convergence remain open.
+The wasm proof builder now
+checks a relay-fetched committed challenge object and matches the published
+proof bytes from fixture-fed prior controls. A separate browser case saves
+and posts a new proof after a fixture claim and real relay challenge, then
+retries the exact proof after a lost result and reload.
+A test-only native CLI driver now verifies the browser's accepted
 batch and sends an encrypted child back through the same relay; Chromium
 projects it after reload. The first manager credential
 persists in IndexedDB for this smoke.

@@ -34,6 +34,14 @@ const oneEntryPage = (familyHex, kind, committed) => Buffer.concat([
   Buffer.from([3, 1, 4, 0x81, 0x83, 2, kind]), cborBytes(committed),
   Buffer.from([5, 2, 6, 0xf4]),
 ]);
+const controlPrefixPage = (familyHex, controls) => Buffer.concat([
+  Buffer.from([0xa6, 1, 1, 2, 0x50]), Buffer.from(familyHex, 'hex'),
+  Buffer.from([3, 0, 4, 0x80 + controls.length]),
+  ...controls.map((value, index) => Buffer.concat([
+    Buffer.from([0x83, index + 1, 1]), cborBytes(Buffer.from(value, 'hex')),
+  ])),
+  Buffer.from([5, controls.length, 6, 0xf4]),
+]);
 const issueBytes = Buffer.from(chain.transitions[1].committed_cbor_hex, 'hex');
 const controlPage = oneEntryPage(chain.test_only_inputs.family_id_hex, 1, issueBytes);
 const batchPage = oneEntryPage(genesis.inputs.family_id_hex, 2,
@@ -44,6 +52,21 @@ const batchResult = Buffer.concat([
 ]);
 const admission = chain.transitions[5];
 const grantIdHex = admission.manifest.find((item) => item[0] === 4)[1];
+const proofTransition = chain.transitions[4];
+const fixtureClaim = chain.transitions[2];
+const claimCandidateHex = Buffer.concat([
+  Buffer.from([0xa2, 1]), Buffer.from(fixtureClaim.unsigned_cbor_hex, 'hex'),
+  Buffer.from([2]), Buffer.from(fixtureClaim.signatures_cbor_hex, 'hex'),
+]).toString('hex');
+const claimCommittedResponseHex = Buffer.concat([
+  Buffer.from([0xa2, 1, 1, 2]),
+  cborBytes(Buffer.from(fixtureClaim.committed_cbor_hex, 'hex')),
+]).toString('hex');
+const proofTransitionIdHex = proofTransition.unsigned_cbor_hex.match(/0550([0-9a-f]{32})/)[1];
+const proofCandidateHex = Buffer.concat([
+  Buffer.from([0xa2, 1]), Buffer.from(proofTransition.unsigned_cbor_hex, 'hex'),
+  Buffer.from([2]), Buffer.from(proofTransition.signatures_cbor_hex, 'hex'),
+]).toString('hex');
 const input = {
   familyHex: fixtures.base.family_id_hex,
   otherFamilyHex: `ff${fixtures.base.family_id_hex.slice(2)}`,
@@ -73,6 +96,15 @@ const input = {
   recipientSeedHex: chain.test_only_inputs.recipient_sign_seed_hex,
   recipientAgreementHex: chain.test_only_inputs.recipient_agreement_seed_hex,
   admissionControlsHex: chain.transitions.slice(1, 6).map((row) => row.committed_cbor_hex),
+  challengePrefixPageHex: controlPrefixPage(chain.test_only_inputs.family_id_hex,
+    chain.transitions.slice(0, 4).map((row) => row.committed_cbor_hex)).toString('hex'),
+  issuePrefixPageHex: controlPrefixPage(chain.test_only_inputs.family_id_hex,
+    chain.transitions.slice(0, 2).map((row) => row.committed_cbor_hex)).toString('hex'),
+  claimCandidateHex,
+  claimCommittedResponseHex,
+  challengeObjectIdHex: chain.transitions[3].manifest.find((item) => item[0] === 2)[1],
+  proofTransitionIdHex,
+  proofCandidateHex,
   grantIdHex,
   recipientOperationHex: chain.batch.operation_cbor_hex,
   promotionIdHex: apiGenesis.inputs.promotion_id_hex,
@@ -177,6 +209,7 @@ async function run() {
   let relay;
   let recipientRelay;
   let invitationRelay;
+  let challengeRelay;
   try {
     relay = await startRelay();
     relayPort = relay.port;
@@ -571,8 +604,127 @@ async function run() {
       pending: { cursor: 3, hasMore: false },
       pendingRetry: { cursor: 3, hasMore: false },
       wrongOriginRejected: true, tamperRejected: true });
+    challengeRelay = await startRelay(true, 4);
+    relayPort = challengeRelay.port;
+    const preparedProof = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g),
+        (pair) => parseInt(pair, 16));
+      const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      const store = await InvitationStore.open(wasm, data.fragment, 'babytrack-proof-smoke');
+      const verifier = new wasm.WasmInvitation(data.fragment);
+      verifier.accept_control_page(bytes(data.issuePrefixPageHex), 0n);
+      verifier.accept_control_response(bytes(data.claimCommittedResponseHex),
+        bytes(data.claimCandidateHex));
+      const write = store.database.transaction(['invitations', 'pages', 'claims'], 'readwrite');
+      const done = new Promise((resolve, reject) => {
+        write.oncomplete = resolve;
+        write.onerror = () => reject(write.error);
+        write.onabort = () => reject(write.error);
+      });
+      write.objectStore('pages').add({ fragment: data.fragment, after: 0,
+        bytes: bytes(data.issuePrefixPageHex) });
+      write.objectStore('claims').add({ fragment: data.fragment, priorCursor: 2,
+        candidate: bytes(data.claimCandidateHex),
+        committedResponse: bytes(data.claimCommittedResponseHex),
+        deviceId: bytes(data.recipientDeviceHex),
+        signingSeed: bytes(data.recipientSeedHex),
+        agreementPrivate: bytes(data.recipientAgreementHex) });
+      write.objectStore('invitations').put({ fragment: data.fragment, cursor: 3,
+        head: hex(verifier.head_hash()), linkedIssue: true });
+      await done;
+      verifier.free();
+      const pulled = await store.pullPending(relayGet);
+      const proof = await store.prepareProof(relayGet);
+      const repeated = await store.prepareProof(relayGet);
+      store.close();
+      return { pulled, same: hex(proof.candidate) === hex(repeated.candidate),
+        candidateLength: proof.candidate.length };
+    }, { ...input, fragment: challengeRelay.fragment });
+    assert.deepEqual(preparedProof.pulled, { cursor: 4, hasMore: false });
+    assert.equal(preparedProof.same, true);
+    assert.ok(preparedProof.candidateLength > 0);
+    await page.reload();
+    const lostProof = await page.evaluate(async (fragment) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { relayPostControl } = await import('/relay-post.js');
+      const store = await InvitationStore.open(wasm, fragment, 'babytrack-proof-smoke');
+      let lost = false;
+      try {
+        await store.submitProof(async (path, candidate) => {
+          await relayPostControl(path, candidate);
+          throw new Error('simulated lost proof response');
+        });
+      } catch { lost = true; }
+      const pending = await store.savedProof();
+      store.close();
+      return { lost, pending: !!pending && !pending.committedResponse };
+    }, challengeRelay.fragment);
+    assert.deepEqual(lostProof, { lost: true, pending: true });
+    await page.reload();
+    const confirmedProof = await page.evaluate(async (fragment) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { relayPostControl } = await import('/relay-post.js');
+      const { relayGet } = await import('/relay-get.js');
+      const store = await InvitationStore.open(wasm, fragment, 'babytrack-proof-smoke');
+      const cursor = await store.submitProof(relayPostControl);
+      const polled = await store.pullPending(relayGet);
+      const verifier = await store.load();
+      const replayed = Number(verifier.control_cursor());
+      verifier.free();
+      store.close();
+      return { cursor, polled, replayed };
+    }, challengeRelay.fragment);
+    assert.deepEqual(confirmedProof,
+      { cursor: 5, polled: { cursor: 5, hasMore: false }, replayed: 5 });
     recipientRelay = await startRelay(true);
     relayPort = recipientRelay.port;
+    const browserProof = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { relayGet } = await import('/relay-get.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g),
+        (pair) => parseInt(pair, 16));
+      const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      const invitation = new wasm.WasmInvitation(data.fragment);
+      invitation.accept_control_page(bytes(data.challengePrefixPageHex), 0n);
+      const objectId = invitation.challenge_hpke_object_id();
+      const path = `/v1/families/${data.familyHex}/objects/${hex(objectId)}`;
+      const auth = invitation.sign_challenge_object_read(objectId,
+        bytes(data.recipientDeviceHex), bytes(data.recipientSeedHex),
+        crypto.getRandomValues(new Uint8Array(16)));
+      const object = await relayGet(path, auth);
+      const candidate = invitation.prepare_proof(bytes(data.recipientDeviceHex),
+        bytes(data.recipientSeedHex), bytes(data.recipientAgreementHex), object,
+        bytes(data.proofTransitionIdHex));
+      let wrongKeyRejected = false;
+      try {
+        invitation.prepare_proof(bytes(data.recipientDeviceHex),
+          bytes(data.recipientSeedHex), new Uint8Array(32), object,
+          bytes(data.proofTransitionIdHex));
+      } catch { wrongKeyRejected = true; }
+      const changed = Uint8Array.from(object);
+      changed[changed.length - 1] ^= 1;
+      let wrongObjectRejected = false;
+      try {
+        invitation.prepare_proof(bytes(data.recipientDeviceHex),
+          bytes(data.recipientSeedHex), bytes(data.recipientAgreementHex), changed,
+          bytes(data.proofTransitionIdHex));
+      } catch { wrongObjectRejected = true; }
+      invitation.free();
+      return { objectId: hex(objectId), candidate: hex(candidate),
+        wrongKeyRejected, wrongObjectRejected };
+    }, { ...input, fragment: recipientRelay.fragment });
+    assert.deepEqual(browserProof, { objectId: input.challengeObjectIdHex,
+      candidate: input.proofCandidateHex, wrongKeyRejected: true,
+      wrongObjectRejected: true });
     const admittedBrowser = await page.evaluate(async (data) => {
       const wasm = await import('/babytrack_core_wasm.js');
       await wasm.default('/babytrack_core_wasm_bg.wasm');
@@ -997,7 +1149,7 @@ async function run() {
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));
-    for (const instance of [recipientRelay, invitationRelay, relay]) {
+    for (const instance of [recipientRelay, challengeRelay, invitationRelay, relay]) {
       if (!instance) continue;
       if (instance.child.exitCode == null) {
         const stopped = new Promise((resolve) => instance.child.once('exit', resolve));

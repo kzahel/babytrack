@@ -562,7 +562,7 @@ An independent browser manager store at the same verified authority head
 pulls that recipient batch from the relay and reads the child name. This
 proves a recipient-authored encrypted event reaches another device without
 sharing the recipient's IndexedDB state. The admission controls and keys
-are still fixture-provisioned. Browser claim/proof transport, later epochs,
+are still fixture-provisioned. A fully live browser claim-to-grant flow, later epochs,
 a native CLI recipient exchange, and full mixed-client convergence remain
 open.
 The core now runs eight deterministic seeded encrypted logs with 64 child
@@ -691,7 +691,7 @@ Chromium fetches and projects the child after reload. Both use the same
 fixture manager credential. A second real-relay case uses an independently
 admitted browser recipient credential for a signed grant fetch and encrypted
 upload after reload. Its admission controls are fixture-fed, so browser
-claim/proof transport, rotations, queued-edit repair after rejection, and
+live browser claim-to-grant flow, rotations, queued-edit repair after rejection, and
 durable independent CLI/browser convergence remain open.
 The browser now also opens a real invitation fragment, signs a bounded
 public-control GET with its invitation credential, and verifies the linked
@@ -702,13 +702,25 @@ a changed relay origin or tampered saved page. The same browser case now
 generates its device keys and exact claim through a wasm-enabled Rust builder,
 saves them before POST, and verifies the relay-signed committed claim after
 reload. A simulated lost commit response retries the saved bytes and reaches
-the same committed cursor. Browser challenge/proof transport and handoff into
-an admitted data view remain open; the admitted recipient case still starts
+the same committed cursor. Live holder challenge and handoff into
+an admitted browser data view remain open; the admitted recipient case still starts
 from fixture-fed controls.
 After claim commit, the browser switches from the consumed invitation
 credential to its saved pending-device signing key for exact control reads.
 The real relay accepts repeated empty pending polls after reload without
 duplicating a page; challenge delivery and proof remain the next slice.
+The recipient proof builder is now a pure Rust core path shared by native
+and wasm. A browser case replays the published signed challenge prefix,
+fetches the committed HPKE object from a real relay with its device key,
+checks the object against the signed manifest, and produces the published
+proof candidate bytes. A wrong agreement key fails before any candidate is
+made. This case uses fixture-fed preceding controls; saving and posting the
+proof from a live browser claim remains open. A second disposable relay stops
+after a fixture claim and holder challenge. Chromium saves that fixture claim,
+pulls the challenge with its pending-device credential, saves a newly signed
+proof candidate before POST, and retries identical bytes after a lost result
+and reload. The verified proof reaches cursor five; holder grant and a single
+fully dynamic browser-to-holder enrollment remain open.
 The first manager's signing and epoch keys persist in IndexedDB and are
 reloaded for this narrow proof.
 An uncertain retry returns those bytes after reopen even if the caller's

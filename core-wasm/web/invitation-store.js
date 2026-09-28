@@ -30,7 +30,7 @@ export class InvitationStore {
         throw new Error('Invitation relay origin differs from this app');
       }
     } finally { probe.free(); }
-    const request = indexedDB.open(name, 2);
+    const request = indexedDB.open(name, 3);
     request.onupgradeneeded = () => {
       const database = request.result;
       if (!database.objectStoreNames.contains('invitations')) {
@@ -42,6 +42,9 @@ export class InvitationStore {
       if (!database.objectStoreNames.contains('claims')) {
         database.createObjectStore('claims', { keyPath: 'fragment' });
       }
+      if (!database.objectStoreNames.contains('proofs')) {
+        database.createObjectStore('proofs', { keyPath: 'fragment' });
+      }
     };
     return new InvitationStore(await result(request), wasm, fragment);
   }
@@ -49,22 +52,28 @@ export class InvitationStore {
   close() { this.database.close(); }
 
   async load() {
-    const read = this.database.transaction(['invitations', 'pages', 'claims'], 'readonly');
+    const read = this.database.transaction(['invitations', 'pages', 'claims', 'proofs'], 'readonly');
     const metadataRequest = read.objectStore('invitations').get(this.fragment);
     const claimRequest = read.objectStore('claims').get(this.fragment);
+    const proofRequest = read.objectStore('proofs').get(this.fragment);
     const pagesRequest = read.objectStore('pages').getAll(
       IDBKeyRange.bound([this.fragment, 0], [this.fragment, Number.MAX_SAFE_INTEGER]),
     );
-    const [metadata, pages, claim] = await Promise.all([
-      result(metadataRequest), result(pagesRequest), result(claimRequest),
+    const [metadata, pages, claim, proof] = await Promise.all([
+      result(metadataRequest), result(pagesRequest), result(claimRequest), result(proofRequest),
     ]);
     const verifier = new this.wasm.WasmInvitation(this.fragment);
     try {
       let claimApplied = false;
+      let proofApplied = false;
       for (const page of pages) {
         if (claim?.committedResponse && !claimApplied && page.after > claim.priorCursor) {
-          verifier.accept_claim_response(claim.committedResponse, claim.candidate);
+          verifier.accept_control_response(claim.committedResponse, claim.candidate);
           claimApplied = true;
+        }
+        if (proof?.committedResponse && !proofApplied && page.after > proof.priorCursor) {
+          verifier.accept_control_response(proof.committedResponse, proof.candidate);
+          proofApplied = true;
         }
         if (Number(verifier.control_cursor()) !== page.after) {
           throw new Error('Saved invitation page order differs');
@@ -72,7 +81,10 @@ export class InvitationStore {
         verifier.accept_control_page(page.bytes, BigInt(page.after));
       }
       if (claim?.committedResponse && !claimApplied) {
-        verifier.accept_claim_response(claim.committedResponse, claim.candidate);
+        verifier.accept_control_response(claim.committedResponse, claim.candidate);
+      }
+      if (proof?.committedResponse && !proofApplied) {
+        verifier.accept_control_response(proof.committedResponse, proof.candidate);
       }
       if (metadata && (Number(verifier.control_cursor()) !== metadata.cursor ||
           hex(verifier.head_hash()) !== metadata.head ||
@@ -157,7 +169,7 @@ export class InvitationStore {
       }
       const family = hex(verifier.family_id());
       const response = await post(`/v1/families/${family}/control`, claim.candidate);
-      verifier.accept_claim_response(response, claim.candidate);
+      verifier.accept_control_response(response, claim.candidate);
       const write = this.database.transaction(['claims', 'invitations'], 'readwrite');
       const done = completed(write);
       write.objectStore('claims').put({ ...claim, committedResponse: Uint8Array.from(response) });
@@ -166,6 +178,59 @@ export class InvitationStore {
         linkedIssue: verifier.linked_issue() });
       await done;
       return { cursor: Number(verifier.control_cursor()), deviceId: claim.deviceId };
+    } finally { verifier.free(); }
+  }
+
+  async savedProof() {
+    const read = this.database.transaction('proofs', 'readonly');
+    return result(read.objectStore('proofs').get(this.fragment));
+  }
+
+  async prepareProof(get) {
+    const prior = await this.savedProof();
+    if (prior) return prior;
+    const claim = await this.savedClaim();
+    if (!claim?.committedResponse) throw new Error('Committed claim required for proof');
+    const verifier = await this.load();
+    try {
+      const objectId = verifier.challenge_hpke_object_id();
+      const objectHex = hex(objectId);
+      const family = hex(verifier.family_id());
+      const path = `/v1/families/${family}/objects/${objectHex}`;
+      const auth = verifier.sign_challenge_object_read(objectId, claim.deviceId,
+        claim.signingSeed, crypto.getRandomValues(new Uint8Array(16)));
+      const response = await get(path, auth);
+      const transitionId = randomV4();
+      const candidate = verifier.prepare_proof(claim.deviceId, claim.signingSeed,
+        claim.agreementPrivate, response, transitionId);
+      const proof = { fragment: this.fragment, candidate: Uint8Array.from(candidate),
+        transitionId, objectResponse: Uint8Array.from(response),
+        priorCursor: Number(verifier.control_cursor()) };
+      const write = this.database.transaction('proofs', 'readwrite');
+      const done = completed(write);
+      write.objectStore('proofs').add(proof);
+      await done;
+      return proof;
+    } finally { verifier.free(); }
+  }
+
+  async submitProof(post) {
+    const proof = await this.savedProof();
+    if (!proof) throw new Error('Proof must be saved before posting');
+    const verifier = await this.load();
+    try {
+      if (proof.committedResponse) return Number(verifier.control_cursor());
+      const family = hex(verifier.family_id());
+      const response = await post(`/v1/families/${family}/control`, proof.candidate);
+      verifier.accept_control_response(response, proof.candidate);
+      const write = this.database.transaction(['proofs', 'invitations'], 'readwrite');
+      const done = completed(write);
+      write.objectStore('proofs').put({ ...proof, committedResponse: Uint8Array.from(response) });
+      write.objectStore('invitations').put({ fragment: this.fragment,
+        cursor: Number(verifier.control_cursor()), head: hex(verifier.head_hash()),
+        linkedIssue: verifier.linked_issue() });
+      await done;
+      return Number(verifier.control_cursor());
     } finally { verifier.free(); }
   }
 

@@ -311,6 +311,14 @@ candidate after reload. Browser challenge/proof transport is still open.
 Once the claim commits, subsequent browser control reads use the saved
 pending-device key and continue the same verified sparse cursor. Repeated
 empty polls leave the durable prefix unchanged.
+The native and wasm proof builder share the Rust challenge verification and
+candidate construction path. Wasm obtains the HPKE object through a signed
+device read, checks the relay object wrapper against the committed manifest,
+then opens it and signs proof in Rust. The browser byte fixture covers this
+builder. IndexedDB now saves the exact browser proof before POST and checks
+the signed commit after a lost-response retry and reload. The real-relay
+proof case starts from a fixture-provided claim; live holder handoff after a
+browser-generated claim is still open.
 IndexedDB keeps one exact sealed batch and an ordered draft queue. After
 signed acceptance, Rust seals the next draft against the new verified head;
 one IndexedDB transaction saves those exact bytes and removes the draft.

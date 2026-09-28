@@ -14,7 +14,7 @@ use babytrack_core::{
     crypto,
     operation::Operation,
     projection::LocalProjection,
-    ready_replay,
+    proof, ready_replay,
     sync_wire::{self, LogPage},
 };
 use wasm_bindgen::prelude::*;
@@ -143,6 +143,91 @@ impl WasmInvitation {
         .map_err(debug_error)
     }
 
+    pub fn challenge_hpke_object_id(&self) -> Result<Vec<u8>, JsError> {
+        Ok(self
+            .chain
+            .as_ref()
+            .and_then(|chain| chain.latest_challenge(&self.bootstrap.invitation_id()))
+            .ok_or_else(|| JsError::new("no verified challenge"))?
+            .hpke_object_id()
+            .to_vec())
+    }
+
+    pub fn sign_challenge_object_read(
+        &self,
+        object_id: &[u8],
+        device_id: &[u8],
+        signing_seed: &[u8],
+        request_id: &[u8],
+    ) -> Result<Vec<u8>, JsError> {
+        let id: [u8; 16] = fixed(object_id, "challenge object ID")?;
+        if self.challenge_hpke_object_id()? != id {
+            return Err(JsError::new("object is not the committed challenge"));
+        }
+        let family: String = self
+            .bootstrap
+            .family_id()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        let object: String = id.iter().map(|byte| format!("{byte:02x}")).collect();
+        let path = format!("/v1/families/{family}/objects/{object}");
+        sync_wire::sign_get_with_id(
+            self.bootstrap.family_id(),
+            self.chain
+                .as_ref()
+                .ok_or_else(|| JsError::new("genesis absent"))?
+                .relay_id(),
+            fixed(device_id, "pending device ID")?,
+            &fixed(signing_seed, "pending signing seed")?,
+            &path,
+            fixed(request_id, "request ID")?,
+        )
+        .map_err(debug_error)
+    }
+
+    pub fn prepare_proof(
+        &self,
+        device_id: &[u8],
+        signing_seed: &[u8],
+        agreement_private: &[u8],
+        object_response: &[u8],
+        transition_id: &[u8],
+    ) -> Result<Vec<u8>, JsError> {
+        let object = self.verified_challenge_object(object_response)?;
+        Ok(proof::build_candidate(
+            self.chain
+                .as_ref()
+                .ok_or_else(|| JsError::new("genesis absent"))?,
+            self.bootstrap.invitation_id(),
+            fixed(device_id, "pending device ID")?,
+            &fixed(signing_seed, "pending signing seed")?,
+            &fixed(agreement_private, "agreement private key")?,
+            &object,
+            fixed(transition_id, "proof transition ID")?,
+        )
+        .map_err(debug_error)?
+        .0)
+    }
+
+    pub fn verified_challenge_object(&self, response: &[u8]) -> Result<Vec<u8>, JsError> {
+        let id: [u8; 16] = self
+            .challenge_hpke_object_id()?
+            .try_into()
+            .map_err(|_| JsError::new("challenge object ID length"))?;
+        for control in &self.controls {
+            if ready_replay::manifest_objects(control)
+                .map_err(debug_error)?
+                .iter()
+                .any(|object| object.id == id)
+            {
+                return ready_replay::verified_object_from_response(control, id, response)
+                    .map_err(debug_error);
+            }
+        }
+        Err(JsError::new("challenge object missing from saved controls"))
+    }
+
     /// The caller saves this exact candidate and its four secrets before POST.
     pub fn prepare_claim(
         &self,
@@ -172,9 +257,17 @@ impl WasmInvitation {
         .map_err(debug_error)
     }
 
-    /// A 200 response alone is not proof: require the relay-signed committed
-    /// control to contain the exact candidate saved before the POST.
+    /// A 200 response alone is insufficient: require the relay-signed
+    /// committed control to contain the exact saved candidate.
     pub fn accept_claim_response(
+        &mut self,
+        response: &[u8],
+        candidate: &[u8],
+    ) -> Result<Vec<u8>, JsError> {
+        self.accept_control_response(response, candidate)
+    }
+
+    pub fn accept_control_response(
         &mut self,
         response: &[u8],
         candidate: &[u8],
@@ -188,19 +281,19 @@ impl WasmInvitation {
         )
         .map_err(debug_error)?;
         let Value::Map(wrapper) = value else {
-            return Err(JsError::new("claim result not map"));
+            return Err(JsError::new("control result not map"));
         };
         if wrapper.len() != 2 || wrapper[0] != (1, Value::Integer(1)) || wrapper[1].0 != 2 {
-            return Err(JsError::new("claim result shape invalid"));
+            return Err(JsError::new("control result shape invalid"));
         }
         let Value::Bytes(committed) = &wrapper[1].1 else {
-            return Err(JsError::new("claim result missing committed control"));
+            return Err(JsError::new("control result missing committed control"));
         };
         let Value::Map(root) = cbor::decode(committed).map_err(debug_error)? else {
-            return Err(JsError::new("committed claim not map"));
+            return Err(JsError::new("committed control not map"));
         };
         if root.len() != 4 {
-            return Err(JsError::new("committed claim width invalid"));
+            return Err(JsError::new("committed control width invalid"));
         }
         let extracted = cbor::encode(&Value::Map(vec![
             (1, root[0].1.clone()),
@@ -208,7 +301,9 @@ impl WasmInvitation {
         ]))
         .map_err(debug_error)?;
         if extracted != candidate {
-            return Err(JsError::new("committed claim differs from saved candidate"));
+            return Err(JsError::new(
+                "committed control differs from saved candidate",
+            ));
         }
         let mut chain = self
             .chain

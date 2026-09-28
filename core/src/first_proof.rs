@@ -2,10 +2,10 @@
 
 use crate::{
     cbor::{self, Value},
-    control_build,
     control_chain::{self, ControlChain},
     crypto,
     enrollment::{self, EnrollmentAttempt},
+    proof,
     shared_history::{self, PublicHistorySession},
     sqlite_store::{self, FamilyHandle, PreparedControlRow, SqliteStore},
 };
@@ -16,6 +16,7 @@ pub enum Error {
     Chain(control_chain::Error),
     Crypto(crypto::Error),
     Enrollment(enrollment::Error),
+    Proof(proof::Error),
     History(shared_history::Error),
     Random(getrandom::Error),
     Store(sqlite_store::Error),
@@ -41,6 +42,11 @@ impl From<enrollment::Error> for Error {
         Self::Enrollment(v)
     }
 }
+impl From<proof::Error> for Error {
+    fn from(value: proof::Error) -> Self {
+        Self::Proof(value)
+    }
+}
 impl From<shared_history::Error> for Error {
     fn from(v: shared_history::Error) -> Self {
         Self::History(v)
@@ -49,15 +55,6 @@ impl From<shared_history::Error> for Error {
 impl From<sqlite_store::Error> for Error {
     fn from(v: sqlite_store::Error) -> Self {
         Self::Store(v)
-    }
-}
-impl From<control_build::Error> for Error {
-    fn from(v: control_build::Error) -> Self {
-        match v {
-            control_build::Error::Cbor(error) => Self::Cbor(error),
-            control_build::Error::Crypto(error) => Self::Crypto(error),
-            control_build::Error::Invalid(reason) => Self::Invalid(reason),
-        }
     }
 }
 
@@ -218,63 +215,24 @@ fn build(
     enrollment: &EnrollmentAttempt,
     transition_id: [u8; 16],
 ) -> Result<(Vec<u8>, [u8; 64]), Error> {
-    let family = enrollment.family();
     let challenge = chain
         .latest_challenge(&enrollment.invitation_id())
         .ok_or(Error::Invalid("no verified challenge"))?;
-    let objects = store.shared_objects(family)?;
-    let hpke_object = objects
-        .iter()
-        .find(|(id, _)| *id == challenge.hpke_object_id())
+    let object_id = challenge.hpke_object_id();
+    let hpke_object = store
+        .shared_objects(enrollment.family())?
+        .into_iter()
+        .find(|(id, _)| *id == object_id)
         .ok_or(Error::Invalid("challenge HPKE object not downloaded"))?;
-    let proof = enrollment.prove_challenge(challenge, &hpke_object.1)?;
-    let Value::Map(mut state) = cbor::decode(&chain.state_bytes()?)? else {
-        return Err(Error::Invalid("auth state not map"));
-    };
-    let Value::Array(pending) = &mut state[5].1 else {
-        return Err(Error::Invalid("pending not array"));
-    };
-    let row = pending
-        .iter_mut()
-        .find(|item| {
-            let Value::Array(fields) = item else {
-                return false;
-            };
-            fields.len() == 9
-                && fixed::<16>(&fields[0]).ok() == Some(enrollment.invitation_id())
-                && fixed::<16>(&fields[1]).ok() == Some(family.device_id)
-        })
-        .ok_or(Error::Invalid("proof pending target absent"))?;
-    let Value::Array(row) = row else {
-        return Err(Error::Invalid("pending row not array"));
-    };
-    if row.len() != 9
-        || fixed::<16>(&row[0])? != enrollment.invitation_id()
-        || fixed::<16>(&row[1])? != family.device_id
-        || row[7] != Value::Bytes(challenge.challenge_id.to_vec())
-    {
-        return Err(Error::Invalid("proof pending context mismatch"));
-    }
-    row[8] = Value::Bytes(proof.proof_hash.to_vec());
-    let delta = Value::Map(vec![
-        (1, Value::Bytes(enrollment.invitation_id().to_vec())),
-        (2, Value::Bytes(family.device_id.to_vec())),
-        (3, Value::Bytes(challenge.challenge_hash.to_vec())),
-        (4, Value::Bytes(proof.signature.to_vec())),
-    ]);
-    let candidate = control_build::candidate(
-        family,
-        chain.relay_id(),
-        chain.head_hash(),
-        transition_id,
-        5,
-        delta,
-        Value::Map(state),
-        chain.epoch()?,
-        &[],
+    Ok(proof::build_candidate(
+        chain,
+        enrollment.invitation_id(),
+        enrollment.family().device_id,
         &enrollment.signing_seed(),
-    )?;
-    Ok((candidate, proof.signature))
+        &enrollment.agreement_private(),
+        &hpke_object.1,
+        transition_id,
+    )?)
 }
 fn secret_aad(
     family: FamilyHandle,

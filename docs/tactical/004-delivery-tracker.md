@@ -66,6 +66,9 @@ multi-segment breast-feed, pumping logs, and note, bottle, diaper, pumping,
 and medication corrections, plus child name and growth-detail, growth-entry,
 and completed sleep corrections, runs
 alongside M0 on emulators; its physical phone gates remain open.
+Growth entry and correction now accept the published mass and length units,
+default to kg/cm, and retain the entered form through local recovery and
+two-device encrypted sync.
 The diaper form includes wet, dirty, both, and dry logging choices.
 The top bar names the selected Family and child and has a wet-diaper-now shortcut above the long
 logging form; the Android UI smoke uses it before correcting that entry.
@@ -251,6 +254,14 @@ Remote runs `36309186029` at `88380d8`, `36309474621` at `148d53b`,
 `36311858889` at `c195175`, and `36312097144` at `efc7b07` passed every required job, including the
 real-relay emulator. The public authority replay and shared client binding
 commits also have local Rust and two-emulator proof.
+
+Run `36393612637` at `39b5edb` passed Rust, native bindings, browser, and
+Android APK jobs, but the Android relay job failed one UI assertion. The
+single-test run had one saved recipient, while the full 14-test suite had
+several, so the new pending-join check assumed the wrong chip number. The
+test now finds and selects its own visible saved recipient. All 14 relay
+instrumentation cases pass together locally after that correction; the
+next remote run must verify it.
 
 For each gate, the owning tactical records the fixed commit, local commands,
 observed CI run, scenario IDs, security session/disposition if applicable,

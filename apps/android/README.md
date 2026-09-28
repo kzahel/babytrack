@@ -1,9 +1,10 @@
 # Android development build
 
 The debug app logs a Family's children, feeds, diapers, sleep, pumping,
-growth, medication, temperature, solids, and notes through the shared Rust
-core. Local tracking works without a relay or account. A Family can later be
-shared through the development relay, and an invited device gets the same
+growth in g/kg/lb/oz and mm/cm/in, medication, temperature, solids, and
+notes through the shared Rust core. Local tracking works without a relay or
+account. A Family can later be shared through the development relay, and an
+invited device gets the same
 tracker after its grant and history are verified. The app saves readable or
 password-protected backups and restores either into a new local Family.
 

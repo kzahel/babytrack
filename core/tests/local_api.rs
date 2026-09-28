@@ -2,7 +2,8 @@
 
 use babytrack_core::{
     local_api::{
-        ActivityTime, BreastSegment, LocalRepository, PumpAmounts, temperature_c_operation,
+        ActivityTime, BreastSegment, GrowthInput, LocalRepository, MeasurementInput, PumpAmounts,
+        temperature_c_operation,
     },
     portable_file::parse_readable,
 };
@@ -130,6 +131,71 @@ fn growth_correction_keeps_activity_and_survives_restore() {
     let csv = String::from_utf8(app.analysis_csv(family).unwrap()).unwrap();
     assert!(csv.contains(",growth_head_mm,"));
     assert!(csv.contains("\"355\""));
+    let backup = app.backup(family, time.saved_at_ms + 2).unwrap();
+    drop(app);
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.timeline(family, child).unwrap(), before);
+    let restored = app.restore(&backup, time.saved_at_ms + 3).unwrap();
+    assert_eq!(app.timeline(restored, child).unwrap(), before);
+}
+
+#[test]
+fn entered_growth_units_round_and_survive_edit_restart_and_restore() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("growth-entered.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    let child = app.add_child(family, "Baby", 1_790_000_000_001).unwrap();
+    let time = ActivityTime {
+        start_utc_ms: 1_790_000_000_002,
+        offset_minutes: 60,
+        saved_at_ms: 1_790_000_000_003,
+    };
+    let measure = |entered: &str, unit| MeasurementInput {
+        entered: entered.to_owned(),
+        unit,
+    };
+    let input = GrowthInput {
+        weight: Some(measure("4.25", 11)),
+        length: Some(measure("52.3", 21)),
+        head: Some(measure("13.5", 22)),
+    };
+    let id = app.log_growth_entered(family, child, &input, time).unwrap();
+    let first = &app.timeline(family, child).unwrap()[0];
+    assert_eq!(first.growth_weight_g, Some(4_250));
+    assert_eq!(first.growth_weight_entered.as_deref(), Some("4.25"));
+    assert_eq!(first.growth_weight_unit, Some(11));
+    assert_eq!(first.growth_length_mm, Some(523));
+    assert_eq!(first.growth_length_entered.as_deref(), Some("52.3"));
+    assert_eq!(first.growth_length_unit, Some(21));
+    assert_eq!(first.growth_head_mm, Some(343));
+    assert_eq!(first.growth_head_unit, Some(22));
+    let invalid = GrowthInput {
+        weight: Some(measure("4.25", 21)),
+        length: None,
+        head: None,
+    };
+    assert!(
+        app.log_growth_entered(family, child, &invalid, time)
+            .is_err()
+    );
+    let correction = GrowthInput {
+        weight: Some(measure("9", 12)),
+        length: None,
+        head: Some(measure("35.6", 21)),
+    };
+    app.edit_growth_entered(family, child, id, &correction, time.saved_at_ms + 1)
+        .unwrap();
+    let before = app.timeline(family, child).unwrap();
+    assert_eq!(before.len(), 1);
+    assert_eq!(before[0].id, id);
+    assert_eq!(before[0].growth_weight_g, Some(4_082));
+    assert_eq!(before[0].growth_weight_entered.as_deref(), Some("9"));
+    assert_eq!(before[0].growth_weight_unit, Some(12));
+    assert_eq!(before[0].growth_length_mm, Some(523));
+    assert_eq!(before[0].growth_length_entered.as_deref(), Some("52.3"));
+    assert_eq!(before[0].growth_head_mm, Some(356));
+    assert_eq!(before[0].growth_head_entered.as_deref(), Some("35.6"));
     let backup = app.backup(family, time.saved_at_ms + 2).unwrap();
     drop(app);
     let mut app = LocalRepository::open(&path).unwrap();

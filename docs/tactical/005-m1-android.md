@@ -55,6 +55,12 @@ weight and length, or alone. The core projects and exports that measurement;
 local file restore and encrypted two-device sync check its correction. A
 headed emulator UI run logged and corrected the measurement across restart,
 and a separate run saved a head-only growth entry.
+Growth entry and correction now offer g, kg, lb, and oz for weight and mm,
+cm, and inch for length or head circumference, defaulting to kg and cm.
+Rust converts exact decimals to base units; the timeline retains the entered
+amount and unit. A local core test covers rounding, edit, restart, and file
+restore. The headed Android UI logs and corrects kg/cm across restart, and
+the two-emulator relay flow delivers the entered units in both directions.
 Caregivers can correct weight, length, or head circumference on an existing growth entry through
 the shared Rust operation path. A blank measurement retains its previous
 value; deleting the entry remains the way to remove a measurement. Local
@@ -233,8 +239,8 @@ This is still a development flow, not a released product flow.
 - [x] Create and switch local Families, add/select children, log bottle and
   diaper, and inspect a persisted timeline through the shared Rust core on
   an emulator. The UI smoke runs after restart in CI.
-- [x] Log sleep timers/completed sleep, notes, growth in whole grams and
-  millimetres, and entered Celsius decimals through the local/shared core.
+- [x] Log sleep timers/completed sleep, notes, growth in published mass and
+  length units, and entered Celsius decimals through the local/shared core.
 - [ ] Complete the MVP logging set: growth percentile display and practical
   edits beyond child name and growth details, note, bottle amount, diaper type, solids, growth,
   pumping amounts, medication, completed sleep, and temperature. Multi-segment breast

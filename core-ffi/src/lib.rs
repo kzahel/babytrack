@@ -102,6 +102,33 @@ pub struct PumpInput {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct EnteredMeasureRow {
+    pub entered: String,
+    pub unit: u8,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct GrowthInputRow {
+    pub weight: Option<EnteredMeasureRow>,
+    pub length: Option<EnteredMeasureRow>,
+    pub head: Option<EnteredMeasureRow>,
+}
+
+impl From<GrowthInputRow> for local_api::GrowthInput {
+    fn from(value: GrowthInputRow) -> Self {
+        let into_measure = |measure: EnteredMeasureRow| local_api::MeasurementInput {
+            entered: measure.entered,
+            unit: measure.unit,
+        };
+        Self {
+            weight: value.weight.map(into_measure),
+            length: value.length.map(into_measure),
+            head: value.head.map(into_measure),
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct BreastSegmentRow {
     pub side: u8,
     pub start_utc_ms: i64,
@@ -165,8 +192,14 @@ pub struct ActivityRow {
     pub pump_right_ml: Option<i64>,
     pub pump_total_ml: Option<i64>,
     pub growth_weight_g: Option<i64>,
+    pub growth_weight_entered: Option<String>,
+    pub growth_weight_unit: Option<u8>,
     pub growth_length_mm: Option<i64>,
+    pub growth_length_entered: Option<String>,
+    pub growth_length_unit: Option<u8>,
     pub growth_head_mm: Option<i64>,
+    pub growth_head_entered: Option<String>,
+    pub growth_head_unit: Option<u8>,
     pub temperature_c: Option<String>,
     pub temperature_entered: Option<String>,
     pub temperature_unit: Option<u8>,
@@ -1777,8 +1810,14 @@ impl NativeSharedStore {
                 pump_right_ml: row.pump_right_ml,
                 pump_total_ml: row.pump_total_ml,
                 growth_weight_g: row.growth_weight_g,
+                growth_weight_entered: row.growth_weight_entered,
+                growth_weight_unit: row.growth_weight_unit,
                 growth_length_mm: row.growth_length_mm,
+                growth_length_entered: row.growth_length_entered,
+                growth_length_unit: row.growth_length_unit,
                 growth_head_mm: row.growth_head_mm,
+                growth_head_entered: row.growth_head_entered,
+                growth_head_unit: row.growth_head_unit,
                 temperature_c: row.temperature_c,
                 temperature_entered: row.temperature_entered,
                 temperature_unit: row.temperature_unit,
@@ -2772,6 +2811,43 @@ impl NativeSharedStore {
             .map_err(rejected)
     }
 
+    pub fn edit_shared_growth_entered(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        input: GrowthInputRow,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let projection = ready.projection_with_pending(&store).map_err(rejected)?;
+        let child_id = fixed(&child_id)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(BindingError::InvalidBytes)?;
+        if child.scope != operation::Scope::Child || child.deleted {
+            return Err(BindingError::InvalidBytes);
+        }
+        let activity = projection
+            .record(&fixed(&activity_id)?)
+            .ok_or(BindingError::InvalidBytes)?;
+        let operation = local_api::edit_growth_entered_operation(
+            handle,
+            child_id,
+            activity,
+            &input.into(),
+            saved_at_ms,
+        )
+        .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map(|_| ())
+            .map_err(rejected)
+    }
+
     pub fn edit_shared_pump_amounts(
         &self,
         family: FamilyRef,
@@ -2995,6 +3071,31 @@ impl NativeSharedStore {
             weight_g,
             length_mm,
             head_mm,
+            time.into(),
+        )
+        .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map_err(rejected)?;
+        Ok(id.to_vec())
+    }
+
+    pub fn log_shared_growth_entered(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        input: GrowthInputRow,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let saved_at_ms = time.saved_at_ms;
+        let (id, operation) = local_api::growth_entered_operation(
+            handle,
+            fixed(&child_id)?,
+            &input.into(),
             time.into(),
         )
         .map_err(rejected)?;
@@ -4088,6 +4189,27 @@ impl NativeLocalStore {
             .map_err(rejected)
     }
 
+    pub fn edit_growth_entered(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        input: GrowthInputRow,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        self.repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .edit_growth_entered(
+                family.handle()?,
+                fixed(&child_id)?,
+                fixed(&activity_id)?,
+                &input.into(),
+                saved_at_ms,
+            )
+            .map_err(rejected)
+    }
+
     pub fn edit_pump_amounts(
         &self,
         family: FamilyRef,
@@ -4240,6 +4362,27 @@ impl NativeLocalStore {
             .to_vec())
     }
 
+    pub fn log_growth_entered(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        input: GrowthInputRow,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .log_growth_entered(
+                family.handle()?,
+                fixed(&child_id)?,
+                &input.into(),
+                time.into(),
+            )
+            .map_err(rejected)?
+            .to_vec())
+    }
+
     pub fn log_temperature_c(
         &self,
         family: FamilyRef,
@@ -4338,8 +4481,14 @@ impl NativeLocalStore {
                 pump_right_ml: row.pump_right_ml,
                 pump_total_ml: row.pump_total_ml,
                 growth_weight_g: row.growth_weight_g,
+                growth_weight_entered: row.growth_weight_entered,
+                growth_weight_unit: row.growth_weight_unit,
                 growth_length_mm: row.growth_length_mm,
+                growth_length_entered: row.growth_length_entered,
+                growth_length_unit: row.growth_length_unit,
                 growth_head_mm: row.growth_head_mm,
+                growth_head_entered: row.growth_head_entered,
+                growth_head_unit: row.growth_head_unit,
                 temperature_c: row.temperature_c,
                 temperature_entered: row.temperature_entered,
                 temperature_unit: row.temperature_unit,

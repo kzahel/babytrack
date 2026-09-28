@@ -77,6 +77,8 @@ import uniffi.babytrack_core_ffi.BackupInfoRow
 import uniffi.babytrack_core_ffi.BreastSegmentRow
 import uniffi.babytrack_core_ffi.ChildRow
 import uniffi.babytrack_core_ffi.FamilyRef
+import uniffi.babytrack_core_ffi.EnteredMeasureRow
+import uniffi.babytrack_core_ffi.GrowthInputRow
 import uniffi.babytrack_core_ffi.NativeLocalStore
 import uniffi.babytrack_core_ffi.MedicationInput
 import uniffi.babytrack_core_ffi.PumpInput
@@ -235,6 +237,74 @@ private fun validBottleAmount(value: String, unit: UByte): Boolean =
         value.any { it in '1'..'9' } &&
         (unit != 1u.toUByte() || value.toLongOrNull()?.let { it in 1..1_000_000 } == true)
 
+private fun validGrowthAmount(value: String, unit: UByte): Boolean =
+    value.isBlank() || (value.length <= 16 && bottleAmountPattern.matches(value) &&
+        value.any { it in '1'..'9' } &&
+        (unit !in listOf(10u.toUByte(), 20u.toUByte()) || !value.contains('.')))
+
+private fun growthInput(
+    weight: String, weightUnit: UByte,
+    length: String, lengthUnit: UByte,
+    head: String, headUnit: UByte,
+): GrowthInputRow = GrowthInputRow(
+    weight.trim().takeIf { it.isNotEmpty() }?.let { EnteredMeasureRow(it, weightUnit) },
+    length.trim().takeIf { it.isNotEmpty() }?.let { EnteredMeasureRow(it, lengthUnit) },
+    head.trim().takeIf { it.isNotEmpty() }?.let { EnteredMeasureRow(it, headUnit) },
+)
+
+private fun growthUnitLabel(context: Context, unit: UByte): String = context.getString(when (unit) {
+    10u.toUByte() -> R.string.unit_g
+    11u.toUByte() -> R.string.unit_kg
+    12u.toUByte() -> R.string.unit_lb
+    13u.toUByte() -> R.string.unit_oz_mass
+    20u.toUByte() -> R.string.unit_mm
+    21u.toUByte() -> R.string.unit_cm
+    else -> R.string.unit_in
+})
+
+private fun growthDisplay(context: Context, base: Long?, entered: String?, unit: UByte?,
+                          baseUnit: UByte): String? = base?.let {
+    val known = when (baseUnit) {
+        10u.toUByte() -> massUnits.any { it.first == unit }
+        else -> lengthUnits.any { it.first == unit }
+    }
+    val shownUnit = if (known) unit!! else baseUnit
+    "${if (known) entered ?: it.toString() else it.toString()} ${growthUnitLabel(context, shownUnit)}"
+}
+
+@Composable
+private fun GrowthUnitChoices(
+    title: Int,
+    units: List<Pair<UByte, Int>>,
+    selected: UByte,
+    onSelect: (UByte) -> Unit,
+) {
+    Text(stringResource(title))
+    units.chunked(2).forEach { row ->
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            row.forEach { (unit, label) ->
+                FilterChip(
+                    selected = selected == unit,
+                    onClick = { onSelect(unit) },
+                    label = { Text(stringResource(label)) },
+                )
+            }
+        }
+    }
+}
+
+private val massUnits = listOf(
+    10u.toUByte() to R.string.unit_g,
+    11u.toUByte() to R.string.unit_kg,
+    12u.toUByte() to R.string.unit_lb,
+    13u.toUByte() to R.string.unit_oz_mass,
+)
+private val lengthUnits = listOf(
+    20u.toUByte() to R.string.unit_mm,
+    21u.toUByte() to R.string.unit_cm,
+    22u.toUByte() to R.string.unit_in,
+)
+
 private data class PendingBreastEdit(
     val family: FamilyRef,
     val childId: ByteArray,
@@ -265,8 +335,11 @@ private data class PendingGrowthEdit(
     val activityId: ByteArray,
     val shared: Boolean,
     val weight: String,
+    val weightUnit: UByte,
     val length: String,
+    val lengthUnit: UByte,
     val head: String,
+    val headUnit: UByte,
 )
 private data class PendingPumpEdit(
     val family: FamilyRef,
@@ -511,8 +584,11 @@ private fun TrackerScreen(
     var sleepPlace by remember { mutableStateOf<UByte?>(null) }
     var noteText by remember { mutableStateOf("") }
     var growthWeight by remember { mutableStateOf("") }
+    var growthWeightUnit by remember { mutableStateOf(11u.toUByte()) }
     var growthLength by remember { mutableStateOf("") }
+    var growthLengthUnit by remember { mutableStateOf(21u.toUByte()) }
     var growthHead by remember { mutableStateOf("") }
+    var growthHeadUnit by remember { mutableStateOf(21u.toUByte()) }
     var temperatureEntered by remember { mutableStateOf("") }
     var temperatureUnit by remember { mutableStateOf(30u.toUByte()) }
     var medicationName by remember { mutableStateOf("") }
@@ -605,8 +681,11 @@ private fun TrackerScreen(
         sleepPlace = null
         noteText = ""
         growthWeight = ""
+        growthWeightUnit = 11u.toUByte()
         growthLength = ""
+        growthLengthUnit = 21u.toUByte()
         growthHead = ""
+        growthHeadUnit = 21u.toUByte()
         temperatureEntered = ""
         temperatureUnit = 30u.toUByte()
         medicationName = ""
@@ -1656,50 +1735,56 @@ private fun TrackerScreen(
                         }) { Text(stringResource(R.string.save_sleep)) }
                     }
                     Text(stringResource(R.string.log_growth), style = MaterialTheme.typography.titleLarge)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = growthWeight,
-                            onValueChange = { growthWeight = it.filter(Char::isDigit) },
-                            label = { Text(stringResource(R.string.weight_g)) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                        )
-                        OutlinedTextField(
-                            value = growthLength,
-                            onValueChange = { growthLength = it.filter(Char::isDigit) },
-                            label = { Text(stringResource(R.string.length_mm)) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                        )
+                    GrowthUnitChoices(R.string.weight_unit, massUnits, growthWeightUnit) {
+                        if (growthWeightUnit != it) { growthWeightUnit = it; growthWeight = "" }
                     }
                     OutlinedTextField(
-                        value = growthHead,
-                        onValueChange = { growthHead = it.filter(Char::isDigit).take(4) },
-                        label = { Text(stringResource(R.string.head_mm)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        value = growthWeight,
+                        onValueChange = { growthWeight = it.filter { char -> char.isDigit() || char == '.' }.take(16) },
+                        label = { Text(stringResource(R.string.weight)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                     )
-                    val weight = growthWeight.toLongOrNull()
-                    val length = growthLength.toLongOrNull()
-                    val head = growthHead.toLongOrNull()
+                    GrowthUnitChoices(R.string.length_unit, lengthUnits, growthLengthUnit) {
+                        if (growthLengthUnit != it) { growthLengthUnit = it; growthLength = "" }
+                    }
+                    OutlinedTextField(
+                        value = growthLength,
+                        onValueChange = { growthLength = it.filter { char -> char.isDigit() || char == '.' }.take(16) },
+                        label = { Text(stringResource(R.string.length)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                    GrowthUnitChoices(R.string.head_unit, lengthUnits, growthHeadUnit) {
+                        if (growthHeadUnit != it) { growthHeadUnit = it; growthHead = "" }
+                    }
+                    OutlinedTextField(
+                        value = growthHead,
+                        onValueChange = { growthHead = it.filter { char -> char.isDigit() || char == '.' }.take(16) },
+                        label = { Text(stringResource(R.string.head_circumference)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
                     Button(
-                        enabled = (weight != null || length != null || head != null) &&
-                            (growthWeight.isBlank() || (weight != null && weight in 1L..100_000L)) &&
-                            (growthLength.isBlank() || (length != null && length in 1L..2_500L)) &&
-                            (growthHead.isBlank() || (head != null && head in 1L..1_000L)),
+                        enabled = listOf(growthWeight, growthLength, growthHead).any { it.isNotBlank() } &&
+                            validGrowthAmount(growthWeight, growthWeightUnit) &&
+                            validGrowthAmount(growthLength, growthLengthUnit) &&
+                            validGrowthAmount(growthHead, growthHeadUnit),
                         onClick = {
                             val savedWeight = growthWeight
                             val savedLength = growthLength
                             val savedHead = growthHead
+                            val input = growthInput(savedWeight, growthWeightUnit,
+                                savedLength, growthLengthUnit, savedHead, growthHeadUnit)
                             val chosenAt = logAtMs
                             val at = logTime()
                             scope.launch {
                                 runCatching { withContext(Dispatchers.IO) {
-                                    if (activeShared) sharing.logGrowthMeasurements(family, child.id, weight, length, head, at)
-                                    else store.logGrowthMeasurements(family, child.id, weight, length, head, at)
+                                    if (activeShared) sharing.logGrowthEntered(family, child.id, input, at)
+                                    else store.logGrowthEntered(family, child.id, input, at)
                                 } }.onSuccess {
                                     if (growthWeight == savedWeight) growthWeight = ""
                                     if (growthLength == savedLength) growthLength = ""
@@ -1898,9 +1983,14 @@ private fun TrackerScreen(
                             entry.note != null -> stringResource(R.string.note_entry, entry.note!!)
                             entry.kind == "growth" -> {
                                 val parts = listOfNotNull(
-                                    entry.growthWeightG?.let { "$it g" },
-                                    entry.growthLengthMm?.let { "$it mm" },
-                                    entry.growthHeadMm?.let { context.getString(R.string.growth_head_part, it) },
+                                    growthDisplay(context, entry.growthWeightG, entry.growthWeightEntered,
+                                        entry.growthWeightUnit, 10u.toUByte()),
+                                    growthDisplay(context, entry.growthLengthMm, entry.growthLengthEntered,
+                                        entry.growthLengthUnit, 20u.toUByte()),
+                                    growthDisplay(context, entry.growthHeadMm, entry.growthHeadEntered,
+                                        entry.growthHeadUnit, 20u.toUByte())?.let {
+                                        context.getString(R.string.growth_head_part, it)
+                                    },
                                 )
                                 if (parts.isEmpty()) entry.kind
                                 else stringResource(R.string.growth_summary, parts.joinToString(" · "))
@@ -2049,9 +2139,12 @@ private fun TrackerScreen(
                                     OutlinedButton(onClick = {
                                         pendingGrowthEdit = PendingGrowthEdit(
                                             family, entry.childId.copyOf(), entry.id.copyOf(), activeShared,
-                                            entry.growthWeightG?.toString().orEmpty(),
-                                            entry.growthLengthMm?.toString().orEmpty(),
-                                            entry.growthHeadMm?.toString().orEmpty(),
+                                            entry.growthWeightEntered ?: entry.growthWeightG?.toString().orEmpty(),
+                                            entry.growthWeightUnit ?: 10u.toUByte(),
+                                            entry.growthLengthEntered ?: entry.growthLengthMm?.toString().orEmpty(),
+                                            entry.growthLengthUnit ?: 20u.toUByte(),
+                                            entry.growthHeadEntered ?: entry.growthHeadMm?.toString().orEmpty(),
+                                            entry.growthHeadUnit ?: 20u.toUByte(),
                                         )
                                     }) { Text(stringResource(R.string.edit_growth)) }
                                 }
@@ -2456,46 +2549,53 @@ private fun TrackerScreen(
             onDismissRequest = { pendingGrowthEdit = null },
             title = { Text(stringResource(R.string.edit_growth)) },
             text = {
-                Column {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    GrowthUnitChoices(R.string.weight_unit, massUnits, target.weightUnit) {
+                        pendingGrowthEdit = target.copy(weight = "", weightUnit = it)
+                    }
                     OutlinedTextField(
                         value = target.weight,
-                        onValueChange = { pendingGrowthEdit = target.copy(weight = it.filter(Char::isDigit).take(6)) },
-                        label = { Text(stringResource(R.string.weight_g)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        onValueChange = { pendingGrowthEdit = target.copy(weight = it.filter { char -> char.isDigit() || char == '.' }.take(16)) },
+                        label = { Text(stringResource(R.string.weight)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                     )
+                    GrowthUnitChoices(R.string.length_unit, lengthUnits, target.lengthUnit) {
+                        pendingGrowthEdit = target.copy(length = "", lengthUnit = it)
+                    }
                     OutlinedTextField(
                         value = target.length,
-                        onValueChange = { pendingGrowthEdit = target.copy(length = it.filter(Char::isDigit).take(4)) },
-                        label = { Text(stringResource(R.string.length_mm)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        onValueChange = { pendingGrowthEdit = target.copy(length = it.filter { char -> char.isDigit() || char == '.' }.take(16)) },
+                        label = { Text(stringResource(R.string.length)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                     )
+                    GrowthUnitChoices(R.string.head_unit, lengthUnits, target.headUnit) {
+                        pendingGrowthEdit = target.copy(head = "", headUnit = it)
+                    }
                     OutlinedTextField(
                         value = target.head,
-                        onValueChange = { pendingGrowthEdit = target.copy(head = it.filter(Char::isDigit).take(4)) },
-                        label = { Text(stringResource(R.string.head_mm)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        onValueChange = { pendingGrowthEdit = target.copy(head = it.filter { char -> char.isDigit() || char == '.' }.take(16)) },
+                        label = { Text(stringResource(R.string.head_circumference)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                     )
                     Text(stringResource(R.string.growth_edit_hint))
                 }
             },
             confirmButton = {
-                val weight = target.weight.toLongOrNull()
-                val length = target.length.toLongOrNull()
-                val head = target.head.toLongOrNull()
-                Button(enabled = (weight != null || length != null || head != null) &&
-                    (target.weight.isBlank() || (weight != null && weight in 1L..100_000L)) &&
-                    (target.length.isBlank() || (length != null && length in 1L..2_500L)) &&
-                    (target.head.isBlank() || (head != null && head in 1L..1_000L)), onClick = {
-                    pendingGrowthEdit = null
+                Button(enabled = listOf(target.weight, target.length, target.head).any { it.isNotBlank() } &&
+                    validGrowthAmount(target.weight, target.weightUnit) &&
+                    validGrowthAmount(target.length, target.lengthUnit) &&
+                    validGrowthAmount(target.head, target.headUnit), onClick = {
+                    val input = growthInput(target.weight, target.weightUnit,
+                        target.length, target.lengthUnit, target.head, target.headUnit)
                     val savedAtMs = System.currentTimeMillis()
-                    change {
-                        if (target.shared) sharing.editGrowthMeasurements(
-                            target.family, target.childId, target.activityId, weight, length, head, savedAtMs,
-                        ) else store.editGrowthMeasurements(
-                            target.family, target.childId, target.activityId, weight, length, head, savedAtMs,
+                    change(onSaved = { pendingGrowthEdit = null }) {
+                        if (target.shared) sharing.editGrowthEntered(
+                            target.family, target.childId, target.activityId, input, savedAtMs,
+                        ) else store.editGrowthEntered(
+                            target.family, target.childId, target.activityId, input, savedAtMs,
                         )
                     }
                 }) { Text(stringResource(R.string.save_changes)) }

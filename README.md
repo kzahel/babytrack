@@ -28,7 +28,8 @@ credentials remain open.
 
 The Android debug app logs children, diapers, bottles with milk/content
 choice and mL/US/UK fluid-ounce entry, sleep timers and completed sleep
-with optional place, notes, growth including head circumference,
+with optional place, notes, growth including head circumference and entered
+mass/length units,
 Celsius or Fahrenheit temperature, medication, solids, breast-feed
 segments, and pumping entries locally or in a shared Family. Existing pumping
 amounts can be corrected without replacing the entry. Completed entries can

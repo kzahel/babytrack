@@ -66,14 +66,33 @@ pub struct Activity {
     pub pump_right_ml: Option<i64>,
     pub pump_total_ml: Option<i64>,
     pub growth_weight_g: Option<i64>,
+    pub growth_weight_entered: Option<String>,
+    pub growth_weight_unit: Option<u8>,
     pub growth_length_mm: Option<i64>,
+    pub growth_length_entered: Option<String>,
+    pub growth_length_unit: Option<u8>,
     pub growth_head_mm: Option<i64>,
+    pub growth_head_entered: Option<String>,
+    pub growth_head_unit: Option<u8>,
     pub temperature_c: Option<String>,
     pub temperature_entered: Option<String>,
     pub temperature_unit: Option<u8>,
     pub medication_name: Option<String>,
     pub medication_dose_amount: Option<String>,
     pub medication_dose_unit: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MeasurementInput {
+    pub entered: String,
+    pub unit: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GrowthInput {
+    pub weight: Option<MeasurementInput>,
+    pub length: Option<MeasurementInput>,
+    pub head: Option<MeasurementInput>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -720,6 +739,31 @@ impl LocalRepository {
         Ok(())
     }
 
+    pub fn edit_growth_entered(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        input: &GrowthInput,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        if child.scope != Scope::Child || child.deleted {
+            return Err(Error::Invalid("target child unavailable"));
+        }
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("activity unavailable"))?;
+        let operation =
+            edit_growth_entered_operation(family, child_id, activity, input, saved_at_ms)?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn edit_pump_amounts(
         &mut self,
         family: FamilyHandle,
@@ -874,6 +918,18 @@ impl LocalRepository {
     ) -> Result<[u8; 16], Error> {
         let (activity_id, operation) =
             growth_measurements_operation(family, child_id, weight_g, length_mm, head_mm, time)?;
+        self.append_activity(family, child_id, operation, time.saved_at_ms)?;
+        Ok(activity_id)
+    }
+
+    pub fn log_growth_entered(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        input: &GrowthInput,
+        time: ActivityTime,
+    ) -> Result<[u8; 16], Error> {
+        let (activity_id, operation) = growth_entered_operation(family, child_id, input, time)?;
         self.append_activity(family, child_id, operation, time.saved_at_ms)?;
         Ok(activity_id)
     }
@@ -1989,6 +2045,97 @@ fn growth_fields(
     Ok(fields)
 }
 
+fn entered_growth_measure(
+    input: &MeasurementInput,
+    units: std::ops::RangeInclusive<u8>,
+    maximum: i128,
+) -> Result<Value, Error> {
+    let entered = input.entered.trim();
+    if entered.is_empty() || entered.len() > 16 || !units.contains(&input.unit) {
+        return Err(Error::Invalid("growth decimal or unit invalid"));
+    }
+    let (numerator, denominator) = crate::record_validity::parse_decimal(entered)
+        .ok_or(Error::Invalid("growth decimal invalid"))?;
+    let (factor_num, factor_den) = crate::record_validity::unit_factor(input.unit.into());
+    let scaled = numerator
+        .checked_mul(factor_num)
+        .ok_or(Error::Invalid("growth measurement overflow"))?;
+    let divisor = denominator
+        .checked_mul(factor_den)
+        .ok_or(Error::Invalid("growth measurement overflow"))?;
+    let base = crate::record_validity::round_ratio(scaled, divisor)
+        .map_err(|_| Error::Invalid("growth measurement overflow"))?;
+    if !(1..=maximum).contains(&base) {
+        return Err(Error::Invalid("growth measurement outside supported range"));
+    }
+    Ok(Value::Map(vec![
+        (1, Value::Integer(base)),
+        (2, Value::Text(entered.to_owned())),
+        (3, Value::Integer(input.unit.into())),
+    ]))
+}
+
+fn growth_entered_fields(input: &GrowthInput) -> Result<Vec<(u64, Value)>, Error> {
+    let mut fields = Vec::new();
+    if let Some(weight) = &input.weight {
+        fields.push((100, entered_growth_measure(weight, 10..=13, 100_000)?));
+    }
+    if let Some(length) = &input.length {
+        fields.push((101, entered_growth_measure(length, 20..=22, 2_500)?));
+    }
+    if let Some(head) = &input.head {
+        fields.push((102, entered_growth_measure(head, 20..=22, 1_000)?));
+    }
+    if fields.is_empty() {
+        return Err(Error::Invalid("growth needs a measurement"));
+    }
+    Ok(fields)
+}
+
+pub fn growth_entered_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    input: &GrowthInput,
+    time: ActivityTime,
+) -> Result<([u8; 16], NewOperation), Error> {
+    activity_operation(
+        family,
+        child_id,
+        "growth",
+        growth_entered_fields(input)?,
+        time,
+    )
+}
+
+pub fn edit_growth_entered_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    input: &GrowthInput,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    if activity.scope != Scope::Activity
+        || activity.child_id != Some(child_id)
+        || activity.record_type != "growth"
+        || activity.deleted
+    {
+        return Err(Error::Invalid("growth target unavailable"));
+    }
+    check_time(saved_at_ms)?;
+    Ok(NewOperation {
+        family_id: family.family_id,
+        operation_id: ids::random_v7(saved_at_ms)?,
+        record_id: activity.id,
+        scope: Scope::Activity,
+        kind: Kind::Set,
+        author_device_id: family.device_id,
+        hlc: placeholder_hlc(family),
+        record_type: None,
+        child_id: None,
+        fields: Some(growth_entered_fields(input)?),
+    })
+}
+
 pub fn edit_growth_operation(
     family: FamilyHandle,
     child_id: [u8; 16],
@@ -2407,15 +2554,32 @@ fn activity_summary(record: &Record) -> Option<Activity> {
     } else {
         (None, None)
     };
-    let growth_measure = |field| -> Option<i64> {
+    let growth_measure = |field| -> Option<(i64, Option<String>, Option<u8>)> {
         let Value::Map(measure) = &record.field(field)?.value else {
             return None;
         };
         let (1, Value::Integer(value)) = measure.first()? else {
             return None;
         };
-        i64::try_from(*value).ok()
+        let entered = match measure.get(1) {
+            Some((2, Value::Text(text))) => Some(text.clone()),
+            _ => None,
+        };
+        let unit = match measure.get(2) {
+            Some((3, Value::Integer(code))) => u8::try_from(*code).ok(),
+            _ => None,
+        };
+        Some((i64::try_from(*value).ok()?, entered, unit))
     };
+    let growth_weight = (record.record_type == "growth")
+        .then(|| growth_measure(100))
+        .flatten();
+    let growth_length = (record.record_type == "growth")
+        .then(|| growth_measure(101))
+        .flatten();
+    let growth_head = (record.record_type == "growth")
+        .then(|| growth_measure(102))
+        .flatten();
     let pump_measure = |field| -> Option<i64> {
         let Value::Map(measure) = &record.field(field)?.value else {
             return None;
@@ -2529,21 +2693,15 @@ fn activity_summary(record: &Record) -> Option<Activity> {
         } else {
             None
         },
-        growth_weight_g: if record.record_type == "growth" {
-            growth_measure(100)
-        } else {
-            None
-        },
-        growth_length_mm: if record.record_type == "growth" {
-            growth_measure(101)
-        } else {
-            None
-        },
-        growth_head_mm: if record.record_type == "growth" {
-            growth_measure(102)
-        } else {
-            None
-        },
+        growth_weight_g: growth_weight.as_ref().map(|measure| measure.0),
+        growth_weight_entered: growth_weight.as_ref().and_then(|measure| measure.1.clone()),
+        growth_weight_unit: growth_weight.as_ref().and_then(|measure| measure.2),
+        growth_length_mm: growth_length.as_ref().map(|measure| measure.0),
+        growth_length_entered: growth_length.as_ref().and_then(|measure| measure.1.clone()),
+        growth_length_unit: growth_length.as_ref().and_then(|measure| measure.2),
+        growth_head_mm: growth_head.as_ref().map(|measure| measure.0),
+        growth_head_entered: growth_head.as_ref().and_then(|measure| measure.1.clone()),
+        growth_head_unit: growth_head.as_ref().and_then(|measure| measure.2),
         temperature_c,
         temperature_entered,
         temperature_unit,

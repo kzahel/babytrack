@@ -60,10 +60,15 @@ complete list, with the other inspectable in history.
 | `temperature` | `value`, optional `method` |
 | `note` | text only |
 
-The Android first-cohort build currently records growth as whole grams and
-millimetres, with weight, length, and head circumference in any nonempty
-combination in one event. The core writes the published
-measure map with the entered unit and rejects empty or out-of-range values.
+Android records weight, length, and head circumference in any nonempty
+combination in one growth event. Entry and correction accept the published
+g, kg, lb, and oz mass units, and mm, cm, and inch length units; the form
+defaults to kg and cm. Rust uses the published exact factors and rounding,
+stores the base grams and millimetres, and preserves each entered decimal
+and unit for the timeline. The analysis CSV exports base units. Empty or
+out-of-range measurements are rejected, and a blank edit leaves the saved
+field intact. Local restart, file restore, and encrypted two-device sync
+preserve the entered values and units.
 Temperature entry and correction now accept Celsius or Fahrenheit. The core
 parses the entered decimal, applies the published exact conversion to
 hundredths Celsius, and retains the entered text and unit for display. Local

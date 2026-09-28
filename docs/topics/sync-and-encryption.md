@@ -278,8 +278,11 @@ control or accepted batch with its cursor and head in one transaction, then
 replays those bytes after reload. The browser adapter can sign exact relay
 reads with Web Crypto request IDs, decode bounded log pages and accepted
 batch results through Rust, and persist a verified fetched prefix. Fixture
-transport tests cover controls and batches. Encrypted record projection,
-local shared outbox, and a real-relay mixed-client exchange remain M0 work.
+transport tests cover controls and batches. A disposable real relay now
+accepts a fixture manager batch; Chromium sends its own signed GETs, verifies
+the accepted batch, and replays the saved cursor after reload. Encrypted
+record projection, local shared outbox, and full mixed-client exchange remain
+M0 work.
 The first Android sharing flow uses foreground polling and scheduled
 background work. FCM and APNs may later provide empty background wakes through
 app-owned interfaces to reduce latency when an app is suspended. A missed

@@ -1,14 +1,18 @@
 const assert = require('node:assert/strict');
+const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
+const os = require('node:os');
 const path = require('node:path');
 const { chromium } = require('playwright');
 
 const generatedDir = process.argv[2];
-if (!generatedDir) throw new Error('pass wasm-bindgen web output directory');
+const relayBin = process.argv[3];
+if (!generatedDir || !relayBin) throw new Error('pass wasm-bindgen web output and relay binary');
 const fixtures = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/negative-batch-v1.json')));
 const full = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/full-wire-v1.json')));
 const chain = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/contiguous-chain-v1.json')));
+const apiGenesis = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/api-genesis-v1.json')));
 const minor = fixtures.cases.find((entry) => entry.id === 'CROSSMINORBYTE01').input;
 const genesis = full.cases.find((entry) => entry.id === 'GENESIS01');
 const acceptedBatch = full.cases.find((entry) => entry.id === 'BATCHBYTE01');
@@ -56,14 +60,27 @@ const input = {
   managerSeedHex: chain.test_only_inputs.manager_sign_seed_hex,
 };
 
+let relayPort;
 const server = http.createServer((request, response) => {
+  if (request.url.startsWith('/v1/families/') && relayPort != null) {
+    const upstream = http.request({
+      hostname: '127.0.0.1', port: relayPort, path: request.url, method: request.method,
+      headers: { Authorization: request.headers.authorization || '' },
+    }, (result) => {
+      response.writeHead(result.statusCode, { 'Content-Type': 'application/cbor' });
+      result.pipe(response);
+    });
+    upstream.on('error', (error) => { response.writeHead(502).end(error.message); });
+    request.pipe(upstream);
+    return;
+  }
   if (request.url === '/') {
     response.writeHead(200, { 'Content-Type': 'text/html' });
     response.end('<!doctype html><title>babytrack wasm storage smoke</title>');
     return;
   }
   const name = request.url.slice(1);
-  if (name === 'local-store.js' || name === 'public-store.js') {
+  if (name === 'local-store.js' || name === 'public-store.js' || name === 'relay-get.js') {
     response.writeHead(200, { 'Content-Type': 'text/javascript' });
     fs.createReadStream(path.join(__dirname, '../../core-wasm/web', name)).pipe(response);
     return;
@@ -78,10 +95,55 @@ const server = http.createServer((request, response) => {
   fs.createReadStream(path.join(generatedDir, name)).pipe(response);
 });
 
+async function startRelay() {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'babytrack-browser-relay-'));
+  const seedPath = path.join(temporary, 'seed');
+  fs.writeFileSync(seedPath, Buffer.from(genesis.inputs.relay_sign_seed_hex, 'hex'));
+  const reservation = http.createServer();
+  await new Promise((resolve) => reservation.listen(0, '127.0.0.1', resolve));
+  const port = reservation.address().port;
+  await new Promise((resolve) => reservation.close(resolve));
+  const child = spawn(path.resolve(relayBin), [path.join(temporary, 'relay.db'), seedPath,
+    `127.0.0.1:${port}`], { stdio: 'ignore' });
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    let ready = false;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (child.exitCode != null) throw new Error('Disposable relay exited before startup');
+      try { await fetch(base); ready = true; break; } catch { /* startup retry */ }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    if (!ready) throw new Error('Disposable relay did not start');
+    const post = async (url, hexBody) => {
+      const response = await fetch(base + url, {
+        method: 'POST', headers: { 'Content-Type': 'application/cbor' },
+        body: Buffer.from(hexBody, 'hex'),
+      });
+      const body = Buffer.from(await response.arrayBuffer());
+      assert.equal(response.status, 200, `Relay fixture POST ${url}: ${body.toString('hex')}`);
+      return body;
+    };
+    const stage = await post(apiGenesis.inputs.stage_path, apiGenesis.inputs.stage_body_cbor_hex);
+    assert.equal(stage.toString('hex'), apiGenesis.expect.stage_response_cbor_hex);
+    const committed = await post(apiGenesis.inputs.commit_path,
+      apiGenesis.inputs.commit_candidate_cbor_hex);
+    assert.equal(committed.subarray(0, 5).toString('hex'), 'a201010259');
+    assert.equal(committed.readUInt16BE(5), committed.length - 7);
+    return { child, temporary, port, genesisHex: committed.subarray(7).toString('hex') };
+  } catch (error) {
+    child.kill();
+    fs.rmSync(temporary, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 async function run() {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   let browser;
+  let relay;
   try {
+    relay = await startRelay();
+    relayPort = relay.port;
     browser = await chromium.launch({ headless: true });
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -358,11 +420,81 @@ async function run() {
       return { ...progress, resultRead };
     }, input);
     assert.deepEqual(batchPulled, { cursor: 2, noMoreVisible: true, resultRead: true });
+
+    const realEnvelope = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+      const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      const publicFamily = new wasm.WasmPublicFamily(bytes(data.genesisHex), bytes(data.relayPublicHex));
+      const head = hex(publicFamily.head_hash());
+      publicFamily.free();
+      const header = data.batchHeaderHex.replace(data.fixtureHeadHex, head);
+      if (header === data.batchHeaderHex) throw new Error('Batch header did not bind real genesis');
+      return hex(wasm.seal_one(bytes(header), bytes(data.operationHex),
+        bytes(data.epochKeyHex), bytes(data.managerSeedHex)));
+    }, {
+      genesisHex: relay.genesisHex,
+      relayPublicHex: input.relayPublicHex,
+      batchHeaderHex: acceptedBatch.expect.header_cbor_hex,
+      fixtureHeadHex: genesis.expect.control_head_hex,
+      operationHex: acceptedBatch.inputs.operation_cbor_hex,
+      epochKeyHex: genesis.inputs.epoch_key_hex,
+      managerSeedHex: input.managerSeedHex,
+    });
+    const upload = await fetch(`http://127.0.0.1:${relay.port}/v1/families/${input.familyHex}/batches`, {
+      method: 'POST', headers: { 'Content-Type': 'application/cbor' },
+      body: Buffer.from(realEnvelope, 'hex'),
+    });
+    assert.equal(upload.status, 200, `Relay batch upload: ${Buffer.from(await upload.arrayBuffer()).toString('hex')}`);
+
+    const realRelay = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+      const store = await PublicStore.open(wasm, 'babytrack-real-relay-public-smoke');
+      const family = await store.begin(bytes(data.genesisHex), bytes(data.relayPublicHex));
+      const progress = await store.pull(family, bytes(data.managerDeviceHex),
+        bytes(data.managerSeedHex), relayGet);
+      store.close();
+      return { ...progress, family };
+    }, {
+      genesisHex: relay.genesisHex,
+      relayPublicHex: input.relayPublicHex,
+      managerDeviceHex: input.managerDeviceHex,
+      managerSeedHex: input.managerSeedHex,
+    });
+    assert.deepEqual(realRelay, {
+      cursor: 2, noMoreVisible: true, family: input.familyHex,
+    });
+    await page.reload();
+    const relayReload = await page.evaluate(async (family) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const store = await PublicStore.open(wasm, 'babytrack-real-relay-public-smoke');
+      const verifier = await store.load(family);
+      const cursor = verifier.last_cursor().toString();
+      verifier.free();
+      store.close();
+      return cursor;
+    }, input.familyHex);
+    assert.equal(relayReload, '2');
     await context.close();
-    console.log('browser wasm + IndexedDB local journal, signed public pull, reload, rollback, and Family isolation: OK');
+    console.log('browser wasm + IndexedDB journal, signed relay GET, public pull, reload, rollback, and Family isolation: OK');
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));
+    if (relay) {
+      if (relay.child.exitCode == null) {
+        const stopped = new Promise((resolve) => relay.child.once('exit', resolve));
+        relay.child.kill();
+        await stopped;
+      }
+      fs.rmSync(relay.temporary, { recursive: true, force: true });
+    }
   }
 }
 

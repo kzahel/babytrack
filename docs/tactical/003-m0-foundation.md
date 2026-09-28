@@ -632,7 +632,10 @@ yet decrypt/project shared records or stage a browser outbox. A bounded
 browser pull now signs exact GET paths with caller-held manager credentials,
 decodes log pages and batch results in Rust, and commits each verified entry.
 The Chromium fixture transport exercises a control and an accepted batch;
-the real-relay browser exchange remains open.
+the browser smoke also starts a disposable relay, commits a fixture genesis
+and encrypted manager batch, then pulls the accepted batch through signed
+browser GETs and replays the saved cursor after reload. This proves public
+relay transport; a CLI/browser encrypted data exchange and outbox remain open.
 An uncertain retry returns those bytes after reopen even if the caller's
 current head/key has changed. The initial `FamilySession` stages through
 that path only with its verified manager identity, head, epoch key, and
@@ -783,8 +786,9 @@ shell, loads the wasm binding, and checks IndexedDB reload, an aborted
 multi-store transaction, and Family-scoped keys and rows. It uses fixture
 keys for encrypted batches and the reusable local-only journal adapter. A
 production public-authority adapter also verifies a signed acceptance through
-Rust and replays it after browser reload; complete browser sync storage and
-cross-language vector coverage remain open.
+Rust and replays it after browser reload. The same smoke starts a disposable
+relay and fetches an accepted batch through signed browser GETs; complete
+browser sync storage and cross-language vector coverage remain open.
 
 Every agreed FS case gets a deterministic core/relay action binding with
 assertions for local state, shared state, pending outbox, visible status, and

@@ -14,7 +14,7 @@ Real-relay tests admit a later device at the current epoch, hydrate its
 history, and continue encrypted sync. An admitted manager can also invite,
 grant, and remove a third device with key rotation. A manager can cancel an
 unused link, with a verified canceled status for a recipient who opens it.
-Later rotations, role changes, general browser shared sync, and broader recovery coverage
+Later rotations, pending-device removal, general browser shared sync, and broader recovery coverage
 remain open.
 The browser harness now stages one epoch-one encrypted write in a durable
 outbox, previews it locally before acceptance, retries it after a lost
@@ -45,6 +45,8 @@ An emulator check saves readable and protected files through Android's
 document picker, reinstalls the app, and restores the saved data. A wrong
 password leaves the new installation without a Family.
 The manager can remove the first recipient from the Android sharing view.
+Managers can also change an admitted device between member and manager roles
+in the debug sharing view; both devices verify the new role through relay sync.
 The removed device verifies a signed removal notice, stops shared writes,
 and automatically copies pending edits into a private Family. A disposable
 relay and two separate emulator installations exercise the first-cohort

@@ -76,6 +76,18 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         }
     }
 
+    fun changeDeviceRole(family: FamilyRef, origin: String, targetDeviceId: ByteArray, newRole: UByte): SharedSnapshotRow {
+        validateRelayOrigin(origin)
+        check(syncAndUpload(family, origin).ready) { "Shared history is not ready" }
+        val relay = RelayTransport(origin)
+        withWrapping { wrapping ->
+            val prepared = core.prepareRoleChange(family, wrapping, targetDeviceId, newRole)
+            val response = relay.post("/v1/families/${family.familyId.hex()}/control", prepared.candidateBytes)
+            core.confirmRoleChange(family, response)
+        }
+        return snapshot(family)
+    }
+
     fun claim(fragment: String): PreparedJoinRow {
         val preview = previewInvitation(fragment)
         val relay = RelayTransport(preview.relayOrigin)

@@ -253,8 +253,11 @@ intended Family and child, and remains usable after process death.
   remove another device at epoch one in the debug flow. A manager can now list
   and cancel unused invitations from the selected Family's debug access
   section, with a confirmation dialog; a real-relay emulator case clicks it
-  and checks that the link becomes unusable. Later rotations, role changes,
-  and admitted-manager cancellation coverage remain open.
+  and checks that the link becomes unusable. Managers can promote and demote
+  admitted devices from this view; a real-relay case verifies the changed
+  recipient role and denial of a later invitation after demotion. Later
+  rotations, pending-device removal, and admitted-manager cancellation
+  coverage remain open.
 - [ ] Make invitation handoff usable through a share/link flow with trusted
   relay pinning and clear pending, accepted, blocked, and removed states.
   The share-sheet receive and custom-link paths now prefill without auto-claiming. Remove

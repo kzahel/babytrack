@@ -315,6 +315,13 @@ private data class PendingInvitationCancel(
     val localManager: Boolean,
 )
 
+private data class PendingRoleChange(
+    val family: FamilyRef,
+    val targetId: ByteArray,
+    val newRole: UByte,
+    val localManager: Boolean,
+)
+
 internal fun runningSleepCount(
     store: NativeLocalStore,
     sharing: ShareCoordinator,
@@ -482,6 +489,7 @@ private fun TrackerScreen(
     var automaticSyncBlocked by remember { mutableStateOf(false) }
     var removalTarget by remember { mutableStateOf<ByteArray?>(null) }
     var cancelInvitationTarget by remember { mutableStateOf<PendingInvitationCancel?>(null) }
+    var roleChangeTarget by remember { mutableStateOf<PendingRoleChange?>(null) }
     val deviceLabelPrefs = remember { context.getSharedPreferences("device_labels", Context.MODE_PRIVATE) }
     var deviceLabels by remember {
         mutableStateOf(deviceLabelPrefs.all.mapNotNull { (key, value) ->
@@ -816,6 +824,17 @@ private fun TrackerScreen(
                             ?: stringResource(R.string.device_short_id, device.deviceId.key().take(8))
                         OutlinedButton(onClick = { removalTarget = device.deviceId }) {
                             Text(stringResource(R.string.remove_device, label))
+                        }
+                        if (BuildConfig.DEBUG) {
+                            val nextRole = if (device.role == 2.toUByte()) 1u.toUByte() else 2u.toUByte()
+                            OutlinedButton(onClick = {
+                                roleChangeTarget = PendingRoleChange(
+                                    family, device.deviceId.copyOf(), nextRole, activeFamilyIsLocal,
+                                )
+                            }) {
+                                Text(stringResource(if (nextRole == 2.toUByte())
+                                    R.string.promote_device else R.string.demote_device, label))
+                            }
                         }
                     }
                     if (BuildConfig.DEBUG) {
@@ -2617,6 +2636,39 @@ private fun TrackerScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { cancelInvitationTarget = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+    roleChangeTarget?.let { target ->
+        val label = deviceLabels[deviceLabelKey(target.family.familyId, target.targetId)]
+            ?.takeIf { it.isNotBlank() } ?: target.targetId.key().take(8)
+        AlertDialog(
+            onDismissRequest = { roleChangeTarget = null },
+            title = { Text(stringResource(R.string.change_device_role_title)) },
+            text = { Text(stringResource(R.string.change_device_role_warning, label,
+                if (target.newRole == 2.toUByte()) stringResource(R.string.manager_role)
+                else stringResource(R.string.member_role))) },
+            confirmButton = {
+                Button(onClick = {
+                    roleChangeTarget = null
+                    scope.launch {
+                        runCatching { withContext(Dispatchers.IO) {
+                            val origin = if (target.localManager)
+                                lastRelayOrigin(target.family) ?: error("Relay origin unavailable")
+                            else sharing.recipientOrigin(target.family)
+                            sharing.changeDeviceRole(target.family, origin, target.targetId, target.newRole)
+                        } }.onSuccess {
+                            activeSharedSnapshot = it
+                            version++
+                            message = context.getString(R.string.device_role_changed)
+                        }.onFailure { message = errorText }
+                    }
+                }) { Text(stringResource(R.string.confirm_device_role_change)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { roleChangeTarget = null }) {
                     Text(stringResource(R.string.cancel))
                 }
             },

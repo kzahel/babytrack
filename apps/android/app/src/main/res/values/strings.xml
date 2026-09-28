@@ -218,6 +218,14 @@
     <string name="cancel_invitation_title">Cancel this invitation?</string>
     <string name="cancel_invitation_warning">Invitation %1$s will stop working after the relay confirms cancellation. A device that already joined keeps its access.</string>
     <string name="confirm_cancel_invitation">Cancel invitation</string>
+    <string name="promote_device">Make %1$s a manager</string>
+    <string name="demote_device">Make %1$s a member</string>
+    <string name="change_device_role_title">Change device access?</string>
+    <string name="change_device_role_warning">%1$s will become a %2$s after the relay confirms this change. Changing a manager to a member also invalidates its unused invitations.</string>
+    <string name="manager_role">manager</string>
+    <string name="member_role">member</string>
+    <string name="confirm_device_role_change">Change role</string>
+    <string name="device_role_changed">Device role changed</string>
     <string name="invitation_canceled">Invitation cancellation confirmed.</string>
     <string name="remove_device_title">Remove shared access?</string>
     <string name="remove_device_warning">Device %1$s will stop receiving new Family data after the relay confirms key rotation. It keeps data already stored on that device.</string>

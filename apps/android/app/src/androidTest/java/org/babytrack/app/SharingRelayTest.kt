@@ -222,11 +222,12 @@ class SharingRelayTest {
             val button = context.getString(R.string.cancel_invitation, shortId)
             val deadline = System.currentTimeMillis() + 25_000
             var clicked = false
+            var scanForward = true
             while (System.currentTimeMillis() < deadline) {
                 val root = instrumentation.uiAutomation.rootInActiveWindow
                 clicked = root?.clickTarget(button)?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
                 if (clicked) break
-                root?.scrollForward()
+                if (root?.scroll(scanForward) != true) scanForward = !scanForward
                 Thread.sleep(200)
             }
             assertTrue("Unused invitation should have a cancel action", clicked)
@@ -330,6 +331,7 @@ class SharingRelayTest {
             val label = context.getString(R.string.join_or_retry)
             val deadline = System.currentTimeMillis() + 25_000
             var clicked = false
+            var scanForward = true
             while (System.currentTimeMillis() < deadline) {
                 val root = instrumentation.uiAutomation.rootInActiveWindow
                 val button = root?.clickTarget(label)
@@ -337,7 +339,7 @@ class SharingRelayTest {
                     clicked = button.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                     if (clicked) break
                 }
-                root?.scrollForward()
+                if (root?.scroll(scanForward) != true) scanForward = !scanForward
                 Thread.sleep(200)
             }
             assertTrue("Invitation link should offer one join action", clicked)
@@ -432,6 +434,14 @@ class SharingRelayTest {
         if (isScrollable && performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) return true
         return (0 until childCount).any { index -> getChild(index)?.scrollForward() == true }
     }
+
+    private fun AccessibilityNodeInfo.scrollBackward(): Boolean {
+        if (isScrollable && performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)) return true
+        return (0 until childCount).any { index -> getChild(index)?.scrollBackward() == true }
+    }
+
+    private fun AccessibilityNodeInfo.scroll(forward: Boolean): Boolean =
+        if (forward) scrollForward() else scrollBackward()
 
     private fun wakeEmulatorScreen() {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
@@ -659,6 +669,27 @@ class SharingRelayTest {
         ShareCoordinator(context, thirdDb.absolutePath).use { sharing ->
             assertTrue(sharing.syncRecipientAndUpload(third).ready)
             assertTrue(sharing.snapshot(third).children.any { it.name == "Holder child" })
+        }
+        ShareCoordinator(context, holderDb.absolutePath).use { sharing ->
+            val promoted = sharing.changeDeviceRole(holder, origin, third.deviceId, 2u.toUByte())
+            assertEquals(2u.toUByte(), promoted.devices.single {
+                it.deviceId.contentEquals(third.deviceId)
+            }.role)
+        }
+        ShareCoordinator(context, thirdDb.absolutePath).use { sharing ->
+            assertTrue(sharing.advanceRecipient(third).ready)
+            assertTrue(sharing.isAdmittedManager(third))
+        }
+        ShareCoordinator(context, holderDb.absolutePath).use { sharing ->
+            val demoted = sharing.changeDeviceRole(holder, origin, third.deviceId, 1u.toUByte())
+            assertEquals(1u.toUByte(), demoted.devices.single {
+                it.deviceId.contentEquals(third.deviceId)
+            }.role)
+        }
+        ShareCoordinator(context, thirdDb.absolutePath).use { sharing ->
+            assertTrue(sharing.advanceRecipient(third).ready)
+            assertTrue(!sharing.isAdmittedManager(third))
+            assertTrue(runCatching { sharing.invite(third, origin, 1u.toUByte()) }.isFailure)
         }
         ShareCoordinator(context, holderDb.absolutePath).use { sharing ->
             val rotated = sharing.removeDevice(holder, origin, third.deviceId)

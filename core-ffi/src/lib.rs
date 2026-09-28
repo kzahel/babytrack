@@ -18,6 +18,7 @@ use babytrack_core::{
     issue::{FirstInviteIssue, LaterInviteIssue},
     local_api::{self, ActivityTime, LocalRepository},
     operation,
+    role_change::RoleChange,
     shared_history::{PendingBatchResult, PublicHistorySession},
     shared_ready::ReadyFamilySession,
     sqlite_store::{FamilyHandle, SqliteStore},
@@ -226,6 +227,13 @@ pub struct PreparedInviteRow {
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct PreparedCancelRow {
     pub invitation_id: Vec<u8>,
+    pub candidate_bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PreparedRoleChangeRow {
+    pub target_device_id: Vec<u8>,
+    pub new_role: u8,
     pub candidate_bytes: Vec<u8>,
 }
 
@@ -643,6 +651,45 @@ impl NativeSharedStore {
     ) -> Result<(), BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
         InviteCancellation::resume(&store, family.handle()?)
+            .map_err(rejected)?
+            .confirm(&mut store, &committed_control(&commit_response)?)
+            .map_err(rejected)
+    }
+
+    /// Save exact manager role-change bytes before HTTP POST.
+    pub fn prepare_role_change(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        target_device_id: Vec<u8>,
+        new_role: u8,
+    ) -> Result<PreparedRoleChangeRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let key = fixed(&wrapping_key)?;
+        let target = fixed(&target_device_id)?;
+        let change = if let Some(holder) = admitted_manager(&mut store, handle, &key)? {
+            RoleChange::prepare_for_admitted_manager(&mut store, &holder, target, new_role)
+                .map_err(rejected)?
+        } else {
+            let manager = ManagerCreation::resume(&store, handle, &key).map_err(rejected)?;
+            RoleChange::prepare_for_initial_manager(&mut store, &manager, target, new_role)
+                .map_err(rejected)?
+        };
+        Ok(PreparedRoleChangeRow {
+            target_device_id: change.target_id().to_vec(),
+            new_role: change.new_role(),
+            candidate_bytes: change.candidate_bytes().to_vec(),
+        })
+    }
+
+    pub fn confirm_role_change(
+        &self,
+        family: FamilyRef,
+        commit_response: Vec<u8>,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        RoleChange::resume(&store, family.handle()?)
             .map_err(rejected)?
             .confirm(&mut store, &committed_control(&commit_response)?)
             .map_err(rejected)

@@ -269,7 +269,7 @@ impl InviteCancellation {
     }
 }
 
-fn committed_matches(
+pub(crate) fn committed_matches(
     store: &SqliteStore,
     family: FamilyHandle,
     candidate: &[u8],
@@ -298,7 +298,7 @@ fn committed_matches(
     Ok(false)
 }
 
-fn random_v4() -> Result<[u8; 16], Error> {
+pub(crate) fn random_v4() -> Result<[u8; 16], Error> {
     let mut id = [0; 16];
     getrandom::fill(&mut id)?;
     id[6] = (id[6] & 0x0f) | 0x40;

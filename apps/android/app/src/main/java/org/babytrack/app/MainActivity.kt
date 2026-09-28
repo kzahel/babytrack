@@ -770,6 +770,9 @@ private fun TrackerScreen(
     val filename = stringResource(R.string.backup_filename)
     val protectedFilename = stringResource(R.string.protected_backup_filename)
     val scrollState = rememberScrollState()
+    LaunchedEffect(incomingInvitation) {
+        if (incomingInvitation != null) scrollState.scrollTo(0)
+    }
     val joinFirst = incomingInvitation != null &&
         (receivedFragment.isNotBlank() || sharedSnapshot == null)
     var timelineTop by remember { mutableStateOf(0) }
@@ -839,6 +842,7 @@ private fun TrackerScreen(
                             onValueChange = { receivedFragment = it },
                             label = { Text(stringResource(R.string.received_fragment)) },
                             modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
                         )
                         Button(enabled = !joinInProgress &&
                             (receivedFragment.isNotBlank() || selectedRecipient != null &&

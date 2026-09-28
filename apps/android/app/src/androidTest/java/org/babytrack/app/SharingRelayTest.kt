@@ -326,7 +326,7 @@ class SharingRelayTest {
         ActivityScenario.launch<MainActivity>(link).use {
             val label = context.getString(R.string.join_or_retry)
             composeRule.waitUntil(25_000) {
-                composeRule.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty()
+                runCatching { composeRule.onNodeWithText(label).assertIsDisplayed() }.isSuccess
             }
             composeRule.onNodeWithText(label).assertIsDisplayed().performClick()
 

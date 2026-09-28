@@ -176,8 +176,11 @@ is committed and saved; the coordinator suites cover the later handshake.
 Deep links place this join card first until history is ready, so the one
 action and pending stage are visible without searching through the tracker;
 the focused Compose UI check asserts it is visible and taps it without
-scrolling. The invitation-cancel UI check also uses Compose semantics to
-find and scroll to its action.
+scrolling. The prefilled invitation input stays one line so a long link
+cannot push that action below a short viewport; opening the link also
+returns the tracker scroll to the top. A 1080×1600 emulator check exercises
+the action. The invitation-cancel UI check uses Compose semantics to find
+and scroll to its action.
 An admitted manager now exposes an invitation action in the selected Family's
 access section and uses the same foreground and scheduled coordinator to answer
 claims and proofs. A real-relay instrumentation case uses three independent

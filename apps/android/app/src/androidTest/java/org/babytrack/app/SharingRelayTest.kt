@@ -331,7 +331,7 @@ class SharingRelayTest {
             composeRule.onNodeWithText(label).assertIsDisplayed().performClick()
 
             val saved = context.filesDir.resolve("families.db").absolutePath
-            val claimDeadline = System.currentTimeMillis() + 25_000
+            val claimDeadline = System.currentTimeMillis() + 45_000
             var committed = false
             while (System.currentTimeMillis() < claimDeadline) {
                 val key = DeviceWrappingKey(context).loadOrCreate()
@@ -340,6 +340,12 @@ class SharingRelayTest {
                         core.recipientFamilies().firstOrNull { it.familyId.contentEquals(family.familyId) }
                             ?.let { core.recipientFirstJoinAction(it, key) == 0u.toUByte() } ?: false
                     }
+                } catch (failure: Exception) {
+                    // The UI coordinator can hold the SQLite writer while this
+                    // independent assertion connection reads its claim state.
+                    // Retry only that transient lock; other failures are real.
+                    if (!failure.message.orEmpty().contains("DatabaseBusy")) throw failure
+                    false
                 } finally {
                     key.fill(0)
                 }

@@ -100,13 +100,13 @@ new screens should be translation-ready from their first implementation:
   schema, and diagnostic codes locale-neutral. Translating a label cannot
   change a Family/child target or grant semantics.
 
-Current Android code already uses `strings.xml` for most copy, plurals for
-some device counts, and locale-aware `DateFormat` for many display times.
-The birth-date field still asks for ISO text, and bottle/growth validation
-accepts only dot decimals. Treat those as migration work for the new
-forms, not as a reason to change Rust's canonical format. Summary strings
-with multiple counts should be reviewed for plural grammar during that
-move.
+Current Android code uses `strings.xml` for most copy, plurals for some
+device counts, and locale-aware `DateFormat` for many display times. Birth
+dates use the platform date picker and render in the device locale. Bottle,
+growth, and temperature fields accept comma or dot decimals and normalize
+only at the Rust boundary; saved entered values render with the viewer's
+decimal separator. The core's canonical format remains unchanged. Summary
+strings with multiple counts still need plural grammar review.
 
 ## Validation and reconsideration
 

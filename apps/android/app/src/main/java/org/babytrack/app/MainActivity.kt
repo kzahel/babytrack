@@ -94,6 +94,7 @@ import uniffi.babytrack_core_ffi.RestoredOriginRow
 import uniffi.babytrack_core_ffi.SharedSnapshotRow
 import uniffi.babytrack_core_ffi.SharedSyncRow
 import java.text.DateFormat
+import java.text.DecimalFormatSymbols
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.Instant
@@ -284,27 +285,49 @@ private data class PendingBottleEdit(
 )
 
 private val bottleAmountPattern = Regex("(0|[1-9][0-9]*)(\\.[0-9]+)?")
+private val temperaturePattern = Regex("-?(0|[1-9][0-9]*)(\\.[0-9]+)?")
 
 private fun validBottleAmount(value: String, unit: UByte): Boolean =
-    value.length <= 16 && bottleAmountPattern.matches(value) &&
-        (unit != 1u.toUByte() || !value.contains('.')) &&
+    value.length <= 16 && bottleAmountPattern.matches(canonicalDecimal(value)) &&
+        (unit != 1u.toUByte() || !canonicalDecimal(value).contains('.')) &&
         value.any { it in '1'..'9' } &&
-        (unit != 1u.toUByte() || value.toLongOrNull()?.let { it in 1..1_000_000 } == true)
+        (unit != 1u.toUByte() || canonicalDecimal(value).toLongOrNull()?.let { it in 1..1_000_000 } == true)
 
 private fun validGrowthAmount(value: String, unit: UByte): Boolean =
-    value.isBlank() || (value.length <= 16 && bottleAmountPattern.matches(value) &&
+    value.isBlank() || (value.length <= 16 && bottleAmountPattern.matches(canonicalDecimal(value)) &&
         value.any { it in '1'..'9' } &&
-        (unit !in listOf(10u.toUByte(), 20u.toUByte()) || !value.contains('.')))
+        (unit !in listOf(10u.toUByte(), 20u.toUByte()) || !canonicalDecimal(value).contains('.')))
+
+private fun validTemperature(value: String): Boolean =
+    value.length <= 16 && temperaturePattern.matches(canonicalDecimal(value))
 
 private fun growthInput(
     weight: String, weightUnit: UByte,
     length: String, lengthUnit: UByte,
     head: String, headUnit: UByte,
 ): GrowthInputRow = GrowthInputRow(
-    weight.trim().takeIf { it.isNotEmpty() }?.let { EnteredMeasureRow(it, weightUnit) },
-    length.trim().takeIf { it.isNotEmpty() }?.let { EnteredMeasureRow(it, lengthUnit) },
-    head.trim().takeIf { it.isNotEmpty() }?.let { EnteredMeasureRow(it, headUnit) },
+    weight.trim().takeIf { it.isNotEmpty() }?.let { EnteredMeasureRow(canonicalDecimal(it), weightUnit) },
+    length.trim().takeIf { it.isNotEmpty() }?.let { EnteredMeasureRow(canonicalDecimal(it), lengthUnit) },
+    head.trim().takeIf { it.isNotEmpty() }?.let { EnteredMeasureRow(canonicalDecimal(it), headUnit) },
 )
+
+private fun localizedEntered(context: Context, value: String): String =
+    localizedDecimal(value, DecimalFormatSymbols.getInstance(context.resources.configuration.locales[0]).decimalSeparator)
+
+private fun birthDateLabel(context: Context, isoDate: String): String =
+    runCatching {
+        val instant = LocalDate.parse(isoDate).atStartOfDay(ZoneId.systemDefault()).toInstant()
+        DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date.from(instant))
+    }.getOrElse { context.getString(R.string.birth_date_not_set) }
+
+private fun chooseBirthDate(context: Context, isoDate: String, onSelected: (String) -> Unit) {
+    val day = runCatching { LocalDate.parse(isoDate) }.getOrElse { LocalDate.now() }
+    DatePickerDialog(context, { _, year, month, date ->
+        onSelected(LocalDate.of(year, month + 1, date).toString())
+    }, day.year, day.monthValue - 1, day.dayOfMonth).apply {
+        datePicker.maxDate = System.currentTimeMillis()
+    }.show()
+}
 
 private fun growthUnitLabel(context: Context, unit: UByte): String = context.getString(when (unit) {
     10u.toUByte() -> R.string.unit_g
@@ -323,7 +346,7 @@ private fun growthDisplay(context: Context, base: Long?, entered: String?, unit:
         else -> lengthUnits.any { it.first == unit }
     }
     val shownUnit = if (known) unit!! else baseUnit
-    "${if (known) entered ?: it.toString() else it.toString()} ${growthUnitLabel(context, shownUnit)}"
+    "${localizedEntered(context, if (known) entered ?: it.toString() else it.toString())} ${growthUnitLabel(context, shownUnit)}"
 }
 
 @Composable
@@ -1737,13 +1760,13 @@ private fun TrackerScreen(
                             }
                         }) { Text(stringResource(R.string.add_child)) }
                     }
-                    OutlinedTextField(
-                        value = childBirthDate,
-                        onValueChange = { childBirthDate = it },
-                        label = { Text(stringResource(R.string.birth_date)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
+                    Text(stringResource(R.string.birth_date))
+                    OutlinedButton(onClick = {
+                        chooseBirthDate(context, childBirthDate) { childBirthDate = it }
+                    }) { Text(birthDateLabel(context, childBirthDate)) }
+                    if (childBirthDate.isNotBlank()) TextButton(onClick = { childBirthDate = "" }) {
+                        Text(stringResource(R.string.clear_birth_date))
+                    }
                     Text(stringResource(R.string.growth_chart_sex))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(
@@ -1862,9 +1885,7 @@ private fun TrackerScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = amount,
-                            onValueChange = { amount = it.filter { char ->
-                                char.isDigit() || (bottleUnit != 1u.toUByte() && char == '.')
-                            }.take(16) },
+                            onValueChange = { amount = decimalDraft(it, bottleUnit != 1u.toUByte()) },
                             label = { Text(stringResource(R.string.bottle_amount)) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f),
@@ -1875,8 +1896,8 @@ private fun TrackerScreen(
                             val unit = bottleUnit
                             val content = bottleContent
                             logCompleted(onSaved = { if (amount == entered) amount = "" }) { at ->
-                                if (activeShared) sharing.logBottleEntered(family, child.id, entered, unit, content, at)
-                                else store.logBottleEntered(family, child.id, entered, unit, content, at)
+                                if (activeShared) sharing.logBottleEntered(family, child.id, canonicalDecimal(entered), unit, content, at)
+                                else store.logBottleEntered(family, child.id, canonicalDecimal(entered), unit, content, at)
                             }
                         }) { Text(stringResource(R.string.log_bottle)) }
                     }
@@ -2130,7 +2151,7 @@ private fun TrackerScreen(
                     }
                     OutlinedTextField(
                         value = growthWeight,
-                        onValueChange = { growthWeight = it.filter { char -> char.isDigit() || char == '.' }.take(16) },
+                        onValueChange = { growthWeight = decimalDraft(it, growthWeightUnit != 10u.toUByte()) },
                         label = { Text(stringResource(R.string.weight)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
@@ -2141,7 +2162,7 @@ private fun TrackerScreen(
                     }
                     OutlinedTextField(
                         value = growthLength,
-                        onValueChange = { growthLength = it.filter { char -> char.isDigit() || char == '.' }.take(16) },
+                        onValueChange = { growthLength = decimalDraft(it, growthLengthUnit != 20u.toUByte()) },
                         label = { Text(stringResource(R.string.length)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
@@ -2152,7 +2173,7 @@ private fun TrackerScreen(
                     }
                     OutlinedTextField(
                         value = growthHead,
-                        onValueChange = { growthHead = it.filter { char -> char.isDigit() || char == '.' }.take(16) },
+                        onValueChange = { growthHead = decimalDraft(it, growthHeadUnit != 20u.toUByte()) },
                         label = { Text(stringResource(R.string.head_circumference)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
@@ -2204,22 +2225,22 @@ private fun TrackerScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = temperatureEntered,
-                            onValueChange = { temperatureEntered = it.take(16) },
+                            onValueChange = { temperatureEntered = decimalDraft(it, fractional = true, signed = true) },
                             label = { Text(stringResource(if (temperatureUnit == 30u.toUByte())
                                 R.string.temperature_c else R.string.temperature_f)) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                         )
-                        Button(enabled = temperatureEntered.isNotBlank(), onClick = {
+                        Button(enabled = validTemperature(temperatureEntered), onClick = {
                             val entered = temperatureEntered.trim()
                             val unit = temperatureUnit
                             val chosenAt = logAtMs
                             val at = logTime()
                             scope.launch {
                                 runCatching { withContext(Dispatchers.IO) {
-                                    if (activeShared) sharing.logTemperatureEntered(family, child.id, entered, unit, at)
-                                    else store.logTemperatureEntered(family, child.id, entered, unit, at)
+                                    if (activeShared) sharing.logTemperatureEntered(family, child.id, canonicalDecimal(entered), unit, at)
+                                    else store.logTemperatureEntered(family, child.id, canonicalDecimal(entered), unit, at)
                                 } }.onSuccess {
                                     if (temperatureEntered.trim() == entered) temperatureEntered = ""
                                     version++
@@ -2343,7 +2364,7 @@ private fun TrackerScreen(
                         }
                         val label = when {
                             entry.bottleMl != null -> stringResource(R.string.bottle_with_entered,
-                                entry.bottleEntered ?: entry.bottleMl.toString(),
+                                localizedEntered(context, entry.bottleEntered ?: entry.bottleMl.toString()),
                                 stringResource(when (entry.bottleUnit) {
                                     2u.toUByte() -> R.string.unit_us_fl_oz
                                     3u.toUByte() -> R.string.unit_uk_fl_oz
@@ -2398,7 +2419,7 @@ private fun TrackerScreen(
                             }
                             entry.kind == "temperature" && entry.temperatureC != null ->
                                 stringResource(R.string.temperature_entry,
-                                    entry.temperatureEntered ?: entry.temperatureC!!,
+                                    localizedEntered(context, entry.temperatureEntered ?: entry.temperatureC!!),
                                     stringResource(if (entry.temperatureUnit == 31u.toUByte())
                                         R.string.unit_fahrenheit else R.string.unit_celsius))
                             entry.kind == "medication" && entry.medicationName != null &&
@@ -2506,7 +2527,7 @@ private fun TrackerScreen(
                                             entry.childId.copyOf(),
                                             entry.id.copyOf(),
                                             activeShared,
-                                            entry.bottleEntered ?: entry.bottleMl.toString(),
+                                            localizedEntered(context, entry.bottleEntered ?: entry.bottleMl.toString()),
                                             entry.bottleUnit ?: 1u.toUByte(),
                                             entry.bottleContent ?: 4u.toUByte(),
                                         )
@@ -2572,11 +2593,11 @@ private fun TrackerScreen(
                                     OutlinedButton(onClick = {
                                         pendingGrowthEdit = PendingGrowthEdit(
                                             family, entry.childId.copyOf(), entry.id.copyOf(), activeShared,
-                                            entry.growthWeightEntered ?: entry.growthWeightG?.toString().orEmpty(),
+                                            localizedEntered(context, entry.growthWeightEntered ?: entry.growthWeightG?.toString().orEmpty()),
                                             entry.growthWeightUnit ?: 10u.toUByte(),
-                                            entry.growthLengthEntered ?: entry.growthLengthMm?.toString().orEmpty(),
+                                            localizedEntered(context, entry.growthLengthEntered ?: entry.growthLengthMm?.toString().orEmpty()),
                                             entry.growthLengthUnit ?: 20u.toUByte(),
-                                            entry.growthHeadEntered ?: entry.growthHeadMm?.toString().orEmpty(),
+                                            localizedEntered(context, entry.growthHeadEntered ?: entry.growthHeadMm?.toString().orEmpty()),
                                             entry.growthHeadUnit ?: 20u.toUByte(),
                                         )
                                     }) { Text(stringResource(R.string.edit_growth)) }
@@ -2585,7 +2606,7 @@ private fun TrackerScreen(
                                     OutlinedButton(onClick = {
                                         pendingTemperatureEdit = PendingTemperatureEdit(
                                             family, entry.childId.copyOf(), entry.id.copyOf(), activeShared,
-                                            entry.temperatureEntered ?: entry.temperatureC!!,
+                                            localizedEntered(context, entry.temperatureEntered ?: entry.temperatureC!!),
                                             entry.temperatureUnit ?: 30u.toUByte(),
                                         )
                                     }) { Text(stringResource(R.string.edit_temperature)) }
@@ -2885,9 +2906,8 @@ private fun TrackerScreen(
                 Column {
                     OutlinedTextField(
                         value = target.amount,
-                        onValueChange = { pendingBottleEdit = target.copy(amount = it.filter { char ->
-                            char.isDigit() || (target.unit != 1u.toUByte() && char == '.')
-                        }.take(16)) },
+                        onValueChange = { pendingBottleEdit = target.copy(amount =
+                            decimalDraft(it, target.unit != 1u.toUByte())) },
                         label = { Text(stringResource(R.string.bottle_amount)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     )
@@ -2926,10 +2946,10 @@ private fun TrackerScreen(
                     change(onSaved = { pendingBottleEdit = null }) {
                         if (target.shared) sharing.editBottleEntered(
                             target.family, target.childId, target.activityId,
-                            target.amount, target.unit, target.content, savedAtMs,
+                            canonicalDecimal(target.amount), target.unit, target.content, savedAtMs,
                         ) else store.editBottleEntered(
                             target.family, target.childId, target.activityId,
-                            target.amount, target.unit, target.content, savedAtMs,
+                            canonicalDecimal(target.amount), target.unit, target.content, savedAtMs,
                         )
                     }
                 }) { Text(stringResource(R.string.save_changes)) }
@@ -3103,7 +3123,7 @@ private fun TrackerScreen(
                     }
                     OutlinedTextField(
                         value = target.weight,
-                        onValueChange = { pendingGrowthEdit = target.copy(weight = it.filter { char -> char.isDigit() || char == '.' }.take(16)) },
+                        onValueChange = { pendingGrowthEdit = target.copy(weight = decimalDraft(it, target.weightUnit != 10u.toUByte())) },
                         label = { Text(stringResource(R.string.weight)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
@@ -3113,7 +3133,7 @@ private fun TrackerScreen(
                     }
                     OutlinedTextField(
                         value = target.length,
-                        onValueChange = { pendingGrowthEdit = target.copy(length = it.filter { char -> char.isDigit() || char == '.' }.take(16)) },
+                        onValueChange = { pendingGrowthEdit = target.copy(length = decimalDraft(it, target.lengthUnit != 20u.toUByte())) },
                         label = { Text(stringResource(R.string.length)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
@@ -3123,7 +3143,7 @@ private fun TrackerScreen(
                     }
                     OutlinedTextField(
                         value = target.head,
-                        onValueChange = { pendingGrowthEdit = target.copy(head = it.filter { char -> char.isDigit() || char == '.' }.take(16)) },
+                        onValueChange = { pendingGrowthEdit = target.copy(head = decimalDraft(it, target.headUnit != 20u.toUByte())) },
                         label = { Text(stringResource(R.string.head_circumference)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
@@ -3261,12 +3281,15 @@ private fun TrackerScreen(
             title = { Text(stringResource(R.string.edit_child_growth_details)) },
             text = {
                 Column {
-                    OutlinedTextField(
-                        value = target.birthDate,
-                        onValueChange = { pendingChildMetadataEdit = target.copy(birthDate = it.take(10)) },
-                        label = { Text(stringResource(R.string.birth_date)) },
-                        singleLine = true,
-                    )
+                    Text(stringResource(R.string.birth_date))
+                    OutlinedButton(onClick = {
+                        chooseBirthDate(context, target.birthDate) {
+                            pendingChildMetadataEdit = target.copy(birthDate = it)
+                        }
+                    }) { Text(birthDateLabel(context, target.birthDate)) }
+                    if (target.birthDate.isNotBlank()) TextButton(onClick = {
+                        pendingChildMetadataEdit = target.copy(birthDate = "")
+                    }) { Text(stringResource(R.string.clear_birth_date)) }
                     Text(stringResource(R.string.birth_date_edit_hint))
                     Text(stringResource(R.string.growth_chart_sex))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3393,7 +3416,7 @@ private fun TrackerScreen(
                 Column {
                     OutlinedTextField(
                         value = target.entered,
-                        onValueChange = { pendingTemperatureEdit = target.copy(entered = it.take(16)) },
+                        onValueChange = { pendingTemperatureEdit = target.copy(entered = decimalDraft(it, fractional = true, signed = true)) },
                         label = { Text(stringResource(if (target.unit == 30u.toUByte())
                             R.string.temperature_c else R.string.temperature_f)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -3410,15 +3433,15 @@ private fun TrackerScreen(
                 }
             },
             confirmButton = {
-                Button(enabled = target.entered.isNotBlank(), onClick = {
+                Button(enabled = validTemperature(target.entered), onClick = {
                     val savedAtMs = System.currentTimeMillis()
                     change(onSaved = { pendingTemperatureEdit = null }) {
                         if (target.shared) sharing.editTemperatureEntered(
                             target.family, target.childId, target.activityId,
-                            target.entered, target.unit, savedAtMs,
+                            canonicalDecimal(target.entered), target.unit, savedAtMs,
                         ) else store.editTemperatureEntered(
                             target.family, target.childId, target.activityId,
-                            target.entered, target.unit, savedAtMs,
+                            canonicalDecimal(target.entered), target.unit, savedAtMs,
                         )
                     }
                 }) { Text(stringResource(R.string.save_changes)) }

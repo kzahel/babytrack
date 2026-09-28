@@ -20,6 +20,7 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -54,6 +55,41 @@ class SharingRelayTest {
             composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onAllNodesWithText(text).onFirst().performScrollTo().performClick()
+    }
+
+    @Test
+    fun commaDecimalBottleSavesThroughCanonicalCoreInput() {
+        wakeEmulatorScreen()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = context.filesDir.resolve("families.db")
+        val now = System.currentTimeMillis()
+        val (family, child) = NativeLocalStore.open(db.absolutePath).use { local ->
+            val family = local.createFamily(now)
+            family to local.addChild(family, "Comma child", now)
+        }
+        context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
+            .edit().putString("family", family.familyId.hex())
+            .putString("child", child.hex()).commit()
+        ActivityScenario.launch(MainActivity::class.java).use {
+            composeRule.onNodeWithText(context.getString(R.string.add_activity)).performClick()
+            composeRule.onNodeWithText(context.getString(R.string.log_bottle)).performClick()
+            composeRule.onNodeWithText(context.getString(R.string.unit_us_fl_oz))
+                .performScrollTo().performClick()
+            composeRule.onNodeWithText(context.getString(R.string.bottle_amount))
+                .performScrollTo().performTextInput("4,5")
+            composeRule.onAllNodesWithText(context.getString(R.string.log_bottle))
+                .onLast().performScrollTo().performClick()
+            openTab(R.string.nav_history)
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText("Bottle · 4.5 US fl oz · Formula")
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+        }
+        NativeLocalStore.open(db.absolutePath).use { local ->
+            assertTrue(local.timeline(family, child).any {
+                it.bottleEntered == "4.5" && it.bottleUnit == 2u.toUByte()
+            })
+        }
     }
 
     @Test

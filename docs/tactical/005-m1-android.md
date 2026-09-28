@@ -276,8 +276,10 @@ This is still a development flow, not a released product flow.
   rules while migrating each route: semantic color and type hierarchy,
   localized resources/plurals, flexible large-text and RTL layouts,
   locale-aware date and decimal input, and accessible status labels. The
-  first light/dark palette and matching widget surfaces are in place;
-  activity components and input migration remain.
+  first light/dark palette and matching widget surfaces are in place.
+  Birth dates now use a localized picker, and bottle/growth/temperature
+  entries accept comma decimals before canonicalizing for Rust. Finish
+  summary plurals, large-text/RTL validation, and accessible status labels.
 - [x] Create and switch local Families, add/select children, log bottle and
   diaper, and inspect a persisted timeline through the shared Rust core on
   an emulator. The UI smoke runs after restart in CI.

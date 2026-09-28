@@ -501,19 +501,13 @@ class SharingRelayTest {
                 composeRule.onAllNodesWithText(confirm).fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onNodeWithText(confirm).performClick()
-            val deadline = System.currentTimeMillis() + 25_000
-            var removed = false
-            while (System.currentTimeMillis() < deadline) {
-                removed = runCatching {
-                    ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
-                        sharing.syncAndUpload(family, origin).ready &&
-                            sharing.snapshot(family).pendingDevices.isEmpty()
-                    }
-                }.getOrDefault(false)
-                if (removed) break
-                Thread.sleep(200)
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText(context.getString(R.string.pending_device_removed))
+                    .fetchSemanticsNodes().isNotEmpty()
             }
-            assertTrue("The UI action should commit pending-device removal", removed)
+        }
+        ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            assertTrue(sharing.snapshot(family).pendingDevices.isEmpty())
         }
         ShareCoordinator(context, recipientDb.absolutePath).use { sharing ->
             assertEquals(8u.toUByte(), sharing.advanceRecipient(recipient).joinPhase)

@@ -136,7 +136,7 @@ scrolls to that action; the complete local recovery flow and remote run
 | Next dependent slice | The first-cohort recheck and [focused general-authority advisory](003-m0-foundation.md#general-authority-advisory-pass-at-98fa0ea) passed. Relay restart replays public controls and accepted batch authority; a signed private checkpoint covers rejected-result and staging-reservation sets. Signed GETs, batch POSTs, manager controls, and later control HTTP writes use that ledger under a SQLite writer lock. Later enrollment after removal and epoch rotation passes on separate emulators. A second admitted manager now invites, grants, and removes a third device through relay HTTP and Android instrumentation, then removes the original manager in a second rotation and writes at epoch three. An initial manager can cancel an unused invitation. An admitted manager can promote and demote an active device, and the recipient verifies the role after sync. Pending-device removal, admitted-manager cancellation coverage, browser outbox beyond the initial manager, and M0 exit review remain. |
 | Next independent review | Run one broader end-of-M0 recovery and mixed-client gate after its executable coverage closes. Focused advisory findings remain open without serial rechecks during feature development. Prioritize usable tracking and browser shared sync before another review cycle. |
 | Open advisory | The [automatic-status recheck](003-m0-foundation.md#advisory-automatic-status-recheck-at-ad42d78) found an own-claim lost-response ambiguity and a concurrent status-write race. FS37/FS77 regressions and repair remain due before real Family data. Durable streaming of large control history also remains open. |
-| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, local Android UI smoke, and document-picker recovery jobs are required on every push/PR. Run `36386643767` at `599937b` passed all required jobs, including queued browser edits, 14 Android relay tests, the tracker UI flow, and file recovery. Its preceding run found a transient SQLite lock in an independent UI-test assertion; the bounded assertion retry passed locally and on this run. Physical phones and the M0 exit gate remain open. |
+| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, local Android UI smoke, and document-picker recovery jobs are required on every push/PR. Run `36406288420` at `8c765b4` passed every required job, including 14 Android relay tests, the tracker UI flow, and file recovery. Physical phones and the M0 exit gate remain open. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.
@@ -270,8 +270,7 @@ Run `36397125159` at `8ad4297` passed all non-emulator jobs but again found
 the join assertion sensitive to viewport position after activity recreation.
 The target chip existed below the CI emulator's viewport; the test now
 scrolls to it before checking visibility and selection. The complete
-14-case relay suite passes locally with this change. A new remote run is
-still required.
+14-case relay suite passed locally and in later remote run `36400724335`.
 
 Run `36400724335` at `1afc2fd` passed Rust, browser, native bindings, Android
 APK, and all 14 real-relay Android tests. Its headed tracker smoke stopped
@@ -281,8 +280,11 @@ A shorter local emulator viewport exposed that the script read the physical
 screen size instead of its active override; the helper now uses the effective
 size. A 1080×1600 local replay passed the child shortcuts, growth correction,
 and attached-note checks, then was stopped during later sleep checks already
-covered by the earlier full-height run. The next remote run remains to be
-verified.
+covered by the earlier full-height run.
+
+Run `36406288420` at `8c765b4` passed all required jobs. The remote
+Android job passed the 14-case relay suite, headed tracker UI smoke, and
+document-picker recovery after the compact-screen repair.
 
 For each gate, the owning tactical records the fixed commit, local commands,
 observed CI run, scenario IDs, security session/disposition if applicable,

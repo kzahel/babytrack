@@ -233,6 +233,23 @@ function holderStep(instance, mode) {
   return step.stdout.trim();
 }
 
+async function restartRelay(instance) {
+  const stopped = new Promise((resolve) => instance.child.once('exit', resolve));
+  instance.child.kill();
+  await stopped;
+  instance.child = spawn(path.resolve(relayBin), [
+    path.join(instance.temporary, 'relay.db'), path.join(instance.temporary, 'seed'),
+    `127.0.0.1:${instance.port}`,
+  ], { stdio: 'ignore' });
+  const base = `http://127.0.0.1:${instance.port}`;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (instance.child.exitCode != null) throw new Error('Relay exited after restart');
+    try { await fetch(base); return; } catch { /* startup retry */ }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error('Relay did not restart');
+}
+
 async function run() {
   await new Promise((resolve) => server.listen(0, 'localhost', resolve));
   let browser;
@@ -757,6 +774,7 @@ async function run() {
     }, holderRelay.fragment);
     assert.deepEqual(dynamicProof, { pulled: { cursor: 4, hasMore: false }, cursor: 5 });
     holderStep(holderRelay, 'grant');
+    await restartRelay(holderRelay);
     await page.reload();
     const dynamicReady = await page.evaluate(async (fragment) => {
       const wasm = await import('/babytrack_core_wasm.js');

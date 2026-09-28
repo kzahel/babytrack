@@ -736,8 +736,10 @@ HTTP, hydrates full history after admission, and reopens its ready view.
 The holder then writes an encrypted child batch that Chromium decrypts; the
 browser writes a different encrypted child batch that the holder verifies
 and decrypts. After initial disposable relay setup, both clients stage,
-commit, and read through HTTP. Later epochs and the broader offline fault
-matrix remain for the M0 mixed-client exit gate.
+commit, and read through HTTP. The relay restarts after grant, before the
+browser hydrates its history; both sides still exchange encrypted edits.
+Later epochs and the broader offline fault matrix remain for the M0
+mixed-client exit gate.
 The first manager's signing and epoch keys persist in IndexedDB and are
 reloaded for this narrow proof.
 An uncertain retry returns those bytes after reopen even if the caller's

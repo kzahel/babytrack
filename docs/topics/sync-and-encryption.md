@@ -328,7 +328,8 @@ after reload; a committed proof alone cannot become data-ready.
 One browser/native smoke now uses independent durable clients for the first
 full invitation, claim, challenge, proof, grant, full-log hydration, and
 encrypted writes in both directions. After direct setup of the disposable
-relay, both browser and native holder read and write through relay HTTP.
+relay, both browser and native holder read and write through relay HTTP. A
+relay restart after grant preserves admission and later encrypted exchange.
 Later-epoch mixed-client behavior remains to validate.
 IndexedDB keeps one exact sealed batch and an ordered draft queue. After
 signed acceptance, Rust seals the next draft against the new verified head;
@@ -355,9 +356,10 @@ relay using its own signing key, and lets Rust verify the grant against its
 agreement key and epoch commitment. IndexedDB saves the recipient signing,
 agreement, and epoch keys together. After reload, Chromium uploads that
 recipient's encrypted child operation and clears its outbox only after
-signed acceptance. The control ancestry before the grant is fixture-fed;
-browser claim/proof, rotation, queued-edit repair after rejection, and full
-independent CLI/browser convergence remain open.
+signed acceptance. That narrow recipient test uses fixture-fed control
+ancestry; the dynamic browser/native join above covers claim and proof over
+HTTP. Rotation, queued-edit repair after rejection, and broader independent
+CLI/browser fault coverage remain open.
 The first Android sharing flow uses foreground polling and scheduled
 background work. FCM and APNs may later provide empty background wakes through
 app-owned interfaces to reduce latency when an app is suspended. A missed

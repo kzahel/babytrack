@@ -658,10 +658,53 @@ async function run() {
         .replaceAll('723e4567e89b42d3a456426614174000', input.managerDeviceHex)
         .replace('0183f9d0000070008000000000000022', '0183f9d0000070008000000000000021')
         .replace('0183f9d0000070008000000000000024', '0183f9d0000070008000000000000025')
-        .replace('08831b000001a0dd591dc80050', '08831b000001a0dd591dc80150') });
+        .replace('08831b000001a0dd591dc80050', '08831b000001a0dd591dc80150')
+        .replace('66467574757265', '664c6174657221') });
     assert.deepEqual(queuedChild, { pending: true, queued: 1, cursor: 3,
       childType: 'child', childNameCbor: '66467574757265', acceptedCursor: 4,
       afterAcceptance: { pending: false, queued: 2 } });
+    await page.reload();
+    const lostQueuedResponse = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const { relayPost } = await import('/relay-post.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+      const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      const store = await PublicStore.open(wasm, 'babytrack-real-relay-public-smoke');
+      const before = await store.loadInitialReadySaved(data.familyHex);
+      const visibleBefore = hex(before.field_cbor(bytes(data.childHex), 1n));
+      before.free();
+      const queuedBefore = (await store.queuedInitial(data.familyHex)).length;
+      let responseLost = false;
+      try {
+        await store.uploadInitial(data.familyHex, async (path, body) => {
+          await relayPost(path, body);
+          throw new Error('Simulated lost queued batch response');
+        }, relayGet);
+      } catch (error) {
+        responseLost = error.message === 'Simulated lost queued batch response';
+        if (!responseLost) throw error;
+      }
+      const pending = await store.pendingInitial(data.familyHex);
+      const queue = await store.queuedInitial(data.familyHex);
+      const ready = await store.loadInitialReadySaved(data.familyHex);
+      const result = { queuedBefore, visibleBefore, responseLost,
+        pendingAfterLost: !!pending, queuedAfterLost: queue.length,
+        cursorAfterLost: Number(ready.last_cursor()),
+        childNameCbor: hex(ready.field_cbor(bytes(data.childHex), 1n)),
+        exactEnvelope: pending && hex(pending.envelope) };
+      ready.free();
+      store.close();
+      return result;
+    }, { familyHex: input.familyHex, childHex: '0183f9d0000070008000000000000021' });
+    const { exactEnvelope, ...lostQueuedStatus } = lostQueuedResponse;
+    assert.match(exactEnvelope, /^[0-9a-f]+$/);
+    assert.deepEqual(lostQueuedStatus, { queuedBefore: 2,
+      visibleBefore: '664c6174657221', responseLost: true,
+      pendingAfterLost: true, queuedAfterLost: 1, cursorAfterLost: 4,
+      childNameCbor: '664c6174657221' });
     await page.reload();
     const drainedQueue = await page.evaluate(async (data) => {
       const wasm = await import('/babytrack_core_wasm.js');
@@ -675,20 +718,23 @@ async function run() {
       const before = await store.loadInitialReadySaved(data.familyHex);
       const visibleBefore = hex(before.field_cbor(bytes(data.childHex), 1n));
       before.free();
+      const pendingBefore = await store.pendingInitial(data.familyHex);
       const queuedBefore = (await store.queuedInitial(data.familyHex)).length;
       const progress = await store.uploadInitial(data.familyHex, relayPost, relayGet);
       const ready = await store.loadInitialReadySaved(data.familyHex);
       const result = { ...progress, queuedBefore, visibleBefore,
+        retriedExact: pendingBefore && hex(pendingBefore.envelope) === data.exactEnvelope,
         pendingAfter: !!(await store.pendingInitial(data.familyHex)),
         queuedAfter: (await store.queuedInitial(data.familyHex)).length,
         childNameCbor: hex(ready.field_cbor(bytes(data.childHex), 1n)) };
       ready.free();
       store.close();
       return result;
-    }, { familyHex: input.familyHex, childHex: '0183f9d0000070008000000000000021' });
-    assert.deepEqual(drainedQueue, { cursor: 6, noMoreVisible: true, queuedBefore: 2,
-      visibleBefore: '66467574757265', pendingAfter: false, queuedAfter: 0,
-      childNameCbor: '66467574757265' });
+    }, { familyHex: input.familyHex, childHex: '0183f9d0000070008000000000000021',
+      exactEnvelope });
+    assert.deepEqual(drainedQueue, { cursor: 6, noMoreVisible: true, queuedBefore: 1,
+      visibleBefore: '664c6174657221', retriedExact: true,
+      pendingAfter: false, queuedAfter: 0, childNameCbor: '664c6174657221' });
     await context.close();
     console.log('browser wasm + IndexedDB journal, queued offline edits, bidirectional native/browser encrypted exchange, durable retry, reload, rollback, and Family isolation: OK');
   } finally {

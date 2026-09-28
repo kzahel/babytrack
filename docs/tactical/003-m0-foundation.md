@@ -538,6 +538,11 @@ fault matrix remain open.
 The browser IndexedDB harness now replays a signed same-epoch invitation
 through the Rust authority and data view after reload. A rotation still
 requires verified new epoch keys and is outside this initial-manager path.
+Its real-relay queue case uses two distinct dependent edits, loses the
+response after the first queued upload is accepted, and checks that the
+saved envelope is retried exactly after reload before the final edit drains.
+This covers an uncertain queued upload for the initial manager, while
+recipient browser keys and later epochs remain open.
 The core now runs eight deterministic seeded encrypted logs with 64 child
 edits each, including deletes, restores, and skewed HLC values. At every
 eighth cursor, a fresh replay matches incremental projection byte-for-byte;

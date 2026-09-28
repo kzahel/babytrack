@@ -291,8 +291,11 @@ the public cursor. Rust validates each queued edit against its predecessors.
 IndexedDB keeps one exact sealed batch and an ordered draft queue. After
 signed acceptance, Rust seals the next draft against the new verified head;
 one IndexedDB transaction saves those exact bytes and removes the draft.
-A real-relay Chromium case previews a child creation and later changes
-across reload, then drains the queue in order. One browser upload pass
+A real-relay Chromium case previews a child creation and two different later
+changes across reload, then drains the queue in order. It also loses the
+response after the relay accepts the first queued batch; IndexedDB retains
+that exact envelope across reload, retries it, and only then advances the
+remaining queued edit. One browser upload pass
 handles at most 64 batches; the remainder stays saved for a later pass.
 A missing target leaves no outbox
 entry. The initial manager's signing seed and epoch key are saved in that

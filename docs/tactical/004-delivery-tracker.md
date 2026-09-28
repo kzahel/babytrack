@@ -46,6 +46,9 @@ production wasm batch enters a durable browser outbox, previews locally,
 survives a lost POST response and reload, and clears only on signed
 acceptance. Later offline edits now queue behind that exact batch, preview
 through Rust after reload, and seal one by one after signed acceptance.
+The real-relay case uses two distinct dependent edits and loses a queued
+upload response after acceptance; reload retries the exact saved envelope
+before the remaining edit drains.
 The browser data view also replays a same-epoch invitation after reload.
 Later-epoch and recipient key storage, rejection repair, and full CLI/browser convergence remain
 open. A test-only native CLI driver now verifies the browser's accepted

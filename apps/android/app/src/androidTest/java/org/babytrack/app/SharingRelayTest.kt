@@ -17,6 +17,7 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import org.junit.Assert.assertArrayEquals
@@ -35,6 +36,8 @@ import java.util.Date
 @RunWith(AndroidJUnit4::class)
 class SharingRelayTest {
     @get:Rule val composeRule = createEmptyComposeRule()
+
+    private fun ByteArray.hex(): String = joinToString("") { "%02x".format(it.toInt() and 255) }
 
     @Test
     fun deletedEntryCanBeUndoneFromTheTracker() {
@@ -1006,6 +1009,96 @@ class SharingRelayTest {
         }
         ShareCoordinator(context, database.absolutePath).use { sharing ->
             assertEquals(0uL, sharing.snapshot(family).unsentCount)
+        }
+    }
+
+    @Test
+    fun backgroundRemovalShowsExactSavedCopyAfterReopen() {
+        wakeEmulatorScreen()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
+            ?: error("relayPublicKey instrumentation argument required")
+        val origin = "http://localhost:8787"
+        val database = context.filesDir.resolve("families.db")
+        val acknowledgments = context.getSharedPreferences(
+            "acknowledged_removal_copies", android.content.Context.MODE_PRIVATE,
+        )
+        ShareCoordinator(context, database.absolutePath).use { sharing ->
+            NativeLocalStore.open(database.absolutePath).use { local ->
+                for (source in local.families() + sharing.recipientFamilies()) {
+                    val copy = sharing.savedRemovalCopy(source) ?: continue
+                    acknowledgments.edit().putString(source.familyId.hex(), copy.familyId.hex()).commit()
+                }
+            }
+        }
+        val original = NativeLocalStore.open(database.absolutePath).use { local ->
+            val created = local.createFamily(System.currentTimeMillis())
+            local.createFamily(System.currentTimeMillis() + 1) // another selectable Family
+            created
+        }
+        val holderDb = context.filesDir.resolve("background-removal-holder-${System.nanoTime()}.db")
+        val fragment = ShareCoordinator(context, database.absolutePath).use { sharing ->
+            sharing.promote(original, origin, publicKey)
+            sharing.invite(original, origin, 2u.toUByte())
+        }
+        val holder = ShareCoordinator(context, holderDb.absolutePath).use { it.claim(fragment).family }
+        ShareCoordinator(context, database.absolutePath).use { assertTrue(it.advanceManager(original, origin).ready) }
+        ShareCoordinator(context, holderDb.absolutePath).use { assertTrue(it.advanceRecipient(holder).awaitingGrant) }
+        ShareCoordinator(context, database.absolutePath).use { assertTrue(it.advanceManager(original, origin).ready) }
+        ShareCoordinator(context, holderDb.absolutePath).use { assertTrue(it.advanceRecipient(holder).ready) }
+        ShareCoordinator(context, database.absolutePath).use { sharing ->
+            sharing.addChild(original, "Saved while offline", System.currentTimeMillis())
+            assertEquals(1uL, sharing.snapshot(original).unsentCount)
+        }
+        ShareCoordinator(context, holderDb.absolutePath).use { sharing ->
+            sharing.invite(holder, origin, 1u.toUByte())
+            sharing.removeDevice(holder, origin, original.deviceId)
+        }
+        context.getSharedPreferences("shared_relay_origins", android.content.Context.MODE_PRIVATE)
+            .edit().putString(original.familyId.hex(), origin).commit()
+        SharedSyncJobService.schedule(context)
+        val jobStatus = context.getSharedPreferences("shared_background_sync", android.content.Context.MODE_PRIVATE)
+        val before = jobStatus.getLong("last_attempt_ms", 0)
+        val command = instrumentation.uiAutomation.executeShellCommand("cmd jobscheduler run -f org.babytrack.app 3400")
+        ParcelFileDescriptor.AutoCloseInputStream(command).bufferedReader().use { it.readText() }
+        val deadline = System.currentTimeMillis() + 25_000
+        var copy: uniffi.babytrack_core_ffi.FamilyRef? = null
+        while (System.currentTimeMillis() < deadline) {
+            ShareCoordinator(context, database.absolutePath).use { sharing ->
+                copy = sharing.savedRemovalCopy(original)
+            }
+            if (copy != null && jobStatus.getLong("last_attempt_ms", 0) > before) break
+            Thread.sleep(100)
+        }
+        val saved = copy ?: error("Background removal did not save pending work")
+        NativeLocalStore.open(database.absolutePath).use { local ->
+            assertTrue(local.children(saved).any { it.name == "Saved while offline" })
+        }
+        val noticeText = context.getString(
+            R.string.history_removed_copy_destination,
+            original.familyId.hex().take(8), saved.familyId.hex().take(8),
+        )
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.recreate()
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText(noticeText).fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText(noticeText).assertIsDisplayed()
+            composeRule.onAllNodesWithText(context.getString(R.string.continue_in_private_copy))
+                .onLast().performClick()
+            composeRule.waitUntil(15_000) {
+                context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
+                    .getString("family", null) == saved.familyId.hex() &&
+                    acknowledgments.getString(original.familyId.hex(), null) == saved.familyId.hex()
+            }
+            scenario.recreate()
+            composeRule.waitUntil(15_000) {
+                composeRule.onAllNodesWithText(noticeText).fetchSemanticsNodes().isEmpty()
+            }
+        }
+        ShareCoordinator(context, database.absolutePath).use { sharing ->
+            assertArrayEquals(saved.familyId, sharing.savedRemovalCopy(original)!!.familyId)
         }
     }
 

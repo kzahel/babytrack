@@ -2072,6 +2072,20 @@ impl NativeSharedStore {
             .map_err(rejected)
     }
 
+    /// Read the destination of an automatic private copy after a verified
+    /// removal, including when another process created it in the background.
+    pub fn saved_removal_copy(&self, family: FamilyRef) -> Result<Option<FamilyRef>, BindingError> {
+        let store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let source = family.handle()?;
+        let Some(removal) = store.saved_removal(source).map_err(rejected)? else {
+            return Ok(None);
+        };
+        store
+            .removal_copy_of(source, removal.transition_id)
+            .map(|copy| copy.map(Into::into))
+            .map_err(rejected)
+    }
+
     pub fn is_shared(&self, family: FamilyRef) -> Result<bool, BindingError> {
         self.store
             .lock()

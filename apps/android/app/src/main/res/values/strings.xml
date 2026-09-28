@@ -265,6 +265,8 @@
     <string name="removed_family_card">Access ended for shared Family %1$s. Continue from locally held history in a private copy.</string>
     <string name="history_removed_accepted">This device’s removal was verified. The last upload was accepted before removal. Locally held history was saved in a new private Family.</string>
     <string name="history_removed_rejected">This device’s removal was verified. The last upload was rejected; pending edits were saved in a new private Family.</string>
+    <string name="history_removed_copy_title">Your work is safe in a private Family</string>
+    <string name="history_removed_copy_destination">Access to shared Family %1$s ended. Your locally held work was saved in private Family %2$s. Open it to continue.</string>
     <string name="shared_devices">Devices with verified access</string>
     <string name="remove_device">Remove %1$s</string>
     <string name="unused_invitations">Unused invitations</string>

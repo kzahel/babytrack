@@ -350,6 +350,12 @@ intended Family and child, and remains usable after process death.
   a real-relay emulator case makes a copy with no pending edits and checks
   that its held child is present. A focused Compose test now taps that card
   after verified removal and finds the child in the new local Family.
+  When a scheduled job verifies removal with pending work, the next foreground
+  view reads the exact private-copy destination from durable core storage.
+  It names that Family and requires an explicit Open action before
+  acknowledging the notice. A real-relay instrumentation case runs the job,
+  reopens the app with another Family present, opens the saved copy, and checks
+  the notice stays acknowledged after activity recreation (FS54).
 - [ ] Make invitation handoff usable through a share/link flow with trusted
   relay pinning and clear pending, accepted, blocked, and removed states.
   The share-sheet receive and custom-link paths now prefill without

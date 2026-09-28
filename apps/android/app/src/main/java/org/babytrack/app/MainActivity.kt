@@ -198,6 +198,7 @@ private fun deviceLabelKey(familyId: ByteArray, deviceId: ByteArray): String =
     familyId.key() + ":" + deviceId.key()
 
 private data class CompletedSave(val atMs: Long, val revision: ULong)
+private data class RemovalCopyNotice(val sourceKey: String, val copy: FamilyRef)
 private enum class TimelineFilter {
     ALL, FEEDS, SLEEP, DIAPERS, CARE, NOTES;
 
@@ -605,8 +606,28 @@ private fun TrackerScreen(
     var activeFamilyIsLocal by remember { mutableStateOf(false) }
     var saveStatusVersion by remember { mutableStateOf(0) }
     val selectionPrefs = remember { context.getSharedPreferences("tracker_selection", Context.MODE_PRIVATE) }
+    val removalNoticePrefs = remember {
+        context.getSharedPreferences("acknowledged_removal_copies", Context.MODE_PRIVATE)
+    }
     var selectedFamily by remember { mutableStateOf(selectionPrefs.getString("family", null)) }
     var selectedChild by remember { mutableStateOf(selectionPrefs.getString("child", null)) }
+    var pendingRemovalNotice by remember { mutableStateOf<RemovalCopyNotice?>(null) }
+    LaunchedEffect(foreground, version, pendingRemovalNotice) {
+        if (!foreground || pendingRemovalNotice != null) return@LaunchedEffect
+        runCatching {
+            withContext(Dispatchers.IO) {
+                (store.families() + sharing.recipientFamilies())
+                    .distinctBy { it.familyId.key() }
+                    .firstNotNullOfOrNull { source ->
+                        val copy = sharing.savedRemovalCopy(source) ?: return@firstNotNullOfOrNull null
+                        val sourceKey = source.familyId.key()
+                        if (removalNoticePrefs.getString(sourceKey, null) == copy.familyId.key()) null
+                        else RemovalCopyNotice(sourceKey, copy)
+                    }
+            }
+        }.onSuccess { pendingRemovalNotice = it }
+            .onFailure { Log.w("BabytrackRemoval", "Could not read saved copy destination", it) }
+    }
     LaunchedEffect(loadedFamilyKey, selectedFamily, selectedChild, children) {
         if (selectedFamily != null && loadedFamilyKey == selectedFamily) {
             val child = selectedChild.takeIf { chosen -> children.any { it.id.key() == chosen } }
@@ -843,17 +864,16 @@ private fun TrackerScreen(
                 sharedSnapshot = null
             }
             managerRemovals[selectedFamily]?.let { removed ->
-                removed.privateCopy?.let { copy ->
-                    selectedFamily = copy.familyId.key()
-                    selectedChild = null
-                }
-                message = when {
-                    removed.privateCopy == null -> context.getString(R.string.history_removed)
-                    removed.pendingResult == 2.toUByte() -> context.getString(R.string.history_removed_accepted)
-                    removed.pendingResult == 3.toUByte() -> context.getString(R.string.history_removed_rejected)
-                    removed.pendingResult == 0.toUByte() -> context.getString(R.string.history_removed_unsent)
-                    else -> context.getString(R.string.history_removed_copied)
-                }
+                val copy = removed.privateCopy
+                if (copy != null) {
+                    pendingRemovalNotice = RemovalCopyNotice(selectedFamily ?: return@let, copy)
+                    message = when (removed.pendingResult) {
+                        2.toUByte() -> context.getString(R.string.history_removed_accepted)
+                        3.toUByte() -> context.getString(R.string.history_removed_rejected)
+                        0.toUByte() -> context.getString(R.string.history_removed_unsent)
+                        else -> context.getString(R.string.history_removed_copied)
+                    }
+                } else message = context.getString(R.string.history_removed)
             }
             recipientStages[selectedRecipient]?.let { progress ->
                 if (progress.removed) sharedSnapshot = null
@@ -2528,6 +2548,30 @@ private fun TrackerScreen(
             }
             message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
+    }
+    pendingRemovalNotice?.let { notice ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.history_removed_copy_title)) },
+            text = { Text(stringResource(
+                R.string.history_removed_copy_destination,
+                notice.sourceKey.take(8), notice.copy.familyId.key().take(8),
+            )) },
+            confirmButton = {
+                Button(onClick = {
+                    val copyKey = notice.copy.familyId.key()
+                    if (selectionPrefs.edit().putString("family", copyKey)
+                            .remove("child").commit() &&
+                        removalNoticePrefs.edit().putString(notice.sourceKey, copyKey).commit()
+                    ) {
+                        selectedFamily = copyKey
+                        selectedChild = null
+                        pendingRemovalNotice = null
+                        version++
+                    } else message = errorText
+                }) { Text(stringResource(R.string.continue_in_private_copy)) }
+            },
+        )
     }
     pendingDelete?.let { target ->
         AlertDialog(

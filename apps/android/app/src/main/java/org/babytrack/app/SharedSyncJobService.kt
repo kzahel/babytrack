@@ -31,6 +31,7 @@ class SharedSyncJobService : JobService() {
                             val origin = origins.getString(family.familyId.keyForJob(), null)
                             if (origin != null && sharing.isShared(family) && !sharing.isRemoved(family)) {
                                 runCatching { sharing.advanceManager(family, origin) }
+                                    // The foreground rereads the durable removal-copy mapping.
                                     .onFailure { if (it !is VerifiedManagerRemoval) failed = true }
                             }
                         }

@@ -355,6 +355,8 @@ internal class ShareCoordinator(
     fun privateCopy(family: FamilyRef, nowMs: Long): FamilyRef =
         withWrapping { wrapping -> core.privateCopyShared(family, wrapping, nowMs) }
 
+    fun savedRemovalCopy(family: FamilyRef): FamilyRef? = core.savedRemovalCopy(family)
+
     fun isShared(family: FamilyRef): Boolean = core.isShared(family)
     fun isRemoved(family: FamilyRef): Boolean = core.isRemoved(family)
 

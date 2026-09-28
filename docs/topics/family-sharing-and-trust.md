@@ -295,6 +295,10 @@ delivery of the same action must not create another Family or duplicate the
 entry. The original remains available as locally held history, not as a
 shared writable destination. With no pending or new action, show the option
 to continue privately without creating a Family the user may never use.
+The Android foreground reads the durable source-to-copy mapping after a
+background removal and names the exact destination. It acknowledges the
+notice only when the user opens that copy, so an interrupted foreground
+visit can show it again without creating another Family.
 
 A still-authorized member whose sole manager device was lost can deliberately
 copy locally held data to a new Family, become its manager, and invite others.

@@ -42,7 +42,9 @@ The timeline can attach, edit, or clear a note on an existing activity.
    label devices on this phone, change admitted roles, cancel an unused link,
    or remove an admitted device. Removal rotates the Family key. After
    verifying removal, a device stops shared writes and preserves pending
-   edits in a private Family copy. Removed devices also see an access-ended
+   edits in a private Family copy. When background sync creates that copy,
+   the app identifies and opens its exact destination on the next foreground
+   visit. Removed devices also see an access-ended
    card that opens or creates a private copy of locally held history.
 
 The relay and public key are manual debug setup. Debug builds allow local

@@ -1770,7 +1770,7 @@ real Family data; do not serially re-review each feature slice. The current
 test signal is an emulator with an honest local relay. It does not establish
 physical-phone scheduling or malicious-relay availability.
 
-## End-of-M0 baseline review launched at 770b132
+## End-of-M0 baseline review at 770b132
 
 The independent Daybreak Blue, high-thinking review was launched through Yep
 Anywhere against the clean detached checkout of `770b1328b41c449fff76adb9cda79d62753a7d30`.
@@ -1779,9 +1779,34 @@ Session `01a0e8bc-6d3b-7111-97b8-4c9f61ad0421`, process
 `L3ByaXZhdGUvdG1wL2JhYnl0cmFjay1tMC1yZXZpZXctNzcwYjEzMg`.
 The reviewer was asked for concrete violations of U1-U8 under the agreed
 relay and hostile-device trust limits, with access and retention blockers
-separated from later hardening. Its verdict and disposition are pending;
-this launch does not close the M0 gate. The detached checkout remained clean
-at the last status check.
+separated from later hardening. It returned **FAIL**; this review does not
+close the M0 gate. Its checkout remained clean. Required CI run
+`36447264766` passed Rust, wasm/browser, native bindings, Android APK, and
+the real-relay emulator job at the reviewed SHA.
+
+The review identified two product-promise blockers. First, the browser's
+epoch-one-only ready view cannot reopen after an honest manager rotation,
+leaving saved browser edits unusable (U1/U4, extend FS48 with a browser/native
+rotation case). Second, an Android background job can create the required
+private copy after verified removal while discarding the result; reopening
+did not identify or select its destination (U5/D7, FS54). The Android repair
+now queries the durable removal-copy mapping on foreground entry and presents
+an explicit destination dialog until the user opens and acknowledges that
+exact Family. A scheduled-job relay instrumentation case covers this after
+activity recreation with another Family present. The browser gap needs a
+durable verified keyring and pending-batch resolution across rotation; it is
+a separate M0 slice, with no
+wire change requested.
+
+The reviewer also found that the normative vector index documents incomplete
+cross-language execution, so the M0 byte gate cannot be claimed from the
+passing subset. Build an applicability matrix and executable consumers before
+gate closure. Defer bounded control-history streaming, the concurrent
+terminal-status insert race, and newer-major stop-writing to their existing
+owners unless a concrete access or retention trace emerges. The review found
+no counterexample for relay plaintext exposure, forged manager authority,
+cross-Family access, or unknown-upload false success under the stated trust
+limits. No physical-phone or power-loss behavior was credited.
 
 ## Completion condition
 

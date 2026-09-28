@@ -287,9 +287,10 @@ genesis manifest objects, and uses storage-independent Rust ready replay to
 verify the epoch-one key, decrypt the accepted batch, and rebuild its record
 projection after reload. The one saved pending operation also overlays the
 verified projection through Rust before acceptance, without advancing the
-public cursor. The initial manager's signing
-seed and epoch key are saved in that browser profile's IndexedDB so reload
-uses the same credential; anyone with access to the profile can read those
+public cursor. Rust validates a new edit against that projection before
+sealing; a missing target leaves no outbox entry. The initial manager's
+signing seed and epoch key are saved in that browser profile's IndexedDB for
+use after reload; anyone with access to the profile can read those
 keys. A different edit submitted while the one exact batch is pending is
 rejected visibly rather than treated as a retry. This narrow path does not
 yet handle later controls, rotations,

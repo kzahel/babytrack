@@ -16,6 +16,7 @@ const apiGenesis = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/a
 const minor = fixtures.cases.find((entry) => entry.id === 'CROSSMINORBYTE01').input;
 const genesis = full.cases.find((entry) => entry.id === 'GENESIS01');
 const acceptedBatch = full.cases.find((entry) => entry.id === 'BATCHBYTE01');
+const preCreateSet = fixtures.cases.find((entry) => entry.id === 'PRECREATEBYTE01').input.operations_hex[1];
 const cborBytes = (value) => {
   if (value.length < 256) return Buffer.concat([Buffer.from([0x58, value.length]), value]);
   const length = Buffer.alloc(3);
@@ -446,6 +447,9 @@ async function run() {
         bytes(data.managerSeedHex), bytes(data.epochKeyHex));
       const progress = await store.pullSaved(family, relayGet);
       const fetched = await store.hydrateGenesisSaved(family, relayGet);
+      let invalidLocalRejected = false;
+      try { await store.stageInitial(family, bytes(data.invalidLocalOperationHex)); }
+      catch (error) { invalidLocalRejected = error.message.includes('record does not exist'); }
       const staged = await store.stageInitial(family, bytes(data.operationHex));
       const retry = await store.stageInitial(family, bytes(data.operationHex));
       const other = bytes(data.operationHex);
@@ -460,7 +464,7 @@ async function run() {
       store.close();
       return { ...progress, family, fetched, staged: staged.envelope.length > 0,
         exactRetry: staged.envelope.every((value, index) => value === retry.envelope[index]),
-        otherEditBlocked, localRecordType, localCursor,
+        invalidLocalRejected, otherEditBlocked, localRecordType, localCursor,
         wrongKeyRejected, noCredentialAfterDenial };
     }, {
       genesisHex: relay.genesisHex,
@@ -469,11 +473,13 @@ async function run() {
       managerSeedHex: input.managerSeedHex,
       epochKeyHex: genesis.inputs.epoch_key_hex,
       operationHex: acceptedBatch.inputs.operation_cbor_hex,
+      invalidLocalOperationHex: preCreateSet.replaceAll('723e4567e89b42d3a456426614174000',
+        input.managerDeviceHex),
     });
     assert.deepEqual(realRelay, {
       cursor: 1, noMoreVisible: true, family: input.familyHex, fetched: 1,
       staged: true, exactRetry: true, wrongKeyRejected: true, noCredentialAfterDenial: true,
-      otherEditBlocked: true,
+      invalidLocalRejected: true, otherEditBlocked: true,
       localRecordType: 'family', localCursor: '1',
     });
     await page.reload();

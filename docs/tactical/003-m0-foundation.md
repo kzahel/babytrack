@@ -642,7 +642,8 @@ the saved operation on the verified cursor-one view, including after reload.
 It projects the accepted Family record and rebuilds it after reload.
 Attempting a different edit while that exact upload is pending returns an
 error and preserves the first operation rather than silently dropping the new
-one.
+one. A structurally valid edit of an absent record is also rejected before
+sealing and leaves the outbox empty.
 Controls after genesis, rotations, recipient key storage, broader offline
 edits, rejection repair, and a CLI/browser
 encrypted exchange remain open. The first manager's signing and epoch keys

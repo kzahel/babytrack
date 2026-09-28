@@ -200,7 +200,12 @@ impl WasmInitialFamily {
                 "initial device authority differs from credential",
             ));
         }
-        Operation::decode_bound(operation_bytes, &ready.chain.family_id(), &device_id)
+        let operation =
+            Operation::decode_bound(operation_bytes, &ready.chain.family_id(), &device_id)
+                .map_err(debug_error)?;
+        ready
+            .projection
+            .with_local_overlay(&[operation])
             .map_err(debug_error)?;
         let plaintext = cbor::encode(&Value::Array(vec![Value::Bytes(operation_bytes.to_vec())]))
             .map_err(debug_error)?;

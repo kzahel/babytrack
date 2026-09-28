@@ -4,6 +4,8 @@ The debug app tracks local Families and runs the first two-device sharing
 handoff on a development relay: promotion, invitation, claim, challenge,
 proof, grant, and recipient history verification. Both devices can edit and
 sync; each can save a shared backup or make an independent private copy.
+Once a child is selected, the top bar names its Family and child and offers
+**Wet now** for a wet-diaper log without scrolling through setup controls.
 While the app is in the foreground it polls the relay every 30 seconds. A
 persisted Android job also requests network sync when the OS allows it.
 After reboot, a receiver restores the ongoing sleep-timer notification from

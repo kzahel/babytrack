@@ -26,7 +26,11 @@ internal class InvitationTerminal(val reason: InvitationTerminalReason) :
     IllegalStateException("Verified invitation terminal status: $reason")
 
 /** Platform transport for the Rust sharing preparation and confirmation API. */
-internal class ShareCoordinator(context: Context, databasePath: String) : AutoCloseable {
+internal class ShareCoordinator(
+    context: Context,
+    databasePath: String,
+    private val relayProvider: (String) -> RelayTransport = ::RelayTransport,
+) : AutoCloseable {
     private val keys = DeviceWrappingKey(context)
     private val core = NativeSharedStore.open(databasePath)
 
@@ -92,19 +96,21 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
 
     fun claim(fragment: String): PreparedJoinRow {
         val preview = previewInvitation(fragment)
-        val relay = RelayTransport(preview.relayOrigin)
+        val relay = relayProvider(preview.relayOrigin)
         val wrapping = keys.loadOrCreate()
         try {
             val saved = core.resumeJoin(fragment, wrapping)
+            var candidateFamily = saved?.family
             try {
                 val pages = joinControlPages(relay, preview.familyId, wrapping, fragment, saved?.family)
                 val prepared = core.prepareJoinPages(fragment, pages, wrapping)
+                candidateFamily = prepared.family
                 val path = "/v1/families/${prepared.family.familyId.hex()}/control"
                 val response = relay.post(path, prepared.candidateBytes)
                 core.confirmJoinClaim(prepared.family, wrapping, response)
                 return prepared
             } catch (failure: Exception) {
-                val terminal = verifiedTerminalInvitationMessage(relay, fragment, saved?.family, wrapping)
+                val terminal = verifiedTerminalInvitationMessage(relay, fragment, candidateFamily, wrapping)
                 if (terminal != null) throw InvitationTerminal(terminal)
                 throw failure
             }
@@ -114,7 +120,7 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     }
 
     fun retryClaim(family: FamilyRef): PreparedJoinRow {
-        val relay = RelayTransport(recipientOrigin(family))
+        val relay = relayProvider(recipientOrigin(family))
         return withWrapping { wrapping ->
             try {
                 val pages = joinControlPages(relay, family.familyId, wrapping, null, family)
@@ -140,8 +146,11 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
             val read = if (fragment != null) invitationStatusRead(fragment)
                 else core.savedInvitationStatusRead(saved ?: return null, wrapping)
             val response = relay.get(read.path, read.auth)
-            if (saved != null) core.recordJoinTerminalStatus(saved, wrapping, response)
-                else verifyInvitationStatus(fragment ?: return null, response)
+            if (saved != null) {
+                val verified = core.verifySavedInvitationStatus(saved, wrapping, response)
+                if (verified.reason == 2u.toUByte()) return null
+                core.recordJoinTerminalStatus(saved, wrapping, response)
+            } else verifyInvitationStatus(fragment ?: return null, response)
         } catch (_: Exception) {
             return null
         }

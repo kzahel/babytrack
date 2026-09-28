@@ -1672,6 +1672,40 @@ The implementation priority now returns to missing MVP flows. These advisory
 findings stay tracked for the M0 exit gate; the focused FAIL does not halt
 independent feature work or call for a review after each small repair.
 
+## Advisory MVP baseline preflight at 014f79b
+
+Daybreak Blue at high thinking reviewed clean fixed commit
+`014f79b6b8932c7df77529db1fbfb9dcaabea514` in detached checkout
+`/tmp/babytrack-review-sy0COd` through Yep Anywhere session
+`01a0e792-c8da-7b70-b4b8-20809591bc65`. The process reached verified idle
+with an empty queue. Result: **directional advisory FAIL**, not the M0 exit
+gate. The reviewer inspected current architecture, v1 protocol, scenarios,
+Rust enrollment/store, Android coordinator and relay tests, and ran workspace,
+native, browser, and Android build checks. It did not run an emulator or
+physical-device flow.
+
+The one immediate baseline join blocker was a saved recipient claim whose
+exact retry committed at the relay but lost its HTTP response. Android then
+persisted the signed invitation `claimed` reason and stopped automatic
+progress forever, even though this device was the claimant. A signed v1
+status identifies the link but not the claimant. The implementation now
+keeps reason `2` inconclusive for a saved candidate, retains exact retry and
+verified-control reconciliation, and lets a new link-only attempt report a
+verified consumed link. Core refuses to persist reason `2` for a saved
+attempt. The Android real-relay FS37 regression drops the accepted retry
+response, restarts the coordinator, then completes challenge, proof, grant,
+and child history. FS77 checks a link-only claimant sees the signed terminal
+reason while a saved competing attempt stays unknown. This repair changes no
+v1 wire bytes. The reviewer did not independently recheck it; the broader
+M0 exit gate remains the next independent review.
+
+The reviewer also noted the concurrent terminal-status insert race, the
+Android 64-page/16-MiB join-history ceiling, and later-invitation lost
+response coverage. Track those with the mixed-client fault matrix before
+real Family data; do not serially re-review each feature slice. The current
+test signal is an emulator with an honest local relay. It does not establish
+physical-phone scheduling or malicious-relay availability.
+
 ## Completion condition
 
 All slice gates pass in CI and on the designated local testbeds, the

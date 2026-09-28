@@ -549,6 +549,13 @@ reason; unsigned HTTP errors, timeouts, or malformed status remain unknown.
 An active status is advisory freshness, not a guarantee that a future claim
 will commit. A malicious relay that owns its signing key can lie about time
 or withhold this response under the accepted trust limits.
+Reason `2` does not identify the claimant. A client with a saved exact claim
+must not durably mark that attempt failed from this status alone: its own
+committed claim may have lost the POST response. It retains the candidate and
+credentials for exact retry or comparison with verified committed controls.
+A new device holding only the link may show reason `2` as terminal for its
+new attempt. This is a client interpretation of the existing v1 response,
+not a new wire field.
 
 A page is CBOR `{1:1, 2:family_id16, 3:requested_after_cursor_u64,
 4:entries, 5:next_after_cursor_u64, 6:has_more_bool}`. Each entry is

@@ -571,6 +571,12 @@ impl EnrollmentAttempt {
         if status.reason == 1 {
             return Err(Error::Invalid("active invitation is not terminal"));
         }
+        // A saved candidate may itself have consumed this invitation. The
+        // v1 status does not identify the claimant, so persisting reason 2
+        // would turn an uncertain successful POST into permanent failure.
+        if status.reason == 2 {
+            return Err(Error::Invalid("claimed status does not identify claimant"));
+        }
         if let Some(saved) = store.enrollment_terminal_status(self.family)? {
             let prior = bootstrap.verify_status(&saved)?;
             if prior.reason != status.reason {

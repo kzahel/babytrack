@@ -113,7 +113,12 @@ The header lets Android fetch pages with its standard HTTP client. The
 its exact syntax.
 Recipient enrollment stores either an ordinary invitation immediately after
 genesis or a sparse control ancestry when data batches precede it. The
-nonempty pre-admission batch path is unsupported; the sparse path persists
+relay-signed invitation status identifies the invitation but not the winning
+claimant. A saved recipient attempt never persists `claimed` as a terminal
+result on that status alone; it keeps its exact candidate and device keys for
+idempotent retry and committed-control reconciliation. A new link-only
+attempt can report a verified consumed invitation. The nonempty
+pre-admission batch path is unsupported; the sparse path persists
 the claim, shared root, and issue ancestry together before contacting the
 relay, then hydrates the full log after admission.
 An enrollment attempt does not appear in the local-only tracker Family list,

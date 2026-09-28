@@ -208,6 +208,11 @@ consumption, or issuer loss only after verifying a relay-signed status bound
 to that invitation. An unsigned denial or timeout leaves its status unknown
 and invites a later retry; it is not evidence that the other person declined
 or that the link expired.
+For a device with a saved exact claim, v1's signed `claimed` reason alone is
+also inconclusive: it does not say whether that same device claimed the link.
+The device retains its credentials and retries the exact claim or reconciles
+verified committed history. A device holding only the link can treat the
+signed `claimed` reason as terminal for a new attempt.
 The UI distinguishes invitation/enrollment pending, waiting for a Family
 key holder, verifying the grant and loading history, and ready for shared
 use; it never calls a keyless pending device ready. Exact status wording and

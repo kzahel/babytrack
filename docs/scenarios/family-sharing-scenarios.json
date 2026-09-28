@@ -1533,7 +1533,7 @@
       "given": "An invitation becomes canceled, expired, or claimed by another device, while the holder of the link may face an untrusted relay denial.",
       "actions": ["Ask for invitation status using exact signed read authentication; compare a signed terminal result with an unsigned denial, timeout, or withheld response."],
       "expect": ["No terminal reason is asserted from an unsigned response or timeout.", "A relay-signed status binds the Family, invitation, reason, current cursor/head, and relay time; the client may explain a verified unusable invitation and offer a new link without receiving event ciphertext or a Family key.", "The first terminal cause is retained across later controls: expiry at or before an invalidating commit wins; explicit cancel differs from issuer demotion or removal; re-promotion never revives a link."],
-      "variants": ["cancel", "expiry boundary", "issuer demotion", "issuer removal", "later re-promotion", "already claimed", "unsigned 403", "relay withholding", "restart"],
+      "variants": ["cancel", "expiry boundary", "issuer demotion", "issuer removal", "later re-promotion", "already claimed by another link-only device", "saved exact claim with lost response stays unknown", "unsigned 403", "relay withholding", "restart"],
       "decisions": ["D2", "D8"]
     }
   ]

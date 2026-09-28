@@ -5,7 +5,7 @@ import java.net.URI
 import java.net.URL
 
 /** Byte transport only; the Rust core constructs and verifies protocol data. */
-internal class RelayTransport(origin: String) {
+internal open class RelayTransport(origin: String) {
     private val base: String
 
     init {
@@ -17,7 +17,7 @@ internal class RelayTransport(origin: String) {
         base = origin.trimEnd('/')
     }
 
-    fun post(path: String, bytes: ByteArray, allowBatchConflict: Boolean = false): ByteArray {
+    open fun post(path: String, bytes: ByteArray, allowBatchConflict: Boolean = false): ByteArray {
         require(path.startsWith("/v1/families/") && !path.contains("..") && !path.contains('#'))
         val connection = URL(base + path).openConnection() as HttpURLConnection
         try {

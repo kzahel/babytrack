@@ -91,7 +91,7 @@ class SharingRelayTest {
     }
 
     @Test
-    fun claimedLinkReturnsVerifiedTerminalReasonToSecondDevice() {
+    fun claimedLinkIsTerminalButSavedCompetingClaimStaysUnknown() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
             ?: error("relayPublicKey instrumentation argument required")
@@ -118,16 +118,90 @@ class SharingRelayTest {
         ShareCoordinator(context, firstDb.absolutePath).use { sharing ->
             sharing.claim(fragment)
         }
+        ShareCoordinator(context, context.filesDir.resolve("claimed-link-${System.nanoTime()}.db").absolutePath).use { sharing ->
+            val result = runCatching { sharing.claim(fragment) }
+            assertEquals(InvitationTerminalReason.CLAIMED, (result.exceptionOrNull() as? InvitationTerminal)?.reason)
+        }
         ShareCoordinator(context, secondDb.absolutePath).use { sharing ->
             val result = runCatching { sharing.advanceRecipient(waiting) }
-            val terminal = result.exceptionOrNull() as? InvitationTerminal
-            assertEquals(InvitationTerminalReason.CLAIMED, terminal?.reason)
+            assertTrue(result.isFailure)
+            assertTrue(result.exceptionOrNull() !is InvitationTerminal)
             assertTrue(sharing.recipientFamilies().any { it.familyId.contentEquals(waiting.familyId) })
         }
         ShareCoordinator(context, secondDb.absolutePath).use { sharing ->
             val result = runCatching { sharing.advanceRecipient(waiting) }
-            val terminal = result.exceptionOrNull() as? InvitationTerminal
-            assertEquals(InvitationTerminalReason.CLAIMED, terminal?.reason)
+            assertTrue(result.isFailure)
+            assertTrue(result.exceptionOrNull() !is InvitationTerminal)
+        }
+    }
+
+    @Test
+    fun committedRetryWithLostResponseRemainsRetryableAfterRestart() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
+            ?: error("relayPublicKey instrumentation argument required")
+        val origin = "http://localhost:8787"
+        val managerDb = context.filesDir.resolve("lost-retry-manager-${System.nanoTime()}.db")
+        val recipientDb = context.filesDir.resolve("lost-retry-recipient-${System.nanoTime()}.db")
+        val family = NativeLocalStore.open(managerDb.absolutePath).use { local ->
+            val created = local.createFamily(System.currentTimeMillis())
+            local.addChild(created, "Recovered join child", System.currentTimeMillis())
+            created
+        }
+        val fragment = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            sharing.promote(family, origin, publicKey)
+            sharing.invite(family, origin, 1u.toUByte())
+        }
+        val preview = previewInvitation(fragment)
+        val wrapping = DeviceWrappingKey(context).loadOrCreate()
+        val recipient = try {
+            NativeSharedStore.open(recipientDb.absolutePath).use { core ->
+                core.prepareJoin(fragment, RelayTransport(origin).get(preview.controlPath, preview.readAuth), wrapping).family
+            }
+        } finally {
+            wrapping.fill(0)
+        }
+        var dropOnce = true
+        val relayProvider: (String) -> RelayTransport = { relayOrigin ->
+            object : RelayTransport(relayOrigin) {
+                override fun post(path: String, bytes: ByteArray, allowBatchConflict: Boolean): ByteArray {
+                    val accepted = super.post(path, bytes, allowBatchConflict)
+                    if (dropOnce && path.endsWith("/control")) {
+                        dropOnce = false
+                        throw IllegalStateException("simulated lost accepted claim response")
+                    }
+                    return accepted
+                }
+            }
+        }
+        ShareCoordinator(context, recipientDb.absolutePath, relayProvider).use { sharing ->
+            val failure = runCatching { sharing.advanceRecipient(recipient) }.exceptionOrNull()
+            assertEquals("simulated lost accepted claim response", failure?.message)
+        }
+        val afterLostResponse = DeviceWrappingKey(context).loadOrCreate()
+        try {
+            NativeSharedStore.open(recipientDb.absolutePath).use { core ->
+                assertEquals(null, core.savedJoinTerminalStatus(recipient, afterLostResponse))
+                assertEquals(2u.toUByte(), core.recipientFirstJoinAction(recipient, afterLostResponse))
+            }
+        } finally {
+            afterLostResponse.fill(0)
+        }
+        ShareCoordinator(context, recipientDb.absolutePath).use { sharing ->
+            assertTrue(sharing.advanceRecipient(recipient).awaitingGrant)
+        }
+        ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            assertTrue(sharing.advanceManager(family, origin).ready)
+        }
+        ShareCoordinator(context, recipientDb.absolutePath).use { sharing ->
+            assertTrue(sharing.advanceRecipient(recipient).awaitingGrant)
+        }
+        ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            assertTrue(sharing.advanceManager(family, origin).ready)
+        }
+        ShareCoordinator(context, recipientDb.absolutePath).use { sharing ->
+            assertTrue(sharing.advanceRecipient(recipient).ready)
+            assertEquals("Recovered join child", sharing.snapshot(recipient).children.single().name)
         }
     }
 

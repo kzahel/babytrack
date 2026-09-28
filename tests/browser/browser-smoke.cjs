@@ -10,8 +10,9 @@ const generatedDir = process.argv[2];
 const relayBin = process.argv[3];
 const nativeExchangeBin = process.argv[4];
 const seedRecipientBin = process.argv[5];
-if (!generatedDir || !relayBin || !nativeExchangeBin || !seedRecipientBin) {
-  throw new Error('pass wasm-bindgen web output, relay binary, native exchange, and recipient seeder');
+const holderBin = process.argv[6];
+if (!generatedDir || !relayBin || !nativeExchangeBin || !seedRecipientBin || !holderBin) {
+  throw new Error('pass wasm-bindgen output, relay, exchange, seeder, and holder binaries');
 }
 const fixtures = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/negative-batch-v1.json')));
 const full = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/full-wire-v1.json')));
@@ -163,16 +164,24 @@ const server = http.createServer((request, response) => {
   fs.createReadStream(path.join(generatedDir, name)).pipe(response);
 });
 
-async function startRelay(recipient = false, transitions = 6) {
+async function startRelay(recipient = false, transitions = 6, holder = false) {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'babytrack-browser-relay-'));
   const seedPath = path.join(temporary, 'seed');
-  fs.writeFileSync(seedPath, Buffer.from(genesis.inputs.relay_sign_seed_hex, 'hex'));
+  fs.writeFileSync(seedPath, holder ? Buffer.alloc(32, 0x6e) :
+    Buffer.from(genesis.inputs.relay_sign_seed_hex, 'hex'));
   const reservation = http.createServer();
   await new Promise((resolve) => reservation.listen(0, '127.0.0.1', resolve));
   const port = reservation.address().port;
   await new Promise((resolve) => reservation.close(resolve));
   let fragment;
-  if (recipient) {
+  if (holder) {
+    const origin = `http://localhost:${server.address().port}`;
+    const setup = spawnSync(path.resolve(holderBin), ['setup',
+      path.join(temporary, 'manager.db'), path.join(temporary, 'relay.db'), origin],
+    { encoding: 'utf8' });
+    assert.equal(setup.status, 0, `Could not set up browser holder: ${setup.stderr}`);
+    fragment = setup.stdout.trim();
+  } else if (recipient) {
     const origin = `http://localhost:${server.address().port}`;
     const seeded = spawnSync(path.resolve(seedRecipientBin),
       [path.join(temporary, 'relay.db'), origin, String(transitions)],
@@ -191,7 +200,7 @@ async function startRelay(recipient = false, transitions = 6) {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     if (!ready) throw new Error('Disposable relay did not start');
-    if (recipient) return { child, temporary, port, fragment,
+    if (recipient || holder) return { child, temporary, port, fragment,
       genesisHex: chain.transitions[0].committed_cbor_hex };
     const post = async (url, hexBody) => {
       const response = await fetch(base + url, {
@@ -216,6 +225,14 @@ async function startRelay(recipient = false, transitions = 6) {
   }
 }
 
+function holderStep(instance, mode) {
+  const step = spawnSync(path.resolve(holderBin), [mode,
+    path.join(instance.temporary, 'manager.db'),
+    path.join(instance.temporary, 'relay.db')], { encoding: 'utf8' });
+  assert.equal(step.status, 0, `Native holder ${mode} failed: ${step.stderr}`);
+  return step.stdout.trim();
+}
+
 async function run() {
   await new Promise((resolve) => server.listen(0, 'localhost', resolve));
   let browser;
@@ -223,6 +240,7 @@ async function run() {
   let recipientRelay;
   let invitationRelay;
   let challengeRelay;
+  let holderRelay;
   try {
     relay = await startRelay();
     relayPort = relay.port;
@@ -704,6 +722,121 @@ async function run() {
     assert.deepEqual(confirmedProof,
       { cursor: 5, polled: { cursor: 5, hasMore: false }, replayed: 5,
         earlyActivationRejected: true });
+    holderRelay = await startRelay(false, 6, true);
+    relayPort = holderRelay.port;
+    const dynamicClaim = await page.evaluate(async (fragment) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const { relayPostControl } = await import('/relay-post.js');
+      const store = await InvitationStore.open(wasm, fragment, 'babytrack-dynamic-holder-smoke');
+      const pulled = await store.pull(relayGet);
+      await store.prepareClaim();
+      const committed = await store.submitClaim(relayPostControl);
+      const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      store.close();
+      return { pulled, cursor: committed.cursor, device: hex(committed.deviceId) };
+    }, holderRelay.fragment);
+    assert.deepEqual({ pulled: dynamicClaim.pulled, cursor: dynamicClaim.cursor }, {
+      pulled: { cursor: 2, linkedIssue: true, hasMore: false }, cursor: 3 });
+    holderStep(holderRelay, 'challenge');
+    await page.reload();
+    const dynamicProof = await page.evaluate(async (fragment) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const { relayPostControl } = await import('/relay-post.js');
+      const store = await InvitationStore.open(wasm, fragment, 'babytrack-dynamic-holder-smoke');
+      const pulled = await store.pullPending(relayGet);
+      await store.prepareProof(relayGet);
+      const cursor = await store.submitProof(relayPostControl);
+      store.close();
+      return { pulled, cursor };
+    }, holderRelay.fragment);
+    assert.deepEqual(dynamicProof, { pulled: { cursor: 4, hasMore: false }, cursor: 5 });
+    holderStep(holderRelay, 'grant');
+    await page.reload();
+    const dynamicReady = await page.evaluate(async (fragment) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { PublicStore } = await import('/public-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const store = await InvitationStore.open(wasm, fragment, 'babytrack-dynamic-holder-smoke');
+      const publicStore = await PublicStore.open(wasm, 'babytrack-dynamic-ready-smoke');
+      const pulled = await store.pullPending(relayGet);
+      const ready = await store.activateFirstEpoch(publicStore, relayGet);
+      publicStore.close();
+      store.close();
+      return { pulled, ready };
+    }, holderRelay.fragment);
+    assert.equal(dynamicReady.pulled.cursor, 6);
+    assert.equal(dynamicReady.ready.cursor, 6);
+    await page.reload();
+    const dynamicReload = await page.evaluate(async (fragment) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { PublicStore } = await import('/public-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const store = await InvitationStore.open(wasm, fragment, 'babytrack-dynamic-holder-smoke');
+      const publicStore = await PublicStore.open(wasm, 'babytrack-dynamic-ready-smoke');
+      const ready = await store.activateFirstEpoch(publicStore, relayGet);
+      publicStore.close();
+      store.close();
+      return ready;
+    }, holderRelay.fragment);
+    assert.deepEqual(dynamicReload, dynamicReady.ready);
+    const dynamicChild = holderStep(holderRelay, 'write');
+    const dynamicSync = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g),
+        (pair) => parseInt(pair, 16));
+      const store = await PublicStore.open(wasm, 'babytrack-dynamic-ready-smoke');
+      await store.pullSaved(data.family, relayGet);
+      const ready = await store.loadInitialReadySaved(data.family);
+      const child = bytes(data.child);
+      const nameCbor = ready.field_cbor(child, 1n);
+      const result = { cursor: Number(ready.last_cursor()), type: ready.record_type(child),
+        name: new TextDecoder().decode(nameCbor.slice(1)) };
+      ready.free();
+      store.close();
+      return result;
+    }, { family: dynamicReady.ready.family, child: dynamicChild });
+    assert.deepEqual(dynamicSync,
+      { cursor: 7, type: 'child', name: 'DynamicHolderChild' });
+    const operationRun = spawnSync(path.resolve(holderBin), ['recipient_operation',
+      dynamicReady.ready.family, dynamicClaim.device], { encoding: 'utf8' });
+    assert.equal(operationRun.status, 0, `Could not encode browser operation: ${operationRun.stderr}`);
+    const browserUpload = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const { relayPost } = await import('/relay-post.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g),
+        (pair) => parseInt(pair, 16));
+      const store = await PublicStore.open(wasm, 'babytrack-dynamic-ready-smoke');
+      await store.stageInitial(data.family, bytes(data.operation));
+      const progress = await store.uploadInitial(data.family, relayPost, relayGet);
+      const ready = await store.loadInitialReadySaved(data.family);
+      const child = bytes(data.child);
+      const nameCbor = ready.field_cbor(child, 1n);
+      const result = { progress, cursor: Number(ready.last_cursor()),
+        name: new TextDecoder().decode(nameCbor.slice(1)) };
+      ready.free();
+      store.close();
+      return result;
+    }, { family: dynamicReady.ready.family, operation: operationRun.stdout.trim(),
+      child: 'b1b1b1b1b1b170b180b1b1b1b1b1b1b1' });
+    assert.equal(browserUpload.cursor, 8);
+    assert.equal(browserUpload.name, 'BrowserRecipientChild');
+    assert.equal(holderStep(holderRelay, 'read'), 'browser child read');
     recipientRelay = await startRelay(true);
     relayPort = recipientRelay.port;
     const browserProof = await page.evaluate(async (data) => {
@@ -1237,7 +1370,7 @@ async function run() {
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));
-    for (const instance of [recipientRelay, challengeRelay, invitationRelay, relay]) {
+    for (const instance of [recipientRelay, holderRelay, challengeRelay, invitationRelay, relay]) {
       if (!instance) continue;
       if (instance.child.exitCode == null) {
         const stopped = new Promise((resolve) => instance.child.once('exit', resolve));

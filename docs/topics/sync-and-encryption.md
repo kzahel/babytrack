@@ -307,7 +307,8 @@ origin must match the browser app origin. The pure Rust claim builder is now
 shared with wasm: IndexedDB saves the generated device keys and exact claim
 before POST, and Rust checks that a committed relay result contains that
 candidate before marking it accepted. Lost responses retry the exact saved
-candidate after reload. Browser challenge/proof transport is still open.
+candidate after reload. The holder handoff is exercised in the dynamic flow
+below.
 Once the claim commits, subsequent browser control reads use the saved
 pending-device key and continue the same verified sparse cursor. Repeated
 empty polls leave the durable prefix unchanged.
@@ -317,13 +318,19 @@ device read, checks the relay object wrapper against the committed manifest,
 then opens it and signs proof in Rust. The browser byte fixture covers this
 builder. IndexedDB now saves the exact browser proof before POST and checks
 the signed commit after a lost-response retry and reload. The real-relay
-proof case starts from a fixture-provided claim; live holder handoff after a
-browser-generated claim is still open.
+proof byte case starts from a fixture-provided claim; a separate dynamic
+browser/native flow below exercises a browser-generated claim.
 After a verified sparse admission, the browser uses the admitted device key
 to read the full contiguous log from genesis. The browser public store checks
 that log, the genesis objects, and the recipient-addressed grant before Rust
 releases an epoch-one key and data-ready view. It can resume that hydration
 after reload; a committed proof alone cannot become data-ready.
+One browser/native smoke now uses independent durable clients for the first
+full invitation, claim, challenge, proof, grant, full-log hydration, and
+encrypted writes in both directions. Browser reads and writes cross relay
+HTTP. The native holder's test driver uses the relay's storage validation
+methods directly for writes; native HTTP transport and later-epoch mixed
+client behavior remain to validate.
 IndexedDB keeps one exact sealed batch and an ordered draft queue. After
 signed acceptance, Rust seals the next draft against the new verified head;
 one IndexedDB transaction saves those exact bytes and removes the draft.

@@ -562,8 +562,9 @@ An independent browser manager store at the same verified authority head
 pulls that recipient batch from the relay and reads the child name. This
 proves a recipient-authored encrypted event reaches another device without
 sharing the recipient's IndexedDB state. The admission controls and keys
-are still fixture-provisioned. A fully live browser claim-to-grant flow, later epochs,
-a native CLI recipient exchange, and full mixed-client convergence remain
+are still fixture-provisioned. A separate dynamic first-cohort browser/native
+flow now covers claim through grant and bidirectional encrypted edits. Later
+epochs, native holder HTTP transport, and the mixed-client fault matrix remain
 open.
 The core now runs eight deterministic seeded encrypted logs with 64 child
 edits each, including deletes, restores, and skewed HLC values. At every
@@ -690,9 +691,9 @@ signed genesis and its object, authors a second encrypted child batch, and
 Chromium fetches and projects the child after reload. Both use the same
 fixture manager credential. A second real-relay case uses an independently
 admitted browser recipient credential for a signed grant fetch and encrypted
-upload after reload. Its admission controls are fixture-fed, so browser
-live browser claim-to-grant flow, rotations, queued-edit repair after rejection, and
-durable independent CLI/browser convergence remain open.
+upload after reload. Its admission controls are fixture-fed. The dynamic
+first-cohort flow below covers live claim through grant. Rotations, queued-edit
+repair after rejection, and native holder HTTP transport remain open.
 The browser now also opens a real invitation fragment, signs a bounded
 public-control GET with its invitation credential, and verifies the linked
 genesis and issue through the Rust sparse authority chain before saving
@@ -702,32 +703,41 @@ a changed relay origin or tampered saved page. The same browser case now
 generates its device keys and exact claim through a wasm-enabled Rust builder,
 saves them before POST, and verifies the relay-signed committed claim after
 reload. A simulated lost commit response retries the saved bytes and reaches
-the same committed cursor. Live holder challenge and handoff into
-an admitted browser data view remain open; the admitted recipient case still starts
-from fixture-fed controls.
+the same committed cursor. That case ends at the claim; the separate
+dynamic holder flow below continues through admission and data readiness.
 After claim commit, the browser switches from the consumed invitation
 credential to its saved pending-device signing key for exact control reads.
 The real relay accepts repeated empty pending polls after reload without
-duplicating a page; challenge delivery and proof remain the next slice.
+duplicating a page. The dynamic flow below uses this polling for challenge
+and grant delivery.
 The recipient proof builder is now a pure Rust core path shared by native
 and wasm. A browser case replays the published signed challenge prefix,
 fetches the committed HPKE object from a real relay with its device key,
 checks the object against the signed manifest, and produces the published
 proof candidate bytes. A wrong agreement key fails before any candidate is
-made. This case uses fixture-fed preceding controls; saving and posting the
-proof from a live browser claim remains open. A second disposable relay stops
+made. This byte case uses fixture-fed preceding controls. A second disposable relay stops
 after a fixture claim and holder challenge. Chromium saves that fixture claim,
 pulls the challenge with its pending-device credential, saves a newly signed
 proof candidate before POST, and retries identical bytes after a lost result
-and reload. The verified proof reaches cursor five; holder grant and a single
-fully dynamic browser-to-holder enrollment remain open.
+and reload. The verified proof reaches cursor five. The dynamic flow below
+continues with a native holder grant.
 For an already committed fixture grant, the browser now carries its verified
 sparse admission into a separate contiguous public-history store. It uses
 the admitted device credential to fetch the full log from genesis, then
 hydrates the signed genesis and addressed grant objects, verifies the epoch
 key in Rust, and reopens a ready data view after reload. A proof without a
-grant cannot activate. A single dynamic browser claim through holder grant
-is still open.
+grant cannot activate. The dynamic flow below exercises the same hydration
+with newly generated claim, proof, and grant bytes.
+The browser harness now also runs one fully dynamic first-cohort join. A
+separately persisted native holder creates the Family and invitation, reads
+the browser-generated claim, commits a challenge, verifies the browser's
+new proof, and commits the grant. Chromium pulls each step through relay
+HTTP, hydrates full history after admission, and reopens its ready view.
+The holder then writes an encrypted child batch that Chromium decrypts; the
+browser writes a different encrypted child batch that the holder verifies
+and decrypts. The test-only holder driver invokes `RelayStore` methods
+directly for its writes, so a native-client HTTP transport variant and
+broader offline fault matrix remain for the M0 mixed-client exit gate.
 The first manager's signing and epoch keys persist in IndexedDB and are
 reloaded for this narrow proof.
 An uncertain retry returns those bytes after reopen even if the caller's

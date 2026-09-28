@@ -34,8 +34,11 @@ The browser now persists a Rust-verified public control and accepted-batch
 history in IndexedDB, with reload and forged-receipt rollback checks. It
 also signs and decodes a bounded public pull. Chromium now fetches an
 accepted encrypted batch through signed GETs from a disposable real relay
-and reloads its saved cursor. Encrypted record projection, a shared outbox,
-and full CLI/browser convergence remain open.
+and reloads its saved cursor. It now fetches signed genesis objects and
+projects the decrypted epoch-one record through Rust after reload. Later
+controls, later-epoch and recipient key storage, a shared outbox, and full
+CLI/browser convergence remain open. The first manager credential persists
+in IndexedDB for this smoke.
 Android local and first-cohort UI work, including solids, completed
 multi-segment breast-feed, pumping logs, and note, bottle, diaper, pumping,
 and medication corrections, plus child name and growth-detail, growth-entry,

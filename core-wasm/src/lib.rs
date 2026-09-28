@@ -2,8 +2,9 @@
 
 #![forbid(unsafe_code)]
 
-#[cfg(feature = "fixture-api")]
-use babytrack_core::projection::{Outcome, Projection};
+use std::collections::BTreeMap;
+
+use babytrack_core::projection::{Outcome, Projection, VerifiedEpochKey};
 use babytrack_core::{
     batch,
     cbor::{self, Value},
@@ -11,6 +12,7 @@ use babytrack_core::{
     crypto,
     operation::Operation,
     projection::LocalProjection,
+    ready_replay,
     sync_wire::{self, LogPage},
 };
 use wasm_bindgen::prelude::*;
@@ -34,6 +36,132 @@ pub struct WasmLocalFamily {
 #[wasm_bindgen]
 pub struct WasmPublicFamily {
     chain: ControlChain,
+}
+
+/// Epoch-one initial manager data view. The signed genesis, committed
+/// manifest objects, key commitment, and every batch receipt must verify
+/// before record fields become visible. Later controls and rotations are
+/// intentionally outside this narrow first-cohort entry point.
+#[wasm_bindgen]
+pub struct WasmInitialFamily {
+    genesis: Vec<u8>,
+    relay_public_key: [u8; 32],
+    epoch_key: [u8; 32],
+    objects: BTreeMap<[u8; 16], Vec<u8>>,
+    ready: Option<InitialReady>,
+}
+
+struct InitialReady {
+    chain: ControlChain,
+    projection: Projection,
+    key: VerifiedEpochKey,
+}
+
+#[wasm_bindgen]
+impl WasmInitialFamily {
+    #[wasm_bindgen(constructor)]
+    pub fn new(genesis: &[u8], relay_public_key: &[u8], epoch_key: &[u8]) -> Result<Self, JsError> {
+        let relay_public_key = fixed(relay_public_key, "relay public key")?;
+        let epoch_key = fixed(epoch_key, "epoch key")?;
+        ControlChain::from_genesis(genesis, relay_public_key)
+            .map_err(debug_error)?
+            .verify_initial_epoch_key(&epoch_key)
+            .map_err(debug_error)?;
+        Ok(Self {
+            genesis: genesis.to_vec(),
+            relay_public_key,
+            epoch_key,
+            objects: BTreeMap::new(),
+            ready: None,
+        })
+    }
+
+    pub fn add_object(&mut self, object_id: &[u8], object_bytes: &[u8]) -> Result<(), JsError> {
+        if self.ready.is_some() {
+            return Err(JsError::new("ready view already initialized"));
+        }
+        let object_id = fixed(object_id, "object ID")?;
+        if self.objects.contains_key(&object_id) {
+            return Err(JsError::new("duplicate manifest object"));
+        }
+        self.objects.insert(object_id, object_bytes.to_vec());
+        Ok(())
+    }
+
+    pub fn finish(&mut self) -> Result<(), JsError> {
+        if self.ready.is_some() {
+            return Err(JsError::new("ready view already initialized"));
+        }
+        let (chain, projection, key) = ready_replay::initial_epoch_projection(
+            &self.genesis,
+            self.relay_public_key,
+            self.epoch_key,
+            &self.objects,
+        )
+        .map_err(debug_error)?;
+        self.ready = Some(InitialReady {
+            chain,
+            projection,
+            key,
+        });
+        Ok(())
+    }
+
+    pub fn apply_batch(
+        &mut self,
+        envelope_bytes: &[u8],
+        receipt_bytes: &[u8],
+    ) -> Result<bool, JsError> {
+        let ready = self
+            .ready
+            .as_mut()
+            .ok_or_else(|| JsError::new("manifest objects not yet verified"))?;
+        let mut chain = ready.chain.clone();
+        let signed = chain
+            .apply_public_batch(envelope_bytes, receipt_bytes)
+            .map_err(debug_error)?;
+        let mut projection = ready.projection.clone();
+        let outcome = projection
+            .apply_authorized_signed(&signed, &ready.key, chain.last_global_cursor())
+            .map_err(debug_error)?;
+        ready.chain = chain;
+        ready.projection = projection;
+        Ok(matches!(outcome, Outcome::Applied))
+    }
+
+    pub fn last_cursor(&self) -> Result<u64, JsError> {
+        Ok(self
+            .ready
+            .as_ref()
+            .ok_or_else(|| JsError::new("manifest objects not yet verified"))?
+            .projection
+            .last_cursor())
+    }
+
+    pub fn field_cbor(&self, record_id: &[u8], field_id: u64) -> Result<Vec<u8>, JsError> {
+        let record_id = fixed(record_id, "record ID")?;
+        let ready = self
+            .ready
+            .as_ref()
+            .ok_or_else(|| JsError::new("manifest objects not yet verified"))?;
+        Ok(ready
+            .projection
+            .record(&record_id)
+            .and_then(|record| record.field(field_id))
+            .map_or_else(Vec::new, |field| field.canonical_bytes.clone()))
+    }
+
+    pub fn record_type(&self, record_id: &[u8]) -> Result<Option<String>, JsError> {
+        let record_id = fixed(record_id, "record ID")?;
+        let ready = self
+            .ready
+            .as_ref()
+            .ok_or_else(|| JsError::new("manifest objects not yet verified"))?;
+        Ok(ready
+            .projection
+            .record(&record_id)
+            .map(|record| record.record_type.clone()))
+    }
 }
 
 /// Bounded core-decoded relay log page. JavaScript handles transport and
@@ -199,6 +327,30 @@ pub fn accepted_batch_receipt(result_bytes: &[u8]) -> Result<Vec<u8>, JsError> {
         .map_err(debug_error)?
         .receipt_bytes
         .ok_or_else(|| JsError::new("committed batch receipt unavailable"))
+}
+
+/// IDs are returned as consecutive 16-byte values in signed manifest order.
+#[wasm_bindgen]
+pub fn manifest_object_ids(committed_control: &[u8]) -> Result<Vec<u8>, JsError> {
+    Ok(ready_replay::manifest_objects(committed_control)
+        .map_err(debug_error)?
+        .into_iter()
+        .flat_map(|object| object.id)
+        .collect())
+}
+
+#[wasm_bindgen]
+pub fn verified_manifest_object(
+    committed_control: &[u8],
+    object_id: &[u8],
+    response: &[u8],
+) -> Result<Vec<u8>, JsError> {
+    ready_replay::verified_object_from_response(
+        committed_control,
+        fixed(object_id, "object ID")?,
+        response,
+    )
+    .map_err(debug_error)
 }
 
 #[wasm_bindgen]

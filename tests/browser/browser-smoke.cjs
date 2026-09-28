@@ -456,34 +456,64 @@ async function run() {
       const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
       const store = await PublicStore.open(wasm, 'babytrack-real-relay-public-smoke');
       const family = await store.begin(bytes(data.genesisHex), bytes(data.relayPublicHex));
-      const progress = await store.pull(family, bytes(data.managerDeviceHex),
-        bytes(data.managerSeedHex), relayGet);
+      const wrongKey = bytes(data.epochKeyHex);
+      wrongKey[0] ^= 1;
+      let wrongKeyRejected = false;
+      try { await store.saveInitialCredential(family, bytes(data.managerDeviceHex),
+        bytes(data.managerSeedHex), wrongKey); }
+      catch { wrongKeyRejected = true; }
+      let noCredentialAfterDenial = false;
+      try { await store.initialCredential(family); }
+      catch { noCredentialAfterDenial = true; }
+      await store.saveInitialCredential(family, bytes(data.managerDeviceHex),
+        bytes(data.managerSeedHex), bytes(data.epochKeyHex));
+      const progress = await store.pullSaved(family, relayGet);
       store.close();
-      return { ...progress, family };
+      return { ...progress, family, wrongKeyRejected, noCredentialAfterDenial };
     }, {
       genesisHex: relay.genesisHex,
       relayPublicHex: input.relayPublicHex,
       managerDeviceHex: input.managerDeviceHex,
       managerSeedHex: input.managerSeedHex,
+      epochKeyHex: genesis.inputs.epoch_key_hex,
     });
     assert.deepEqual(realRelay, {
       cursor: 2, noMoreVisible: true, family: input.familyHex,
+      wrongKeyRejected: true, noCredentialAfterDenial: true,
     });
+    const hydrated = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+      const store = await PublicStore.open(wasm, 'babytrack-real-relay-public-smoke');
+      const fetched = await store.hydrateGenesisSaved(data.familyHex, relayGet);
+      const ready = await store.loadInitialReadySaved(data.familyHex);
+      const result = { fetched, cursor: ready.last_cursor().toString(),
+        recordType: ready.record_type(bytes(data.familyHex)) };
+      ready.free();
+      store.close();
+      return result;
+    }, input);
+    assert.deepEqual(hydrated, { fetched: 1, cursor: '2', recordType: 'family' });
     await page.reload();
-    const relayReload = await page.evaluate(async (family) => {
+    const relayReload = await page.evaluate(async (data) => {
       const wasm = await import('/babytrack_core_wasm.js');
       await wasm.default('/babytrack_core_wasm_bg.wasm');
       const { PublicStore } = await import('/public-store.js');
       const store = await PublicStore.open(wasm, 'babytrack-real-relay-public-smoke');
-      const verifier = await store.load(family);
-      const cursor = verifier.last_cursor().toString();
-      verifier.free();
+      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+      const ready = await store.loadInitialReadySaved(data.familyHex);
+      const result = { cursor: ready.last_cursor().toString(),
+        recordType: ready.record_type(bytes(data.familyHex)) };
+      ready.free();
       store.close();
-      return cursor;
-    }, input.familyHex);
-    assert.equal(relayReload, '2');
+      return result;
+    }, { familyHex: input.familyHex });
+    assert.deepEqual(relayReload, { cursor: '2', recordType: 'family' });
     await context.close();
-    console.log('browser wasm + IndexedDB journal, signed relay GET, public pull, reload, rollback, and Family isolation: OK');
+    console.log('browser wasm + IndexedDB journal, signed relay GET, encrypted initial projection, reload, rollback, and Family isolation: OK');
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));

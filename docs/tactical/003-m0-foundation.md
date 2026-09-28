@@ -635,7 +635,13 @@ The Chromium fixture transport exercises a control and an accepted batch;
 the browser smoke also starts a disposable relay, commits a fixture genesis
 and encrypted manager batch, then pulls the accepted batch through signed
 browser GETs and replays the saved cursor after reload. This proves public
-relay transport; a CLI/browser encrypted data exchange and outbox remain open.
+relay transport. A storage-independent Rust initial-epoch replay now checks
+the signed genesis object manifest and epoch-key commitment before it opens
+that batch. Chromium fetches the object, projects the Family record, and
+rebuilds it after reload. Controls after genesis, rotations, recipient key
+storage, a CLI/browser encrypted exchange, and outbox remain open. The first
+manager's signing and epoch keys persist in IndexedDB and are reloaded for
+this narrow proof.
 An uncertain retry returns those bytes after reopen even if the caller's
 current head/key has changed. The initial `FamilySession` stages through
 that path only with its verified manager identity, head, epoch key, and

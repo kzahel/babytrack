@@ -5,13 +5,12 @@ use std::collections::BTreeMap;
 use crate::{
     batch,
     cbor::{self, Value},
-    control_chain::{self, ControlChain},
-    crypto,
+    control_chain, crypto,
     enrollment::EnrollmentAttempt,
     grant, membership,
     operation::NewOperation,
-    operation::Operation,
     projection::{self, Projection, VerifiedEpochKey},
+    ready_replay::{self, initial_epoch_projection, verify_manifest},
     shared_history::{self, PublicHistorySession},
     sqlite_store::{self, AppendedOperation, FamilyHandle, PreparedBatch, SqliteStore},
 };
@@ -25,6 +24,7 @@ pub enum Error {
     Grant(grant::Error),
     Membership(membership::Error),
     Projection(projection::Error),
+    Ready(ready_replay::Error),
     Public(shared_history::Error),
     Store(sqlite_store::Error),
     Invalid(&'static str),
@@ -62,6 +62,11 @@ impl From<membership::Error> for Error {
 impl From<projection::Error> for Error {
     fn from(value: projection::Error) -> Self {
         Self::Projection(value)
+    }
+}
+impl From<ready_replay::Error> for Error {
+    fn from(value: ready_replay::Error) -> Self {
+        Self::Ready(value)
     }
 }
 impl From<shared_history::Error> for Error {
@@ -217,27 +222,19 @@ impl ReadyFamilySession {
             return Err(Error::Invalid("device is not the initial manager"));
         }
         let objects: BTreeMap<_, _> = store.shared_objects(family)?.into_iter().collect();
-        verify_manifest(&history.genesis_bytes, &objects)?;
-        let mut chain =
-            ControlChain::from_genesis(&history.genesis_bytes, history.relay_public_key)?;
         let initial_epoch_key = keys
             .get(&1)
             .ok_or(Error::Invalid("initial history key missing"))?
             .bytes;
-        let first_key = chain.verify_initial_epoch_key(&initial_epoch_key)?;
+        let (mut chain, mut projection, first_key) = initial_epoch_projection(
+            &history.genesis_bytes,
+            history.relay_public_key,
+            initial_epoch_key,
+            &objects,
+        )?;
         if keys.get(&1) != Some(&first_key) {
             return Err(Error::Invalid("initial history key differs from genesis"));
         }
-        let mut projection = Projection::new(family.family_id);
-        replay_promotion(
-            &history.genesis_bytes,
-            &objects,
-            family.family_id,
-            genesis.relay_id(),
-            genesis.manager_device_id(),
-            &initial_epoch_key,
-            &mut projection,
-        )?;
         for entry in history.entries {
             match entry.kind {
                 1 => {
@@ -484,210 +481,6 @@ fn control_id_and_kind(bytes: &[u8]) -> Result<([u8; 16], u64), Error> {
         kind.try_into()
             .map_err(|_| Error::Invalid("transition kind negative"))?,
     ))
-}
-
-fn verify_manifest(
-    committed_bytes: &[u8],
-    objects: &BTreeMap<[u8; 16], Vec<u8>>,
-) -> Result<(), Error> {
-    let value = cbor::decode(committed_bytes)?;
-    let Value::Map(root) = value else {
-        return Err(Error::Invalid("control not map"));
-    };
-    let Value::Map(unsigned) = &root[0].1 else {
-        return Err(Error::Invalid("unsigned control not map"));
-    };
-    let Value::Array(manifest) = &unsigned[9].1 else {
-        return Err(Error::Invalid("manifest not array"));
-    };
-    for entry in manifest {
-        let Value::Array(fields) = entry else {
-            return Err(Error::Invalid("manifest entry not array"));
-        };
-        let Value::Bytes(id) = &fields[1] else {
-            return Err(Error::Invalid("manifest object ID not bytes"));
-        };
-        let id: [u8; 16] = id
-            .as_slice()
-            .try_into()
-            .map_err(|_| Error::Invalid("manifest object ID length"))?;
-        let object = objects
-            .get(&id)
-            .ok_or(Error::Invalid("committed object not downloaded"))?;
-        if fields[3] != Value::Integer(object.len() as i128)
-            || fields[2] != Value::Bytes(crypto::hash("object", object)?.to_vec())
-        {
-            return Err(Error::Invalid(
-                "committed object bytes differ from manifest",
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn replay_promotion(
-    genesis_bytes: &[u8],
-    objects: &BTreeMap<[u8; 16], Vec<u8>>,
-    family_id: [u8; 16],
-    relay_id: [u8; 32],
-    manager_id: [u8; 16],
-    epoch_key: &[u8; 32],
-    projection: &mut Projection,
-) -> Result<(), Error> {
-    let genesis = cbor::decode(genesis_bytes)?;
-    let Value::Map(root) = genesis else {
-        return Err(Error::Invalid("genesis not map"));
-    };
-    let Value::Map(unsigned) = &root[0].1 else {
-        return Err(Error::Invalid("unsigned genesis not map"));
-    };
-    let Value::Array(signed_objects) = &unsigned[9].1 else {
-        return Err(Error::Invalid("genesis object list not array"));
-    };
-    let Value::Array(first_object) = &signed_objects[0] else {
-        return Err(Error::Invalid("promotion manifest entry not array"));
-    };
-    let manifest_id = fixed_bytes::<16>(&first_object[1])?;
-    let manifest_bytes = objects
-        .get(&manifest_id)
-        .ok_or(Error::Invalid("promotion manifest missing"))?;
-    let manifest = cbor::decode(manifest_bytes)?;
-    let Value::Map(fields) = manifest else {
-        return Err(Error::Invalid("promotion manifest not map"));
-    };
-    if fields.len() != 6
-        || fields
-            .iter()
-            .enumerate()
-            .any(|(i, (key, _))| *key != i as u64 + 1)
-        || fields[0].1 != Value::Integer(1)
-        || fixed_bytes::<16>(&fields[1].1)? != family_id
-        || fixed_bytes::<32>(&fields[2].1)? != relay_id
-        || fixed_bytes::<16>(&fields[3].1)? != manifest_id
-    {
-        return Err(Error::Invalid("promotion manifest context"));
-    }
-    let watermark = positive_or_zero(&fields[4].1)?;
-    let Value::Array(rows) = &fields[5].1 else {
-        return Err(Error::Invalid("promotion rows not array"));
-    };
-    if rows.len() + 1 != signed_objects.len() || rows.len() > 16_383 {
-        return Err(Error::Invalid("promotion object count"));
-    }
-    let signed_chunk_ids = signed_objects[1..]
-        .iter()
-        .map(|entry| {
-            let Value::Array(fields) = entry else {
-                return Err(Error::Invalid("signed chunk row not array"));
-            };
-            fixed_bytes::<16>(&fields[1])
-        })
-        .collect::<Result<std::collections::BTreeSet<_>, Error>>()?;
-    let mut referenced = std::collections::BTreeSet::new();
-    let mut operations = Vec::new();
-    let mut next = 1u64;
-    for (index, row) in rows.iter().enumerate() {
-        let Value::Array(parts) = row else {
-            return Err(Error::Invalid("promotion chunk row not array"));
-        };
-        if parts.len() != 6 || positive_or_zero(&parts[0])? != index as u64 {
-            return Err(Error::Invalid("promotion chunk index"));
-        }
-        let object_id = fixed_bytes::<16>(&parts[1])?;
-        if !referenced.insert(object_id) || !signed_chunk_ids.contains(&object_id) {
-            return Err(Error::Invalid("promotion chunk not in signed genesis"));
-        }
-        let object = objects
-            .get(&object_id)
-            .ok_or(Error::Invalid("promotion chunk missing"))?;
-        if fixed_bytes::<32>(&parts[2])? != crypto::hash("object", object)?
-            || positive_or_zero(&parts[3])? != object.len() as u64
-            || positive_or_zero(&parts[4])? != next
-        {
-            return Err(Error::Invalid("promotion chunk hash or range"));
-        }
-        let last = positive_or_zero(&parts[5])?;
-        if last < next {
-            return Err(Error::Invalid("promotion chunk empty range"));
-        }
-        let Value::Map(chunk) = cbor::decode(object)? else {
-            return Err(Error::Invalid("promotion chunk not map"));
-        };
-        if chunk.len() != 3
-            || chunk[0].0 != 1
-            || chunk[1].0 != 2
-            || chunk[2].0 != 3
-            || chunk[0].1 != Value::Integer(1)
-        {
-            return Err(Error::Invalid("promotion chunk shape"));
-        }
-        let Value::Array(header) = &chunk[1].1 else {
-            return Err(Error::Invalid("promotion header not array"));
-        };
-        if header.len() != 6
-            || fixed_bytes::<16>(&header[0])? != family_id
-            || fixed_bytes::<32>(&header[1])? != relay_id
-            || fixed_bytes::<16>(&header[2])? != manifest_id
-            || positive_or_zero(&header[3])? != index as u64
-            || header[4] != Value::Integer(1)
-        {
-            return Err(Error::Invalid("promotion header context"));
-        }
-        let nonce = fixed_bytes::<24>(&header[5])?;
-        let Value::Bytes(ciphertext) = &chunk[2].1 else {
-            return Err(Error::Invalid("promotion ciphertext not bytes"));
-        };
-        let aad = crypto::hash("promotion-aad", &cbor::encode(&chunk[1].1)?)?;
-        let plaintext = crypto::open(epoch_key, &nonce, &aad, ciphertext)?;
-        if plaintext.len() > 256 * 1024 {
-            return Err(Error::Invalid("promotion plaintext too large"));
-        }
-        let Value::Array(encoded_ops) = cbor::decode(&plaintext)? else {
-            return Err(Error::Invalid("promotion plaintext not array"));
-        };
-        if encoded_ops.is_empty()
-            || encoded_ops.len() > 256
-            || encoded_ops.len() as u64 != last - next + 1
-        {
-            return Err(Error::Invalid("promotion operation count"));
-        }
-        for encoded in encoded_ops {
-            let Value::Bytes(bytes) = encoded else {
-                return Err(Error::Invalid("promotion operation not bytes"));
-            };
-            operations.push(
-                Operation::decode_bound(&bytes, &family_id, &manager_id)
-                    .map_err(|_| Error::Invalid("promotion operation invalid"))?,
-            );
-        }
-        next = last
-            .checked_add(1)
-            .ok_or(Error::Invalid("promotion index overflow"))?;
-    }
-    if referenced != signed_chunk_ids || watermark != next - 1 {
-        return Err(Error::Invalid("promotion history incomplete"));
-    }
-    projection.apply_promotion(&operations)?;
-    Ok(())
-}
-
-fn fixed_bytes<const N: usize>(value: &Value) -> Result<[u8; N], Error> {
-    let Value::Bytes(bytes) = value else {
-        return Err(Error::Invalid("expected bytes"));
-    };
-    bytes
-        .as_slice()
-        .try_into()
-        .map_err(|_| Error::Invalid("byte length"))
-}
-
-fn positive_or_zero(value: &Value) -> Result<u64, Error> {
-    let Value::Integer(number) = value else {
-        return Err(Error::Invalid("expected integer"));
-    };
-    (*number)
-        .try_into()
-        .map_err(|_| Error::Invalid("negative or large integer"))
 }
 
 #[cfg(test)]

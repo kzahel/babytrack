@@ -38,6 +38,7 @@ pub mod membership;
 pub mod operation;
 pub mod portable_file;
 pub mod projection;
+pub mod ready_replay;
 pub mod rotation;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod rotation_build;

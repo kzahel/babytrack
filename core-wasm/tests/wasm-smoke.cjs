@@ -4,7 +4,8 @@ const path = require('node:path');
 
 const bindingPath = process.argv[2];
 if (!bindingPath) throw new Error('pass generated wasm-bindgen Node module path');
-const { WasmFamily, WasmPublicFamily, WasmLogPage, ed25519_public_key, seal_one } = require(path.resolve(bindingPath));
+const { WasmFamily, WasmPublicFamily, WasmInitialFamily, WasmLogPage,
+  ed25519_public_key, seal_one } = require(path.resolve(bindingPath));
 const vectors = JSON.parse(fs.readFileSync(path.join(__dirname, '../../tests/vectors/negative-batch-v1.json')));
 const full = JSON.parse(fs.readFileSync(path.join(__dirname, '../../tests/vectors/full-wire-v1.json')));
 const api = JSON.parse(fs.readFileSync(path.join(__dirname, '../../tests/vectors/api-v1.json')));
@@ -81,6 +82,35 @@ assert.equal(Buffer.from(publicFamily.family_id()).toString('hex'), genesis.inpu
 assert.equal(Buffer.from(publicFamily.head_hash()).toString('hex'), genesis.expect.control_head_hex);
 publicFamily.apply_batch(sealed, hex(fixedBatch.expect.accepted_receipt_cbor_hex));
 assert.equal(publicFamily.last_cursor(), 2n);
+const ready = new WasmInitialFamily(
+  hex(genesis.expect.control_object_hex), hex(genesis.expect.relay_public_key_hex),
+  hex(genesis.inputs.epoch_key_hex),
+);
+assert.throws(() => ready.finish());
+ready.add_object(hex(genesis.inputs.promotion_id_hex),
+  hex(genesis.expect.promotion_manifest_object_hex));
+ready.finish();
+assert.equal(ready.last_cursor(), 1n);
+assert.equal(ready.record_type(hex(genesis.inputs.family_id_hex)), undefined);
+assert.equal(ready.apply_batch(sealed, hex(fixedBatch.expect.accepted_receipt_cbor_hex)), true);
+assert.equal(ready.last_cursor(), 2n);
+assert.equal(ready.record_type(hex(genesis.inputs.family_id_hex)), 'family');
+const badObject = new WasmInitialFamily(
+  hex(genesis.expect.control_object_hex), hex(genesis.expect.relay_public_key_hex),
+  hex(genesis.inputs.epoch_key_hex),
+);
+const damagedPromotion = hex(genesis.expect.promotion_manifest_object_hex);
+damagedPromotion[damagedPromotion.length - 1] ^= 1;
+badObject.add_object(hex(genesis.inputs.promotion_id_hex), damagedPromotion);
+assert.throws(() => badObject.finish());
+assert.throws(() => badObject.apply_batch(sealed, hex(fixedBatch.expect.accepted_receipt_cbor_hex)));
+badObject.free();
+const wrongInitialKey = hex(genesis.inputs.epoch_key_hex);
+wrongInitialKey[0] ^= 1;
+assert.throws(() => new WasmInitialFamily(
+  hex(genesis.expect.control_object_hex), hex(genesis.expect.relay_public_key_hex), wrongInitialKey,
+));
+ready.free();
 const denied = new WasmPublicFamily(
   hex(genesis.expect.control_object_hex), hex(genesis.expect.relay_public_key_hex),
 );

@@ -15,6 +15,9 @@ history, and continue encrypted sync. An admitted manager can also invite,
 grant, and remove a third device with key rotation. Later rotations, role
 changes, cancellation, browser shared sync, and broader recovery coverage
 remain open.
+The browser harness now makes signed reads to a disposable relay and rebuilds
+an epoch-one encrypted record through the shared Rust core after reload;
+later controls and browser writes are still open.
 
 The Android debug app logs children, diapers, bottles with milk/content
 choice, sleep timers and completed sleep with optional place, notes, growth

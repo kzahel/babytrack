@@ -280,9 +280,14 @@ reads with Web Crypto request IDs, decode bounded log pages and accepted
 batch results through Rust, and persist a verified fetched prefix. Fixture
 transport tests cover controls and batches. A disposable real relay now
 accepts a fixture manager batch; Chromium sends its own signed GETs, verifies
-the accepted batch, and replays the saved cursor after reload. Encrypted
-record projection, local shared outbox, and full mixed-client exchange remain
-M0 work.
+the accepted batch, and replays the saved cursor after reload. The browser
+now fetches genesis manifest objects and uses a storage-independent Rust
+ready replay to verify the epoch-one key, decrypt the accepted batch, and
+rebuild its record projection after reload. The initial manager's signing
+seed and epoch key are saved in that browser profile's IndexedDB so reload
+uses the same credential; anyone with access to the profile can read those
+keys. This narrow path does not yet handle later controls, rotations,
+recipient credentials, local shared outbox, or full mixed-client exchange.
 The first Android sharing flow uses foreground polling and scheduled
 background work. FCM and APNs may later provide empty background wakes through
 app-owned interfaces to reduce latency when an app is suspended. A missed

@@ -42,11 +42,21 @@ export class PublicStore {
   }
 
   static async open(wasm, name = 'babytrack-public') {
-    const request = indexedDB.open(name, 1);
+    const request = indexedDB.open(name, 3);
     request.onupgradeneeded = () => {
       const database = request.result;
-      database.createObjectStore('families', { keyPath: 'family' });
-      database.createObjectStore('entries', { keyPath: ['family', 'cursor'] });
+      if (!database.objectStoreNames.contains('families')) {
+        database.createObjectStore('families', { keyPath: 'family' });
+      }
+      if (!database.objectStoreNames.contains('entries')) {
+        database.createObjectStore('entries', { keyPath: ['family', 'cursor'] });
+      }
+      if (!database.objectStoreNames.contains('objects')) {
+        database.createObjectStore('objects', { keyPath: ['family', 'objectId'] });
+      }
+      if (!database.objectStoreNames.contains('credentials')) {
+        database.createObjectStore('credentials', { keyPath: 'family' });
+      }
     };
     return new PublicStore(await requestResult(request), wasm);
   }
@@ -81,6 +91,124 @@ export class PublicStore {
     ]);
     if (!metadata) throw new Error('Family is absent');
     return replay(this.wasm, metadata, rows);
+  }
+
+  async saveInitialCredential(family, deviceId, signingSeed, epochKey) {
+    const publicVerifier = await this.load(family);
+    try {
+      const path = `/v1/families/${family}/log?after=${publicVerifier.last_cursor()}`;
+      publicVerifier.sign_get(deviceId, signingSeed, path,
+        crypto.getRandomValues(new Uint8Array(16)));
+      const transaction = this.database.transaction('families', 'readonly');
+      const metadata = await requestResult(transaction.objectStore('families').get(family));
+      const initial = new this.wasm.WasmInitialFamily(
+        metadata.genesis, metadata.relayPublicKey, epochKey,
+      );
+      initial.free();
+    } finally {
+      publicVerifier.free();
+    }
+    const transaction = this.database.transaction('credentials', 'readwrite');
+    const done = transactionDone(transaction);
+    transaction.objectStore('credentials').put({
+      family, deviceId: Uint8Array.from(deviceId), signingSeed: Uint8Array.from(signingSeed),
+      epochKey: Uint8Array.from(epochKey),
+    });
+    await done;
+  }
+
+  async initialCredential(family) {
+    const transaction = this.database.transaction('credentials', 'readonly');
+    const row = await requestResult(transaction.objectStore('credentials').get(family));
+    if (!row) throw new Error('No saved initial device credential');
+    return row;
+  }
+
+  async pullSaved(family, get, maxPages = 4) {
+    const row = await this.initialCredential(family);
+    return this.pull(family, row.deviceId, row.signingSeed, get, maxPages);
+  }
+
+  async hydrateGenesisSaved(family, get) {
+    const row = await this.initialCredential(family);
+    return this.hydrateGenesis(family, row.deviceId, row.signingSeed, get);
+  }
+
+  async loadInitialReadySaved(family) {
+    const row = await this.initialCredential(family);
+    return this.loadInitialReady(family, row.epochKey);
+  }
+
+  async hydrateGenesis(family, deviceId, signingSeed, get) {
+    const transaction = this.database.transaction(['families', 'objects'], 'readonly');
+    const metadataRequest = transaction.objectStore('families').get(family);
+    const objectsRequest = transaction.objectStore('objects').getAll(
+      IDBKeyRange.bound([family, ''], [family, 'f'.repeat(32)]),
+    );
+    const [metadata, stored] = await Promise.all([
+      requestResult(metadataRequest), requestResult(objectsRequest),
+    ]);
+    if (!metadata) throw new Error('Family is absent');
+    const verifier = await this.load(family);
+    const present = new Set(stored.map((row) => row.objectId));
+    let fetched = 0;
+    try {
+      const ids = this.wasm.manifest_object_ids(metadata.genesis);
+      for (let offset = 0; offset < ids.length; offset += 16) {
+        const id = ids.slice(offset, offset + 16);
+        const objectId = hex(id);
+        if (present.has(objectId)) continue;
+        const path = `/v1/families/${family}/objects/${objectId}`;
+        const auth = verifier.sign_get(deviceId, signingSeed, path,
+          crypto.getRandomValues(new Uint8Array(16)));
+        const response = await get(path, auth);
+        const object = this.wasm.verified_manifest_object(metadata.genesis, id, response);
+        const write = this.database.transaction('objects', 'readwrite');
+        const done = transactionDone(write);
+        write.objectStore('objects').add({ family, objectId, bytes: object });
+        await done;
+        present.add(objectId);
+        fetched++;
+      }
+      return fetched;
+    } finally {
+      verifier.free();
+    }
+  }
+
+  async loadInitialReady(family, epochKey) {
+    const transaction = this.database.transaction(['families', 'entries', 'objects'], 'readonly');
+    const metadataRequest = transaction.objectStore('families').get(family);
+    const entriesRequest = transaction.objectStore('entries').getAll(
+      IDBKeyRange.bound([family, 1], [family, Number.MAX_SAFE_INTEGER]),
+    );
+    const objectsRequest = transaction.objectStore('objects').getAll(
+      IDBKeyRange.bound([family, ''], [family, 'f'.repeat(32)]),
+    );
+    const [metadata, rows, objects] = await Promise.all([
+      requestResult(metadataRequest), requestResult(entriesRequest), requestResult(objectsRequest),
+    ]);
+    if (!metadata) throw new Error('Family is absent');
+    const publicVerifier = replay(this.wasm, metadata, rows);
+    let ready;
+    try {
+      ready = new this.wasm.WasmInitialFamily(metadata.genesis, metadata.relayPublicKey, epochKey);
+      for (const row of objects) ready.add_object(bytes(row.objectId), row.bytes);
+      ready.finish();
+      for (const row of rows) {
+        if (row.kind !== 'batch') throw new Error('Later control needs full ready replay');
+        ready.apply_batch(row.bytes, row.receipt);
+      }
+      if (ready.last_cursor() !== publicVerifier.last_cursor()) {
+        throw new Error('Ready projection differs from verified public cursor');
+      }
+      return ready;
+    } catch (error) {
+      ready?.free();
+      throw error;
+    } finally {
+      publicVerifier.free();
+    }
   }
 
   append(family, kind, bytes, receipt = null) {

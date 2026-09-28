@@ -560,6 +560,7 @@ private fun TrackerScreen(
     var restoreInfo by remember { mutableStateOf<BackupInfoRow?>(null) }
     val passwordNeeded = stringResource(R.string.password_needed)
     val passwordOrFileError = stringResource(R.string.password_or_file_error)
+    val damagedBackupError = stringResource(R.string.damaged_backup_error)
     LaunchedEffect(foreground, selectedRecipient) {
         if (foreground) while (isActive) {
             val (syncResult, terminalReasons) = withContext(Dispatchers.IO) {
@@ -630,19 +631,29 @@ private fun TrackerScreen(
     }
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
-            runCatching {
-                val bytes = withContext(Dispatchers.IO) { readFile(uri) ?: error("Missing backup") }
-                pendingRestore = bytes
-                restoreInfo = null
-                restorePassword = ""
-                pendingRestoreProtected = bytes.size >= 5 && bytes.copyOfRange(0, 5).contentEquals("BTBK1".toByteArray())
-                if (pendingRestoreProtected) {
-                    message = passwordNeeded
-                } else {
-                    restoreInfo = withContext(Dispatchers.IO) { store.inspectReadable(bytes) }
-                    message = null
+            pendingRestore = null
+            restoreInfo = null
+            restorePassword = ""
+            pendingRestoreProtected = false
+            val bytes = runCatching { withContext(Dispatchers.IO) { readFile(uri) ?: error("Missing backup") } }
+                .getOrElse {
+                    message = if (it is BackupTooLarge) tooLargeError else errorText
+                    return@launch
                 }
-            }.onFailure { message = if (it is BackupTooLarge) tooLargeError else errorText }
+            val protected = bytes.size >= 5 && bytes.copyOfRange(0, 5).contentEquals("BTBK1".toByteArray())
+            if (protected) {
+                pendingRestore = bytes
+                pendingRestoreProtected = true
+                message = passwordNeeded
+            } else {
+                runCatching { withContext(Dispatchers.IO) { store.inspectReadable(bytes) } }
+                    .onSuccess { info ->
+                        pendingRestore = bytes
+                        restoreInfo = info
+                        message = null
+                    }
+                    .onFailure { message = damagedBackupError }
+            }
         }
     }
     fun change(onSaved: (() -> Unit)? = null, action: () -> Unit) {

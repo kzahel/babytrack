@@ -264,10 +264,12 @@ delivered, and removed access cannot obtain new Family data.
   the later activity does not, and the restored Family survives restart. The
   same check saves a password-protected file through the picker, reinstalls,
   rejects a wrong password without creating a Family, then restores with the
-  correct password. Physical phones, corrupt files, and provider failures
-  remain open. Remote run `36356278973` reached the protected-file preview
-  but its UI script did not scroll to the confirmation button; a scroll-aware
-  local rerun and remote run `36357854875` pass.
+  correct password. The emulator picker check now also rejects a truncated
+  readable file with a specific message and no Family creation. Physical
+  phones and provider failures remain open. Remote run `36356278973` reached
+  the protected-file preview but its UI script did not scroll to the
+  confirmation button; a scroll-aware local rerun and remote run
+  `36357854875` pass.
 - [ ] Add the planned analysis export and Nara import through shared Rust
   import/export, with real sanitized samples and target preview. The
   current-state analysis CSV now exports local and shared Families through

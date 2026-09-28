@@ -155,6 +155,7 @@
     <string name="restore_protected">Restore protected backup</string>
     <string name="password_needed">Enter the backup password to restore this file.</string>
     <string name="password_or_file_error">Wrong password or damaged backup file.</string>
+    <string name="damaged_backup_error">This backup file is damaged or unsupported. No Family was restored.</string>
     <string name="backup_too_large">This backup is too large to open safely on this device.</string>
     <string name="saved">Backup saved</string>
     <string name="restored">Backup restored as a new Family</string>

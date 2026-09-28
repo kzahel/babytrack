@@ -63,8 +63,9 @@ view. Growth entries now carry optional head circumference through local
 restore, encrypted sync, the Android form, and analysis CSV.
 An Android emulator recovery check now saves readable and protected files
 through the system picker and restores each after reinstall. It verifies the
-saved point and wrong-password denial; physical-phone and provider-failure
-checks remain.
+saved point, rejects a truncated readable file and a wrong protected-file
+password, and leaves the Family list untouched on either denial.
+Physical-phone and provider-failure checks remain.
 The Android tracker now retains the selected Family and child across process
 restart, with a two-Family emulator UI check. Remote run `36356278973`
 confirmed the concurrent SQLite fresh-open repair and passed the relay and
@@ -80,7 +81,7 @@ scrolls to that action; the complete local recovery flow and remote run
 | Next dependent slice | The first-cohort recheck and [focused general-authority advisory](003-m0-foundation.md#general-authority-advisory-pass-at-98fa0ea) passed. Relay restart replays public controls and accepted batch authority; a signed private checkpoint covers rejected-result and staging-reservation sets. Signed GETs, batch POSTs, manager controls, and later control HTTP writes use that ledger under a SQLite writer lock. Later enrollment after removal and epoch rotation passes on separate emulators. A second admitted manager now invites, grants, and removes a third device with rotation through relay HTTP and Android instrumentation. Later rotations, role changes, cancellation, browser shared outbox, and M0 exit review remain. |
 | Next independent review | Run one broader end-of-M0 recovery and mixed-client gate after its executable coverage closes. Focused advisory findings remain open without serial rechecks during feature development. Prioritize usable tracking and browser shared sync before another review cycle. |
 | Open advisory | The [automatic-status recheck](003-m0-foundation.md#advisory-automatic-status-recheck-at-ad42d78) found an own-claim lost-response ambiguity and a concurrent status-write race. FS37/FS77 regressions and repair remain due before real Family data. Durable streaming of large control history also remains open. |
-| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, local Android UI smoke, and document-picker recovery jobs are required on every push/PR. Run `36357854875` at `9f1fcd9` passed every required job, including readable and protected document-picker recovery across reinstall. |
+| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, local Android UI smoke, and document-picker recovery jobs are required on every push/PR. Run `36359335159` at `8aa168e` passed every required job, including readable and protected document-picker recovery across reinstall and the two-child UI path. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.

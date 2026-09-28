@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import re
+import subprocess
+import tempfile
+from pathlib import Path
 
 from check_android_ui_smoke import (
     APK, PACKAGE, adb, dismiss_keyboard, find, nodes, scroll_up, serial, tap,
@@ -14,6 +17,8 @@ FILENAME = "babytrack-backup.cbor"
 DOWNLOAD = f"/storage/emulated/0/Download/{FILENAME}"
 PROTECTED_FILENAME = "babytrack-backup.btbk"
 PROTECTED_DOWNLOAD = f"/storage/emulated/0/Download/{PROTECTED_FILENAME}"
+CORRUPT_FILENAME = "babytrack-corrupt.cbor"
+CORRUPT_DOWNLOAD = f"/storage/emulated/0/Download/{CORRUPT_FILENAME}"
 TEST_PASSWORD = "TestPassphrase42"
 
 
@@ -32,7 +37,7 @@ def main() -> None:
     adb(target, "install", "-r", str(APK))
     adb(target, "shell", "pm", "clear", PACKAGE)
     downloads = adb(target, "shell", "ls", "/storage/emulated/0/Download").splitlines()
-    for name in (FILENAME, PROTECTED_FILENAME):
+    for name in (FILENAME, PROTECTED_FILENAME, CORRUPT_FILENAME):
         if name in downloads:
             adb(target, "shell", "rm", f"/storage/emulated/0/Download/{name}")
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
@@ -55,6 +60,15 @@ def main() -> None:
     size = int(adb(target, "shell", "stat", "-c", "%s", DOWNLOAD).strip())
     if size < 100:
         raise AssertionError(f"Saved backup was unexpectedly short: {size} bytes")
+    readable = subprocess.run(
+        ["adb", "-s", target, "exec-out", "cat", DOWNLOAD],
+        check=True, capture_output=True,
+    ).stdout
+    with tempfile.TemporaryDirectory() as scratch:
+        corrupt = Path(scratch) / CORRUPT_FILENAME
+        corrupt.write_bytes(readable[:len(readable) // 2])
+        subprocess.run(["adb", "-s", target, "push", str(corrupt), CORRUPT_DOWNLOAD],
+                       check=True, capture_output=True)
     scroll_up(target, 12)
     tap(target, "What happened?", scroll=True)
     adb(target, "shell", "input", "text", "AfterBackupMarker")
@@ -64,6 +78,12 @@ def main() -> None:
 
     reinstall(target)
     find(target, "New Family")
+    tap(target, "Restore backup")
+    tap(target, CORRUPT_FILENAME)
+    find(target, "This backup file is damaged or unsupported. No Family was restored.")
+    if any(node.attrib.get("text", "").startswith("Family 1")
+           for node in nodes(target).iter("node")):
+        raise AssertionError("Damaged backup created a Family")
     tap(target, "Restore backup")
     tap(target, FILENAME)
     find(target, "File saved at ", contains=True)
@@ -124,7 +144,7 @@ def main() -> None:
     find(target, "RecoveryChild", scroll=True)
     tap(target, "View timeline", scroll=True)
     find(target, "Note · RecoveryMarker", scroll=True)
-    print("Android readable/protected document backups, fresh-install restore, and restart: OK")
+    print("Android readable/protected backups, damaged-file denial, fresh-install restore, and restart: OK")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,27 @@
 <resources>
     <string name="app_name">Babytrack</string>
     <string name="screen_title">Today</string>
+    <string name="nav_today">Today</string>
+    <string name="nav_history">History</string>
+    <string name="nav_family">Family</string>
+    <string name="add_activity">Add activity</string>
+    <string name="capture_for_child">For %1$s</string>
+    <string name="quick_log">Quick log</string>
+    <string name="recent_entries">Recent entries</string>
+    <string name="show_entry_actions">Details and edits</string>
+    <string name="hide_entry_actions">Hide details</string>
+    <string name="unknown_activity">Entry from a newer app version</string>
+    <string name="event_diaper">Diaper</string>
+    <string name="event_bottle">Bottle</string>
+    <string name="event_breast">Breast feed</string>
+    <string name="event_solids">Solids</string>
+    <string name="event_sleep">Sleep</string>
+    <string name="event_pump">Pumping</string>
+    <string name="event_growth">Growth</string>
+    <string name="event_temperature">Temperature</string>
+    <string name="event_medication">Medication</string>
+    <string name="event_note">Note</string>
+    <string name="back">Back</string>
     <string name="local_only">On this device</string>
     <string name="shared_family">Shared Family · syncs while open and during scheduled background work</string>
     <string name="automatic_sync_delayed">Shared sync is delayed. Local entries stay saved; retry when connected.</string>

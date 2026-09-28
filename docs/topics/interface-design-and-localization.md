@@ -30,8 +30,13 @@ than literal colors in individual screens.
 | Ink | `#18272C` | `#F6F7F4` | Primary text |
 | Primary | `#176B75` | `#A5E7E5` | Main Save, start/stop, selected navigation |
 | Primary container | `#D3F0EE` | `#24545B` | Quiet selected state and status panel |
-| Warm accent | `#9E4B30` | `#FFC0A8` | Feed-related illustration/accent, secondary emphasis |
-| Violet accent | `#603F83` | `#D8C4F4` | Care/diaper-related illustration/accent |
+| Secondary | `#41636A` | `#AFCED0` | Selected chips and secondary actions |
+| Warm accent | `#9E4B30` | `#FFC0A8` | Feed-related illustration/accent |
+
+The Material surface-container roles use neutral green-gray tones, so cards,
+chips, and bottom navigation do not fall back to the library's default
+purple and pink colors. A future violet care accent can be a category token
+when those illustrations exist; it is not a global selection color.
 
 Primary text on primary, ink on surface, and container foregrounds were
 chosen at or above 4.5:1 contrast. Future activity colors require the same

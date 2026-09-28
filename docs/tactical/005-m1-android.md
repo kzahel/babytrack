@@ -267,6 +267,11 @@ This is still a development flow, not a released product flow.
   Back/return state, 1.5× text, target-bound drafts and timers, pending join,
   and private-copy notice as each route moves. The
   [navigation topic](../topics/android-navigation.md) owns the route plan.
+  The route shell, focused capture selector/forms, compact History rows, and
+  Today recent entries are implemented. The quick emulator UI flow and the
+  23-test real-relay Android suite pass on this layout. Finish target
+  switching, date browsing, large-text/RTL checks, and Family hierarchy
+  before closing this slice.
 - [ ] Apply the [interface design and localization](../topics/interface-design-and-localization.md)
   rules while migrating each route: semantic color and type hierarchy,
   localized resources/plurals, flexible large-text and RTL layouts,

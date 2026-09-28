@@ -39,6 +39,23 @@ class SharingRelayTest {
 
     private fun ByteArray.hex(): String = joinToString("") { "%02x".format(it.toInt() and 255) }
 
+    private fun openTab(label: Int) {
+        val text = InstrumentationRegistry.getInstrumentation().targetContext.getString(label)
+        composeRule.waitUntil(25_000) {
+            composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onAllNodesWithText(text).onLast().performClick()
+    }
+
+    private fun openFirstEntryActions() {
+        val text = InstrumentationRegistry.getInstrumentation().targetContext
+            .getString(R.string.show_entry_actions)
+        composeRule.waitUntil(25_000) {
+            composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onAllNodesWithText(text).onFirst().performScrollTo().performClick()
+    }
+
     @Test
     fun deletedEntryCanBeUndoneFromTheTracker() {
         wakeEmulatorScreen()
@@ -55,10 +72,12 @@ class SharingRelayTest {
             .edit().putString("family", family.familyId.joinToString("") { "%02x".format(it) })
             .putString("child", child.joinToString("") { "%02x".format(it) }).commit()
         ActivityScenario.launch(MainActivity::class.java).use {
+            openTab(R.string.nav_history)
             composeRule.waitUntil(25_000) {
                 composeRule.onAllNodesWithText("Note · Undo me").fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onNodeWithText("Note · Undo me").performScrollTo().assertIsDisplayed()
+            openFirstEntryActions()
             composeRule.onNodeWithText(context.getString(R.string.delete_entry))
                 .performScrollTo().performClick()
             composeRule.onNodeWithText(context.getString(R.string.confirm_delete_entry)).performClick()
@@ -125,7 +144,9 @@ class SharingRelayTest {
                 composeRule.onAllNodesWithText(context.getString(R.string.stop_sleep))
                     .fetchSemanticsNodes().isNotEmpty()
             }
+            openTab(R.string.nav_family)
             composeRule.onNodeWithText("Other summary child").performScrollTo().performClick()
+            openTab(R.string.nav_today)
             composeRule.waitUntil(25_000) {
                 composeRule.onAllNodesWithText(context.getString(R.string.today_feeds, 0L, 0L))
                     .fetchSemanticsNodes().isNotEmpty()
@@ -160,7 +181,9 @@ class SharingRelayTest {
             .edit().putString("family", family.familyId.joinToString("") { "%02x".format(it) })
             .putString("child", child.joinToString("") { "%02x".format(it) }).commit()
         ActivityScenario.launch(MainActivity::class.java).use {
+            openTab(R.string.nav_history)
             val edit = context.getString(R.string.edit_entry_time)
+            openFirstEntryActions()
             composeRule.waitUntil(25_000) {
                 composeRule.onAllNodesWithText(edit).fetchSemanticsNodes().isNotEmpty()
             }
@@ -194,7 +217,9 @@ class SharingRelayTest {
             .edit().putString("family", family.familyId.joinToString("") { "%02x".format(it) })
             .putString("child", child.joinToString("") { "%02x".format(it) }).commit()
         ActivityScenario.launch(MainActivity::class.java).use {
+            openTab(R.string.nav_history)
             val move = context.getString(R.string.move_completed_session)
+            openFirstEntryActions()
             composeRule.waitUntil(25_000) {
                 composeRule.onAllNodesWithText(move).fetchSemanticsNodes().isNotEmpty()
             }
@@ -485,6 +510,7 @@ class SharingRelayTest {
         context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
             .edit().putString("family", familyHex).commit()
         ActivityScenario.launch(MainActivity::class.java).use {
+            openTab(R.string.nav_family)
             val shortId = pending.deviceId.joinToString("") { "%02x".format(it.toInt() and 255) }.take(8)
             val label = context.getString(R.string.device_short_id, shortId)
             val button = context.getString(R.string.remove_pending_device, label)

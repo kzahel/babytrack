@@ -12,6 +12,7 @@ import android.content.pm.PackageManager
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.Lifecycle
@@ -32,6 +33,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -51,10 +56,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -64,6 +68,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -95,7 +100,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.Date
 import java.util.TimeZone
-import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     private var incomingInvitation by mutableStateOf<String?>(null)
@@ -232,6 +236,32 @@ private val noteEditableKinds = setOf(
 private val instantTimeEditableKinds = setOf(
     "note", "feed.bottle", "feed.solids", "diaper", "growth", "medication", "temperature",
 )
+private enum class TrackerDestination { TODAY, HISTORY, FAMILY, CAPTURE }
+private enum class CaptureKind(val label: Int) {
+    DIAPER(R.string.log_diaper),
+    BOTTLE(R.string.log_bottle),
+    BREAST(R.string.log_breast),
+    PUMP(R.string.log_pump),
+    SOLIDS(R.string.log_solids),
+    SLEEP(R.string.log_sleep),
+    GROWTH(R.string.log_growth),
+    TEMPERATURE(R.string.log_temperature),
+    MEDICATION(R.string.log_medication),
+    NOTE(R.string.log_note),
+}
+private fun activityLabel(kind: String): Int = when (kind) {
+    "diaper" -> R.string.event_diaper
+    "feed.bottle" -> R.string.event_bottle
+    "feed.breast" -> R.string.event_breast
+    "feed.solids" -> R.string.event_solids
+    "sleep" -> R.string.event_sleep
+    "pump" -> R.string.event_pump
+    "growth" -> R.string.event_growth
+    "temperature" -> R.string.event_temperature
+    "medication" -> R.string.event_medication
+    "note" -> R.string.event_note
+    else -> R.string.unknown_activity
+}
 private data class PendingTimeEdit(
     val family: FamilyRef,
     val childId: ByteArray,
@@ -608,6 +638,8 @@ private fun TrackerScreen(
     }
     var selectedFamily by remember { mutableStateOf(selectionPrefs.getString("family", null)) }
     var selectedChild by remember { mutableStateOf(selectionPrefs.getString("child", null)) }
+    var destination by rememberSaveable { mutableStateOf(TrackerDestination.TODAY) }
+    var captureKind by rememberSaveable { mutableStateOf<CaptureKind?>(null) }
     var pendingRemovalNotice by remember { mutableStateOf<RemovalCopyNotice?>(null) }
     LaunchedEffect(foreground, version, pendingRemovalNotice) {
         if (!foreground || pendingRemovalNotice != null) return@LaunchedEffect
@@ -666,6 +698,7 @@ private fun TrackerScreen(
     var doseUnit by remember { mutableStateOf("") }
     var logAtMs by remember { mutableStateOf<Long?>(null) }
     var timelineFilter by remember { mutableStateOf(TimelineFilter.ALL) }
+    var expandedEntryKey by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(message) {
@@ -741,6 +774,7 @@ private fun TrackerScreen(
         if (incomingInvitation != null) {
             receivedFragment = incomingInvitation
             showJoinForm = true
+            destination = TrackerDestination.FAMILY
         }
     }
     val errorText = stringResource(R.string.error)
@@ -764,6 +798,9 @@ private fun TrackerScreen(
         }.orEmpty()
     }
     LaunchedEffect(selectedFamily, selectedChild) {
+        captureKind = null
+        if (destination == TrackerDestination.CAPTURE) destination = TrackerDestination.TODAY
+        expandedEntryKey = null
         recentlyDeleted = null
         showAddChildForm = false
         childName = ""
@@ -988,40 +1025,74 @@ private fun TrackerScreen(
     val completed = remember(selectedFamily, saveStatusVersion) { family?.let(lastSave) }
     val filename = stringResource(R.string.backup_filename)
     val protectedFilename = stringResource(R.string.protected_backup_filename)
-    val scrollState = rememberScrollState()
+    val todayScrollState = rememberScrollState()
+    val historyScrollState = rememberScrollState()
+    val familyScrollState = rememberScrollState()
+    val captureScrollState = rememberScrollState()
+    val route = if (family == null || child == null) TrackerDestination.FAMILY else destination
+    val scrollState = when (route) {
+        TrackerDestination.TODAY -> todayScrollState
+        TrackerDestination.HISTORY -> historyScrollState
+        TrackerDestination.FAMILY -> familyScrollState
+        TrackerDestination.CAPTURE -> captureScrollState
+    }
+    BackHandler(enabled = route != TrackerDestination.TODAY && family != null && child != null) {
+        destination = TrackerDestination.TODAY
+        captureKind = null
+    }
     LaunchedEffect(incomingInvitation) {
-        if (incomingInvitation != null) scrollState.scrollTo(0)
+        if (incomingInvitation != null) familyScrollState.scrollTo(0)
     }
     val joinFirst = incomingInvitation != null &&
         (receivedFragment.isNotBlank() || sharedSnapshot == null)
-    var timelineTop by remember { mutableStateOf(0) }
-    var bottleTop by remember { mutableStateOf(0) }
-    var sleepTop by remember { mutableStateOf(0) }
     fun logTime(): ActivityWhen = activityWhen(logAtMs ?: System.currentTimeMillis())
     fun resetLogTime(savedAt: Long?) {
         if (logAtMs == savedAt) logAtMs = null
     }
+    fun finishCapture() {
+        if (destination == TrackerDestination.CAPTURE) {
+            destination = TrackerDestination.TODAY
+            captureKind = null
+        }
+    }
     fun logCompleted(onSaved: (() -> Unit)? = null, action: (ActivityWhen) -> Unit) {
         val chosenAt = logAtMs
         val at = logTime()
-        change(onSaved = { resetLogTime(chosenAt); onSaved?.invoke() }) { action(at) }
+        change(onSaved = {
+            resetLogTime(chosenAt)
+            onSaved?.invoke()
+            finishCapture()
+        }) { action(at) }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
+                navigationIcon = {
+                    if (route == TrackerDestination.CAPTURE) {
+                        IconButton(onClick = {
+                            destination = TrackerDestination.TODAY
+                            captureKind = null
+                        }) { Icon(painterResource(R.drawable.ic_back), contentDescription = stringResource(R.string.back)) }
+                    }
+                },
                 title = {
                     val familyNumber = families.indexOfFirst { it.familyId.key() == selectedFamily } + 1
                     Text(
                         if (child != null && familyNumber > 0) {
                             stringResource(R.string.family_with_child, familyNumber, child.name)
-                        } else stringResource(R.string.screen_title),
+                        } else stringResource(when (route) {
+                            TrackerDestination.TODAY -> R.string.nav_today
+                            TrackerDestination.HISTORY -> R.string.nav_history
+                            TrackerDestination.FAMILY -> R.string.nav_family
+                            TrackerDestination.CAPTURE -> R.string.add_activity
+                        }),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 },
                 actions = {
-                    if (family != null && child != null) {
+                    if (family != null && child != null && route == TrackerDestination.TODAY) {
                         val description = stringResource(R.string.quick_wet_diaper_description)
                         TextButton(
                             modifier = Modifier.semantics { contentDescription = description },
@@ -1036,6 +1107,24 @@ private fun TrackerScreen(
                     }
                 },
             )
+        },
+        bottomBar = {
+            if (family != null && child != null && route != TrackerDestination.CAPTURE) {
+                NavigationBar {
+                    listOf(
+                        Triple(TrackerDestination.TODAY, R.string.nav_today, R.drawable.ic_today),
+                        Triple(TrackerDestination.HISTORY, R.string.nav_history, R.drawable.ic_history),
+                        Triple(TrackerDestination.FAMILY, R.string.nav_family, R.drawable.ic_family),
+                    ).forEach { (target, label, icon) ->
+                        NavigationBarItem(
+                            selected = route == target,
+                            onClick = { destination = target },
+                            icon = { Icon(painterResource(icon), contentDescription = null) },
+                            label = { Text(stringResource(label)) },
+                        )
+                    }
+                }
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
@@ -1121,6 +1210,7 @@ private fun TrackerScreen(
             modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(scrollState).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            if (route == TrackerDestination.FAMILY) {
             if (joinFirst) joinControls()
             Text(stringResource(if (activeShared) R.string.shared_family else R.string.local_only), style = MaterialTheme.typography.labelMedium)
             if (automaticSyncDelayed && !automaticSyncBlocked) Text(stringResource(R.string.automatic_sync_delayed))
@@ -1355,7 +1445,8 @@ private fun TrackerScreen(
 
             if (!joinFirst && (family == null || showFamilySetup || recipientFamilies.isNotEmpty())) joinControls()
 
-            if (family != null && activeFamilyIsLocal) {
+            }
+            if (route == TrackerDestination.FAMILY && family != null && activeFamilyIsLocal) {
                 if (showFamilySetup && BuildConfig.DEBUG) {
                     if (!showShareForm) OutlinedButton(
                         onClick = { showShareForm = true },
@@ -1463,6 +1554,9 @@ private fun TrackerScreen(
                         }
                     }
                 }
+            }
+            if (family != null) {
+                if (route == TrackerDestination.FAMILY) {
                 restoredOrigin?.let { origin ->
                     Text(stringResource(R.string.restored_from, savedTime(origin.snapshotUtcMs)))
                     if (origin.knownGap) Text(stringResource(R.string.file_known_gap))
@@ -1486,7 +1580,8 @@ private fun TrackerScreen(
                         )
                     }
                 }
-                if (child != null) {
+                }
+                if (child != null && route == TrackerDestination.TODAY) {
                     if (loadedChildKey == selectedChild && daySummary != null &&
                         daySummaryDay == LocalDate.now(ZoneId.systemDefault())) {
                         val today = daySummary!!
@@ -1535,17 +1630,40 @@ private fun TrackerScreen(
                             }
                         }
                     }
-                    OutlinedButton(onClick = {
-                        scope.launch { scrollState.animateScrollTo(timelineTop) }
-                    }) { Text(stringResource(R.string.view_timeline)) }
+                    Text(stringResource(R.string.quick_log), style = MaterialTheme.typography.titleMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = {
-                            scope.launch { scrollState.animateScrollTo(bottleTop) }
-                        }) { Text(stringResource(R.string.jump_to_bottle)) }
+                            captureKind = CaptureKind.BOTTLE
+                            destination = TrackerDestination.CAPTURE
+                        }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.event_bottle)) }
                         OutlinedButton(onClick = {
-                            scope.launch { scrollState.animateScrollTo(sleepTop) }
-                        }) { Text(stringResource(R.string.jump_to_sleep)) }
+                            captureKind = CaptureKind.DIAPER
+                            destination = TrackerDestination.CAPTURE
+                        }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.event_diaper)) }
                     }
+                    Button(onClick = {
+                        captureKind = null
+                        destination = TrackerDestination.CAPTURE
+                    }, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.add_activity))
+                    }
+                    Text(stringResource(R.string.recent_entries), style = MaterialTheme.typography.titleMedium)
+                    val recentEntries = if (loadedChildKey == selectedChild)
+                        entries.sortedByDescending { it.startUtcMs }.take(3) else emptyList()
+                    if (recentEntries.isEmpty()) Text(stringResource(R.string.no_entries))
+                    recentEntries.forEach { entry ->
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp)) {
+                                Text(stringResource(activityLabel(entry.kind)), fontWeight = FontWeight.SemiBold)
+                                Text(savedTime(entry.startUtcMs), style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                    TextButton(onClick = { destination = TrackerDestination.HISTORY }) {
+                        Text(stringResource(R.string.view_timeline))
+                    }
+                }
+                if (child != null && route == TrackerDestination.FAMILY) {
                     OutlinedButton(onClick = { showChildDetails = !showChildDetails }) {
                         Text(stringResource(if (showChildDetails) R.string.hide_child_options
                             else R.string.child_options))
@@ -1585,10 +1703,10 @@ private fun TrackerScreen(
                         )
                     }) { Text(stringResource(R.string.edit_child_growth_details)) }
                 }
-                if (children.isNotEmpty() && showChildDetails && !showAddChildForm) OutlinedButton(onClick = {
+                if (route == TrackerDestination.FAMILY && children.isNotEmpty() && showChildDetails && !showAddChildForm) OutlinedButton(onClick = {
                     showAddChildForm = true
                 }) { Text(stringResource(R.string.add_another_child)) }
-                if (children.isEmpty() || (showChildDetails && showAddChildForm)) {
+                if (route == TrackerDestination.FAMILY && (children.isEmpty() || (showChildDetails && showAddChildForm))) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = childName,
@@ -1648,7 +1766,21 @@ private fun TrackerScreen(
                     }) { Text(stringResource(R.string.cancel)) }
                 }
 
-                if (child != null) {
+                if (child != null && route == TrackerDestination.CAPTURE) {
+                    if (captureKind == null) {
+                        Text(stringResource(R.string.add_activity), style = MaterialTheme.typography.titleLarge)
+                        CaptureKind.entries.forEach { kind ->
+                            OutlinedButton(
+                                onClick = {
+                                    captureKind = kind
+                                    scope.launch { captureScrollState.scrollTo(0) }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text(stringResource(kind.label)) }
+                        }
+                    } else {
+                        Text(stringResource(R.string.capture_for_child, child.name),
+                            style = MaterialTheme.typography.titleMedium)
                     Text(stringResource(R.string.log_time_title), style = MaterialTheme.typography.titleMedium)
                     Text(if (logAtMs == null) stringResource(R.string.log_time_now)
                         else stringResource(R.string.log_time_selected,
@@ -1678,6 +1810,7 @@ private fun TrackerScreen(
                             Text(stringResource(R.string.log_time_reset))
                         }
                     }
+                    if (captureKind == CaptureKind.DIAPER) {
                     Text(stringResource(R.string.log_diaper), style = MaterialTheme.typography.titleLarge)
                     listOf(
                         1u.toUByte() to R.string.wet,
@@ -1696,11 +1829,9 @@ private fun TrackerScreen(
                             }
                         }
                     }
-                    Text(stringResource(R.string.log_bottle),
-                        modifier = Modifier.onGloballyPositioned {
-                            bottleTop = it.positionInParent().y.roundToInt()
-                        },
-                        style = MaterialTheme.typography.titleLarge)
+                    }
+                    if (captureKind == CaptureKind.BOTTLE) {
+                    Text(stringResource(R.string.log_bottle), style = MaterialTheme.typography.titleLarge)
                     listOf(
                         1u.toUByte() to R.string.bottle_breast_milk,
                         2u.toUByte() to R.string.bottle_formula,
@@ -1749,6 +1880,8 @@ private fun TrackerScreen(
                             }
                         }) { Text(stringResource(R.string.log_bottle)) }
                     }
+                    }
+                    if (captureKind == CaptureKind.BREAST) {
                     Text(stringResource(R.string.log_breast), style = MaterialTheme.typography.titleLarge)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(1u.toUByte() to R.string.breast_left, 2u.toUByte() to R.string.breast_right).forEach { (side, label) ->
@@ -1813,9 +1946,12 @@ private fun TrackerScreen(
                                 version++
                                 message = null
                                 resetLogTime(chosenAt)
+                                finishCapture()
                             }.onFailure { message = errorText }
                         }
                     }) { Text(stringResource(R.string.save_breast)) }
+                    }
+                    if (captureKind == CaptureKind.PUMP) {
                     Text(stringResource(R.string.log_pump), style = MaterialTheme.typography.titleLarge)
                     OutlinedTextField(
                         value = pumpMinutes,
@@ -1881,9 +2017,12 @@ private fun TrackerScreen(
                                 version++
                                 message = null
                                 resetLogTime(chosenAt)
+                                finishCapture()
                             }.onFailure { message = errorText }
                         }
                     }) { Text(stringResource(R.string.save_pump)) }
+                    }
+                    if (captureKind == CaptureKind.SOLIDS) {
                     Text(stringResource(R.string.log_solids), style = MaterialTheme.typography.titleLarge)
                     OutlinedTextField(
                         value = solidsFoods,
@@ -1914,14 +2053,13 @@ private fun TrackerScreen(
                                 version++
                                 message = null
                                 resetLogTime(chosenAt)
+                                finishCapture()
                             }.onFailure { message = errorText }
                         }
                     }) { Text(stringResource(R.string.save_solids)) }
-                    Text(stringResource(R.string.log_sleep),
-                        modifier = Modifier.onGloballyPositioned {
-                            sleepTop = it.positionInParent().y.roundToInt()
-                        },
-                        style = MaterialTheme.typography.titleLarge)
+                    }
+                    if (captureKind == CaptureKind.SLEEP) {
+                    Text(stringResource(R.string.log_sleep), style = MaterialTheme.typography.titleLarge)
                     Text(stringResource(R.string.sleep_place_title))
                     listOf(
                         null to R.string.sleep_place_unspecified,
@@ -1948,6 +2086,7 @@ private fun TrackerScreen(
                             if (Build.VERSION.SDK_INT >= 33 &&
                                 context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
                             ) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            finishCapture()
                         }) {
                             if (activeShared) sharing.startSleepWithPlace(family, child.id, nowTime(), enteredPlace)
                             else store.startSleepWithPlace(family, child.id, nowTime(), enteredPlace)
@@ -1974,6 +2113,7 @@ private fun TrackerScreen(
                             val endOffset = (zone.getOffset(end) / 60_000).toShort()
                             change(onSaved = {
                                 resetLogTime(chosenAt)
+                                finishCapture()
                                 if (sleepMinutes == enteredMinutes) sleepMinutes = ""
                                 if (sleepPlace == enteredPlace) sleepPlace = null
                             }) {
@@ -1982,6 +2122,8 @@ private fun TrackerScreen(
                             }
                         }) { Text(stringResource(R.string.save_sleep)) }
                     }
+                    }
+                    if (captureKind == CaptureKind.GROWTH) {
                     Text(stringResource(R.string.log_growth), style = MaterialTheme.typography.titleLarge)
                     GrowthUnitChoices(R.string.weight_unit, massUnits, growthWeightUnit) {
                         if (growthWeightUnit != it) { growthWeightUnit = it; growthWeight = "" }
@@ -2040,10 +2182,13 @@ private fun TrackerScreen(
                                     version++
                                     message = null
                                     resetLogTime(chosenAt)
+                                    finishCapture()
                                 }.onFailure { message = errorText }
                             }
                         },
                     ) { Text(stringResource(R.string.save_growth)) }
+                    }
+                    if (captureKind == CaptureKind.TEMPERATURE) {
                     Text(stringResource(R.string.log_temperature), style = MaterialTheme.typography.titleLarge)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(30u.toUByte() to R.string.unit_celsius,
@@ -2080,10 +2225,13 @@ private fun TrackerScreen(
                                     version++
                                     message = null
                                     resetLogTime(chosenAt)
+                                    finishCapture()
                                 }.onFailure { message = errorText }
                             }
                         }) { Text(stringResource(R.string.save_temperature)) }
                     }
+                    }
+                    if (captureKind == CaptureKind.MEDICATION) {
                     Text(stringResource(R.string.log_medication), style = MaterialTheme.typography.titleLarge)
                     OutlinedTextField(
                         value = medicationName,
@@ -2128,10 +2276,13 @@ private fun TrackerScreen(
                                     version++
                                     message = null
                                     resetLogTime(chosenAt)
+                                    finishCapture()
                                 }.onFailure { message = errorText }
                             }
                         },
                     ) { Text(stringResource(R.string.save_medication)) }
+                    }
+                    if (captureKind == CaptureKind.NOTE) {
                     Text(stringResource(R.string.log_note), style = MaterialTheme.typography.titleLarge)
                     OutlinedTextField(
                         value = noteText,
@@ -2152,14 +2303,15 @@ private fun TrackerScreen(
                                 version++
                                 message = null
                                 resetLogTime(chosenAt)
+                                finishCapture()
                             }.onFailure { message = errorText }
                         }
                     }) { Text(stringResource(R.string.save_note)) }
-                    Text(stringResource(R.string.timeline),
-                        modifier = Modifier.onGloballyPositioned {
-                            timelineTop = it.positionInParent().y.roundToInt()
-                        },
-                        style = MaterialTheme.typography.titleLarge)
+                    }
+                    }
+                }
+                if (child != null && route == TrackerDestination.HISTORY) {
+                    Text(stringResource(R.string.timeline), style = MaterialTheme.typography.titleLarge)
                     listOf(
                         TimelineFilter.ALL to R.string.timeline_all,
                         TimelineFilter.FEEDS to R.string.timeline_feeds,
@@ -2261,7 +2413,7 @@ private fun TrackerScreen(
                                 3 -> stringResource(R.string.both)
                                 else -> stringResource(R.string.dry)
                             })
-                            else -> entry.kind
+                            else -> stringResource(R.string.unknown_activity)
                         }
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp)) {
@@ -2280,6 +2432,14 @@ private fun TrackerScreen(
                                     }
                                     Text(stringResource(R.string.sleep_place_entry, stringResource(placeLabel)))
                                 }
+                                val entryKey = entry.id.key()
+                                TextButton(onClick = {
+                                    expandedEntryKey = if (expandedEntryKey == entryKey) null else entryKey
+                                }) {
+                                    Text(stringResource(if (expandedEntryKey == entryKey)
+                                        R.string.hide_entry_actions else R.string.show_entry_actions))
+                                }
+                                if (expandedEntryKey == entryKey) {
                                 if (entry.kind == "sleep" && entry.endUtcMs == null) {
                                     Button(onClick = {
                                         val end = System.currentTimeMillis()
@@ -2438,11 +2598,13 @@ private fun TrackerScreen(
                                         activeShared,
                                     )
                                 }) { Text(stringResource(R.string.delete_entry)) }
+                                }
                             }
                         }
                     }
                 }
 
+                if (route == TrackerDestination.FAMILY) {
                 Spacer(Modifier.height(8.dp))
                 Text(stringResource(R.string.backup_title), style = MaterialTheme.typography.titleLarge)
                 if (!activeShared) completed?.let { saved ->
@@ -2494,7 +2656,9 @@ private fun TrackerScreen(
                             .onFailure { message = errorText }
                     }
                 }) { Text(stringResource(R.string.export_analysis_csv)) }
+                }
             }
+            if (route == TrackerDestination.FAMILY) {
             OutlinedButton(onClick = { restoreLauncher.launch(arrayOf("application/octet-stream", "*/*")) }) {
                 Text(stringResource(R.string.restore_backup))
             }
@@ -2542,6 +2706,7 @@ private fun TrackerScreen(
                         }.onFailure { message = if (protected) passwordOrFileError else errorText }
                     }
                 }) { Text(stringResource(R.string.confirm_restore)) }
+            }
             }
             message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }

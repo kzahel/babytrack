@@ -18,8 +18,14 @@ PACKAGE = "org.babytrack.app"
 
 
 def command(*args: str) -> str:
-    result = subprocess.run(args, check=True, capture_output=True, text=True)
-    return result.stdout
+    for attempt in range(4):
+        result = subprocess.run(args, capture_output=True, text=True)
+        if result.returncode == 0:
+            return result.stdout
+        if args[0] != "adb" or result.returncode != 255 or attempt == 3:
+            result.check_returncode()
+        time.sleep(1)
+    raise AssertionError("unreachable")
 
 
 def serial() -> str:
@@ -119,6 +125,56 @@ def dismiss_keyboard(target: str) -> None:
         adb(target, "shell", "input", "keyevent", "4")
 
 
+def tap_tab(target: str, label: str) -> None:
+    root = nodes(target)
+    matches = [node for node in root.iter("node") if node.attrib.get("text") == label]
+    if not matches:
+        raise AssertionError(f"Navigation destination {label!r} is absent")
+    x1, y1, x2, y2 = map(int, re.findall(r"\d+", matches[-1].attrib["bounds"]))
+    adb(target, "shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
+
+
+def open_capture(target: str, activity: str) -> None:
+    tap_tab(target, "Today")
+    tap(target, "Add activity", actionable=True)
+    tap(target, activity, scroll=True, actionable=True)
+
+
+def open_history(target: str) -> None:
+    tap_tab(target, "History")
+
+
+def open_family(target: str) -> None:
+    tap_tab(target, "Family")
+
+
+def open_entry_actions(target: str, entry_label: str) -> None:
+    """Expand the actions on the named History row, even after scrolling."""
+    find(target, entry_label, scroll=True)
+    for _ in range(4):
+        root = nodes(target)
+        parents = {child: parent for parent in root.iter() for child in parent}
+        labels = [node for node in root.iter("node") if node.attrib.get("text") == entry_label]
+        if labels:
+            ancestor = labels[0]
+            while ancestor in parents:
+                ancestor = parents[ancestor]
+                buttons = [node for node in ancestor.iter("node")
+                           if node.attrib.get("text") in ("Details and edits", "Hide details")]
+                if len(buttons) == 1:
+                    if buttons[0].attrib["text"] == "Details and edits":
+                        x1, y1, x2, y2 = map(int, re.findall(r"\d+", buttons[0].attrib["bounds"]))
+                        adb(target, "shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
+                    return
+        # The label can be at the bottom of the viewport while its actions
+        # are just below it. Bring the rest of the row into view.
+        sizes = re.findall(r"(\d+)x(\d+)", adb(target, "shell", "wm", "size"))
+        width, height = map(int, sizes[-1])
+        adb(target, "shell", "input", "swipe", str(width // 2), str(height * 7 // 10),
+            str(width // 2), str(height * 5 // 10), "300")
+    raise AssertionError(f"No details action found for {entry_label!r}")
+
+
 def main(quick: bool = False) -> None:
     target = serial()
     if adb(target, "shell", "getprop", "ro.kernel.qemu").strip() != "1":
@@ -138,21 +194,25 @@ def main(quick: bool = False) -> None:
     dismiss_keyboard(target)
     tap(target, "Add child", scroll=True)
     find(target, "Family 1 · UITestChild")
+    tap(target, "Family", actionable=True)
     tap(target, "Child options", scroll=True)
     find(target, "Rename child", scroll=True)
     find(target, "Add another child", scroll=True)
     tap(target, "Hide child options", scroll=True)
+    tap(target, "Today", actionable=True)
     tap(target, "View timeline", scroll=True)
     find(target, "No entries yet.")
-    scroll_up(target, 12)
+    tap(target, "Today", actionable=True)
     tap(target, "Bottle", scroll=True)
     find(target, "Bottle amount")
-    scroll_up(target, 12)
-    tap(target, "Sleep", scroll=True)
+    adb(target, "shell", "input", "keyevent", "4")
+    open_capture(target, "Log completed sleep")
     find(target, "Minutes slept")
-    scroll_up(target, 12)
+    adb(target, "shell", "input", "keyevent", "4")
     tap(target, "Wet now")
+    tap(target, "History", actionable=True)
     find(target, "Diaper · Wet", scroll=True)
+    tap(target, "Details and edits", scroll=True)
     tap(target, "Edit diaper type", scroll=True)
     tap(target, "Dirty")
     tap(target, "Save changes")
@@ -166,8 +226,9 @@ def main(quick: bool = False) -> None:
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     find(target, "Family 1 · UITestChild")
-    tap(target, "View timeline", scroll=True)
+    tap(target, "History", actionable=True)
     find(target, "Diaper · Dirty")
+    tap(target, "Details and edits", scroll=True)
     tap(target, "Delete entry", scroll=True)
     find(target, "Remove this entry from the Family timeline? Shared devices receive the change when they sync.")
     tap(target, "Delete")
@@ -175,16 +236,19 @@ def main(quick: bool = False) -> None:
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     find(target, "Family 1 · UITestChild")
+    tap(target, "History", actionable=True)
     find(target, "No entries yet.", scroll=True)
     if quick:
         print("Android UI quick Family, diaper, edit, delete, and restart: OK")
         return
-    scroll_up(target)
+    open_capture(target, "Add note")
     tap(target, "What happened?", scroll=True)
     adb(target, "shell", "input", "text", "Before")
     dismiss_keyboard(target)
     tap(target, "Save note", scroll=True)
+    open_history(target)
     find(target, "Note · Before", scroll=True)
+    open_entry_actions(target, "Note · Before")
     tap(target, "Edit note", scroll=True)
     tap(target, "Before")
     adb(target, "shell", "input", "text", "After")
@@ -193,17 +257,21 @@ def main(quick: bool = False) -> None:
     find(target, "Note · BeforeAfter", scroll=True)
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    open_history(target)
     find(target, "Note · BeforeAfter", scroll=True)
-    scroll_up(target, 12)
+    open_capture(target, "Log diaper")
     tap(target, "Dry", scroll=True)
+    open_history(target)
     find(target, "Diaper · Dry", scroll=True)
-    scroll_up(target, 12)
+    open_capture(target, "Log bottle")
     tap(target, "Breast milk", scroll=True)
     tap(target, "Bottle amount", scroll=True)
     adb(target, "shell", "input", "text", "90")
     dismiss_keyboard(target)
     tap(target, "Log bottle", scroll=True, actionable=True)
+    open_history(target)
     find(target, "Bottle · 90 mL · Breast milk", scroll=True)
+    open_entry_actions(target, "Bottle · 90 mL · Breast milk")
     tap(target, "Edit bottle", scroll=True)
     tap(target, "Formula")
     tap(target, "Bottle amount")
@@ -216,6 +284,7 @@ def main(quick: bool = False) -> None:
     find(target, "Bottle · 120 mL · Formula", scroll=True)
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    open_capture(target, "Log breast feed")
     tap(target, "Minutes on selected side", scroll=True)
     adb(target, "shell", "input", "text", "5")
     dismiss_keyboard(target)
@@ -226,16 +295,20 @@ def main(quick: bool = False) -> None:
     adb(target, "shell", "input", "text", "8")
     dismiss_keyboard(target)
     tap(target, "Save breast feed", scroll=True)
+    open_history(target)
     find(target, "Breast · Left 5 min → Right 8 min", scroll=True)
+    open_entry_actions(target, "Breast · Left 5 min → Right 8 min")
     tap(target, "Edit breast feed", scroll=True)
     tap(target, "Right")
     tap(target, "Save changes")
     find(target, "Breast · Right 5 min → Right 8 min", scroll=True)
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    open_history(target)
     find(target, "Breast · Right 5 min → Right 8 min", scroll=True)
     scroll_up(target)
     find(target, "Bottle · 120 mL · Formula", scroll=True)
+    open_entry_actions(target, "Bottle · 120 mL · Formula")
     tap(target, "Edit bottle", scroll=True)
     tap(target, "US fl oz")
     tap(target, "Bottle amount")
@@ -253,9 +326,11 @@ def main(quick: bool = False) -> None:
     find(target, "Bottle · 4.5 UK fl oz · Formula", scroll=True)
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    open_history(target)
     find(target, "Bottle · 4.5 UK fl oz · Formula", scroll=True)
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    open_family(target)
     tap(target, "Child options", scroll=True)
     tap(target, "Rename child", scroll=True)
     tap(target, "New child name", scroll=True)
@@ -268,7 +343,7 @@ def main(quick: bool = False) -> None:
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     find(target, "Renamed", scroll=True, contains=True)
-    scroll_up(target, 12)
+    open_capture(target, "Log growth")
     tap(target, "Weight", scroll=True)
     adb(target, "shell", "input", "text", "4.2")
     dismiss_keyboard(target)
@@ -279,7 +354,9 @@ def main(quick: bool = False) -> None:
     adb(target, "shell", "input", "text", "35")
     dismiss_keyboard(target)
     tap(target, "Save growth", scroll=True)
+    open_history(target)
     find(target, "Growth · 4.2 kg · 54 cm · head 35 cm", scroll=True)
+    open_entry_actions(target, "Growth · 4.2 kg · 54 cm · head 35 cm")
     tap(target, "Edit growth", scroll=True)
     tap(target, "4.2", scroll=True)
     adb(target, "shell", "input", "keyevent", "123")
@@ -307,16 +384,19 @@ def main(quick: bool = False) -> None:
     find(target, "Note: GrowthNote", scroll=True)
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    open_history(target)
     find(target, "Growth · 4.3 kg · 54 cm · head 35.5 cm", scroll=True)
     find(target, "Note: GrowthNote", scroll=True)
-    scroll_up(target, 12)
+    open_capture(target, "Log completed sleep")
     tap(target, "Minutes slept", scroll=True)
     adb(target, "shell", "input", "text", "30")
     dismiss_keyboard(target)
     tap(target, "Crib", scroll=True)
     tap(target, "Save sleep", scroll=True)
+    open_history(target)
     find(target, "Sleep · 30 min", scroll=True)
     find(target, "Place: Crib", scroll=True)
+    open_entry_actions(target, "Sleep · 30 min")
     tap(target, "Edit sleep duration", scroll=True)
     tap(target, "30")
     adb(target, "shell", "input", "keyevent", "123")
@@ -333,14 +413,17 @@ def main(quick: bool = False) -> None:
     find(target, "Place: Pram", scroll=True)
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    open_history(target)
     find(target, "Sleep · 20 min", scroll=True)
     find(target, "Place: Pram", scroll=True)
-    scroll_up(target, 12)
+    open_capture(target, "Log temperature")
     tap(target, "Temperature (°C)", scroll=True)
     adb(target, "shell", "input", "text", "37.5")
     dismiss_keyboard(target)
     tap(target, "Save temperature", scroll=True)
+    open_history(target)
     find(target, "Temperature · 37.5 °C", scroll=True)
+    open_entry_actions(target, "Temperature · 37.5 °C")
     tap(target, "Edit temperature", scroll=True)
     tap(target, "37.5")
     adb(target, "shell", "input", "keyevent", "123")
@@ -353,7 +436,9 @@ def main(quick: bool = False) -> None:
     find(target, "Temperature · 37.8 °C", scroll=True)
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    open_history(target)
     find(target, "Temperature · 37.8 °C", scroll=True)
+    open_entry_actions(target, "Temperature · 37.8 °C")
     dismiss_keyboard(target)
     tap(target, "Edit temperature", scroll=True, actionable=True)
     tap(target, "°F")
@@ -364,28 +449,32 @@ def main(quick: bool = False) -> None:
     find(target, "Temperature · 99 °F", scroll=True)
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    open_history(target)
     find(target, "Temperature · 99 °F", scroll=True)
-    scroll_up(target, 20)
+    open_family(target)
     tap(target, "Family options", scroll=True)
     tap(target, "New Family", scroll=True)
     tap(target, "Child’s name", scroll=True)
     adb(target, "shell", "input", "text", "FirstChild")
     dismiss_keyboard(target)
     tap(target, "Add child", scroll=True)
+    open_family(target)
     tap(target, "Child options", scroll=True)
     tap(target, "Add another child", scroll=True)
     tap(target, "Child’s name", scroll=True)
     adb(target, "shell", "input", "text", "SelectedChild")
     dismiss_keyboard(target)
     tap(target, "Add child", scroll=True)
+    open_capture(target, "Add note")
     tap(target, "What happened?", scroll=True)
     adb(target, "shell", "input", "text", "SelectedChildMarker")
     dismiss_keyboard(target)
     tap(target, "Save note", scroll=True)
+    open_history(target)
     find(target, "Note · SelectedChildMarker", scroll=True)
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
-    tap(target, "View timeline", scroll=True)
+    open_history(target)
     find(target, "Note · SelectedChildMarker", scroll=True)
     print("Android UI Family/child selection, timeline, logging, edits, and restart: OK")
 

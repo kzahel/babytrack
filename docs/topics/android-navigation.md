@@ -1,6 +1,6 @@
 # Android navigation and screen structure
 
-Status: proposed for M1 implementation. This topic owns the Android screen
+Status: M1 route shell implemented; presentation refinement continues. This topic owns the Android screen
 map and navigation behavior. [005](../tactical/005-m1-android.md) owns the
 delivery steps and test evidence. The [event model](event-model.md) and
 [Family sharing contract](family-sharing-and-trust.md) own data and access
@@ -21,11 +21,12 @@ do not fit this MVP's accountless tracking and Family access model. The
 screenshots include private details and remain only in `local-references/`;
 this document deliberately records no names or values from them.
 
-The current Android app presents Today, all activity forms, History, Family
-access, join, and backup in one scrolling Compose screen. Scroll shortcuts
-help, but changing between daily logging, old entries, and sharing still
-requires searching a long page. The navigation change should reuse the
-existing Rust-backed actions and projection.
+The former Android screen put Today, activity forms, History, Family access,
+join, and backup in one scroll. The current debug app has Today, History, and
+Family destinations, focused capture forms, and an explicit target header.
+It reuses the existing Rust-backed actions and projection. Child selection,
+date browsing, route return state, and Family section density still need
+refinement.
 
 ## Primary destinations
 

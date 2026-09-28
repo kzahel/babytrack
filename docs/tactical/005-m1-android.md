@@ -268,10 +268,11 @@ This is still a development flow, not a released product flow.
   and private-copy notice as each route moves. The
   [navigation topic](../topics/android-navigation.md) owns the route plan.
   The route shell, focused capture selector/forms, compact History rows, and
-  Today recent entries are implemented. The quick emulator UI flow and the
-  23-test real-relay Android suite pass on this layout. Finish target
-  switching, date browsing, large-text/RTL checks, and Family hierarchy
-  before closing this slice.
+  Today recent entries, a two-column activity chooser, header target
+  switching, a History day picker, and an expandable Family data section
+  are implemented. The quick emulator UI
+  flow and the 25-case real-relay Android suite pass on the route shell. Finish
+  large-text/RTL and target-bound draft checks before closing this slice.
 - [ ] Apply the [interface design and localization](../topics/interface-design-and-localization.md)
   rules while migrating each route: semantic color and type hierarchy,
   localized resources/plurals, flexible large-text and RTL layouts,
@@ -452,6 +453,8 @@ runs daily and on manual workflow dispatch; both modes use the same script
 and emulator guard. This keeps broad UI coverage without making every
 feature commit wait for all form interactions. Expand UI checks for sharing
 and backup only where a failure would escape the core integration suite.
+CI now also stores synthetic light/normal and dark/1.5× navigation captures
+for visual review, without a brittle pixel-diff gate at this maturity.
 Remote run `36435229528` at `6deceec` passed the 22-case relay suite, short
 UI path, file recovery, and all required build jobs after this split. Record
 local emulator, physical phone, and observed remote CI results separately.

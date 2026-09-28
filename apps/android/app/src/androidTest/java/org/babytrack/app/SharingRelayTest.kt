@@ -16,6 +16,8 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performClick
@@ -89,6 +91,41 @@ class SharingRelayTest {
             assertTrue(local.timeline(family, child).any {
                 it.bottleEntered == "4.5" && it.bottleUnit == 2u.toUByte()
             })
+        }
+    }
+
+    @Test
+    fun headerTargetPickerChangesTheHistoryChild() {
+        wakeEmulatorScreen()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = context.filesDir.resolve("families.db")
+        val now = System.currentTimeMillis()
+        val (family, first, _) = NativeLocalStore.open(db.absolutePath).use { local ->
+            val family = local.createFamily(now)
+            val first = local.addChild(family, "First child", now)
+            val second = local.addChild(family, "Second child", now)
+            local.logNote(family, first, "First marker", ActivityWhen(now, 0, now))
+            local.logNote(family, second, "Second marker", ActivityWhen(now, 0, now))
+            Triple(family, first, second)
+        }
+        context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
+            .edit().putString("family", family.familyId.hex())
+            .putString("child", first.hex()).commit()
+        ActivityScenario.launch(MainActivity::class.java).use {
+            val switch = context.getString(R.string.switch_target)
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText("Family 1 · First child")
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithContentDescription(switch).performClick()
+            composeRule.onNodeWithText("Second child").performClick()
+            openTab(R.string.nav_history)
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText("Note · Second marker")
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+            assertTrue(composeRule.onAllNodesWithText("Note · First marker")
+                .fetchSemanticsNodes().isEmpty())
         }
     }
 
@@ -557,8 +594,8 @@ class SharingRelayTest {
             composeRule.onNodeWithText(context.resources.getQuantityString(
                 R.plurals.shared_pending_device_count, 1, 1)).performScrollTo().assertIsDisplayed()
             assertTrue(composeRule.onAllNodesWithText(button).fetchSemanticsNodes().isEmpty())
-            composeRule.onNodeWithText(context.getString(R.string.family_with_child, 1,
-                "Everyday child")).assertIsDisplayed()
+            assertTrue(composeRule.onAllNodesWithText("Everyday child", substring = true)
+                .fetchSemanticsNodes().isNotEmpty())
             composeRule.onNodeWithText(context.getString(R.string.show_family_access))
                 .performScrollTo().performClick()
             composeRule.onNodeWithText(button).performScrollTo().performClick()
@@ -614,8 +651,17 @@ class SharingRelayTest {
         val before = NativeLocalStore.open(recipientDb.absolutePath).use { local ->
             local.families().map { it.familyId.joinToString("") { byte -> "%02x".format(byte.toInt() and 255) } }.toSet()
         }
+        context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
+            .edit().putString("family", recipient.familyId.hex()).remove("child").commit()
         ActivityScenario.launch(MainActivity::class.java).use {
             val button = context.getString(R.string.continue_in_private_copy)
+            val switch = context.getString(R.string.switch_target)
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText(button).fetchSemanticsNodes().isNotEmpty() ||
+                    composeRule.onAllNodesWithContentDescription(switch).fetchSemanticsNodes().isNotEmpty()
+            }
+            if (composeRule.onAllNodesWithContentDescription(switch)
+                    .fetchSemanticsNodes().isNotEmpty()) openTab(R.string.nav_family)
             composeRule.waitUntil(25_000) {
                 composeRule.onAllNodesWithText(button).fetchSemanticsNodes().isNotEmpty()
             }

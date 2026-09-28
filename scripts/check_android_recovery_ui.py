@@ -58,6 +58,7 @@ def main() -> None:
     find(target, "Note · RecoveryMarker", scroll=True)
 
     tap(target, "Family", actionable=True)
+    tap(target, "Data and backups", scroll=True)
     tap(target, "Save backup", scroll=True)
     tap(target, "SAVE")
     find(target, "Last completed file save:", scroll=True, contains=True)
@@ -118,6 +119,7 @@ def main() -> None:
     find(target, "Note · RecoveryMarker", scroll=True)
 
     tap(target, "Family", actionable=True)
+    tap(target, "Data and backups", scroll=True)
     tap(target, "Protect with password", scroll=True)
     tap(target, "Backup password", scroll=True)
     adb(target, "shell", "input", "text", TEST_PASSWORD)

@@ -8,3 +8,4 @@ else
   python3 scripts/check_android_ui_smoke.py --quick
 fi
 python3 scripts/check_android_recovery_ui.py
+python3 scripts/capture_android_navigation.py

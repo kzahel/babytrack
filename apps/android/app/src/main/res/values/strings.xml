@@ -6,6 +6,7 @@
     <string name="nav_family">Family</string>
     <string name="add_activity">Add activity</string>
     <string name="capture_for_child">For %1$s</string>
+    <string name="switch_target">Switch Family or child</string>
     <string name="quick_log">Quick log</string>
     <string name="recent_entries">Recent entries</string>
     <string name="show_entry_actions">Details and edits</string>
@@ -33,6 +34,8 @@
     <string name="hide_family_setup">Hide Family options</string>
     <string name="show_family_access">Family access</string>
     <string name="hide_family_access">Hide Family access</string>
+    <string name="show_data_controls">Data and backups</string>
+    <string name="hide_data_controls">Hide data and backups</string>
     <plurals name="shared_device_count">
         <item quantity="one">%d device has access</item>
         <item quantity="other">%d devices have access</item>
@@ -61,6 +64,8 @@
     <string name="rename_child">Rename child</string>
     <string name="no_children">Add a child to start tracking.</string>
     <string name="timeline">Timeline</string>
+    <string name="choose_history_day">Choose day</string>
+    <string name="show_all_days">Show all days</string>
     <string name="today_summary">Today</string>
     <string name="today_sleep">Logged sleep: %1$d h %2$d min</string>
     <string name="today_feeds">Feeds: %1$d · bottle %2$d mL</string>

@@ -140,6 +140,13 @@ jobs:
           target: default
           disable-animations: true
           script: bash scripts/check_android_ci_emulator.sh
+      - name: Keep Android navigation captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: babytrack-android-navigation
+          path: local-references/android-redesign-qa/*.png
+          if-no-files-found: ignore
 
   required:
     name: Required checks

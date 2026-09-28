@@ -24,9 +24,10 @@ this document deliberately records no names or values from them.
 The former Android screen put Today, activity forms, History, Family access,
 join, and backup in one scroll. The current debug app has Today, History, and
 Family destinations, focused capture forms, and an explicit target header.
-It reuses the existing Rust-backed actions and projection. Child selection,
-date browsing, route return state, and Family section density still need
-refinement.
+It reuses the existing Rust-backed actions and projection. The header opens
+a target picker, History has an optional day filter, and Family keeps data
+and backup controls in an expandable section. Visual density and route
+return behavior still need phone use and accessibility review.
 
 ## Primary destinations
 

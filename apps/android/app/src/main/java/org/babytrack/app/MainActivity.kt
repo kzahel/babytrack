@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.rememberScrollState
@@ -64,6 +65,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
@@ -663,6 +665,7 @@ private fun TrackerScreen(
     var selectedChild by remember { mutableStateOf(selectionPrefs.getString("child", null)) }
     var destination by rememberSaveable { mutableStateOf(TrackerDestination.TODAY) }
     var captureKind by rememberSaveable { mutableStateOf<CaptureKind?>(null) }
+    var showTargetPicker by remember { mutableStateOf(false) }
     var pendingRemovalNotice by remember { mutableStateOf<RemovalCopyNotice?>(null) }
     LaunchedEffect(foreground, version, pendingRemovalNotice) {
         if (!foreground || pendingRemovalNotice != null) return@LaunchedEffect
@@ -721,6 +724,7 @@ private fun TrackerScreen(
     var doseUnit by remember { mutableStateOf("") }
     var logAtMs by remember { mutableStateOf<Long?>(null) }
     var timelineFilter by remember { mutableStateOf(TimelineFilter.ALL) }
+    var selectedHistoryDay by rememberSaveable { mutableStateOf<String?>(null) }
     var expandedEntryKey by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -786,6 +790,7 @@ private fun TrackerScreen(
     var showShareForm by remember { mutableStateOf(false) }
     var showFamilySetup by remember { mutableStateOf(false) }
     var showAccessControls by remember { mutableStateOf(false) }
+    var showDataControls by remember { mutableStateOf(false) }
     var joinStage by remember { mutableStateOf<String?>(null) }
     var joinInProgress by remember { mutableStateOf(false) }
     var sharedSnapshot by remember { mutableStateOf<SharedSnapshotRow?>(null) }
@@ -805,6 +810,7 @@ private fun TrackerScreen(
     val restoredText = stringResource(R.string.restored)
     LaunchedEffect(selectedFamily) {
         showAccessControls = false
+        showDataControls = false
         showShareForm = false
         shareStage = null
         invitationFragment = null
@@ -821,10 +827,12 @@ private fun TrackerScreen(
         }.orEmpty()
     }
     LaunchedEffect(selectedFamily, selectedChild) {
+        showTargetPicker = false
         captureKind = null
         if (destination == TrackerDestination.CAPTURE) destination = TrackerDestination.TODAY
         expandedEntryKey = null
         recentlyDeleted = null
+        showChildDetails = false
         showAddChildForm = false
         childName = ""
         childBirthDate = ""
@@ -872,6 +880,7 @@ private fun TrackerScreen(
         pendingTemperatureEdit = null
         logAtMs = null
         timelineFilter = TimelineFilter.ALL
+        selectedHistoryDay = null
     }
     var pendingBackup by remember { mutableStateOf<BackupFileRow?>(null) }
     var pendingAnalysisCsv by remember { mutableStateOf<ByteArray?>(null) }
@@ -1052,6 +1061,12 @@ private fun TrackerScreen(
     val historyScrollState = rememberScrollState()
     val familyScrollState = rememberScrollState()
     val captureScrollState = rememberScrollState()
+    LaunchedEffect(selectedFamily, selectedChild) {
+        todayScrollState.scrollTo(0)
+        historyScrollState.scrollTo(0)
+        familyScrollState.scrollTo(0)
+        captureScrollState.scrollTo(0)
+    }
     val route = if (family == null || child == null) TrackerDestination.FAMILY else destination
     val scrollState = when (route) {
         TrackerDestination.TODAY -> todayScrollState
@@ -1101,18 +1116,24 @@ private fun TrackerScreen(
                 },
                 title = {
                     val familyNumber = families.indexOfFirst { it.familyId.key() == selectedFamily } + 1
-                    Text(
-                        if (child != null && familyNumber > 0) {
-                            stringResource(R.string.family_with_child, familyNumber, child.name)
-                        } else stringResource(when (route) {
-                            TrackerDestination.TODAY -> R.string.nav_today
-                            TrackerDestination.HISTORY -> R.string.nav_history
-                            TrackerDestination.FAMILY -> R.string.nav_family
-                            TrackerDestination.CAPTURE -> R.string.add_activity
-                        }),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    val title = if (child != null && familyNumber > 0) {
+                        stringResource(R.string.family_with_child, familyNumber, child.name)
+                    } else stringResource(when (route) {
+                        TrackerDestination.TODAY -> R.string.nav_today
+                        TrackerDestination.HISTORY -> R.string.nav_history
+                        TrackerDestination.FAMILY -> R.string.nav_family
+                        TrackerDestination.CAPTURE -> R.string.add_activity
+                    })
+                    if (child != null && route != TrackerDestination.CAPTURE) {
+                        val description = stringResource(R.string.switch_target)
+                        TextButton(onClick = { showTargetPicker = true },
+                            modifier = Modifier.semantics { contentDescription = description }) {
+                            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.titleLarge)
+                            Icon(painterResource(R.drawable.ic_expand_more), contentDescription = null)
+                        }
+                    } else Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 },
                 actions = {
                     if (family != null && child != null && route == TrackerDestination.TODAY) {
@@ -1792,14 +1813,18 @@ private fun TrackerScreen(
                 if (child != null && route == TrackerDestination.CAPTURE) {
                     if (captureKind == null) {
                         Text(stringResource(R.string.add_activity), style = MaterialTheme.typography.titleLarge)
-                        CaptureKind.entries.forEach { kind ->
-                            OutlinedButton(
-                                onClick = {
-                                    captureKind = kind
-                                    scope.launch { captureScrollState.scrollTo(0) }
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) { Text(stringResource(kind.label)) }
+                        CaptureKind.entries.chunked(2).forEach { kinds ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                kinds.forEach { kind ->
+                                    OutlinedButton(
+                                        onClick = {
+                                            captureKind = kind
+                                            scope.launch { captureScrollState.scrollTo(0) }
+                                        },
+                                        modifier = Modifier.weight(1f).heightIn(min = 88.dp),
+                                    ) { Text(stringResource(kind.label), textAlign = TextAlign.Center) }
+                                }
+                            }
                         }
                     } else {
                         Text(stringResource(R.string.capture_for_child, child.name),
@@ -2333,6 +2358,25 @@ private fun TrackerScreen(
                 }
                 if (child != null && route == TrackerDestination.HISTORY) {
                     Text(stringResource(R.string.timeline), style = MaterialTheme.typography.titleLarge)
+                    OutlinedButton(onClick = {
+                        val day = selectedHistoryDay?.let { LocalDate.parse(it) } ?: LocalDate.now()
+                        DatePickerDialog(context, { _, year, month, date ->
+                            selectedHistoryDay = LocalDate.of(year, month + 1, date).toString()
+                            expandedEntryKey = null
+                        }, day.year, day.monthValue - 1, day.dayOfMonth).apply {
+                            datePicker.maxDate = System.currentTimeMillis()
+                        }.show()
+                    }) {
+                        Text(selectedHistoryDay?.let { iso ->
+                            val day = LocalDate.parse(iso)
+                            DateFormat.getDateInstance(DateFormat.MEDIUM).format(
+                                Date.from(day.atStartOfDay(ZoneId.systemDefault()).toInstant()))
+                        } ?: stringResource(R.string.choose_history_day))
+                    }
+                    if (selectedHistoryDay != null) TextButton(onClick = {
+                        selectedHistoryDay = null
+                        expandedEntryKey = null
+                    }) { Text(stringResource(R.string.show_all_days)) }
                     listOf(
                         TimelineFilter.ALL to R.string.timeline_all,
                         TimelineFilter.FEEDS to R.string.timeline_feeds,
@@ -2350,7 +2394,11 @@ private fun TrackerScreen(
                         }
                     }
                     val currentEntries = if (loadedChildKey == selectedChild) entries else emptyList()
-                    val visibleEntries = currentEntries.filter { timelineFilter.includes(it.kind) }
+                    val visibleEntries = currentEntries.filter { entry ->
+                        timelineFilter.includes(entry.kind) &&
+                            (selectedHistoryDay == null || Instant.ofEpochMilli(entry.startUtcMs)
+                                .atZone(ZoneId.systemDefault()).toLocalDate().toString() == selectedHistoryDay)
+                    }
                     if (visibleEntries.isEmpty()) Text(stringResource(
                         if (currentEntries.isEmpty()) R.string.no_entries else R.string.no_matching_entries))
                     var previousDay: LocalDate? = null
@@ -2627,6 +2675,11 @@ private fun TrackerScreen(
 
                 if (route == TrackerDestination.FAMILY) {
                 Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { showDataControls = !showDataControls }) {
+                    Text(stringResource(if (showDataControls) R.string.hide_data_controls
+                        else R.string.show_data_controls))
+                }
+                if (showDataControls) {
                 Text(stringResource(R.string.backup_title), style = MaterialTheme.typography.titleLarge)
                 if (!activeShared) completed?.let { saved ->
                     Text(stringResource(R.string.last_saved_at, savedTime(saved.atMs)))
@@ -2678,8 +2731,9 @@ private fun TrackerScreen(
                     }
                 }) { Text(stringResource(R.string.export_analysis_csv)) }
                 }
+                }
             }
-            if (route == TrackerDestination.FAMILY) {
+            if (route == TrackerDestination.FAMILY && (family == null || showDataControls)) {
             OutlinedButton(onClick = { restoreLauncher.launch(arrayOf("application/octet-stream", "*/*")) }) {
                 Text(stringResource(R.string.restore_backup))
             }
@@ -2731,6 +2785,44 @@ private fun TrackerScreen(
             }
             message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
+    }
+    if (showTargetPicker) {
+        AlertDialog(
+            onDismissRequest = { showTargetPicker = false },
+            title = { Text(stringResource(R.string.switch_target)) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.families), style = MaterialTheme.typography.titleMedium)
+                    families.forEachIndexed { index, item ->
+                        val name = familyChildNames[item.familyId.key()]
+                        val label = if (name == null) stringResource(R.string.family_number, index + 1)
+                            else stringResource(R.string.family_with_child, index + 1, name)
+                        FilterChip(selected = item.familyId.key() == selectedFamily,
+                            onClick = {
+                                selectedFamily = item.familyId.key()
+                                selectedChild = null
+                                showTargetPicker = false
+                            }, label = { Text(label) })
+                    }
+                    if (children.isNotEmpty()) {
+                        Text(stringResource(R.string.children), style = MaterialTheme.typography.titleMedium)
+                        children.forEach { item ->
+                            FilterChip(selected = item.id.key() == selectedChild,
+                                onClick = {
+                                    selectedChild = item.id.key()
+                                    showTargetPicker = false
+                                }, label = { Text(item.name) })
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showTargetPicker = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
     }
     pendingRemovalNotice?.let { notice ->
         AlertDialog(

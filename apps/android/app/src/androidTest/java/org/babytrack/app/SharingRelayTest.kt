@@ -122,6 +122,136 @@ class SharingRelayTest {
             assertEquals(InvitationTerminalReason.CLAIMED, terminal?.reason)
         }
     }
+
+    @Test
+    fun managerCancelsUnusedInvitationBeforeClaim() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
+            ?: error("relayPublicKey instrumentation argument required")
+        val origin = "http://localhost:8787"
+        val managerDb = context.filesDir.resolve("cancel-manager-${System.nanoTime()}.db")
+        val recipientDb = context.filesDir.resolve("cancel-recipient-${System.nanoTime()}.db")
+        val family = NativeLocalStore.open(managerDb.absolutePath).use {
+            it.createFamily(System.currentTimeMillis())
+        }
+        val fragment = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            sharing.promote(family, origin, publicKey)
+            sharing.invite(family, origin, 1u.toUByte())
+        }
+        ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            val invitationId = sharing.unusedInvitationIds(family).single()
+            val key = DeviceWrappingKey(context).loadOrCreate()
+            try {
+                val first = NativeSharedStore.open(managerDb.absolutePath).use { core ->
+                    core.prepareInviteCancel(family, key, invitationId).candidateBytes
+                }
+                val resumed = NativeSharedStore.open(managerDb.absolutePath).use { core ->
+                    core.prepareInviteCancel(family, key, invitationId).candidateBytes
+                }
+                assertArrayEquals(first, resumed)
+            } finally {
+                key.fill(0)
+            }
+            sharing.cancelInvitation(family, origin, invitationId)
+            assertTrue(sharing.unusedInvitationIds(family).isEmpty())
+        }
+        ShareCoordinator(context, recipientDb.absolutePath).use { sharing ->
+            val result = runCatching { sharing.claim(fragment) }
+            val terminal = result.exceptionOrNull() as? InvitationTerminal
+            assertEquals(InvitationTerminalReason.CANCELED, terminal?.reason)
+            assertTrue(sharing.recipientFamilies().isEmpty())
+        }
+    }
+
+    @Test
+    fun lostCancelResponseDoesNotBlockAnotherInvitation() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
+            ?: error("relayPublicKey instrumentation argument required")
+        val origin = "http://localhost:8787"
+        val managerDb = context.filesDir.resolve("lost-cancel-manager-${System.nanoTime()}.db")
+        val family = NativeLocalStore.open(managerDb.absolutePath).use {
+            it.createFamily(System.currentTimeMillis())
+        }
+        ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            sharing.promote(family, origin, publicKey)
+            sharing.invite(family, origin, 1u.toUByte())
+            sharing.invite(family, origin, 1u.toUByte())
+            val ids = sharing.unusedInvitationIds(family)
+            assertEquals(2, ids.size)
+            val key = DeviceWrappingKey(context).loadOrCreate()
+            val first = try {
+                NativeSharedStore.open(managerDb.absolutePath).use { core ->
+                    core.prepareInviteCancel(family, key, ids[0]).candidateBytes
+                }
+            } finally {
+                key.fill(0)
+            }
+            RelayTransport(origin).post(
+                "/v1/families/${family.familyId.joinToString("") { "%02x".format(it) }}/control",
+                first,
+            ) // The signed response is lost before local confirmation.
+            sharing.cancelInvitation(family, origin, ids[1])
+            assertTrue(sharing.unusedInvitationIds(family).isEmpty())
+        }
+    }
+
+    @Test
+    fun managerCanCancelAnUnusedInvitationFromTheUi() {
+        wakeEmulatorScreen()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
+            ?: error("relayPublicKey instrumentation argument required")
+        val origin = "http://localhost:8787"
+        val db = context.filesDir.resolve("families.db")
+        val family = NativeLocalStore.open(db.absolutePath).use {
+            it.createFamily(System.currentTimeMillis())
+        }
+        val invitationId = ShareCoordinator(context, db.absolutePath).use { sharing ->
+            sharing.promote(family, origin, publicKey)
+            sharing.invite(family, origin, 1u.toUByte())
+            sharing.unusedInvitationIds(family).single()
+        }
+        context.getSharedPreferences("shared_relay_origins", android.content.Context.MODE_PRIVATE)
+            .edit().putString(family.familyId.joinToString("") { "%02x".format(it) }, origin).commit()
+        context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
+            .edit().putString("family", family.familyId.joinToString("") { "%02x".format(it) }).commit()
+        val shortId = invitationId.joinToString("") { "%02x".format(it) }.take(8)
+        ActivityScenario.launch(MainActivity::class.java).use {
+            val button = context.getString(R.string.cancel_invitation, shortId)
+            val deadline = System.currentTimeMillis() + 25_000
+            var clicked = false
+            while (System.currentTimeMillis() < deadline) {
+                val root = instrumentation.uiAutomation.rootInActiveWindow
+                clicked = root?.clickTarget(button)?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+                if (clicked) break
+                root?.scrollForward()
+                Thread.sleep(200)
+            }
+            assertTrue("Unused invitation should have a cancel action", clicked)
+            val confirm = context.getString(R.string.confirm_cancel_invitation)
+            val confirmDeadline = System.currentTimeMillis() + 15_000
+            var confirmed = false
+            while (System.currentTimeMillis() < confirmDeadline) {
+                confirmed = instrumentation.uiAutomation.rootInActiveWindow
+                    ?.clickTarget(confirm)?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+                if (confirmed) break
+                Thread.sleep(200)
+            }
+            assertTrue("Cancellation should require explicit confirmation", confirmed)
+            val committedDeadline = System.currentTimeMillis() + 25_000
+            var canceled = false
+            while (System.currentTimeMillis() < committedDeadline) {
+                canceled = ShareCoordinator(context, db.absolutePath).use { sharing ->
+                    sharing.unusedInvitationIds(family).isEmpty()
+                }
+                if (canceled) break
+                Thread.sleep(200)
+            }
+            assertTrue("The UI action should commit the invitation cancellation", canceled)
+        }
+    }
     @Test
     fun sharedInvitationOpensJoinFormWithoutRedeemingIt() {
         wakeEmulatorScreen()

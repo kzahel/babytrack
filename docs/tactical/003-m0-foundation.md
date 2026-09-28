@@ -243,8 +243,12 @@ from the Rust public authority chain. It labels this installation separately
 and shows the full Family-scoped device ID, without implying a person-level
 account. The emulator checks the manager-only list before admission and both
 manager/member credentials afterward. The tracker now exposes manager
-removal controls and phone-local labels for each verified device; broader
-role changes and invitation cancellation remain open.
+removal controls and phone-local labels for each verified device. The Rust
+core and Android debug UI can now cancel an unused invitation through an
+exact saved manager proposal. A local real-relay test confirms a canceled
+link gives a verified canceled status, and a lost cancellation response does
+not block the next cancellation. Admitted-manager cancellation, role changes,
+and broader membership flows remain open.
 Remote emulator runs through `bba928a` exposed concurrent SQLite schema
 initialization: independent Android components could both observe version
 one and attempt the same invitation-table migration. Initialization and
@@ -1424,7 +1428,7 @@ own enrollment. The admitted manager can also remove that third device at
 epoch one, granting the rotated key to remaining holders. The CLI checks
 the removed device's new-data read denial; Android checks the removed state,
 hides its stale shared snapshot, and confirms the original manager still
-syncs. Later rotations, role changes, cancellation, and broader recovery
+syncs. Later rotations, role changes, admitted-manager cancellation, and broader recovery
 cases remain open.
 Ready replay can now start from a later recipient's admission grant at a
 rotated epoch: it verifies that epoch's committed keyring and membership,

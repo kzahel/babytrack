@@ -12,8 +12,9 @@ The development relay admits an initial cohort, accepts encrypted batches,
 and verifies a recipient removal with epoch rotation and revoked data access.
 Real-relay tests admit a later device at the current epoch, hydrate its
 history, and continue encrypted sync. An admitted manager can also invite,
-grant, and remove a third device with key rotation. Later rotations, role
-changes, cancellation, general browser shared sync, and broader recovery coverage
+grant, and remove a third device with key rotation. A manager can cancel an
+unused link, with a verified canceled status for a recipient who opens it.
+Later rotations, role changes, general browser shared sync, and broader recovery coverage
 remain open.
 The browser harness now stages one epoch-one encrypted write in a durable
 outbox, previews it locally before acceptance, retries it after a lost

@@ -212,6 +212,13 @@
     <string name="history_removed_rejected">This device’s removal was verified. The last upload was rejected; pending edits were saved in a new private Family.</string>
     <string name="shared_devices">Devices with verified access</string>
     <string name="remove_device">Remove %1$s</string>
+    <string name="unused_invitations">Unused invitations</string>
+    <string name="invitation_list_delayed">Could not load unused invitations. Sync and try again.</string>
+    <string name="cancel_invitation">Cancel invitation %1$s</string>
+    <string name="cancel_invitation_title">Cancel this invitation?</string>
+    <string name="cancel_invitation_warning">Invitation %1$s will stop working after the relay confirms cancellation. A device that already joined keeps its access.</string>
+    <string name="confirm_cancel_invitation">Cancel invitation</string>
+    <string name="invitation_canceled">Invitation cancellation confirmed.</string>
     <string name="remove_device_title">Remove shared access?</string>
     <string name="remove_device_warning">Device %1$s will stop receiving new Family data after the relay confirms key rotation. It keeps data already stored on that device.</string>
     <string name="confirm_remove_device">Remove access</string>

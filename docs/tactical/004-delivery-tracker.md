@@ -28,7 +28,7 @@ emulators exercise join, encrypted sync,
 removal, and private-copy recovery. An admitted manager also invites and
 grants to a third device, then removes it with key rotation, through relay
 HTTP and Android instrumentation.
-Role changes, cancellation, general browser shared
+Role changes, admitted-manager cancellation coverage, general browser shared
 outbox, complete vector coverage, and the M0 exit review remain open.
 The browser now persists a Rust-verified public control and accepted-batch
 history in IndexedDB, with reload and forged-receipt rollback checks. It
@@ -75,6 +75,10 @@ for logging, backups, immediate sync retry, and a manager's next invitation;
 the old duplicate debug child/history panel is removed.
 A real-relay Android UI check now opens a fresh link, taps the single join
 action, and verifies that its recipient claim was committed and saved.
+The debug manager access section can list and cancel unused invitation links.
+A real-relay UI test confirms the tap and signed cancellation; a separate
+relay test checks exact preparation across reopen and another invitation
+after a lost cancellation response.
 The daily-use surface now has a saved-timer home-screen widget and local
 labels for individual enrolled devices. Growth reference data licensing and
 Nara sample mapping remain open for their planned features.
@@ -103,7 +107,7 @@ scrolls to that action; the complete local recovery flow and remote run
 |---|---|
 | Active implementation owner | [003 M0 foundation](003-m0-foundation.md) for protocol and [005 M1 Android](005-m1-android.md) for the caregiver app. |
 | Next demonstrable proof | The Android local UI creates Families and children, records bottle, solids, completed alternating breast feed, diaper, sleep timer, completed sleep, note, growth, Celsius, and medication entries, shows a timeline with confirmed activity deletion, and saves/restores readable or password-protected files through Rust. A disposable relay and two separate emulators pass first-cohort join, a recipient timer stopped by the manager, recipient growth, temperature, medication, solids, and alternating breast feed read by the manager, reciprocal edits and one deletion, offline work, removal, and automatic private copy; note, medication, and solids markers are absent from relay storage and logs. Foreground polling and a scheduled job advance sharing; normal job timing is OS controlled. |
-| Next dependent slice | The first-cohort recheck and [focused general-authority advisory](003-m0-foundation.md#general-authority-advisory-pass-at-98fa0ea) passed. Relay restart replays public controls and accepted batch authority; a signed private checkpoint covers rejected-result and staging-reservation sets. Signed GETs, batch POSTs, manager controls, and later control HTTP writes use that ledger under a SQLite writer lock. Later enrollment after removal and epoch rotation passes on separate emulators. A second admitted manager now invites, grants, and removes a third device with rotation through relay HTTP and Android instrumentation. Later rotations, role changes, cancellation, browser outbox beyond the initial manager, and M0 exit review remain. |
+| Next dependent slice | The first-cohort recheck and [focused general-authority advisory](003-m0-foundation.md#general-authority-advisory-pass-at-98fa0ea) passed. Relay restart replays public controls and accepted batch authority; a signed private checkpoint covers rejected-result and staging-reservation sets. Signed GETs, batch POSTs, manager controls, and later control HTTP writes use that ledger under a SQLite writer lock. Later enrollment after removal and epoch rotation passes on separate emulators. A second admitted manager now invites, grants, and removes a third device with rotation through relay HTTP and Android instrumentation. An initial manager can cancel an unused invitation. Later rotations, role changes, admitted-manager cancellation coverage, browser outbox beyond the initial manager, and M0 exit review remain. |
 | Next independent review | Run one broader end-of-M0 recovery and mixed-client gate after its executable coverage closes. Focused advisory findings remain open without serial rechecks during feature development. Prioritize usable tracking and browser shared sync before another review cycle. |
 | Open advisory | The [automatic-status recheck](003-m0-foundation.md#advisory-automatic-status-recheck-at-ad42d78) found an own-claim lost-response ambiguity and a concurrent status-write race. FS37/FS77 regressions and repair remain due before real Family data. Durable streaming of large control history also remains open. |
 | CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, local Android UI smoke, and document-picker recovery jobs are required on every push/PR. Run `36369522847` at `6a6fa16` passed every required job, including the mixed native/browser relay exchange and the one-action Android join test in the real-relay emulator suite. Physical phones and the M0 exit gate remain open. |

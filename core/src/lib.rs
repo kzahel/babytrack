@@ -31,6 +31,8 @@ pub mod handoff;
 pub mod hlc;
 pub mod hpke;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod invite_cancel;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod issue;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod local_api;

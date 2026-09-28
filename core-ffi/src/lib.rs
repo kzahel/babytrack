@@ -14,6 +14,7 @@ use babytrack_core::{
     first_challenge::FirstChallenge,
     first_proof::FirstProof,
     first_removal::FirstRemoval,
+    invite_cancel::InviteCancellation,
     issue::{FirstInviteIssue, LaterInviteIssue},
     local_api::{self, ActivityTime, LocalRepository},
     operation,
@@ -220,6 +221,12 @@ pub struct PreparedInviteRow {
     pub invitation_id: Vec<u8>,
     pub candidate_bytes: Vec<u8>,
     pub object: StagedObjectRow,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PreparedCancelRow {
+    pub invitation_id: Vec<u8>,
+    pub candidate_bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -550,6 +557,94 @@ impl NativeSharedStore {
             )
             .map_err(rejected)?
             .to_fragment()
+            .map_err(rejected)
+    }
+
+    /// Public IDs of unused links visible to a current data-ready manager.
+    pub fn unused_invitation_ids(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+    ) -> Result<Vec<Vec<u8>>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let key = fixed(&wrapping_key)?;
+        if admitted_manager(&mut store, handle, &key)?.is_none() {
+            let manager = ManagerCreation::resume(&store, handle, &key).map_err(rejected)?;
+            let ready = manager.ready_session(&store).map_err(rejected)?;
+            let public = PublicHistorySession::resume(&store, handle).map_err(rejected)?;
+            if ready.observed_cursor() != public.cursor()
+                || ready.observed_head() != public.head_hash()
+            {
+                return Err(BindingError::Rejected(
+                    "Manager view behind public authority".into(),
+                ));
+            }
+        }
+        let public = PublicHistorySession::resume(&store, handle).map_err(rejected)?;
+        let Value::Map(state) =
+            cbor::decode(&public.chain().state_bytes().map_err(rejected)?).map_err(rejected)?
+        else {
+            return Err(BindingError::InvalidBytes);
+        };
+        let Some((7, Value::Array(invitations))) = state.get(6) else {
+            return Err(BindingError::InvalidBytes);
+        };
+        let mut unused = Vec::new();
+        for row in invitations {
+            let Value::Array(fields) = row else {
+                return Err(BindingError::InvalidBytes);
+            };
+            if fields.len() != 6 {
+                return Err(BindingError::InvalidBytes);
+            }
+            if fields[5] == Value::Integer(1) {
+                let Value::Bytes(id) = &fields[0] else {
+                    return Err(BindingError::InvalidBytes);
+                };
+                if id.len() != 16 {
+                    return Err(BindingError::InvalidBytes);
+                }
+                unused.push(id.clone());
+            }
+        }
+        Ok(unused)
+    }
+
+    /// Save exact cancellation bytes before HTTP POST.
+    pub fn prepare_invite_cancel(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        invitation_id: Vec<u8>,
+    ) -> Result<PreparedCancelRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let key = fixed(&wrapping_key)?;
+        let target = fixed(&invitation_id)?;
+        let cancellation = if let Some(holder) = admitted_manager(&mut store, handle, &key)? {
+            InviteCancellation::prepare_for_admitted_manager(&mut store, &holder, target)
+                .map_err(rejected)?
+        } else {
+            let manager = ManagerCreation::resume(&store, handle, &key).map_err(rejected)?;
+            InviteCancellation::prepare_for_initial_manager(&mut store, &manager, target)
+                .map_err(rejected)?
+        };
+        Ok(PreparedCancelRow {
+            invitation_id: cancellation.invitation_id().to_vec(),
+            candidate_bytes: cancellation.candidate_bytes().to_vec(),
+        })
+    }
+
+    pub fn confirm_invite_cancel(
+        &self,
+        family: FamilyRef,
+        commit_response: Vec<u8>,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        InviteCancellation::resume(&store, family.handle()?)
+            .map_err(rejected)?
+            .confirm(&mut store, &committed_control(&commit_response)?)
             .map_err(rejected)
     }
 

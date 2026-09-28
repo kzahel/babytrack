@@ -62,6 +62,20 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         }
     }
 
+    fun unusedInvitationIds(family: FamilyRef): List<ByteArray> =
+        withWrapping { wrapping -> core.unusedInvitationIds(family, wrapping) }
+
+    fun cancelInvitation(family: FamilyRef, origin: String, invitationId: ByteArray) {
+        validateRelayOrigin(origin)
+        check(syncAndUpload(family, origin).ready) { "Shared history is not ready" }
+        val relay = RelayTransport(origin)
+        withWrapping { wrapping ->
+            val prepared = core.prepareInviteCancel(family, wrapping, invitationId)
+            val response = relay.post("/v1/families/${family.familyId.hex()}/control", prepared.candidateBytes)
+            core.confirmInviteCancel(family, response)
+        }
+    }
+
     fun claim(fragment: String): PreparedJoinRow {
         val preview = previewInvitation(fragment)
         val relay = RelayTransport(preview.relayOrigin)

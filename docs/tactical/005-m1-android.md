@@ -250,8 +250,11 @@ intended Family and child, and remains usable after process death.
   invite cancellation, and key rotation in [003](003-m0-foundation.md) before
   exposing those actions as ordinary Android sharing controls. An admitted
   manager can now issue an invitation, complete challenge and grant, and
-  remove another device at epoch one in the debug flow. Later rotations,
-  role changes, and cancellation remain open.
+  remove another device at epoch one in the debug flow. A manager can now list
+  and cancel unused invitations from the selected Family's debug access
+  section, with a confirmation dialog; a real-relay emulator case clicks it
+  and checks that the link becomes unusable. Later rotations, role changes,
+  and admitted-manager cancellation coverage remain open.
 - [ ] Make invitation handoff usable through a share/link flow with trusted
   relay pinning and clear pending, accepted, blocked, and removed states.
   The share-sheet receive and custom-link paths now prefill without auto-claiming. Remove

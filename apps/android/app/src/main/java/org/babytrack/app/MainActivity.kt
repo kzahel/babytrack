@@ -305,7 +305,14 @@ internal data class ScreenData(
     val mainSharedSnapshot: SharedSnapshotRow?,
     val recipients: List<FamilyRef>,
     val joinedSnapshot: SharedSnapshotRow?,
+    val unusedInvitationIds: List<ByteArray>?,
     val activeSleepCount: Int,
+)
+
+private data class PendingInvitationCancel(
+    val family: FamilyRef,
+    val invitationId: ByteArray,
+    val localManager: Boolean,
 )
 
 internal fun runningSleepCount(
@@ -368,6 +375,9 @@ internal fun loadTrackerData(
     val recipientSnapshot = readyJoined.find { it.first.familyId.key() == family?.familyId?.key() }?.second
     val shared = recipientSnapshot != null || (family?.let(sharing::isShared) ?: false)
     val snapshot = recipientSnapshot ?: if (shared) sharing.snapshot(family ?: error("Shared Family absent")) else null
+    val unusedInvitationIds = if (family != null && snapshot?.devices?.any {
+        it.deviceId.contentEquals(family.deviceId) && it.role == 2.toUByte()
+    } == true) runCatching { sharing.unusedInvitationIds(family) }.getOrNull() else emptyList()
     val kids = snapshot?.children ?: family?.let(store::children).orEmpty()
     val child = kids.find { it.id.key() == selectedChild } ?: kids.firstOrNull()
     val history = if (family != null && child != null) {
@@ -378,7 +388,7 @@ internal fun loadTrackerData(
         shown, familyChildNames, family?.familyId?.key(), localFamily, kids, history,
         if (!shared) family?.let(store::revision) ?: 0uL else 0uL,
         if (!shared) family?.let(store::restoredOrigin) else null,
-        shared, snapshot, recipients, joinedSnapshot,
+        shared, snapshot, recipients, joinedSnapshot, unusedInvitationIds,
         runningSleepCount(store, sharing, local, recipients),
     )
 }
@@ -421,6 +431,7 @@ private fun TrackerScreen(
     var restoredOrigin by remember { mutableStateOf<RestoredOriginRow?>(null) }
     var isShared by remember { mutableStateOf(false) }
     var activeSharedSnapshot by remember { mutableStateOf<SharedSnapshotRow?>(null) }
+    var activeUnusedInvitationIds by remember { mutableStateOf<List<ByteArray>?>(emptyList()) }
     var loadedFamilyKey by remember { mutableStateOf<String?>(null) }
     var activeFamilyIsLocal by remember { mutableStateOf(false) }
     var saveStatusVersion by remember { mutableStateOf(0) }
@@ -470,6 +481,7 @@ private fun TrackerScreen(
     var automaticSyncDelayed by remember { mutableStateOf(false) }
     var automaticSyncBlocked by remember { mutableStateOf(false) }
     var removalTarget by remember { mutableStateOf<ByteArray?>(null) }
+    var cancelInvitationTarget by remember { mutableStateOf<PendingInvitationCancel?>(null) }
     val deviceLabelPrefs = remember { context.getSharedPreferences("device_labels", Context.MODE_PRIVATE) }
     var deviceLabels by remember {
         mutableStateOf(deviceLabelPrefs.all.mapNotNull { (key, value) ->
@@ -699,6 +711,7 @@ private fun TrackerScreen(
             restoredOrigin = data.restoredOrigin
             isShared = data.shared
             activeSharedSnapshot = data.mainSharedSnapshot
+            activeUnusedInvitationIds = data.unusedInvitationIds
             loadedFamilyKey = data.activeFamilyKey
             recipientFamilies = data.recipients
             selectedRecipient = data.recipients.find { it.familyId.key() == selectedRecipient }
@@ -805,6 +818,23 @@ private fun TrackerScreen(
                             Text(stringResource(R.string.remove_device, label))
                         }
                     }
+                    if (BuildConfig.DEBUG) {
+                        if (activeUnusedInvitationIds == null) {
+                            Text(stringResource(R.string.invitation_list_delayed))
+                        } else if (!activeUnusedInvitationIds.isNullOrEmpty()) {
+                            Text(stringResource(R.string.unused_invitations), style = MaterialTheme.typography.titleMedium)
+                            activeUnusedInvitationIds.orEmpty().forEach { invitationId ->
+                                OutlinedButton(onClick = {
+                                    cancelInvitationTarget = PendingInvitationCancel(
+                                        family, invitationId.copyOf(), activeFamilyIsLocal,
+                                    )
+                                }) {
+                                    Text(stringResource(R.string.cancel_invitation,
+                                        invitationId.key().take(8)))
+                                }
+                            }
+                        }
+                    }
                     if (BuildConfig.DEBUG && !activeFamilyIsLocal) {
                         Text(stringResource(R.string.invite_manager), style = MaterialTheme.typography.titleMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -831,6 +861,7 @@ private fun TrackerScreen(
                                 } }.onSuccess { fragment ->
                                     invitationFragment = fragment
                                     shareStage = context.getString(R.string.invite_confirmed)
+                                    version++
                                     message = null
                                 }.onFailure {
                                     shareStage = context.getString(R.string.share_retry)
@@ -1025,6 +1056,7 @@ private fun TrackerScreen(
                                     }.onSuccess { fragment ->
                                         invitationFragment = fragment
                                         shareStage = context.getString(R.string.invite_confirmed)
+                                        version++
                                         message = null
                                     }.onFailure {
                                         shareStage = context.getString(R.string.share_retry)
@@ -2558,6 +2590,35 @@ private fun TrackerScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { pendingTemperatureEdit = null }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+    cancelInvitationTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { cancelInvitationTarget = null },
+            title = { Text(stringResource(R.string.cancel_invitation_title)) },
+            text = { Text(stringResource(R.string.cancel_invitation_warning, target.invitationId.key())) },
+            confirmButton = {
+                Button(onClick = {
+                    cancelInvitationTarget = null
+                    scope.launch {
+                        runCatching { withContext(Dispatchers.IO) {
+                            val origin = if (target.localManager)
+                                lastRelayOrigin(target.family) ?: error("Relay origin unavailable")
+                            else sharing.recipientOrigin(target.family)
+                            sharing.cancelInvitation(target.family, origin, target.invitationId)
+                        } }.onSuccess {
+                            invitationFragment = null
+                            version++
+                            message = context.getString(R.string.invitation_canceled)
+                        }.onFailure { message = errorText }
+                    }
+                }) { Text(stringResource(R.string.confirm_cancel_invitation)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { cancelInvitationTarget = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
             },
         )
     }

@@ -138,6 +138,79 @@ impl WasmInitialFamily {
             .last_cursor())
     }
 
+    pub fn head_hash(&self) -> Result<Vec<u8>, JsError> {
+        Ok(self
+            .ready
+            .as_ref()
+            .ok_or_else(|| JsError::new("manifest objects not yet verified"))?
+            .chain
+            .head_hash()
+            .to_vec())
+    }
+
+    /// Seal one validated operation with a fresh core-generated identity and
+    /// nonce. The browser must durably save these exact bytes before POST.
+    pub fn prepare_one(
+        &self,
+        operation_bytes: &[u8],
+        device_id: &[u8],
+        signing_seed: &[u8],
+    ) -> Result<Vec<u8>, JsError> {
+        let ready = self
+            .ready
+            .as_ref()
+            .ok_or_else(|| JsError::new("manifest objects not yet verified"))?;
+        let device_id = fixed(device_id, "device ID")?;
+        let signing_seed = fixed(signing_seed, "signing seed")?;
+        if ready.chain.epoch().map_err(debug_error)? != 1
+            || ready
+                .chain
+                .active_signing_public(device_id)
+                .map_err(debug_error)?
+                != crypto::signing_public_key(&signing_seed)
+        {
+            return Err(JsError::new(
+                "initial device authority differs from credential",
+            ));
+        }
+        Operation::decode_bound(operation_bytes, &ready.chain.family_id(), &device_id)
+            .map_err(debug_error)?;
+        let plaintext = cbor::encode(&Value::Array(vec![Value::Bytes(operation_bytes.to_vec())]))
+            .map_err(debug_error)?;
+        let mut batch_id = [0u8; 16];
+        let mut nonce = [0u8; 24];
+        getrandom::fill(&mut batch_id).map_err(debug_error)?;
+        batch_id[6] = (batch_id[6] & 0x0f) | 0x40;
+        batch_id[8] = (batch_id[8] & 0x3f) | 0x80;
+        getrandom::fill(&mut nonce).map_err(debug_error)?;
+        let header = batch::Header {
+            minor: 0,
+            family_id: ready.chain.family_id(),
+            relay_id: ready.chain.relay_id(),
+            control_head: ready.chain.head_hash(),
+            epoch: 1,
+            batch_id,
+            author_device_id: device_id,
+            device_sequence: ready
+                .chain
+                .next_sequence_for(device_id)
+                .map_err(debug_error)?,
+            nonce,
+            plaintext_len: plaintext
+                .len()
+                .try_into()
+                .map_err(|_| JsError::new("operation too large"))?,
+        };
+        Ok(batch::seal(
+            &header,
+            &[operation_bytes.to_vec()],
+            &self.epoch_key,
+            &signing_seed,
+        )
+        .map_err(debug_error)?
+        .envelope_bytes)
+    }
+
     pub fn field_cbor(&self, record_id: &[u8], field_id: u64) -> Result<Vec<u8>, JsError> {
         let record_id = fixed(record_id, "record ID")?;
         let ready = self

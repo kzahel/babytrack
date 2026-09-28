@@ -65,7 +65,10 @@ const server = http.createServer((request, response) => {
   if (request.url.startsWith('/v1/families/') && relayPort != null) {
     const upstream = http.request({
       hostname: '127.0.0.1', port: relayPort, path: request.url, method: request.method,
-      headers: { Authorization: request.headers.authorization || '' },
+      headers: {
+        Authorization: request.headers.authorization || '',
+        'Content-Type': request.headers['content-type'] || 'application/cbor',
+      },
     }, (result) => {
       response.writeHead(result.statusCode, { 'Content-Type': 'application/cbor' });
       result.pipe(response);
@@ -80,7 +83,8 @@ const server = http.createServer((request, response) => {
     return;
   }
   const name = request.url.slice(1);
-  if (name === 'local-store.js' || name === 'public-store.js' || name === 'relay-get.js') {
+  if (name === 'local-store.js' || name === 'public-store.js' ||
+      name === 'relay-get.js' || name === 'relay-post.js') {
     response.writeHead(200, { 'Content-Type': 'text/javascript' });
     fs.createReadStream(path.join(__dirname, '../../core-wasm/web', name)).pipe(response);
     return;
@@ -421,33 +425,6 @@ async function run() {
     }, input);
     assert.deepEqual(batchPulled, { cursor: 2, noMoreVisible: true, resultRead: true });
 
-    const realEnvelope = await page.evaluate(async (data) => {
-      const wasm = await import('/babytrack_core_wasm.js');
-      await wasm.default('/babytrack_core_wasm_bg.wasm');
-      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
-      const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
-      const publicFamily = new wasm.WasmPublicFamily(bytes(data.genesisHex), bytes(data.relayPublicHex));
-      const head = hex(publicFamily.head_hash());
-      publicFamily.free();
-      const header = data.batchHeaderHex.replace(data.fixtureHeadHex, head);
-      if (header === data.batchHeaderHex) throw new Error('Batch header did not bind real genesis');
-      return hex(wasm.seal_one(bytes(header), bytes(data.operationHex),
-        bytes(data.epochKeyHex), bytes(data.managerSeedHex)));
-    }, {
-      genesisHex: relay.genesisHex,
-      relayPublicHex: input.relayPublicHex,
-      batchHeaderHex: acceptedBatch.expect.header_cbor_hex,
-      fixtureHeadHex: genesis.expect.control_head_hex,
-      operationHex: acceptedBatch.inputs.operation_cbor_hex,
-      epochKeyHex: genesis.inputs.epoch_key_hex,
-      managerSeedHex: input.managerSeedHex,
-    });
-    const upload = await fetch(`http://127.0.0.1:${relay.port}/v1/families/${input.familyHex}/batches`, {
-      method: 'POST', headers: { 'Content-Type': 'application/cbor' },
-      body: Buffer.from(realEnvelope, 'hex'),
-    });
-    assert.equal(upload.status, 200, `Relay batch upload: ${Buffer.from(await upload.arrayBuffer()).toString('hex')}`);
-
     const realRelay = await page.evaluate(async (data) => {
       const wasm = await import('/babytrack_core_wasm.js');
       await wasm.default('/babytrack_core_wasm_bg.wasm');
@@ -468,35 +445,59 @@ async function run() {
       await store.saveInitialCredential(family, bytes(data.managerDeviceHex),
         bytes(data.managerSeedHex), bytes(data.epochKeyHex));
       const progress = await store.pullSaved(family, relayGet);
+      const fetched = await store.hydrateGenesisSaved(family, relayGet);
+      const staged = await store.stageInitial(family, bytes(data.operationHex));
+      const retry = await store.stageInitial(family, bytes(data.operationHex));
       store.close();
-      return { ...progress, family, wrongKeyRejected, noCredentialAfterDenial };
+      return { ...progress, family, fetched, staged: staged.envelope.length > 0,
+        exactRetry: staged.envelope.every((value, index) => value === retry.envelope[index]),
+        wrongKeyRejected, noCredentialAfterDenial };
     }, {
       genesisHex: relay.genesisHex,
       relayPublicHex: input.relayPublicHex,
       managerDeviceHex: input.managerDeviceHex,
       managerSeedHex: input.managerSeedHex,
       epochKeyHex: genesis.inputs.epoch_key_hex,
+      operationHex: acceptedBatch.inputs.operation_cbor_hex,
     });
     assert.deepEqual(realRelay, {
-      cursor: 2, noMoreVisible: true, family: input.familyHex,
-      wrongKeyRejected: true, noCredentialAfterDenial: true,
+      cursor: 1, noMoreVisible: true, family: input.familyHex, fetched: 1,
+      staged: true, exactRetry: true, wrongKeyRejected: true, noCredentialAfterDenial: true,
     });
-    const hydrated = await page.evaluate(async (data) => {
+    await page.reload();
+    const uploaded = await page.evaluate(async (data) => {
       const wasm = await import('/babytrack_core_wasm.js');
       await wasm.default('/babytrack_core_wasm_bg.wasm');
       const { PublicStore } = await import('/public-store.js');
       const { relayGet } = await import('/relay-get.js');
+      const { relayPost } = await import('/relay-post.js');
       const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
       const store = await PublicStore.open(wasm, 'babytrack-real-relay-public-smoke');
-      const fetched = await store.hydrateGenesisSaved(data.familyHex, relayGet);
+      const pendingBefore = await store.pendingInitial(data.familyHex);
+      let lostResponseKept = false;
+      try {
+        await store.uploadInitial(data.familyHex, async (path, envelope) => {
+          await relayPost(path, envelope);
+          throw new Error('simulated lost response');
+        }, relayGet);
+      } catch (error) {
+        if (error.message !== 'simulated lost response') throw error;
+        const retry = await store.pendingInitial(data.familyHex);
+        lostResponseKept = !!retry && retry.envelope.every(
+          (value, index) => value === pendingBefore.envelope[index]);
+      }
+      const progress = await store.uploadInitial(data.familyHex, relayPost, relayGet);
       const ready = await store.loadInitialReadySaved(data.familyHex);
-      const result = { fetched, cursor: ready.last_cursor().toString(),
+      const result = { ...progress, pendingBefore: !!pendingBefore, lostResponseKept,
+        pendingAfter: !!(await store.pendingInitial(data.familyHex)),
         recordType: ready.record_type(bytes(data.familyHex)) };
       ready.free();
       store.close();
       return result;
     }, input);
-    assert.deepEqual(hydrated, { fetched: 1, cursor: '2', recordType: 'family' });
+    assert.deepEqual(uploaded, { cursor: 2, noMoreVisible: true,
+      pendingBefore: true, lostResponseKept: true,
+      pendingAfter: false, recordType: 'family' });
     await page.reload();
     const relayReload = await page.evaluate(async (data) => {
       const wasm = await import('/babytrack_core_wasm.js');
@@ -513,7 +514,7 @@ async function run() {
     }, { familyHex: input.familyHex });
     assert.deepEqual(relayReload, { cursor: '2', recordType: 'family' });
     await context.close();
-    console.log('browser wasm + IndexedDB journal, signed relay GET, encrypted initial projection, reload, rollback, and Family isolation: OK');
+    console.log('browser wasm + IndexedDB journal, signed relay GET, durable initial batch upload, encrypted projection, reload, rollback, and Family isolation: OK');
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));

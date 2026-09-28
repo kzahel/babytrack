@@ -621,27 +621,27 @@ now stores validated operation bytes and append indexes in one transaction;
 `WasmLocalFamily` replays through the shared Rust projection. The real
 Chromium smoke covers reload, duplicate rejection, and wrong-Family append
 rollback. Materialized projection, browser HLC, general shared replay,
-browser outbox, and private copy remain open. Native SQLite now also reserves a random
+general browser outbox, and private copy remain open. Native SQLite now also reserves a random
 batch ID and nonce and persists exact signed envelope bytes in one transaction.
 The browser also has a separate production public-authority journal. Its wasm
 verifier uses the Rust control chain for signed genesis, controls, and batch
 acceptance; IndexedDB stores exact bytes with cursor/head atomically and
 rebuilds the verifier after reload. The Chromium smoke rejects a forged
-receipt and duplicate batch without advancing the durable pin. It does not
-yet decrypt/project shared records or stage a browser outbox. A bounded
+receipt and duplicate batch without advancing the durable pin. A bounded
 browser pull now signs exact GET paths with caller-held manager credentials,
 decodes log pages and batch results in Rust, and commits each verified entry.
 The Chromium fixture transport exercises a control and an accepted batch;
-the browser smoke also starts a disposable relay, commits a fixture genesis
-and encrypted manager batch, then pulls the accepted batch through signed
-browser GETs and replays the saved cursor after reload. This proves public
-relay transport. A storage-independent Rust initial-epoch replay now checks
-the signed genesis object manifest and epoch-key commitment before it opens
-that batch. Chromium fetches the object, projects the Family record, and
-rebuilds it after reload. Controls after genesis, rotations, recipient key
-storage, a CLI/browser encrypted exchange, and outbox remain open. The first
-manager's signing and epoch keys persist in IndexedDB and are reloaded for
-this narrow proof.
+the browser smoke also starts a disposable relay, commits a fixture genesis,
+and fetches its signed object. A storage-independent Rust initial-epoch replay
+checks the genesis manifest and epoch-key commitment. Production wasm then
+seals a manager operation with a fresh random batch ID and nonce. Chromium
+stores exact bytes in IndexedDB before upload, retains them after a simulated
+lost response, retries after reload, and atomically clears the outbox only
+when a signed acceptance enters public history. It projects the Family record
+and rebuilds it after reload. Controls after genesis, rotations, recipient
+key storage, unsent-edit preview, rejection repair, and a CLI/browser
+encrypted exchange remain open. The first manager's signing and epoch keys
+persist in IndexedDB and are reloaded for this narrow proof.
 An uncertain retry returns those bytes after reopen even if the caller's
 current head/key has changed. The initial `FamilySession` stages through
 that path only with its verified manager identity, head, epoch key, and
@@ -654,7 +654,7 @@ uncertain, even after rotation. A signed stale-epoch rejection matching the
 newly pinned head archives the old bytes and receipt without removing the
 local operation; the next stage reserves a new nonce and batch ID at the
 same sequence. Restart retries the replacement bytes exactly. General
-browser outbox and removed-device private copy remain open. In the public
+general browser outbox and removed-device private copy remain open. In the public
 shared journal, an own accepted batch now advances the global cursor,
 stores the signed envelope and receipt, clears its exact matching outbox,
 and advances the local accepted index/sequence in one SQLite transaction.
@@ -794,7 +794,9 @@ keys for encrypted batches and the reusable local-only journal adapter. A
 production public-authority adapter also verifies a signed acceptance through
 Rust and replays it after browser reload. The same smoke starts a disposable
 relay and fetches an accepted batch through signed browser GETs; complete
-browser sync storage and cross-language vector coverage remain open.
+browser sync storage and cross-language vector coverage remain open. It also
+stages a production encrypted write, loses the POST response, retries exact
+bytes after reload, and clears its outbox on signed acceptance.
 
 Every agreed FS case gets a deterministic core/relay action binding with
 assertions for local state, shared state, pending outbox, visible status, and

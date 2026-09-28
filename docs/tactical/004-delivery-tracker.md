@@ -35,10 +35,12 @@ history in IndexedDB, with reload and forged-receipt rollback checks. It
 also signs and decodes a bounded public pull. Chromium now fetches an
 accepted encrypted batch through signed GETs from a disposable real relay
 and reloads its saved cursor. It now fetches signed genesis objects and
-projects the decrypted epoch-one record through Rust after reload. Later
-controls, later-epoch and recipient key storage, a shared outbox, and full
-CLI/browser convergence remain open. The first manager credential persists
-in IndexedDB for this smoke.
+projects the decrypted epoch-one record through Rust after reload. A
+production wasm batch enters a durable browser outbox, survives a lost POST
+response and reload, and clears only on signed acceptance. Later controls,
+later-epoch and recipient key storage, unsent-edit preview, rejection repair,
+and full CLI/browser convergence remain open. The first manager credential
+persists in IndexedDB for this smoke.
 Android local and first-cohort UI work, including solids, completed
 multi-segment breast-feed, pumping logs, and note, bottle, diaper, pumping,
 and medication corrections, plus child name and growth-detail, growth-entry,
@@ -88,10 +90,10 @@ scrolls to that action; the complete local recovery flow and remote run
 |---|---|
 | Active implementation owner | [003 M0 foundation](003-m0-foundation.md) for protocol and [005 M1 Android](005-m1-android.md) for the caregiver app. |
 | Next demonstrable proof | The Android local UI creates Families and children, records bottle, solids, completed alternating breast feed, diaper, sleep timer, completed sleep, note, growth, Celsius, and medication entries, shows a timeline with confirmed activity deletion, and saves/restores readable or password-protected files through Rust. A disposable relay and two separate emulators pass first-cohort join, a recipient timer stopped by the manager, recipient growth, temperature, medication, solids, and alternating breast feed read by the manager, reciprocal edits and one deletion, offline work, removal, and automatic private copy; note, medication, and solids markers are absent from relay storage and logs. Foreground polling and a scheduled job advance sharing; normal job timing is OS controlled. |
-| Next dependent slice | The first-cohort recheck and [focused general-authority advisory](003-m0-foundation.md#general-authority-advisory-pass-at-98fa0ea) passed. Relay restart replays public controls and accepted batch authority; a signed private checkpoint covers rejected-result and staging-reservation sets. Signed GETs, batch POSTs, manager controls, and later control HTTP writes use that ledger under a SQLite writer lock. Later enrollment after removal and epoch rotation passes on separate emulators. A second admitted manager now invites, grants, and removes a third device with rotation through relay HTTP and Android instrumentation. Later rotations, role changes, cancellation, browser shared outbox, and M0 exit review remain. |
+| Next dependent slice | The first-cohort recheck and [focused general-authority advisory](003-m0-foundation.md#general-authority-advisory-pass-at-98fa0ea) passed. Relay restart replays public controls and accepted batch authority; a signed private checkpoint covers rejected-result and staging-reservation sets. Signed GETs, batch POSTs, manager controls, and later control HTTP writes use that ledger under a SQLite writer lock. Later enrollment after removal and epoch rotation passes on separate emulators. A second admitted manager now invites, grants, and removes a third device with rotation through relay HTTP and Android instrumentation. Later rotations, role changes, cancellation, browser outbox beyond the initial manager, and M0 exit review remain. |
 | Next independent review | Run one broader end-of-M0 recovery and mixed-client gate after its executable coverage closes. Focused advisory findings remain open without serial rechecks during feature development. Prioritize usable tracking and browser shared sync before another review cycle. |
 | Open advisory | The [automatic-status recheck](003-m0-foundation.md#advisory-automatic-status-recheck-at-ad42d78) found an own-claim lost-response ambiguity and a concurrent status-write race. FS37/FS77 regressions and repair remain due before real Family data. Durable streaming of large control history also remains open. |
-| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, local Android UI smoke, and document-picker recovery jobs are required on every push/PR. Run `36359335159` at `8aa168e` passed every required job, including readable and protected document-picker recovery across reinstall and the two-child UI path. Run `36361405594` at `6442f85` also passed every required job, including damaged-backup denial. The browser public-authority and Android invitation-link commits have local checks; their remote run is pending. |
+| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, local Android UI smoke, and document-picker recovery jobs are required on every push/PR. Run `36363892641` at `0bfddd5` passed every required job, including the real-relay Android emulator. The browser encrypted projection and outbox slices pass locally; their remote run is pending. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.

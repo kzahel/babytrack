@@ -4,6 +4,7 @@
 
 const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
 const bytes = (value) => Uint8Array.from(value.match(/../g) || [], (pair) => parseInt(pair, 16));
+const sameBytes = (a, b) => a.length === b.length && a.every((byte, index) => byte === b[index]);
 const requestResult = (request) => new Promise((resolve, reject) => {
   request.onsuccess = () => resolve(request.result);
   request.onerror = () => reject(request.error);
@@ -42,7 +43,7 @@ export class PublicStore {
   }
 
   static async open(wasm, name = 'babytrack-public') {
-    const request = indexedDB.open(name, 3);
+    const request = indexedDB.open(name, 4);
     request.onupgradeneeded = () => {
       const database = request.result;
       if (!database.objectStoreNames.contains('families')) {
@@ -56,6 +57,9 @@ export class PublicStore {
       }
       if (!database.objectStoreNames.contains('credentials')) {
         database.createObjectStore('credentials', { keyPath: 'family' });
+      }
+      if (!database.objectStoreNames.contains('outbox')) {
+        database.createObjectStore('outbox', { keyPath: 'family' });
       }
     };
     return new PublicStore(await requestResult(request), wasm);
@@ -139,6 +143,62 @@ export class PublicStore {
     return this.loadInitialReady(family, row.epochKey);
   }
 
+  async pendingInitial(family) {
+    const transaction = this.database.transaction('outbox', 'readonly');
+    return requestResult(transaction.objectStore('outbox').get(family));
+  }
+
+  // Stage exact signed bytes before any network request. One pending batch per
+  // Family is retried byte-for-byte after a lost response or browser reload.
+  async stageInitial(family, operation) {
+    const pending = await this.pendingInitial(family);
+    if (pending) return pending;
+    const credential = await this.initialCredential(family);
+    const ready = await this.loadInitialReady(family, credential.epochKey);
+    let envelope, cursor, head;
+    try {
+      envelope = ready.prepare_one(operation, credential.deviceId, credential.signingSeed);
+      cursor = Number(ready.last_cursor());
+      head = hex(ready.head_hash());
+    } finally { ready.free(); }
+    return new Promise((resolve, reject) => {
+      const transaction = this.database.transaction(['families', 'outbox'], 'readwrite');
+      const families = transaction.objectStore('families');
+      const outbox = transaction.objectStore('outbox');
+      let failure, result;
+      transaction.oncomplete = () => resolve(result);
+      transaction.onerror = () => reject(failure || transaction.error);
+      transaction.onabort = () => reject(failure || transaction.error || new Error('transaction aborted'));
+      const metadataRequest = families.get(family);
+      metadataRequest.onsuccess = () => {
+        const metadata = metadataRequest.result;
+        if (!metadata || metadata.cursor !== cursor || metadata.head !== head) {
+          failure = new Error('Family authority changed before staging');
+          transaction.abort();
+          return;
+        }
+        const pendingRequest = outbox.get(family);
+        pendingRequest.onsuccess = () => {
+          if (pendingRequest.result) {
+            result = pendingRequest.result;
+          } else {
+            result = { family, operation: Uint8Array.from(operation), envelope: Uint8Array.from(envelope) };
+            outbox.add(result);
+          }
+        };
+      };
+    });
+  }
+
+  async uploadInitial(family, post, get) {
+    const pending = await this.pendingInitial(family);
+    if (!pending) throw new Error('No pending initial batch');
+    await post(`/v1/families/${family}/batches`, pending.envelope);
+    const progress = await this.pullSaved(family, get);
+    if (await this.pendingInitial(family)) throw new Error('Accepted batch not yet verified');
+    return progress;
+  }
+
   async hydrateGenesis(family, deviceId, signingSeed, get) {
     const transaction = this.database.transaction(['families', 'objects'], 'readonly');
     const metadataRequest = transaction.objectStore('families').get(family);
@@ -215,9 +275,10 @@ export class PublicStore {
     if (kind !== 'control' && kind !== 'batch') throw new Error('Unknown public entry kind');
     if (kind === 'batch' && receipt == null) throw new Error('Batch acceptance receipt is absent');
     return new Promise((resolve, reject) => {
-      const transaction = this.database.transaction(['families', 'entries'], 'readwrite');
+      const transaction = this.database.transaction(['families', 'entries', 'outbox'], 'readwrite');
       const families = transaction.objectStore('families');
       const entries = transaction.objectStore('entries');
+      const outbox = transaction.objectStore('outbox');
       let failure;
       let nextCursor;
       transaction.oncomplete = () => resolve(nextCursor);
@@ -231,6 +292,7 @@ export class PublicStore {
           transaction.abort();
           return;
         }
+        const pendingRequest = outbox.get(family);
         const rowsRequest = entries.getAll(
           IDBKeyRange.bound([family, 1], [family, Number.MAX_SAFE_INTEGER]),
         );
@@ -250,6 +312,8 @@ export class PublicStore {
               receipt: receipt == null ? null : Uint8Array.from(receipt),
             });
             families.put({ ...metadata, cursor: nextCursor, head: hex(verifier.head_hash()) });
+            if (kind === 'batch' && pendingRequest.result &&
+                sameBytes(pendingRequest.result.envelope, bytes)) outbox.delete(family);
           } catch (error) {
             failure = error;
             transaction.abort();

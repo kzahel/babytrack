@@ -300,7 +300,8 @@ intended Family and child, and remains usable after process death.
   from writable Family selection and offers a copy action that reuses an
   existing removal copy. The same card now appears for a removed recipient;
   a real-relay emulator case makes a copy with no pending edits and checks
-  that its held child is present. A focused UI tap check remains open.
+  that its held child is present. A focused Compose test now taps that card
+  after verified removal and finds the child in the new local Family.
 - [ ] Make invitation handoff usable through a share/link flow with trusted
   relay pinning and clear pending, accepted, blocked, and removed states.
   The share-sheet receive and custom-link paths now prefill without

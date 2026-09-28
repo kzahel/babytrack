@@ -312,6 +312,62 @@ class SharingRelayTest {
     }
 
     @Test
+    fun removedRecipientCanContinueInPrivateCopyFromTheUi() {
+        wakeEmulatorScreen()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
+            ?: error("relayPublicKey instrumentation argument required")
+        val origin = "http://localhost:8787"
+        val managerDb = context.filesDir.resolve("copy-ui-manager-${System.nanoTime()}.db")
+        val recipientDb = context.filesDir.resolve("families.db")
+        val manager = NativeLocalStore.open(managerDb.absolutePath).use { local ->
+            val family = local.createFamily(System.currentTimeMillis())
+            local.addChild(family, "UI private child", System.currentTimeMillis())
+            family
+        }
+        val fragment = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            sharing.promote(manager, origin, publicKey)
+            sharing.invite(manager, origin, 1u.toUByte())
+        }
+        val recipient = ShareCoordinator(context, recipientDb.absolutePath).use { it.claim(fragment).family }
+        ShareCoordinator(context, managerDb.absolutePath).use { assertTrue(it.advanceManager(manager, origin).ready) }
+        ShareCoordinator(context, recipientDb.absolutePath).use { assertTrue(it.advanceRecipient(recipient).awaitingGrant) }
+        ShareCoordinator(context, managerDb.absolutePath).use { assertTrue(it.advanceManager(manager, origin).ready) }
+        ShareCoordinator(context, recipientDb.absolutePath).use { assertTrue(it.advanceRecipient(recipient).ready) }
+        ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            sharing.removeDevice(manager, origin, recipient.deviceId)
+        }
+        ShareCoordinator(context, recipientDb.absolutePath).use { sharing ->
+            val removed = sharing.advanceRecipient(recipient)
+            assertTrue(removed.removed)
+            assertEquals(null, removed.privateCopy)
+        }
+        val before = NativeLocalStore.open(recipientDb.absolutePath).use { local ->
+            local.families().map { it.familyId.joinToString("") { byte -> "%02x".format(byte.toInt() and 255) } }.toSet()
+        }
+        ActivityScenario.launch(MainActivity::class.java).use {
+            val button = context.getString(R.string.continue_in_private_copy)
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText(button).fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText(button).performScrollTo().performClick()
+            val deadline = System.currentTimeMillis() + 25_000
+            var copied = false
+            while (System.currentTimeMillis() < deadline) {
+                copied = NativeLocalStore.open(recipientDb.absolutePath).use { local ->
+                    local.families().any { family ->
+                        val id = family.familyId.joinToString("") { byte -> "%02x".format(byte.toInt() and 255) }
+                        id !in before && local.children(family).any { child -> child.name == "UI private child" }
+                    }
+                }
+                if (copied) break
+                Thread.sleep(200)
+            }
+            assertTrue("The recovery action should create a local Family with held history", copied)
+        }
+    }
+
+    @Test
     fun managerCancelsUnusedInvitationBeforeClaim() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")

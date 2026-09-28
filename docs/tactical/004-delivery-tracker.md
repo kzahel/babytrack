@@ -263,6 +263,13 @@ test now finds and selects its own visible saved recipient. All 14 relay
 instrumentation cases pass together locally after that correction; the
 next remote run must verify it.
 
+Run `36397125159` at `8ad4297` passed all non-emulator jobs but again found
+the join assertion sensitive to viewport position after activity recreation.
+The target chip existed below the CI emulator's viewport; the test now
+scrolls to it before checking visibility and selection. The complete
+14-case relay suite passes locally with this change. A new remote run is
+still required.
+
 For each gate, the owning tactical records the fixed commit, local commands,
 observed CI run, scenario IDs, security session/disposition if applicable,
 and remaining limits. Mark an unobserved remote run as unverified.

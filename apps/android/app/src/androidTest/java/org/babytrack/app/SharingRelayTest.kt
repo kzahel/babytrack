@@ -358,15 +358,16 @@ class SharingRelayTest {
             assertTrue("The single UI action should commit a saved recipient claim", committed)
             val joining = context.getString(R.string.joining_family_number, joiningIndex + 1)
             composeRule.waitUntil(25_000) {
-                runCatching { composeRule.onNodeWithText(joining).assertIsDisplayed() }.isSuccess
+                composeRule.onAllNodesWithText(joining).fetchSemanticsNodes().isNotEmpty()
             }
-            composeRule.onNodeWithText(joining).performClick()
+            composeRule.onNodeWithText(joining).performScrollTo().assertIsDisplayed().performClick()
             scenario.recreate()
             composeRule.waitUntil(25_000) {
-                runCatching { composeRule.onNodeWithText(joining).assertIsDisplayed() }.isSuccess
+                composeRule.onAllNodesWithText(joining).fetchSemanticsNodes().isNotEmpty()
             }
-            composeRule.onNodeWithText(joining).performClick()
-            composeRule.onNodeWithText(context.getString(R.string.saved_join_pending)).assertIsDisplayed()
+            composeRule.onNodeWithText(joining).performScrollTo().assertIsDisplayed().performClick()
+            composeRule.onNodeWithText(context.getString(R.string.saved_join_pending))
+                .performScrollTo().assertIsDisplayed()
             assertEquals(0, composeRule.onAllNodesWithText(fragment).fetchSemanticsNodes().size)
         }
     }

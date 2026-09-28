@@ -64,8 +64,9 @@ The Android first-cohort build currently records growth as whole grams and
 millimetres, with weight, length, and head circumference in any nonempty
 combination in one event. The core writes the published
 measure map with the entered unit and rejects empty or out-of-range values.
-The first Celsius entry path parses decimal text in the core, rounds to
-hundredths using the published rule, and retains the entered text. Local
+Temperature entry and correction now accept Celsius or Fahrenheit. The core
+parses the entered decimal, applies the published exact conversion to
+hundredths Celsius, and retains the entered text and unit for display. Local
 restart/file restore and cross-device encrypted sync preserve these
 measurements. Medication entry records a name and entered dose amount/unit
 as text without a dosing recommendation; local file restore and encrypted

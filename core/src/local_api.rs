@@ -69,6 +69,8 @@ pub struct Activity {
     pub growth_length_mm: Option<i64>,
     pub growth_head_mm: Option<i64>,
     pub temperature_c: Option<String>,
+    pub temperature_entered: Option<String>,
+    pub temperature_unit: Option<u8>,
     pub medication_name: Option<String>,
     pub medication_dose_amount: Option<String>,
     pub medication_dose_unit: Option<String>,
@@ -803,6 +805,38 @@ impl LocalRepository {
         Ok(())
     }
 
+    pub fn edit_temperature_entered(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        entered: &str,
+        unit: u8,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        if child.scope != Scope::Child || child.deleted {
+            return Err(Error::Invalid("target child unavailable"));
+        }
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("activity unavailable"))?;
+        let operation = edit_temperature_entered_operation(
+            family,
+            child_id,
+            activity,
+            entered,
+            unit,
+            saved_at_ms,
+        )?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn log_note(
         &mut self,
         family: FamilyHandle,
@@ -852,6 +886,20 @@ impl LocalRepository {
         time: ActivityTime,
     ) -> Result<[u8; 16], Error> {
         let (activity_id, operation) = temperature_c_operation(family, child_id, entered_c, time)?;
+        self.append_activity(family, child_id, operation, time.saved_at_ms)?;
+        Ok(activity_id)
+    }
+
+    pub fn log_temperature_entered(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        entered: &str,
+        unit: u8,
+        time: ActivityTime,
+    ) -> Result<[u8; 16], Error> {
+        let (activity_id, operation) =
+            temperature_entered_operation(family, child_id, entered, unit, time)?;
         self.append_activity(family, child_id, operation, time.saved_at_ms)?;
         Ok(activity_id)
     }
@@ -1998,26 +2046,55 @@ pub fn temperature_c_operation(
     entered_c: &str,
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
+    temperature_entered_operation(family, child_id, entered_c, 30, time)
+}
+
+pub fn temperature_entered_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    entered: &str,
+    unit: u8,
+    time: ActivityTime,
+) -> Result<([u8; 16], NewOperation), Error> {
     activity_operation(
         family,
         child_id,
         "temperature",
-        temperature_c_fields(entered_c)?,
+        temperature_fields(entered, unit)?,
         time,
     )
 }
 
-fn temperature_c_fields(entered_c: &str) -> Result<Vec<(u64, Value)>, Error> {
-    let decimal = entered_c.trim();
-    if decimal.is_empty() || decimal.len() > 16 {
-        return Err(Error::Invalid("temperature decimal empty or too long"));
+fn temperature_fields(entered: &str, unit: u8) -> Result<Vec<(u64, Value)>, Error> {
+    let decimal = entered.trim();
+    if decimal.is_empty() || decimal.len() > 16 || !matches!(unit, 30 | 31) {
+        return Err(Error::Invalid("temperature decimal or unit invalid"));
     }
     let (numerator, denominator) = crate::record_validity::parse_decimal(decimal)
         .ok_or(Error::Invalid("temperature decimal invalid"))?;
-    let scaled = numerator
-        .checked_mul(100)
-        .ok_or(Error::Invalid("temperature decimal overflow"))?;
-    let base = crate::record_validity::round_ratio(scaled, denominator)
+    let (scaled, divisor) = if unit == 30 {
+        (
+            numerator
+                .checked_mul(100)
+                .ok_or(Error::Invalid("temperature decimal overflow"))?,
+            denominator,
+        )
+    } else {
+        (
+            numerator
+                .checked_sub(
+                    denominator
+                        .checked_mul(32)
+                        .ok_or(Error::Invalid("temperature decimal overflow"))?,
+                )
+                .and_then(|difference| difference.checked_mul(500))
+                .ok_or(Error::Invalid("temperature decimal overflow"))?,
+            denominator
+                .checked_mul(9)
+                .ok_or(Error::Invalid("temperature decimal overflow"))?,
+        )
+    };
+    let base = crate::record_validity::round_ratio(scaled, divisor)
         .map_err(|_| Error::Invalid("temperature decimal overflow"))?;
     i64::try_from(base).map_err(|_| Error::Invalid("temperature outside i64 range"))?;
     Ok(vec![(
@@ -2025,7 +2102,7 @@ fn temperature_c_fields(entered_c: &str) -> Result<Vec<(u64, Value)>, Error> {
         Value::Map(vec![
             (1, Value::Integer(base)),
             (2, Value::Text(decimal.to_owned())),
-            (3, Value::Integer(30)),
+            (3, Value::Integer(unit.into())),
         ]),
     )])
 }
@@ -2035,6 +2112,17 @@ pub fn edit_temperature_c_operation(
     child_id: [u8; 16],
     activity: &Record,
     entered_c: &str,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    edit_temperature_entered_operation(family, child_id, activity, entered_c, 30, saved_at_ms)
+}
+
+pub fn edit_temperature_entered_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    entered: &str,
+    unit: u8,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
     if activity.scope != Scope::Activity
@@ -2055,7 +2143,7 @@ pub fn edit_temperature_c_operation(
         hlc: placeholder_hlc(family),
         record_type: None,
         child_id: None,
-        fields: Some(temperature_c_fields(entered_c)?),
+        fields: Some(temperature_fields(entered, unit)?),
     })
 }
 
@@ -2337,17 +2425,40 @@ fn activity_summary(record: &Record) -> Option<Activity> {
         };
         i64::try_from(*value).ok()
     };
-    let temperature_c = if record.record_type == "temperature" {
-        let Value::Map(measure) = &record.field(100)?.value else {
-            return None;
+    let (temperature_c, temperature_entered, temperature_unit) =
+        if record.record_type == "temperature" {
+            let Value::Map(measure) = &record.field(100)?.value else {
+                return None;
+            };
+            let (1, Value::Integer(base)) = measure.first()? else {
+                return None;
+            };
+            let base = i64::try_from(*base).ok()?;
+            let entered = match measure.get(1) {
+                Some((2, Value::Text(decimal))) => Some(decimal.clone()),
+                _ => None,
+            };
+            let unit = match measure.get(2) {
+                Some((3, Value::Integer(value))) => u8::try_from(*value)
+                    .ok()
+                    .filter(|unit| matches!(unit, 30 | 31)),
+                _ => None,
+            };
+            let celsius = if unit == Some(30) {
+                entered.clone()
+            } else {
+                let magnitude = base.unsigned_abs();
+                Some(format!(
+                    "{}{}.{:02}",
+                    if base < 0 { "-" } else { "" },
+                    magnitude / 100,
+                    magnitude % 100
+                ))
+            };
+            (celsius, entered.filter(|_| unit.is_some()), unit)
+        } else {
+            (None, None, None)
         };
-        match measure.get(1) {
-            Some((2, Value::Text(decimal))) => Some(decimal.clone()),
-            _ => None,
-        }
-    } else {
-        None
-    };
     let (medication_name, medication_dose_amount, medication_dose_unit) =
         if record.record_type == "medication" {
             let Value::Text(name) = &record.field(100)?.value else {
@@ -2434,6 +2545,8 @@ fn activity_summary(record: &Record) -> Option<Activity> {
             None
         },
         temperature_c,
+        temperature_entered,
+        temperature_unit,
         medication_name,
         medication_dose_amount,
         medication_dose_unit,

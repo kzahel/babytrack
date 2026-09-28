@@ -43,6 +43,10 @@ the shared core checks the target and retains its original time. Local file
 restore and the two-emulator encrypted relay flow cover the correction.
 The Android surface now follows the device's light or dark mode for both
 Compose content and system bars; emulator captures checked each mode.
+Temperature logging and correction now offer °C and °F through the Rust
+conversion and preserve the entered decimal and unit in the timeline. The
+local file round trip and two-emulator encrypted sync check Fahrenheit;
+the Android UI smoke checks entry and correction across restart.
 Child creation can also record a birth date and the sex code needed for
 eventual growth charts. The shared core persists these as child metadata in
 local and shared history; growth percentiles are still pending.

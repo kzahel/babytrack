@@ -463,6 +463,12 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
                          enteredC: String, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedTemperatureC(family, wrapping, childId, activityId, enteredC, savedAtMs) }
 
+    fun editTemperatureEntered(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+                               entered: String, unit: UByte, savedAtMs: Long): Unit =
+        withWrapping { wrapping -> core.editSharedTemperatureEntered(
+            family, wrapping, childId, activityId, entered, unit, savedAtMs,
+        ) }
+
     fun logNote(family: FamilyRef, childId: ByteArray, note: String, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedNote(family, wrapping, childId, note, time) }
 
@@ -474,6 +480,10 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
 
     fun logTemperatureC(family: FamilyRef, childId: ByteArray, enteredC: String, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedTemperatureC(family, wrapping, childId, enteredC, time) }
+
+    fun logTemperatureEntered(family: FamilyRef, childId: ByteArray, entered: String,
+                              unit: UByte, time: ActivityWhen): ByteArray =
+        withWrapping { wrapping -> core.logSharedTemperatureEntered(family, wrapping, childId, entered, unit, time) }
 
     fun logMedication(family: FamilyRef, childId: ByteArray, input: uniffi.babytrack_core_ffi.MedicationInput, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedMedication(family, wrapping, childId, input, time) }

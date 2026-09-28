@@ -301,7 +301,8 @@ private data class PendingTemperatureEdit(
     val childId: ByteArray,
     val activityId: ByteArray,
     val shared: Boolean,
-    val enteredC: String,
+    val entered: String,
+    val unit: UByte,
 )
 internal data class ScreenData(
     val families: List<FamilyRef>,
@@ -497,7 +498,8 @@ private fun TrackerScreen(
     var growthWeight by remember { mutableStateOf("") }
     var growthLength by remember { mutableStateOf("") }
     var growthHead by remember { mutableStateOf("") }
-    var temperatureC by remember { mutableStateOf("") }
+    var temperatureEntered by remember { mutableStateOf("") }
+    var temperatureUnit by remember { mutableStateOf(30u.toUByte()) }
     var medicationName by remember { mutableStateOf("") }
     var doseAmount by remember { mutableStateOf("") }
     var doseUnit by remember { mutableStateOf("") }
@@ -590,7 +592,8 @@ private fun TrackerScreen(
         growthWeight = ""
         growthLength = ""
         growthHead = ""
-        temperatureC = ""
+        temperatureEntered = ""
+        temperatureUnit = 30u.toUByte()
         medicationName = ""
         doseAmount = ""
         doseUnit = ""
@@ -1685,24 +1688,37 @@ private fun TrackerScreen(
                     ) { Text(stringResource(R.string.save_growth)) }
                     Text(stringResource(R.string.log_temperature), style = MaterialTheme.typography.titleLarge)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(30u.toUByte() to R.string.unit_celsius,
+                            31u.toUByte() to R.string.unit_fahrenheit).forEach { (unit, label) ->
+                            FilterChip(selected = temperatureUnit == unit, onClick = {
+                                if (temperatureUnit != unit) {
+                                    temperatureUnit = unit
+                                    temperatureEntered = ""
+                                }
+                            }, label = { Text(stringResource(label)) })
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
-                            value = temperatureC,
-                            onValueChange = { temperatureC = it.take(16) },
-                            label = { Text(stringResource(R.string.temperature_c)) },
+                            value = temperatureEntered,
+                            onValueChange = { temperatureEntered = it.take(16) },
+                            label = { Text(stringResource(if (temperatureUnit == 30u.toUByte())
+                                R.string.temperature_c else R.string.temperature_f)) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                         )
-                        Button(enabled = temperatureC.isNotBlank(), onClick = {
-                            val entered = temperatureC.trim()
+                        Button(enabled = temperatureEntered.isNotBlank(), onClick = {
+                            val entered = temperatureEntered.trim()
+                            val unit = temperatureUnit
                             val chosenAt = logAtMs
                             val at = logTime()
                             scope.launch {
                                 runCatching { withContext(Dispatchers.IO) {
-                                    if (activeShared) sharing.logTemperatureC(family, child.id, entered, at)
-                                    else store.logTemperatureC(family, child.id, entered, at)
+                                    if (activeShared) sharing.logTemperatureEntered(family, child.id, entered, unit, at)
+                                    else store.logTemperatureEntered(family, child.id, entered, unit, at)
                                 } }.onSuccess {
-                                    if (temperatureC.trim() == entered) temperatureC = ""
+                                    if (temperatureEntered.trim() == entered) temperatureEntered = ""
                                     version++
                                     message = null
                                     resetLogTime(chosenAt)
@@ -1865,7 +1881,10 @@ private fun TrackerScreen(
                                 else stringResource(R.string.growth_summary, parts.joinToString(" · "))
                             }
                             entry.kind == "temperature" && entry.temperatureC != null ->
-                                stringResource(R.string.temperature_entry, entry.temperatureC!!)
+                                stringResource(R.string.temperature_entry,
+                                    entry.temperatureEntered ?: entry.temperatureC!!,
+                                    stringResource(if (entry.temperatureUnit == 31u.toUByte())
+                                        R.string.unit_fahrenheit else R.string.unit_celsius))
                             entry.kind == "medication" && entry.medicationName != null &&
                                 entry.medicationDoseAmount != null && entry.medicationDoseUnit != null ->
                                 stringResource(
@@ -2015,7 +2034,8 @@ private fun TrackerScreen(
                                     OutlinedButton(onClick = {
                                         pendingTemperatureEdit = PendingTemperatureEdit(
                                             family, entry.childId.copyOf(), entry.id.copyOf(), activeShared,
-                                            entry.temperatureC!!,
+                                            entry.temperatureEntered ?: entry.temperatureC!!,
+                                            entry.temperatureUnit ?: 30u.toUByte(),
                                         )
                                     }) { Text(stringResource(R.string.edit_temperature)) }
                                 }
@@ -2697,23 +2717,35 @@ private fun TrackerScreen(
             onDismissRequest = { pendingTemperatureEdit = null },
             title = { Text(stringResource(R.string.edit_temperature)) },
             text = {
-                OutlinedTextField(
-                    value = target.enteredC,
-                    onValueChange = { pendingTemperatureEdit = target.copy(enteredC = it.take(16)) },
-                    label = { Text(stringResource(R.string.temperature_c)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                )
+                Column {
+                    OutlinedTextField(
+                        value = target.entered,
+                        onValueChange = { pendingTemperatureEdit = target.copy(entered = it.take(16)) },
+                        label = { Text(stringResource(if (target.unit == 30u.toUByte())
+                            R.string.temperature_c else R.string.temperature_f)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(30u.toUByte() to R.string.unit_celsius,
+                            31u.toUByte() to R.string.unit_fahrenheit).forEach { (unit, label) ->
+                            FilterChip(selected = target.unit == unit, onClick = {
+                                if (target.unit != unit) pendingTemperatureEdit = target.copy(entered = "", unit = unit)
+                            }, label = { Text(stringResource(label)) })
+                        }
+                    }
+                }
             },
             confirmButton = {
-                Button(enabled = target.enteredC.isNotBlank(), onClick = {
-                    pendingTemperatureEdit = null
+                Button(enabled = target.entered.isNotBlank(), onClick = {
                     val savedAtMs = System.currentTimeMillis()
-                    change {
-                        if (target.shared) sharing.editTemperatureC(
-                            target.family, target.childId, target.activityId, target.enteredC, savedAtMs,
-                        ) else store.editTemperatureC(
-                            target.family, target.childId, target.activityId, target.enteredC, savedAtMs,
+                    change(onSaved = { pendingTemperatureEdit = null }) {
+                        if (target.shared) sharing.editTemperatureEntered(
+                            target.family, target.childId, target.activityId,
+                            target.entered, target.unit, savedAtMs,
+                        ) else store.editTemperatureEntered(
+                            target.family, target.childId, target.activityId,
+                            target.entered, target.unit, savedAtMs,
                         )
                     }
                 }) { Text(stringResource(R.string.save_changes)) }

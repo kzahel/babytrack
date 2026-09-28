@@ -168,6 +168,8 @@ pub struct ActivityRow {
     pub growth_length_mm: Option<i64>,
     pub growth_head_mm: Option<i64>,
     pub temperature_c: Option<String>,
+    pub temperature_entered: Option<String>,
+    pub temperature_unit: Option<u8>,
     pub medication_name: Option<String>,
     pub medication_dose_amount: Option<String>,
     pub medication_dose_unit: Option<String>,
@@ -1778,6 +1780,8 @@ impl NativeSharedStore {
                 growth_length_mm: row.growth_length_mm,
                 growth_head_mm: row.growth_head_mm,
                 temperature_c: row.temperature_c,
+                temperature_entered: row.temperature_entered,
+                temperature_unit: row.temperature_unit,
                 medication_name: row.medication_name,
                 medication_dose_amount: row.medication_dose_amount,
                 medication_dose_unit: row.medication_dose_unit,
@@ -2882,6 +2886,46 @@ impl NativeSharedStore {
             .map_err(rejected)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn edit_shared_temperature_entered(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        entered: String,
+        unit: u8,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let projection = ready.projection_with_pending(&store).map_err(rejected)?;
+        let child_id = fixed(&child_id)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(BindingError::InvalidBytes)?;
+        if child.scope != operation::Scope::Child || child.deleted {
+            return Err(BindingError::InvalidBytes);
+        }
+        let activity = projection
+            .record(&fixed(&activity_id)?)
+            .ok_or(BindingError::InvalidBytes)?;
+        let operation = local_api::edit_temperature_entered_operation(
+            handle,
+            child_id,
+            activity,
+            &entered,
+            unit,
+            saved_at_ms,
+        )
+        .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map(|_| ())
+            .map_err(rejected)
+    }
+
     pub fn log_shared_note(
         &self,
         family: FamilyRef,
@@ -2975,6 +3019,33 @@ impl NativeSharedStore {
         let (id, operation) =
             local_api::temperature_c_operation(handle, fixed(&child_id)?, &entered_c, time.into())
                 .map_err(rejected)?;
+        ready
+            .append_local(&mut store, operation, saved_at_ms)
+            .map_err(rejected)?;
+        Ok(id.to_vec())
+    }
+
+    pub fn log_shared_temperature_entered(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        entered: String,
+        unit: u8,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
+        let saved_at_ms = time.saved_at_ms;
+        let (id, operation) = local_api::temperature_entered_operation(
+            handle,
+            fixed(&child_id)?,
+            &entered,
+            unit,
+            time.into(),
+        )
+        .map_err(rejected)?;
         ready
             .append_local(&mut store, operation, saved_at_ms)
             .map_err(rejected)?;
@@ -4082,6 +4153,29 @@ impl NativeLocalStore {
             .map_err(rejected)
     }
 
+    pub fn edit_temperature_entered(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        activity_id: Vec<u8>,
+        entered: String,
+        unit: u8,
+        saved_at_ms: i64,
+    ) -> Result<(), BindingError> {
+        self.repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .edit_temperature_entered(
+                family.handle()?,
+                fixed(&child_id)?,
+                fixed(&activity_id)?,
+                &entered,
+                unit,
+                saved_at_ms,
+            )
+            .map_err(rejected)
+    }
+
     pub fn log_note(
         &self,
         family: FamilyRef,
@@ -4162,6 +4256,29 @@ impl NativeLocalStore {
             .to_vec())
     }
 
+    pub fn log_temperature_entered(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        entered: String,
+        unit: u8,
+        time: ActivityWhen,
+    ) -> Result<Vec<u8>, BindingError> {
+        Ok(self
+            .repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .log_temperature_entered(
+                family.handle()?,
+                fixed(&child_id)?,
+                &entered,
+                unit,
+                time.into(),
+            )
+            .map_err(rejected)?
+            .to_vec())
+    }
+
     pub fn log_medication(
         &self,
         family: FamilyRef,
@@ -4224,6 +4341,8 @@ impl NativeLocalStore {
                 growth_length_mm: row.growth_length_mm,
                 growth_head_mm: row.growth_head_mm,
                 temperature_c: row.temperature_c,
+                temperature_entered: row.temperature_entered,
+                temperature_unit: row.temperature_unit,
                 medication_name: row.medication_name,
                 medication_dose_amount: row.medication_dose_amount,
                 medication_dose_unit: row.medication_dose_unit,

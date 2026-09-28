@@ -894,6 +894,54 @@ fn entered_celsius_round_trips_through_core_and_file() {
 }
 
 #[test]
+fn fahrenheit_temperature_keeps_entered_unit_through_edit_and_restore() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("fahrenheit.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    let child = app.add_child(family, "Baby", 1_790_000_000_001).unwrap();
+    let other = app.add_child(family, "Other", 1_790_000_000_002).unwrap();
+    let time = ActivityTime {
+        start_utc_ms: 1_790_000_000_003,
+        offset_minutes: 0,
+        saved_at_ms: 1_790_000_000_004,
+    };
+    assert!(
+        app.log_temperature_entered(family, child, "98.6", 32, time)
+            .is_err()
+    );
+    assert!(
+        app.log_temperature_entered(family, child, "98e1", 31, time)
+            .is_err()
+    );
+    let id = app
+        .log_temperature_entered(family, child, "98.6", 31, time)
+        .unwrap();
+    let first = &app.timeline(family, child).unwrap()[0];
+    assert_eq!(first.temperature_c.as_deref(), Some("37.00"));
+    assert_eq!(first.temperature_entered.as_deref(), Some("98.6"));
+    assert_eq!(first.temperature_unit, Some(31));
+    assert!(
+        app.edit_temperature_entered(family, other, id, "99", 31, time.saved_at_ms + 1)
+            .is_err()
+    );
+    app.edit_temperature_entered(family, child, id, "99", 31, time.saved_at_ms + 1)
+        .unwrap();
+    let before = app.timeline(family, child).unwrap();
+    assert_eq!(before[0].id, id);
+    assert_eq!(before[0].start_utc_ms, time.start_utc_ms);
+    assert_eq!(before[0].temperature_c.as_deref(), Some("37.22"));
+    assert_eq!(before[0].temperature_entered.as_deref(), Some("99"));
+    assert_eq!(before[0].temperature_unit, Some(31));
+    let backup = app.backup(family, time.saved_at_ms + 2).unwrap();
+    drop(app);
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.timeline(family, child).unwrap(), before);
+    let restored = app.restore(&backup, time.saved_at_ms + 3).unwrap();
+    assert_eq!(app.timeline(restored, child).unwrap(), before);
+}
+
+#[test]
 fn medication_record_preserves_entered_name_and_dose_after_restore() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("medication.db");

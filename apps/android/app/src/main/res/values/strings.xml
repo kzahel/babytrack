@@ -128,8 +128,11 @@
     <string name="growth_length">Growth · %1$d mm</string>
     <string name="log_temperature">Log temperature</string>
     <string name="temperature_c">Temperature (°C)</string>
+    <string name="temperature_f">Temperature (°F)</string>
+    <string name="unit_celsius">°C</string>
+    <string name="unit_fahrenheit">°F</string>
     <string name="save_temperature">Save temperature</string>
-    <string name="temperature_entry">Temperature · %1$s °C</string>
+    <string name="temperature_entry">Temperature · %1$s %2$s</string>
     <string name="log_medication">Log medication</string>
     <string name="medication_name">Medication name</string>
     <string name="dose_amount">Dose amount</string>

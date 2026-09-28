@@ -202,10 +202,11 @@ class TwoDeviceRelayTest {
                 it.kind == "temperature" && it.temperatureC == "37.50"
             })
             val temperature = sharing.snapshot(family).activities.single { it.kind == "temperature" }
-            sharing.editTemperatureC(family, temperature.childId, temperature.id,
-                "37.8", System.currentTimeMillis())
+            sharing.editTemperatureEntered(family, temperature.childId, temperature.id,
+                "99", 31u.toUByte(), System.currentTimeMillis())
             assertTrue(sharing.snapshot(family).activities.any {
-                it.id.contentEquals(temperature.id) && it.temperatureC == "37.8" &&
+                it.id.contentEquals(temperature.id) && it.temperatureC == "37.22" &&
+                    it.temperatureEntered == "99" && it.temperatureUnit == 31u.toUByte() &&
                     it.startUtcMs == temperature.startUtcMs
             })
             assertTrue(sharing.snapshot(family).activities.any {
@@ -376,7 +377,8 @@ class TwoDeviceRelayTest {
                     it.growthHeadMm == 355L
             })
             assertTrue(sharing.snapshot(family).activities.any {
-                it.kind == "temperature" && it.temperatureC == "37.8"
+                it.kind == "temperature" && it.temperatureC == "37.22" &&
+                    it.temperatureEntered == "99" && it.temperatureUnit == 31u.toUByte()
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "diaper" && it.diaperKind == 2u.toUByte()

@@ -549,7 +549,15 @@ boundaries. Browser recipient credentials, more clients, and the bounded
 fault matrix remain open.
 The browser IndexedDB harness now replays a signed same-epoch invitation
 through the Rust authority and data view after reload. A rotation still
-requires verified new epoch keys and is outside this initial-manager path.
+requires verified new epoch keys. A fixture surviving manager now replays
+the signed removal at epoch two only after its addressed grant, full
+keyring, and membership verify; Chromium reopens the view from IndexedDB
+at cursor nine after reload. A tampered keyring or missing agreement secret
+keeps the ready cursor at eight. A disposable relay now serves that signed
+fixture chain and accepts a fresh browser-authored epoch-two batch, which
+Chromium reopens at cursor ten. Dynamic native/browser rotation and
+old-epoch uncertain outbox repair remain open before the browser blocker
+closes.
 Its real-relay queue case uses two distinct dependent edits, loses the
 response after the first queued upload is accepted, and checks that the
 saved envelope is retried exactly after reload before the final edit drains.

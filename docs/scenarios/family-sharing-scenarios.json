@@ -1132,6 +1132,7 @@
       "variants": [
         "old batch accepted before cutover",
         "old batch rejected after cutover",
+        "Charlie is a browser client and reopens verified history after rotation",
         "signed stale-epoch result names rotation cursor R, but another accepted entry reaches R+1 before result query",
         "restart before the client persists the queried result"
       ]

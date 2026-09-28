@@ -448,15 +448,16 @@ impl WasmInvitation {
     }
 }
 
-/// Epoch-one initial manager data view. The signed genesis, committed
-/// manifest objects, key commitment, and every batch receipt must verify
-/// before record fields become visible. Same-epoch authority changes can
-/// advance this view; rotation requires a separately verified keyring.
+/// Data view rooted in a verified epoch-one key. Rotation objects and the
+/// complete keyring are checked by the shared Rust authority path before a
+/// later epoch or its records become usable.
 #[wasm_bindgen]
 pub struct WasmInitialFamily {
     genesis: Vec<u8>,
     relay_public_key: [u8; 32],
     epoch_key: [u8; 32],
+    agreement_private: Option<[u8; 32]>,
+    holder_device_id: Option<[u8; 16]>,
     objects: BTreeMap<[u8; 16], Vec<u8>>,
     ready: Option<InitialReady>,
 }
@@ -466,7 +467,7 @@ struct InitialReady {
     projection: Projection,
     overlay: Option<Projection>,
     overlay_operations: Vec<Operation>,
-    key: VerifiedEpochKey,
+    keys: BTreeMap<u32, VerifiedEpochKey>,
 }
 
 #[wasm_bindgen]
@@ -483,9 +484,26 @@ impl WasmInitialFamily {
             genesis: genesis.to_vec(),
             relay_public_key,
             epoch_key,
+            agreement_private: None,
+            holder_device_id: None,
             objects: BTreeMap::new(),
             ready: None,
         })
+    }
+
+    /// The local holder's agreement secret is needed to open its addressed
+    /// grant after a rotation. It never leaves this browser process.
+    pub fn set_agreement_private(
+        &mut self,
+        device_id: &[u8],
+        private: &[u8],
+    ) -> Result<(), JsError> {
+        if self.ready.is_some() {
+            return Err(JsError::new("ready view already initialized"));
+        }
+        self.agreement_private = Some(fixed(private, "agreement private key")?);
+        self.holder_device_id = Some(fixed(device_id, "holder device ID")?);
+        Ok(())
     }
 
     pub fn add_object(&mut self, object_id: &[u8], object_bytes: &[u8]) -> Result<(), JsError> {
@@ -516,7 +534,7 @@ impl WasmInitialFamily {
             projection,
             overlay: None,
             overlay_operations: Vec::new(),
-            key,
+            keys: BTreeMap::from([(1, key)]),
         });
         Ok(())
     }
@@ -535,8 +553,12 @@ impl WasmInitialFamily {
             .apply_public_batch(envelope_bytes, receipt_bytes)
             .map_err(debug_error)?;
         let mut projection = ready.projection.clone();
+        let key = ready
+            .keys
+            .get(&signed.header().epoch)
+            .ok_or_else(|| JsError::new("verified batch epoch key is missing"))?;
         let outcome = projection
-            .apply_authorized_signed(&signed, &ready.key, chain.last_global_cursor())
+            .apply_authorized_signed(&signed, key, chain.last_global_cursor())
             .map_err(debug_error)?;
         ready.chain = chain;
         ready.projection = projection;
@@ -545,23 +567,76 @@ impl WasmInitialFamily {
         Ok(matches!(outcome, Outcome::Applied))
     }
 
-    /// Replay a signed same-epoch authority change in the global cursor
-    /// stream. A rotation cannot use the initial manager key-only view.
+    /// Replay a signed authority change. Rotation cannot advance the ready
+    /// view without its committed grant, keyring, and membership objects.
     pub fn apply_control(&mut self, committed_bytes: &[u8]) -> Result<(), JsError> {
         let ready = self
             .ready
             .as_mut()
             .ok_or_else(|| JsError::new("manifest objects not yet verified"))?;
         let mut chain = ready.chain.clone();
+        let previous_epoch = chain.epoch().map_err(debug_error)?;
         chain.apply_control(committed_bytes).map_err(debug_error)?;
-        chain
-            .verify_initial_epoch_key(&self.epoch_key)
-            .map_err(debug_error)?;
+        let mut keys = ready.keys.clone();
+        let next_epoch = chain.epoch().map_err(debug_error)?;
+        if next_epoch > previous_epoch {
+            ready_replay::verify_manifest(committed_bytes, &self.objects).map_err(debug_error)?;
+            if next_epoch != previous_epoch + 1 {
+                return Err(JsError::new("rotation skipped an epoch"));
+            }
+            let (transition_id, rotation) = chain
+                .rotation_for_epoch(next_epoch)
+                .ok_or_else(|| JsError::new("verified rotation is missing"))?;
+            let keyring = self
+                .objects
+                .get(&rotation.keyring_id())
+                .ok_or_else(|| JsError::new("rotation keyring is missing"))?;
+            let membership = chain
+                .membership_check(&transition_id)
+                .ok_or_else(|| JsError::new("rotation membership is missing"))?;
+            let membership_object = self
+                .objects
+                .get(&membership.object_id())
+                .ok_or_else(|| JsError::new("rotation membership object is missing"))?;
+            let agreement_private = self
+                .agreement_private
+                .as_ref()
+                .ok_or_else(|| JsError::new("local rotation agreement key is missing"))?;
+            let grants = rotation
+                .grant_ids()
+                .into_iter()
+                .map(|id| {
+                    self.objects
+                        .get(&id)
+                        .cloned()
+                        .map(|object| (id, object))
+                        .ok_or_else(|| JsError::new("rotation grant object is missing"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let rotated = chain
+                .open_rotation_for(
+                    &transition_id,
+                    self.holder_device_id
+                        .ok_or_else(|| JsError::new("rotation holder device ID is missing"))?,
+                    agreement_private,
+                    &grants,
+                    keyring,
+                    membership_object,
+                )
+                .map_err(debug_error)?;
+            for (epoch, prior) in &keys {
+                if rotated.earlier(*epoch) != Some(prior) {
+                    return Err(JsError::new("rotation keyring differs from saved history"));
+                }
+            }
+            keys.insert(next_epoch, rotated.current().clone());
+        }
         let mut projection = ready.projection.clone();
         projection
             .advance_control(chain.last_global_cursor())
             .map_err(debug_error)?;
         ready.chain = chain;
+        ready.keys = keys;
         ready.projection = projection;
         ready.overlay = None;
         ready.overlay_operations.clear();
@@ -627,15 +702,14 @@ impl WasmInitialFamily {
             .ok_or_else(|| JsError::new("manifest objects not yet verified"))?;
         let device_id = fixed(device_id, "device ID")?;
         let signing_seed = fixed(signing_seed, "signing seed")?;
-        if ready.chain.epoch().map_err(debug_error)? != 1
-            || ready
-                .chain
-                .active_signing_public(device_id)
-                .map_err(debug_error)?
-                != crypto::signing_public_key(&signing_seed)
+        if ready
+            .chain
+            .active_signing_public(device_id)
+            .map_err(debug_error)?
+            != crypto::signing_public_key(&signing_seed)
         {
             return Err(JsError::new(
-                "initial device authority differs from credential",
+                "active device authority differs from credential",
             ));
         }
         let operation =
@@ -658,7 +732,7 @@ impl WasmInitialFamily {
             family_id: ready.chain.family_id(),
             relay_id: ready.chain.relay_id(),
             control_head: ready.chain.head_hash(),
-            epoch: 1,
+            epoch: ready.chain.epoch().map_err(debug_error)?,
             batch_id,
             author_device_id: device_id,
             device_sequence: ready
@@ -671,10 +745,15 @@ impl WasmInitialFamily {
                 .try_into()
                 .map_err(|_| JsError::new("operation too large"))?,
         };
+        let epoch = ready.chain.epoch().map_err(debug_error)?;
+        let key = ready
+            .keys
+            .get(&epoch)
+            .ok_or_else(|| JsError::new("active epoch key is missing"))?;
         Ok(batch::seal(
             &header,
             &[operation_bytes.to_vec()],
-            &self.epoch_key,
+            &key.bytes_for_storage(),
             &signing_seed,
         )
         .map_err(debug_error)?

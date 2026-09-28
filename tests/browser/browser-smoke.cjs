@@ -104,6 +104,7 @@ const input = {
   batchResultHex: batchResult.toString('hex'),
   managerDeviceHex: chain.test_only_inputs.manager_device_id_hex,
   managerSeedHex: chain.test_only_inputs.manager_sign_seed_hex,
+  managerAgreementHex: chain.test_only_inputs.manager_agreement_seed_hex,
   recipientDeviceHex: chain.test_only_inputs.recipient_device_id_hex,
   recipientSeedHex: chain.test_only_inputs.recipient_sign_seed_hex,
   recipientAgreementHex: chain.test_only_inputs.recipient_agreement_seed_hex,
@@ -258,6 +259,7 @@ async function run() {
   let invitationRelay;
   let challengeRelay;
   let holderRelay;
+  let rotationRelay;
   try {
     relay = await startRelay();
     relayPort = relay.port;
@@ -524,7 +526,8 @@ async function run() {
       const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
       const store = await PublicStore.open(wasm, 'babytrack-public-pull-smoke');
       await store.saveInitialCredential(data.familyHex, bytes(data.managerDeviceHex),
-        bytes(data.managerSeedHex), bytes(data.controlEpochKeyHex));
+        bytes(data.managerSeedHex), bytes(data.controlEpochKeyHex),
+        bytes(data.managerAgreementHex));
       const write = store.database.transaction('objects', 'readwrite');
       const committed = new Promise((resolve, reject) => {
         write.oncomplete = resolve;
@@ -782,6 +785,7 @@ async function run() {
       const { InvitationStore } = await import('/invitation-store.js');
       const { PublicStore } = await import('/public-store.js');
       const { relayGet } = await import('/relay-get.js');
+      const { relayPost } = await import('/relay-post.js');
       const store = await InvitationStore.open(wasm, fragment, 'babytrack-dynamic-holder-smoke');
       const publicStore = await PublicStore.open(wasm, 'babytrack-dynamic-ready-smoke');
       const pulled = await store.pullPending(relayGet);
@@ -977,7 +981,8 @@ async function run() {
       let shortcutRejected = false;
       try {
         await store.saveInitialCredential(family, bytes(data.recipientDeviceHex),
-          bytes(data.recipientSeedHex), bytes(data.controlEpochKeyHex));
+          bytes(data.recipientSeedHex), bytes(data.controlEpochKeyHex),
+          bytes(data.recipientAgreementHex));
       } catch { shortcutRejected = true; }
       let missingGrantRejected = false;
       try {
@@ -1077,7 +1082,8 @@ async function run() {
         objectId: data.controlPromotionIdHex, bytes: bytes(data.controlPromotionHex) });
       await objectCommitted;
       await store.saveInitialCredential(family, bytes(data.managerDeviceHex),
-        bytes(data.managerSeedHex), bytes(data.controlEpochKeyHex));
+        bytes(data.managerSeedHex), bytes(data.controlEpochKeyHex),
+        bytes(data.managerAgreementHex));
       const progress = await store.pullSaved(family, relayGet);
       const ready = await store.loadInitialReadySaved(family);
       const child = bytes('0183f9d0000070008000000000000001');
@@ -1126,13 +1132,14 @@ async function run() {
       wrongKey[0] ^= 1;
       let wrongKeyRejected = false;
       try { await store.saveInitialCredential(family, bytes(data.managerDeviceHex),
-        bytes(data.managerSeedHex), wrongKey); }
+        bytes(data.managerSeedHex), wrongKey, bytes(data.managerAgreementHex)); }
       catch { wrongKeyRejected = true; }
       let noCredentialAfterDenial = false;
       try { await store.initialCredential(family); }
       catch { noCredentialAfterDenial = true; }
       await store.saveInitialCredential(family, bytes(data.managerDeviceHex),
-        bytes(data.managerSeedHex), bytes(data.epochKeyHex));
+        bytes(data.managerSeedHex), bytes(data.epochKeyHex),
+        bytes(data.managerAgreementHex));
       const progress = await store.pullSaved(family, relayGet);
       const fetched = await store.hydrateGenesisSaved(family, relayGet);
       let invalidLocalRejected = false;
@@ -1159,6 +1166,7 @@ async function run() {
       relayPublicHex: input.relayPublicHex,
       managerDeviceHex: input.managerDeviceHex,
       managerSeedHex: input.managerSeedHex,
+      managerAgreementHex: input.managerAgreementHex,
       epochKeyHex: genesis.inputs.epoch_key_hex,
       operationHex: acceptedBatch.inputs.operation_cbor_hex,
       invalidLocalOperationHex: preCreateSet.replaceAll('723e4567e89b42d3a456426614174000',
@@ -1383,12 +1391,128 @@ async function run() {
     assert.deepEqual(drainedQueue, { cursor: 6, noMoreVisible: true, queuedBefore: 1,
       visibleBefore: '664c6174657221', retriedExact: true,
       pendingAfter: false, queuedAfter: 0, childNameCbor: '664c6174657221' });
+    // FS48: verified rotation and its keyring survive an IndexedDB reopen.
+    const rotationSaved = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+      const store = await PublicStore.open(wasm, 'babytrack-rotation-smoke');
+      const family = await store.begin(bytes(data.genesis), bytes(data.relayPublic));
+      await store.saveInitialCredential(family, bytes(data.device), bytes(data.seed),
+        bytes(data.key), bytes(data.agreement));
+      const write = store.database.transaction('objects', 'readwrite');
+      const done = new Promise((resolve, reject) => {
+        write.oncomplete = resolve;
+        write.onabort = () => reject(write.error);
+      });
+      for (const [id, object] of Object.entries(data.objects)) {
+        write.objectStore('objects').add({ family, objectId: id, bytes: bytes(object) });
+      }
+      await done;
+      for (const control of data.controls.slice(1, 7)) {
+        await store.append(family, 'control', bytes(control));
+      }
+      await store.append(family, 'batch', bytes(data.envelope), bytes(data.receipt));
+      await store.append(family, 'control', bytes(data.controls[7]));
+      const ready = await store.loadInitialReadySaved(family);
+      const result = { family, cursor: Number(ready.last_cursor()),
+        type: ready.record_type(bytes(data.child)) };
+      ready.free();
+      store.close();
+      return result;
+    }, {
+      genesis: chain.transitions[0].committed_cbor_hex,
+      relayPublic: genesis.expect.relay_public_key_hex,
+      device: input.managerDeviceHex, seed: input.managerSeedHex,
+      agreement: input.managerAgreementHex, key: input.controlEpochKeyHex,
+      controls: chain.transitions.map((row) => row.committed_cbor_hex),
+      envelope: chain.batch.envelope_cbor_hex,
+      receipt: chain.batch.receipt_cbor_hex,
+      objects: chain.objects_by_id_hex,
+      child: '0183f9d0000070008000000000000001',
+    });
+    assert.deepEqual(rotationSaved, { family: chain.test_only_inputs.family_id_hex,
+      cursor: 9, type: 'child' });
+    await page.reload();
+    const rotationReopened = await page.evaluate(async (family) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const store = await PublicStore.open(wasm, 'babytrack-rotation-smoke');
+      const ready = await store.loadInitialReadySaved(family);
+      const result = Number(ready.last_cursor());
+      ready.free();
+      store.close();
+      return result;
+    }, rotationSaved.family);
+    assert.equal(rotationReopened, 9);
+    rotationRelay = await startRelay(true, 8);
+    relayPort = rotationRelay.port;
+    const liveRotation = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const { relayPost } = await import('/relay-post.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g),
+        (pair) => parseInt(pair, 16));
+      const store = await PublicStore.open(wasm, 'babytrack-live-rotation-smoke');
+      const family = await store.begin(bytes(data.genesis), bytes(data.relayPublic));
+      await store.saveInitialCredential(family, bytes(data.device), bytes(data.seed),
+        bytes(data.key), bytes(data.agreement));
+      const progress = await store.pullSaved(family, relayGet);
+      const genesisObjects = await store.hydrateGenesisSaved(family, relayGet);
+      const controlObjects = await store.hydrateControlObjectsSaved(family, relayGet);
+      const ready = await store.loadInitialReadySaved(family);
+      const result = { ...progress, genesisObjects, controlObjects,
+        readyCursor: Number(ready.last_cursor()),
+        child: ready.record_type(bytes(data.child)) };
+      ready.free();
+      await store.stageInitial(family, bytes(data.operation));
+      const upload = await store.uploadInitial(family, relayPost, relayGet);
+      const after = await store.loadInitialReadySaved(family);
+      result.uploadCursor = upload.cursor;
+      result.afterCursor = Number(after.last_cursor());
+      result.managerRecord = after.record_type(bytes(family));
+      after.free();
+      store.close();
+      return result;
+    }, {
+      genesis: chain.transitions[0].committed_cbor_hex,
+      relayPublic: genesis.expect.relay_public_key_hex,
+      device: input.managerDeviceHex, seed: input.managerSeedHex,
+      agreement: input.managerAgreementHex, key: input.controlEpochKeyHex,
+      child: '0183f9d0000070008000000000000001',
+      operation: acceptedBatch.inputs.operation_cbor_hex,
+    });
+    assert.deepEqual(liveRotation, { cursor: 9, noMoreVisible: true,
+      genesisObjects: 1, controlObjects: 10, readyCursor: 9, child: 'child',
+      uploadCursor: 10, afterCursor: 10, managerRecord: 'family' });
+    await page.reload();
+    const liveRotationReload = await page.evaluate(async () => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const store = await PublicStore.open(wasm, 'babytrack-live-rotation-smoke');
+      const families = await new Promise((resolve, reject) => {
+        const request = store.database.transaction('families').objectStore('families').getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const ready = await store.loadInitialReadySaved(families[0].family);
+      const cursor = Number(ready.last_cursor());
+      ready.free();
+      store.close();
+      return cursor;
+    });
+    assert.equal(liveRotationReload, 10);
     await context.close();
     console.log('browser wasm + IndexedDB journal, queued offline edits, bidirectional native/browser encrypted exchange, durable retry, reload, rollback, and Family isolation: OK');
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));
-    for (const instance of [recipientRelay, holderRelay, challengeRelay, invitationRelay, relay]) {
+    for (const instance of [rotationRelay, recipientRelay, holderRelay, challengeRelay, invitationRelay, relay]) {
       if (!instance) continue;
       if (instance.child.exitCode == null) {
         const stopped = new Promise((resolve) => instance.child.once('exit', resolve));

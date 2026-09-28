@@ -35,6 +35,9 @@ transcripts. The object-free cancellation, role-change, and pending-removal
 bytes are checked by the Rust control-chain test; other platform runners
 have not consumed them yet. `INVSTAT01` runs through the shared Rust core
 and the Kotlin and Swift production bindings, including signature tampering.
+The wasm and Chromium harnesses now consume the contiguous chain through
+its first rotation, with the signed receipt, grant, keyring, membership, and
+reload checks. This is a selected chain case, not full vector coverage.
 Negative state-machine cases remain in the smaller JSON files.
 Cryptographic test keys
 must never be production keys.

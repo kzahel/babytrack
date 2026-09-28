@@ -149,6 +149,76 @@ controlFamily.apply_control(page.entry_bytes(0));
 assert.equal(controlFamily.last_cursor(), 2n);
 page.free();
 controlFamily.free();
+
+// FS48: a surviving manager reopens the same verified record view after
+// removal rotates the Family to epoch two. The keyring and membership must
+// verify before the rotation cursor becomes data-ready.
+const rotatedFixture = () => {
+  const view = new WasmInitialFamily(
+    hex(chain.transitions[0].committed_cbor_hex),
+    hex(genesis.expect.relay_public_key_hex),
+    hex(chain.test_only_inputs.epoch_1_key_hex),
+  );
+  for (const [id, object] of Object.entries(chain.objects_by_id_hex)) {
+    view.add_object(hex(id), hex(object));
+  }
+  view.finish();
+  for (const control of chain.transitions.slice(1, 7)) {
+    view.apply_control(hex(control.committed_cbor_hex));
+  }
+  view.apply_batch(hex(chain.batch.envelope_cbor_hex), hex(chain.batch.receipt_cbor_hex));
+  return view;
+};
+const missingAgreement = rotatedFixture();
+assert.equal(missingAgreement.last_cursor(), 8n);
+assert.throws(() => missingAgreement.apply_control(
+  hex(chain.transitions[7].committed_cbor_hex)), /agreement key/);
+assert.equal(missingAgreement.last_cursor(), 8n);
+missingAgreement.free();
+const damagedKeyring = new WasmInitialFamily(
+  hex(chain.transitions[0].committed_cbor_hex),
+  hex(genesis.expect.relay_public_key_hex),
+  hex(chain.test_only_inputs.epoch_1_key_hex),
+);
+damagedKeyring.set_agreement_private(
+  hex(chain.test_only_inputs.manager_device_id_hex),
+  hex(chain.test_only_inputs.manager_agreement_seed_hex),
+);
+const keyringId = chain.transitions[7].manifest.find((object) => object[0] === 5)[1];
+for (const [id, object] of Object.entries(chain.objects_by_id_hex)) {
+  const value = hex(object);
+  if (id === keyringId) value[value.length - 1] ^= 1;
+  damagedKeyring.add_object(hex(id), value);
+}
+damagedKeyring.finish();
+for (const control of chain.transitions.slice(1, 7)) {
+  damagedKeyring.apply_control(hex(control.committed_cbor_hex));
+}
+damagedKeyring.apply_batch(hex(chain.batch.envelope_cbor_hex), hex(chain.batch.receipt_cbor_hex));
+assert.throws(() => damagedKeyring.apply_control(hex(chain.transitions[7].committed_cbor_hex)));
+assert.equal(damagedKeyring.last_cursor(), 8n);
+damagedKeyring.free();
+const reopened = new WasmInitialFamily(
+  hex(chain.transitions[0].committed_cbor_hex),
+  hex(genesis.expect.relay_public_key_hex),
+  hex(chain.test_only_inputs.epoch_1_key_hex),
+);
+reopened.set_agreement_private(
+  hex(chain.test_only_inputs.manager_device_id_hex),
+  hex(chain.test_only_inputs.manager_agreement_seed_hex),
+);
+for (const [id, object] of Object.entries(chain.objects_by_id_hex)) {
+  reopened.add_object(hex(id), hex(object));
+}
+reopened.finish();
+for (const control of chain.transitions.slice(1, 7)) {
+  reopened.apply_control(hex(control.committed_cbor_hex));
+}
+reopened.apply_batch(hex(chain.batch.envelope_cbor_hex), hex(chain.batch.receipt_cbor_hex));
+reopened.apply_control(hex(chain.transitions[7].committed_cbor_hex));
+assert.equal(reopened.last_cursor(), 9n);
+assert.equal(reopened.record_type(hex('0183f9d0000070008000000000000001')), 'child');
+reopened.free();
 publicFamily.free();
 denied.free();
 const afterControl = new WasmFamily(familyId);

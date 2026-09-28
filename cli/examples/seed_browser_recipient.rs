@@ -59,7 +59,7 @@ fn main() {
         .unwrap_or_else(|| "6".to_owned())
         .parse()
         .unwrap();
-    assert!((2..=6).contains(&transitions));
+    assert!((2..=8).contains(&transitions));
     let fixture: Json =
         serde_json::from_str(include_str!("../../tests/vectors/contiguous-chain-v1.json")).unwrap();
     let inputs = &fixture["test_only_inputs"];
@@ -68,6 +68,19 @@ fn main() {
     let mut relay = RelayStore::open(path, relay_seed).unwrap();
 
     for index in 0..transitions {
+        if index == 7 {
+            let batch = &fixture["batch"];
+            let response = relay
+                .commit_batch(family, &hex(batch["envelope_cbor_hex"].as_str().unwrap()))
+                .unwrap();
+            let Value::Map(result) = cbor::decode(&response).unwrap() else {
+                panic!("batch result not map");
+            };
+            assert_eq!(
+                result[1].1,
+                Value::Bytes(hex(batch["receipt_cbor_hex"].as_str().unwrap()))
+            );
+        }
         let transition = &fixture["transitions"][index];
         let body = candidate(transition);
         let Value::Map(parts) = cbor::decode(&body).unwrap() else {
@@ -99,6 +112,9 @@ fn main() {
                 5 => relay
                     .stage_first_admission_object(family, id, &staging)
                     .unwrap(),
+                6 | 7 => relay
+                    .stage_general_control_object(family, id, &staging)
+                    .unwrap(),
                 _ => panic!("unexpected staged object"),
             };
         }
@@ -120,6 +136,9 @@ fn main() {
                 .unwrap(),
             5 => relay
                 .commit_first_admission(family, &body, commit_time(transition))
+                .unwrap(),
+            6 | 7 => relay
+                .commit_general_control_with_clock(family, &body, || Ok(commit_time(transition)))
                 .unwrap(),
             _ => unreachable!(),
         };

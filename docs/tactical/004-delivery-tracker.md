@@ -62,8 +62,13 @@ uploads an encrypted child after reload. Its earlier admission controls are
 fixture-fed. A separate browser invitation path now verifies a live relay
 prefix, saves a Rust-built claim and device keys before POST, retries
 the exact candidate after a lost result, and polls as the pending device.
-Later epochs, rejection repair, and offline
-fault cases remain open.
+Later-device admission after rotation, rejection repair, and offline fault
+cases remain open.
+Chromium now also replays the published rotation through a disposable relay,
+fetches its committed grant, keyring, and membership objects, authors an
+epoch-two batch, and reopens that accepted history after reload. Dynamic
+native/browser rotation and old-epoch pending-batch repair remain for the
+M0 exit gate.
 The wasm proof builder now
 checks a relay-fetched committed challenge object and matches the published
 proof bytes from fixture-fed prior controls. A separate browser case saves

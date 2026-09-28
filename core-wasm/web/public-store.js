@@ -102,7 +102,10 @@ export class PublicStore {
     return replay(this.wasm, metadata, rows);
   }
 
-  async saveInitialCredential(family, deviceId, signingSeed, epochKey) {
+  async saveInitialCredential(family, deviceId, signingSeed, epochKey, agreementPrivate) {
+    if (agreementPrivate?.length !== 32) {
+      throw new Error('Initial manager agreement key is required for rotation');
+    }
     const publicVerifier = await this.load(family);
     try {
       if (!sameBytes(publicVerifier.initial_manager_device_id(), deviceId)) {
@@ -125,6 +128,7 @@ export class PublicStore {
     transaction.objectStore('credentials').put({
       family, deviceId: Uint8Array.from(deviceId), signingSeed: Uint8Array.from(signingSeed),
       epochKey: Uint8Array.from(epochKey),
+      agreementPrivate: Uint8Array.from(agreementPrivate),
     });
     await done;
   }
@@ -199,7 +203,8 @@ export class PublicStore {
 
   async loadInitialReadySaved(family) {
     const row = await this.initialCredential(family);
-    const ready = await this.loadInitialReady(family, row.epochKey);
+    const ready = await this.loadInitialReady(family, row.epochKey,
+      row.deviceId, row.agreementPrivate);
     try {
       const pending = await this.pendingInitial(family);
       if (pending) ready.preview_one(pending.operation, row.deviceId);
@@ -239,7 +244,8 @@ export class PublicStore {
       throw new Error('Earlier browser edits are waiting for upload');
     }
     const credential = await this.initialCredential(family);
-    const ready = await this.loadInitialReady(family, credential.epochKey);
+    const ready = await this.loadInitialReady(family, credential.epochKey,
+      credential.deviceId, credential.agreementPrivate);
     let envelope, cursor, head;
     try {
       envelope = ready.prepare_one(operationBytes, credential.deviceId, credential.signingSeed);
@@ -302,7 +308,8 @@ export class PublicStore {
       throw new Error('Browser edit is already pending');
     }
     const credential = await this.initialCredential(family);
-    const ready = await this.loadInitialReady(family, credential.epochKey);
+    const ready = await this.loadInitialReady(family, credential.epochKey,
+      credential.deviceId, credential.agreementPrivate);
     let cursor, head;
     try {
       cursor = Number(ready.last_cursor());
@@ -345,7 +352,8 @@ export class PublicStore {
     const operations = await this.queuedInitial(family);
     if (!operations.length) return null;
     const credential = await this.initialCredential(family);
-    const ready = await this.loadInitialReady(family, credential.epochKey);
+    const ready = await this.loadInitialReady(family, credential.epochKey,
+      credential.deviceId, credential.agreementPrivate);
     let envelope, cursor, head;
     try {
       envelope = ready.prepare_one(operations[0], credential.deviceId, credential.signingSeed);
@@ -437,7 +445,48 @@ export class PublicStore {
     }
   }
 
-  async loadInitialReady(family, epochKey) {
+  // Fetch every manifest-bound control object needed to rebuild the ready
+  // view, including rotation grants, keyring, and membership. The Rust core
+  // checks each response against its committed control before persistence.
+  async hydrateControlObjectsSaved(family, get) {
+    const credential = await this.initialCredential(family);
+    const read = this.database.transaction(['entries', 'objects'], 'readonly');
+    const rowsRequest = read.objectStore('entries').getAll(
+      IDBKeyRange.bound([family, 1], [family, Number.MAX_SAFE_INTEGER]),
+    );
+    const storedRequest = read.objectStore('objects').getAll(
+      IDBKeyRange.bound([family, ''], [family, 'f'.repeat(32)]),
+    );
+    const [rows, stored] = await Promise.all([requestResult(rowsRequest), requestResult(storedRequest)]);
+    const present = new Set(stored.map((row) => row.objectId));
+    const verifier = await this.load(family);
+    let fetched = 0;
+    try {
+      for (const row of rows) {
+        if (row.kind !== 'control') continue;
+        const ids = this.wasm.manifest_object_ids(row.bytes);
+        for (let offset = 0; offset < ids.length; offset += 16) {
+          const id = ids.slice(offset, offset + 16);
+          const objectId = hex(id);
+          if (present.has(objectId)) continue;
+          const path = `/v1/families/${family}/objects/${objectId}`;
+          const auth = verifier.sign_get(credential.deviceId, credential.signingSeed, path,
+            crypto.getRandomValues(new Uint8Array(16)));
+          const response = await get(path, auth);
+          const object = this.wasm.verified_manifest_object(row.bytes, id, response);
+          const write = this.database.transaction('objects', 'readwrite');
+          const done = transactionDone(write);
+          write.objectStore('objects').add({ family, objectId, bytes: object });
+          await done;
+          present.add(objectId);
+          fetched++;
+        }
+      }
+      return fetched;
+    } finally { verifier.free(); }
+  }
+
+  async loadInitialReady(family, epochKey, deviceId = null, agreementPrivate = null) {
     const transaction = this.database.transaction(['families', 'entries', 'objects'], 'readonly');
     const metadataRequest = transaction.objectStore('families').get(family);
     const entriesRequest = transaction.objectStore('entries').getAll(
@@ -454,6 +503,10 @@ export class PublicStore {
     let ready;
     try {
       ready = new this.wasm.WasmInitialFamily(metadata.genesis, metadata.relayPublicKey, epochKey);
+      if (agreementPrivate != null) {
+        if (deviceId == null) throw new Error('Rotation holder device ID is absent');
+        ready.set_agreement_private(deviceId, agreementPrivate);
+      }
       for (const row of objects) ready.add_object(bytes(row.objectId), row.bytes);
       ready.finish();
       for (const row of rows) {

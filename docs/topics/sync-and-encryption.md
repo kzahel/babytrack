@@ -358,7 +358,17 @@ agreement, and epoch keys together. After reload, Chromium uploads that
 recipient's encrypted child operation and clears its outbox only after
 signed acceptance. That narrow recipient test uses fixture-fed control
 ancestry; the dynamic browser/native join above covers claim and proof over
-HTTP. Rotation, queued-edit repair after rejection, and broader independent
+HTTP. The browser's Rust ready replay now opens a surviving holder's
+addressed rotation grant, complete keyring, and membership object before
+applying the new epoch. IndexedDB retains the agreement secret and
+manifest-bound objects, so a fixture manager can reopen verified history
+after rotation and reload; a tampered keyring leaves the ready cursor at the
+earlier epoch. A disposable real relay now serves the fixture chain to
+Chromium, including the signed batch and rotation objects. The browser
+verifies them, writes a new epoch-two batch, and reopens at its accepted
+cursor after reload. This does not yet prove a dynamic browser/native
+rotation or resolve an uncertain old-epoch outbox batch. Browser admission after
+rotation, queued-edit repair after rejection, and broader independent
 CLI/browser fault coverage remain open.
 The first Android sharing flow uses foreground polling and scheduled
 background work. FCM and APNs may later provide empty background wakes through

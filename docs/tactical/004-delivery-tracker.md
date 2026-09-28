@@ -30,8 +30,10 @@ grants to a third device, then removes it with key rotation, through relay
 HTTP and Android instrumentation. The same manager removes the original
 manager in a second rotation and continues writing at epoch three.
 The removed original manager now verifies its own removal and saves pending
-work into a private copy through the core. The tracker excludes the removed
-source from writable Family selection and offers an access-ended copy action.
+work into a private copy through the core. The tracker excludes removed
+sources from writable Family selection and offers an access-ended copy action
+for managers and recipients. A removed recipient without pending edits can
+copy its held history and continue locally.
 Pending-device removal, admitted-manager cancellation coverage, general browser shared
 outbox, complete vector coverage, and the M0 exit review remain open.
 The browser now persists a Rust-verified public control and accepted-batch
@@ -115,7 +117,7 @@ scrolls to that action; the complete local recovery flow and remote run
 | Next dependent slice | The first-cohort recheck and [focused general-authority advisory](003-m0-foundation.md#general-authority-advisory-pass-at-98fa0ea) passed. Relay restart replays public controls and accepted batch authority; a signed private checkpoint covers rejected-result and staging-reservation sets. Signed GETs, batch POSTs, manager controls, and later control HTTP writes use that ledger under a SQLite writer lock. Later enrollment after removal and epoch rotation passes on separate emulators. A second admitted manager now invites, grants, and removes a third device through relay HTTP and Android instrumentation, then removes the original manager in a second rotation and writes at epoch three. An initial manager can cancel an unused invitation. An admitted manager can promote and demote an active device, and the recipient verifies the role after sync. Pending-device removal, admitted-manager cancellation coverage, browser outbox beyond the initial manager, and M0 exit review remain. |
 | Next independent review | Run one broader end-of-M0 recovery and mixed-client gate after its executable coverage closes. Focused advisory findings remain open without serial rechecks during feature development. Prioritize usable tracking and browser shared sync before another review cycle. |
 | Open advisory | The [automatic-status recheck](003-m0-foundation.md#advisory-automatic-status-recheck-at-ad42d78) found an own-claim lost-response ambiguity and a concurrent status-write race. FS37/FS77 regressions and repair remain due before real Family data. Durable streaming of large control history also remains open. |
-| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, local Android UI smoke, and document-picker recovery jobs are required on every push/PR. Run `36372579478` at `3d0662d` exposed a UI accessibility scan that missed the join button. The scan now searches both directions. Run `36375535489` at `4fa6462` passed every required job, including the 14-test real-relay emulator suite. The later browser staged-edit assertion passed locally; its next remote run remains due. Physical phones and the M0 exit gate remain open. |
+| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, local Android UI smoke, and document-picker recovery jobs are required on every push/PR. Run `36375535489` at `4fa6462` passed every required job, including the 14-test real-relay emulator suite. Run `36377416630` at `938387f` passed the non-emulator jobs but failed to find the deep-link join action in the long tracker screen. Opening an invitation now puts its join card first; the focused one-action UI test and full 14-test relay suite pass locally. A new remote run remains due. Physical phones and the M0 exit gate remain open. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.

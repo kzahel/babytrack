@@ -37,8 +37,8 @@ password-protected backups and restores either into a new local Family.
    label devices on this phone, change admitted roles, cancel an unused link,
    or remove an admitted device. Removal rotates the Family key. After
    verifying removal, a device stops shared writes and preserves pending
-   edits in a private Family copy. The removed original manager also sees an
-   access-ended card with a private-copy action.
+   edits in a private Family copy. Removed devices also see an access-ended
+   card that opens or creates a private copy of locally held history.
 
 The relay and public key are manual debug setup. Debug builds allow local
 cleartext HTTP; the release manifest does not. Physical two-phone use and

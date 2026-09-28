@@ -363,7 +363,11 @@ internal fun loadTrackerData(
     val activeLocal = local.filterNot { candidate ->
         removedLocal.any { it.familyId.contentEquals(candidate.familyId) }
     }
-    val recipients = sharing.recipientFamilies()
+    val allRecipients = sharing.recipientFamilies()
+    val removedRecipients = allRecipients.filter(sharing::isRemoved)
+    val recipients = allRecipients.filterNot { candidate ->
+        removedRecipients.any { it.familyId.contentEquals(candidate.familyId) }
+    }
     val recipient = recipients.find { it.familyId.key() == selectedRecipient } ?: recipients.firstOrNull()
     val readyJoined = recipients.mapNotNull { candidate ->
         runCatching { candidate to sharing.snapshot(candidate) }.getOrNull()
@@ -398,7 +402,8 @@ internal fun loadTrackerData(
             ?: store.timeline(family, child.id)
     } else emptyList()
     return ScreenData(
-        shown, removedLocal, familyChildNames, family?.familyId?.key(), localFamily, kids, history,
+        shown, (removedLocal + removedRecipients).distinctBy { it.familyId.key() },
+        familyChildNames, family?.familyId?.key(), localFamily, kids, history,
         if (!shared) family?.let(store::revision) ?: 0uL else 0uL,
         if (!shared) family?.let(store::restoredOrigin) else null,
         shared, snapshot, recipients, joinedSnapshot, unusedInvitationIds,
@@ -765,6 +770,8 @@ private fun TrackerScreen(
     val filename = stringResource(R.string.backup_filename)
     val protectedFilename = stringResource(R.string.protected_backup_filename)
     val scrollState = rememberScrollState()
+    val joinFirst = incomingInvitation != null &&
+        (receivedFragment.isNotBlank() || sharedSnapshot == null)
     var timelineTop by remember { mutableStateOf(0) }
     fun logTime(): ActivityWhen = activityWhen(logAtMs ?: System.currentTimeMillis())
     fun resetLogTime(savedAt: Long?) {
@@ -808,10 +815,78 @@ private fun TrackerScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
+        val joinControls: @Composable () -> Unit = {
+            if (BuildConfig.DEBUG) {
+                if (!showJoinForm && recipientFamilies.isEmpty()) OutlinedButton(
+                    onClick = { showJoinForm = true },
+                ) { Text(stringResource(R.string.join_family)) }
+                else Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(stringResource(R.string.dev_join_title), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.dev_join_description))
+                        recipientFamilies.forEachIndexed { index, recipient ->
+                            FilterChip(
+                                selected = recipient.familyId.key() == selectedRecipient,
+                                onClick = { selectedRecipient = recipient.familyId.key() },
+                                label = { Text(stringResource(R.string.joined_family_number, index + 1)) },
+                            )
+                        }
+                        OutlinedTextField(
+                            value = receivedFragment,
+                            onValueChange = { receivedFragment = it },
+                            label = { Text(stringResource(R.string.received_fragment)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Button(enabled = !joinInProgress &&
+                            (receivedFragment.isNotBlank() || selectedRecipient != null &&
+                                sharedSnapshot?.family?.familyId?.key() != selectedRecipient), onClick = {
+                            joinInProgress = true
+                            joinStage = context.getString(R.string.join_preparing)
+                            scope.launch {
+                                runCatching {
+                                    withContext(Dispatchers.IO) {
+                                        val recipient = recipientFamilies.find { it.familyId.key() == selectedRecipient }
+                                        val prepared = if (receivedFragment.isNotBlank()) sharing.claim(receivedFragment.trim())
+                                            else sharing.retryClaim(recipient ?: error("No saved recipient claim"))
+                                        prepared to runCatching { sharing.advanceRecipient(prepared.family) }
+                                    }
+                                }.onSuccess { (prepared, result) ->
+                                    selectedRecipient = prepared.family.familyId.key()
+                                    receivedFragment = ""
+                                    version++
+                                    val progress = result.getOrNull()
+                                    joinStage = when {
+                                        progress?.ready == true -> context.getString(R.string.history_ready_auto)
+                                        progress?.awaitingGrant == true -> pendingRecipientMessage(context, progress)
+                                        progress != null -> context.getString(R.string.history_pending, progress.verifiedCursor.toLong())
+                                        result.exceptionOrNull() is InvitationTerminal -> terminalInvitationMessage(
+                                            context, (result.exceptionOrNull() as InvitationTerminal).reason)
+                                        else -> context.getString(R.string.join_progress_delayed)
+                                    }
+                                    message = null
+                                }.onFailure { failure ->
+                                    joinStage = (failure as? InvitationTerminal)?.reason
+                                        ?.let { terminalInvitationMessage(context, it) }
+                                        ?: context.getString(R.string.join_retry)
+                                    message = if (failure is InvitationTerminal) null else errorText
+                                    version++
+                                }
+                                joinInProgress = false
+                            }
+                        }) { Text(stringResource(R.string.join_or_retry)) }
+                        joinStage?.let { Text(it) }
+                    }
+                }
+            }
+        }
         Column(
             modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(scrollState).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            if (joinFirst) joinControls()
             Text(stringResource(if (activeShared) R.string.shared_family else R.string.local_only), style = MaterialTheme.typography.labelMedium)
             if (automaticSyncDelayed && !automaticSyncBlocked) Text(stringResource(R.string.automatic_sync_delayed))
             if (automaticSyncBlocked) Text(
@@ -970,7 +1045,7 @@ private fun TrackerScreen(
                                     message = context.getString(R.string.private_copy_created)
                                 }.onFailure { message = errorText }
                             }
-                        }) { Text(stringResource(R.string.make_private_copy)) }
+                        }) { Text(stringResource(R.string.continue_in_private_copy)) }
                     }
                 }
             }
@@ -986,71 +1061,7 @@ private fun TrackerScreen(
                 }
             }) { Text(stringResource(R.string.new_family)) }
 
-            if (BuildConfig.DEBUG) {
-                if (!showJoinForm && recipientFamilies.isEmpty()) OutlinedButton(
-                    onClick = { showJoinForm = true },
-                ) { Text(stringResource(R.string.join_family)) }
-                else Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(stringResource(R.string.dev_join_title), style = MaterialTheme.typography.titleMedium)
-                        Text(stringResource(R.string.dev_join_description))
-                        recipientFamilies.forEachIndexed { index, recipient ->
-                            FilterChip(
-                                selected = recipient.familyId.key() == selectedRecipient,
-                                onClick = { selectedRecipient = recipient.familyId.key() },
-                                label = { Text(stringResource(R.string.joined_family_number, index + 1)) },
-                            )
-                        }
-                        OutlinedTextField(
-                            value = receivedFragment,
-                            onValueChange = { receivedFragment = it },
-                            label = { Text(stringResource(R.string.received_fragment)) },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Button(enabled = !joinInProgress &&
-                            (receivedFragment.isNotBlank() || selectedRecipient != null &&
-                                sharedSnapshot?.family?.familyId?.key() != selectedRecipient), onClick = {
-                            joinInProgress = true
-                            joinStage = context.getString(R.string.join_preparing)
-                            scope.launch {
-                                runCatching {
-                                    withContext(Dispatchers.IO) {
-                                        val recipient = recipientFamilies.find { it.familyId.key() == selectedRecipient }
-                                        val prepared = if (receivedFragment.isNotBlank()) sharing.claim(receivedFragment.trim())
-                                            else sharing.retryClaim(recipient ?: error("No saved recipient claim"))
-                                        prepared to runCatching { sharing.advanceRecipient(prepared.family) }
-                                    }
-                                }.onSuccess { (prepared, result) ->
-                                    selectedRecipient = prepared.family.familyId.key()
-                                    receivedFragment = ""
-                                    version++
-                                    val progress = result.getOrNull()
-                                    joinStage = when {
-                                        progress?.ready == true -> context.getString(R.string.history_ready_auto)
-                                        progress?.awaitingGrant == true -> pendingRecipientMessage(context, progress)
-                                        progress != null -> context.getString(R.string.history_pending, progress.verifiedCursor.toLong())
-                                        result.exceptionOrNull() is InvitationTerminal -> terminalInvitationMessage(
-                                            context, (result.exceptionOrNull() as InvitationTerminal).reason)
-                                        else -> context.getString(R.string.join_progress_delayed)
-                                    }
-                                    message = null
-                                }.onFailure { failure ->
-                                    joinStage = (failure as? InvitationTerminal)?.reason
-                                        ?.let { terminalInvitationMessage(context, it) }
-                                        ?: context.getString(R.string.join_retry)
-                                    message = if (failure is InvitationTerminal) null else errorText
-                                    version++
-                                }
-                                joinInProgress = false
-                            }
-                        }) { Text(stringResource(R.string.join_or_retry)) }
-                        joinStage?.let { Text(it) }
-                    }
-                }
-            }
+            if (!joinFirst) joinControls()
 
             if (family != null && activeFamilyIsLocal) {
                 if (BuildConfig.DEBUG) {

@@ -173,6 +173,9 @@ The join card remains a developer link-entry and pending-stage surface until
 the ordinary sharing UI gate. A focused real-relay emulator UI check opens a
 fresh invitation link, taps that one action, and verifies the recipient claim
 is committed and saved; the coordinator suites cover the later handshake.
+Deep links place this join card first until history is ready, so the one
+action and pending stage are visible without searching through the tracker;
+the focused UI check taps it without scrolling.
 An admitted manager now exposes an invitation action in the selected Family's
 access section and uses the same foreground and scheduled coordinator to answer
 claims and proofs. A real-relay instrumentation case uses three independent
@@ -264,7 +267,9 @@ intended Family and child, and remains usable after process death.
   original manager now has a signed proof and private-copy path through the
   Rust binding and Android coordinator. The tracker omits that removed source
   from writable Family selection and offers a copy action that reuses an
-  existing removal copy. A focused UI tap check remains open.
+  existing removal copy. The same card now appears for a removed recipient;
+  a real-relay emulator case makes a copy with no pending edits and checks
+  that its held child is present. A focused UI tap check remains open.
 - [ ] Make invitation handoff usable through a share/link flow with trusted
   relay pinning and clear pending, accepted, blocked, and removed states.
   The share-sheet receive and custom-link paths now prefill without auto-claiming. Remove

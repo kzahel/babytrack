@@ -331,7 +331,6 @@ class SharingRelayTest {
             val label = context.getString(R.string.join_or_retry)
             val deadline = System.currentTimeMillis() + 25_000
             var clicked = false
-            var scanForward = true
             while (System.currentTimeMillis() < deadline) {
                 val root = instrumentation.uiAutomation.rootInActiveWindow
                 val button = root?.clickTarget(label)
@@ -339,10 +338,9 @@ class SharingRelayTest {
                     clicked = button.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                     if (clicked) break
                 }
-                if (root?.scroll(scanForward) != true) scanForward = !scanForward
                 Thread.sleep(200)
             }
-            assertTrue("Invitation link should offer one join action", clicked)
+            assertTrue("Invitation link should bring its one join action into view", clicked)
 
             val saved = context.filesDir.resolve("families.db").absolutePath
             val claimDeadline = System.currentTimeMillis() + 25_000
@@ -699,6 +697,17 @@ class SharingRelayTest {
         ShareCoordinator(context, thirdDb.absolutePath).use { sharing ->
             assertTrue(sharing.syncRecipient(third).removed)
             assertTrue(runCatching { sharing.snapshot(third) }.isFailure)
+            val copy = sharing.privateCopy(third, System.currentTimeMillis())
+            NativeLocalStore.open(thirdDb.absolutePath).use { local ->
+                assertTrue(local.children(copy).any { it.name == "Holder child" })
+                val screen = loadTrackerData(local, sharing,
+                    third.familyId.joinToString("") { "%02x".format(it) }, null,
+                    third.familyId.joinToString("") { "%02x".format(it) })
+                assertTrue(screen.removedFamilies.any { it.familyId.contentEquals(third.familyId) })
+                assertTrue(screen.families.none { it.familyId.contentEquals(third.familyId) })
+                assertTrue(screen.recipients.none { it.familyId.contentEquals(third.familyId) })
+                assertTrue(screen.families.any { it.familyId.contentEquals(copy.familyId) })
+            }
         }
         ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
             assertTrue(sharing.syncAndUpload(manager, origin).ready)

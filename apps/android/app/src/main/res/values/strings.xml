@@ -143,6 +143,7 @@
     <string name="backup_description">Save this Family’s records to a readable file. Anyone with the file can read it. Restoring creates a separate Family and does not restore shared access.</string>
     <string name="shared_backup_description">Save verified shared history and changes still saved on this device. The file is a snapshot; restoring creates a separate Family without shared access. Anyone with an unprotected file can read it.</string>
     <string name="make_private_copy">Make a private Family copy</string>
+    <string name="continue_in_private_copy">Continue in a private copy</string>
     <string name="private_copy_created">Private copy ready. It will not sync with the original Family.</string>
     <string name="protected_backup_description">A password protects this copy. Keep the password: it cannot be recovered. Restoring creates a separate Family and does not restore shared access.</string>
     <string name="save_backup">Save backup</string>
@@ -208,7 +209,7 @@
     <string name="history_removed">This device’s removal was verified. The shared Family is read only here; you can still export its locally held data.</string>
     <string name="history_removed_copied">This device’s removal was verified. Delivery of the last upload is unconfirmed; locally held edits were saved in a new private Family. The original shared Family is read only.</string>
     <string name="history_removed_unsent">This device’s removal was verified. Offline edits were saved in a new private Family; they were never uploaded to the old one.</string>
-    <string name="removed_family_card">Access ended for shared Family %1$s. Locally held history is still available. Make an independent copy to continue logging.</string>
+    <string name="removed_family_card">Access ended for shared Family %1$s. Continue from locally held history in a private copy.</string>
     <string name="history_removed_accepted">This device’s removal was verified. The last upload was accepted before removal. Locally held history was saved in a new private Family.</string>
     <string name="history_removed_rejected">This device’s removal was verified. The last upload was rejected; pending edits were saved in a new private Family.</string>
     <string name="shared_devices">Devices with verified access</string>

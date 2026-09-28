@@ -563,8 +563,8 @@ pulls that recipient batch from the relay and reads the child name. This
 proves a recipient-authored encrypted event reaches another device without
 sharing the recipient's IndexedDB state. The admission controls and keys
 are still fixture-provisioned. A separate dynamic first-cohort browser/native
-flow now covers claim through grant and bidirectional encrypted edits. Later
-epochs, native holder HTTP transport, and the mixed-client fault matrix remain
+flow now covers claim through grant and bidirectional encrypted edits over
+relay HTTP. Later epochs and the mixed-client fault matrix remain
 open.
 The core now runs eight deterministic seeded encrypted logs with 64 child
 edits each, including deletes, restores, and skewed HLC values. At every
@@ -693,7 +693,7 @@ fixture manager credential. A second real-relay case uses an independently
 admitted browser recipient credential for a signed grant fetch and encrypted
 upload after reload. Its admission controls are fixture-fed. The dynamic
 first-cohort flow below covers live claim through grant. Rotations, queued-edit
-repair after rejection, and native holder HTTP transport remain open.
+repair after rejection, and later-epoch mixed-client transport remain open.
 The browser now also opens a real invitation fragment, signs a bounded
 public-control GET with its invitation credential, and verifies the linked
 genesis and issue through the Rust sparse authority chain before saving
@@ -735,9 +735,9 @@ new proof, and commits the grant. Chromium pulls each step through relay
 HTTP, hydrates full history after admission, and reopens its ready view.
 The holder then writes an encrypted child batch that Chromium decrypts; the
 browser writes a different encrypted child batch that the holder verifies
-and decrypts. The test-only holder driver invokes `RelayStore` methods
-directly for its writes, so a native-client HTTP transport variant and
-broader offline fault matrix remain for the M0 mixed-client exit gate.
+and decrypts. After initial disposable relay setup, both clients stage,
+commit, and read through HTTP. Later epochs and the broader offline fault
+matrix remain for the M0 mixed-client exit gate.
 The first manager's signing and epoch keys persist in IndexedDB and are
 reloaded for this narrow proof.
 An uncertain retry returns those bytes after reopen even if the caller's

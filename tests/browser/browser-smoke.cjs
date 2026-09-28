@@ -228,7 +228,7 @@ async function startRelay(recipient = false, transitions = 6, holder = false) {
 function holderStep(instance, mode) {
   const step = spawnSync(path.resolve(holderBin), [mode,
     path.join(instance.temporary, 'manager.db'),
-    path.join(instance.temporary, 'relay.db')], { encoding: 'utf8' });
+    `http://127.0.0.1:${instance.port}`], { encoding: 'utf8' });
   assert.equal(step.status, 0, `Native holder ${mode} failed: ${step.stderr}`);
   return step.stdout.trim();
 }

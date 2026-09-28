@@ -327,10 +327,9 @@ releases an epoch-one key and data-ready view. It can resume that hydration
 after reload; a committed proof alone cannot become data-ready.
 One browser/native smoke now uses independent durable clients for the first
 full invitation, claim, challenge, proof, grant, full-log hydration, and
-encrypted writes in both directions. Browser reads and writes cross relay
-HTTP. The native holder's test driver uses the relay's storage validation
-methods directly for writes; native HTTP transport and later-epoch mixed
-client behavior remain to validate.
+encrypted writes in both directions. After direct setup of the disposable
+relay, both browser and native holder read and write through relay HTTP.
+Later-epoch mixed-client behavior remains to validate.
 IndexedDB keeps one exact sealed batch and an ordered draft queue. After
 signed acceptance, Rust seals the next draft against the new verified head;
 one IndexedDB transaction saves those exact bytes and removes the draft.

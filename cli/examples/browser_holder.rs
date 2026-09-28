@@ -1,9 +1,11 @@
 //! Test-only native holder for a browser-created enrollment over one relay.
-//! The browser uses HTTP; this driver uses the same RelayStore validation
-//! methods directly so the two clients remain independently persisted.
+//! Setup seeds a disposable relay store; subsequent holder actions use HTTP.
+//! The browser and holder keep separate durable client stores.
 
 use std::{
     env,
+    io::Write,
+    process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -80,7 +82,55 @@ fn committed(response: &[u8]) -> Vec<u8> {
     bytes.clone()
 }
 
-fn pull_new_controls(local: &mut SqliteStore, relay: &mut RelayStore, manager: &ManagerCreation) {
+fn relay_get(origin: &str, path: &str, auth: &[u8]) -> Vec<u8> {
+    let output = Command::new("curl")
+        .args([
+            "--fail-with-body",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "10",
+        ])
+        .arg("--header")
+        .arg(format!("Authorization: Babytrack-Read {}", hex(auth)))
+        .arg(format!("{origin}{path}"))
+        .output()
+        .expect("curl must be installed for browser smoke");
+    assert!(
+        output.status.success(),
+        "relay GET {path}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output.stdout
+}
+
+fn relay_post(origin: &str, path: &str, body: &[u8]) -> Vec<u8> {
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    file.write_all(body).unwrap();
+    file.flush().unwrap();
+    let output = Command::new("curl")
+        .args([
+            "--fail-with-body",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "10",
+        ])
+        .args(["--header", "Content-Type: application/cbor"])
+        .arg("--data-binary")
+        .arg(format!("@{}", file.path().display()))
+        .arg(format!("{origin}{path}"))
+        .output()
+        .expect("curl must be installed for browser smoke");
+    assert!(
+        output.status.success(),
+        "relay POST {path}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output.stdout
+}
+
+fn pull_new_controls(local: &mut SqliteStore, origin: &str, manager: &ManagerCreation) {
     let family = manager.family();
     for _ in 0..8 {
         let after = PublicHistorySession::resume(local, family)
@@ -91,9 +141,7 @@ fn pull_new_controls(local: &mut SqliteStore, relay: &mut RelayStore, manager: &
             hex(&family.family_id)
         );
         let auth = manager.sign_get(&path).unwrap();
-        let bytes = relay
-            .control_page_authenticated(family.family_id, after, &path, &auth.bytes)
-            .unwrap();
+        let bytes = relay_get(origin, &path, &auth.bytes);
         let page = ControlPage::decode(&bytes, family.family_id, after).unwrap();
         for entry in &page.entries {
             PublicHistorySession::resume(local, family)
@@ -143,10 +191,10 @@ fn main() {
         return;
     }
     let mut local = SqliteStore::open(&args[1]).unwrap();
-    let mut relay = RelayStore::open(&args[2], RELAY_SEED).unwrap();
     let family = family();
     match mode {
         "setup" => {
+            let mut relay = RelayStore::open(&args[2], RELAY_SEED).unwrap();
             let origin = args.get(3).expect("browser origin required");
             local
                 .create_family(family.family_id, family.device_id)
@@ -188,46 +236,61 @@ fn main() {
             println!("{}", link.to_fragment().unwrap());
         }
         "challenge" => {
+            let origin = &args[2];
             let manager = ManagerCreation::resume(&local, family, &WRAPPING_KEY).unwrap();
-            pull_new_controls(&mut local, &mut relay, &manager);
+            pull_new_controls(&mut local, origin, &manager);
             let challenge =
                 FirstChallenge::prepare_for_only_pending(&mut local, &manager, &WRAPPING_KEY)
                     .unwrap();
             for (id, body) in challenge.stage_bodies().unwrap() {
-                relay
-                    .stage_first_challenge_object(family.family_id, id, &body)
-                    .unwrap();
+                relay_post(
+                    origin,
+                    &format!(
+                        "/v1/families/{}/objects/{}",
+                        hex(&family.family_id),
+                        hex(&id)
+                    ),
+                    &body,
+                );
             }
-            let committed_challenge = committed(
-                &relay
-                    .commit_first_challenge(family.family_id, challenge.candidate_bytes(), now_ms())
-                    .unwrap(),
-            );
+            let committed_challenge = committed(&relay_post(
+                origin,
+                &format!("/v1/families/{}/control", hex(&family.family_id)),
+                challenge.candidate_bytes(),
+            ));
             challenge.confirm(&mut local, &committed_challenge).unwrap();
             println!("challenge committed");
         }
         "grant" => {
+            let origin = &args[2];
             let manager = ManagerCreation::resume(&local, family, &WRAPPING_KEY).unwrap();
-            pull_new_controls(&mut local, &mut relay, &manager);
+            pull_new_controls(&mut local, origin, &manager);
             let admission =
                 FirstAdmission::prepare_for_only_proved(&mut local, &manager, &WRAPPING_KEY)
                     .unwrap();
             for (id, body) in admission.stage_bodies().unwrap() {
-                relay
-                    .stage_first_admission_object(family.family_id, id, &body)
-                    .unwrap();
+                relay_post(
+                    origin,
+                    &format!(
+                        "/v1/families/{}/objects/{}",
+                        hex(&family.family_id),
+                        hex(&id)
+                    ),
+                    &body,
+                );
             }
-            let committed_admission = committed(
-                &relay
-                    .commit_first_admission(family.family_id, admission.candidate_bytes(), now_ms())
-                    .unwrap(),
-            );
+            let committed_admission = committed(&relay_post(
+                origin,
+                &format!("/v1/families/{}/control", hex(&family.family_id)),
+                admission.candidate_bytes(),
+            ));
             admission
                 .confirm(&mut local, &manager, &committed_admission)
                 .unwrap();
             println!("grant committed");
         }
         "write" => {
+            let origin = &args[2];
             let manager = ManagerCreation::resume(&local, family, &WRAPPING_KEY).unwrap();
             let ready = manager.ready_session(&local).unwrap();
             let child = v7(0xa1);
@@ -256,9 +319,11 @@ fn main() {
             let upload = match manager.stage_next_local(&ready, &mut local).unwrap() {
                 NextUpload::Fresh(batch) | NextUpload::RetryExact(batch) => batch,
             };
-            let response = relay
-                .commit_batch(family.family_id, &upload.envelope_bytes)
-                .unwrap();
+            let response = relay_post(
+                origin,
+                &format!("/v1/families/{}/batches", hex(&family.family_id)),
+                &upload.envelope_bytes,
+            );
             let receipt = committed(&response);
             PublicHistorySession::resume(&local, family)
                 .unwrap()
@@ -267,6 +332,7 @@ fn main() {
             println!("{}", hex(&child));
         }
         "read" => {
+            let origin = &args[2];
             let manager = ManagerCreation::resume(&local, family, &WRAPPING_KEY).unwrap();
             let after = PublicHistorySession::resume(&local, family)
                 .unwrap()
@@ -274,9 +340,7 @@ fn main() {
             let path = format!("/v1/families/{}/log?after={after}", hex(&family.family_id));
             let auth = manager.sign_get(&path).unwrap();
             let page = LogPage::decode(
-                &relay
-                    .log_page_authenticated(family.family_id, after, &path, &auth.bytes)
-                    .unwrap(),
+                &relay_get(origin, &path, &auth.bytes),
                 family.family_id,
                 after,
             )
@@ -294,17 +358,8 @@ fn main() {
                 hex(&header.batch_id)
             );
             let auth = manager.sign_get(&result_path).unwrap();
-            let result = BatchResult::decode(
-                &relay
-                    .batch_result_authenticated(
-                        family.family_id,
-                        header.batch_id,
-                        &result_path,
-                        &auth.bytes,
-                    )
-                    .unwrap(),
-            )
-            .unwrap();
+            let result =
+                BatchResult::decode(&relay_get(origin, &result_path, &auth.bytes)).unwrap();
             PublicHistorySession::resume(&local, family)
                 .unwrap()
                 .accept_batch(

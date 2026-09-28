@@ -291,9 +291,10 @@ This is still a development flow, not a released product flow.
   diaper totals, and the two-emulator flow checks a shared diaper summary.
   The card now sits immediately below the selected child, ahead of the long
   logging form. It shows the last saved feed and diaper times across the
-  child's history and provides a stop action for the latest running sleep.
-  The focused emulator check stops that timer from the card and verifies the
-  saved end. A child switch hides stale prior-child records while the new
+  child's history and offers a start action when no sleep is running or a
+  stop action for the latest running sleep. The focused emulator check stops
+  and starts timers from the card, then verifies both saved records. A child
+  switch hides stale prior-child records while the new
   projection loads; the same check finds zero totals on a second child.
   Preserve unknown fields and exact Family/child targets. Keep clinical
   recommendations out of the UI.

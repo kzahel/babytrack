@@ -1458,7 +1458,8 @@ private fun TrackerScreen(
                                     today.wetDiaperCount.toLong(), today.dirtyDiaperCount.toLong()))
                                 lastFeed?.let { Text(stringResource(R.string.last_feed, savedTime(it.startUtcMs))) }
                                 lastDiaper?.let { Text(stringResource(R.string.last_diaper, savedTime(it.startUtcMs))) }
-                                runningSleep?.let { timer ->
+                                if (runningSleep != null) {
+                                    val timer = runningSleep
                                     Text(stringResource(R.string.running_sleep_since, savedTime(timer.startUtcMs)))
                                     Button(onClick = {
                                         val end = System.currentTimeMillis()
@@ -1468,6 +1469,17 @@ private fun TrackerScreen(
                                             else store.stopSleep(family, timer.childId, timer.id, end, endOffset, end)
                                         }
                                     }) { Text(stringResource(R.string.stop_sleep)) }
+                                } else {
+                                    Button(onClick = {
+                                        change(onSaved = {
+                                            if (Build.VERSION.SDK_INT >= 33 &&
+                                                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                                            ) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        }) {
+                                            if (activeShared) sharing.startSleepWithPlace(family, child.id, nowTime(), null)
+                                            else store.startSleepWithPlace(family, child.id, nowTime(), null)
+                                        }
+                                    }) { Text(stringResource(R.string.start_sleep)) }
                                 }
                             }
                         }

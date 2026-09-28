@@ -52,6 +52,9 @@ class SharingRelayTest {
             .edit().putString("family", family.familyId.joinToString("") { "%02x".format(it) })
             .putString("child", child.joinToString("") { "%02x".format(it) }).commit()
         ActivityScenario.launch(MainActivity::class.java).use {
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText("Note · Undo me").fetchSemanticsNodes().isNotEmpty()
+            }
             composeRule.onNodeWithText("Note · Undo me").performScrollTo().assertIsDisplayed()
             composeRule.onNodeWithText(context.getString(R.string.delete_entry))
                 .performScrollTo().performClick()
@@ -74,6 +77,8 @@ class SharingRelayTest {
     fun selectedChildTodaySummaryUsesSavedLocalEntries() {
         wakeEmulatorScreen()
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+        InstrumentationRegistry.getInstrumentation().uiAutomation.grantRuntimePermission(
+            context.packageName, Manifest.permission.POST_NOTIFICATIONS)
         val db = context.filesDir.resolve("families.db")
         val now = System.currentTimeMillis()
         val (family, child, timer) = NativeLocalStore.open(db.absolutePath).use { local ->
@@ -111,6 +116,12 @@ class SharingRelayTest {
                 composeRule.onAllNodesWithText(context.getString(R.string.running_sleep_since,
                     sleepTime)).fetchSemanticsNodes().isEmpty()
             }
+            composeRule.onAllNodesWithText(context.getString(R.string.start_sleep)).onFirst()
+                .performScrollTo().performClick()
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText(context.getString(R.string.stop_sleep))
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
             composeRule.onNodeWithText("Other summary child").performScrollTo().performClick()
             composeRule.waitUntil(25_000) {
                 composeRule.onAllNodesWithText(context.getString(R.string.today_feeds, 0L, 0L))
@@ -122,6 +133,9 @@ class SharingRelayTest {
         NativeLocalStore.open(db.absolutePath).use { local ->
             assertTrue(local.timeline(family, child).any {
                 it.id.contentEquals(timer) && it.endUtcMs != null
+            })
+            assertTrue(local.timeline(family, child).any {
+                it.id.contentEquals(timer).not() && it.kind == "sleep" && it.endUtcMs == null
             })
         }
     }

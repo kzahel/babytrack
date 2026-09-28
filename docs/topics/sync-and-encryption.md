@@ -295,8 +295,9 @@ keys. A different edit submitted while the one exact batch is pending is
 rejected visibly rather than treated as a retry. A test-only native CLI
 example verifies the browser's accepted batch, writes a second encrypted
 child batch through the same relay, and Chromium projects it after reload.
-This proves initial-epoch wire exchange across native Rust and wasm; it does
-not exercise an independent durable native outbox in that same run. This
+This proves initial-epoch wire exchange across native Rust and wasm using the
+same fixture manager credential; it does not exercise separate device
+identities or an independent durable native outbox in that same run. This
 narrow path does not yet handle later controls, rotations, recipient
 credentials, broader offline edits, rejection repair, or full mixed-client
 convergence.

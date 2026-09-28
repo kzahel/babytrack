@@ -646,8 +646,10 @@ one. A structurally valid edit of an absent record is also rejected before
 sealing and leaves the outbox empty.
 The test-only native CLI example verifies that accepted browser batch from
 signed genesis and its object, authors a second encrypted child batch, and
-Chromium fetches and projects the child after reload. Controls after genesis,
-rotations, recipient key storage, broader offline edits, rejection repair,
+Chromium fetches and projects the child after reload. Both use the same
+fixture manager credential; separate device identities remain untested here.
+Controls after genesis, rotations, recipient key storage, broader offline
+edits, rejection repair,
 and durable independent CLI/browser convergence remain open. The first
 manager's signing and epoch keys
 persist in IndexedDB and are reloaded for this narrow proof.

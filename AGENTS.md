@@ -12,7 +12,7 @@ launch and record the separate reviewer.
 
 Each concern has one authoritative home: product promises and technical
 decisions in their owning topics, scope/milestones in the plan, work status
-in tacticals, exact protocol formats in future `docs/protocol/`, and test
+in tacticals, exact protocol formats in `docs/protocol/`, and test
 expectations in scenario/vector files. Summaries link to the owner. If two
 documents contradict, reconcile them or ask; do not silently pick one.
 
@@ -22,12 +22,13 @@ and later-device admission at the current epoch. The development relay
 authorizes opaque encrypted batches and signed membership controls. The
 Android debug app logs, syncs, handles removal/private copy, and completes a
 later recipient join after epoch rotation through separate automatic wakes
-on two emulators. An admitted manager can now invite, grant, and remove
-another device through the real relay; later rotations, role changes, and
-cancellation remain open.
+on two emulators. An admitted manager can invite, grant, remove, and change
+another device's role through the real relay. Two successive rotations and
+unused-invitation cancellation pass local relay flows. Pending-device
+removal and broader recovery cases remain open.
 The first-cohort authority security recheck passed at `82c0f4c`; browser
-shared sync, the end-of-M0 security gate, and physical-phone validation
-remain open.
+shared sync beyond the first manager, the end-of-M0 security gate, and
+physical-phone validation remain open.
 `babytrack` is a code name.
 
 The working tree may contain concurrent human or agent changes. Do not revert,
@@ -142,9 +143,10 @@ decryption, a full batch byte vector, and encrypted minor/inert batches.
 Per-Family HLC boundary tests run there as well. The wasm smoke calls the
 shared core through JavaScript with fixed encrypted vectors. The native
 smoke calls it through Swift and Kotlin with the same selected vectors. All
-four runtimes seal and open one fixed child event. `server` and `cli`
-still have no behavioral tests. The Playwright Chromium smoke exercises wasm
-and IndexedDB with fixture data across reload and rollback. Its local
+four runtimes seal and open one fixed child event. `server` and `cli` now
+have real-relay authority and encrypted exchange tests. The Playwright
+Chromium smoke exercises wasm and IndexedDB with fixture data across reload
+and rollback. Its local
 journal adapter also exercises validated operation append, duplicate
 rejection, Family isolation, and reload. Add gates for the remaining
 behavior with M0 work. `core/tests/sqlite_store.rs` covers

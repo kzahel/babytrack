@@ -533,8 +533,8 @@ whose response the recipient loses, and again halfway through staging a
 multi-object removal. Exact result lookup and idempotent stage/commit
 continue across both restarts in all three first-cohort flow variants.
 This exercises durable relay state, not an OS power cut or all transaction
-boundaries. Browser shared outbox, more clients, and the bounded fault
-matrix remain open.
+boundaries. Browser recipient credentials, more clients, and the bounded
+fault matrix remain open.
 The browser IndexedDB harness now replays a signed same-epoch invitation
 through the Rust authority and data view after reload. A rotation still
 requires verified new epoch keys and is outside this initial-manager path.

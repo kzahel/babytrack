@@ -104,6 +104,9 @@ timeline below the logging forms. A 1.5× Android text-size check exposed that
 scrolling to the screen's bottom landed in backup controls. The action now
 targets the measured timeline heading, and the filter chips use two per row
 so their labels stay readable at that size.
+The selected-child controls also jump directly to the bottle and sleep
+forms. The headed UI smoke checks both destinations without manual form
+scrolling.
 The timeline now groups entries under the viewer's local calendar day and
 filters the selected child's entries by feeds, sleep, diapers, growth/care,
 or notes. The Rust core still supplies the ordered activity projection;

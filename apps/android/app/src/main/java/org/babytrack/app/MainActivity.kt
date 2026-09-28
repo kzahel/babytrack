@@ -893,6 +893,8 @@ private fun TrackerScreen(
     val joinFirst = incomingInvitation != null &&
         (receivedFragment.isNotBlank() || sharedSnapshot == null)
     var timelineTop by remember { mutableStateOf(0) }
+    var bottleTop by remember { mutableStateOf(0) }
+    var sleepTop by remember { mutableStateOf(0) }
     fun logTime(): ActivityWhen = activityWhen(logAtMs ?: System.currentTimeMillis())
     fun resetLogTime(savedAt: Long?) {
         if (logAtMs == savedAt) logAtMs = null
@@ -1413,6 +1415,14 @@ private fun TrackerScreen(
                 }
 
                 if (child != null) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = {
+                            scope.launch { scrollState.animateScrollTo(bottleTop) }
+                        }) { Text(stringResource(R.string.jump_to_bottle)) }
+                        OutlinedButton(onClick = {
+                            scope.launch { scrollState.animateScrollTo(sleepTop) }
+                        }) { Text(stringResource(R.string.jump_to_sleep)) }
+                    }
                     OutlinedButton(onClick = {
                         scope.launch { scrollState.animateScrollTo(timelineTop) }
                     }) { Text(stringResource(R.string.view_timeline)) }
@@ -1463,7 +1473,11 @@ private fun TrackerScreen(
                             }
                         }
                     }
-                    Text(stringResource(R.string.log_bottle), style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.log_bottle),
+                        modifier = Modifier.onGloballyPositioned {
+                            bottleTop = it.positionInParent().y.roundToInt()
+                        },
+                        style = MaterialTheme.typography.titleLarge)
                     listOf(
                         1u.toUByte() to R.string.bottle_breast_milk,
                         2u.toUByte() to R.string.bottle_formula,
@@ -1680,7 +1694,11 @@ private fun TrackerScreen(
                             }.onFailure { message = errorText }
                         }
                     }) { Text(stringResource(R.string.save_solids)) }
-                    Text(stringResource(R.string.log_sleep), style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.log_sleep),
+                        modifier = Modifier.onGloballyPositioned {
+                            sleepTop = it.positionInParent().y.roundToInt()
+                        },
+                        style = MaterialTheme.typography.titleLarge)
                     Text(stringResource(R.string.sleep_place_title))
                     listOf(
                         null to R.string.sleep_place_unspecified,

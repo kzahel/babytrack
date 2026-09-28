@@ -76,6 +76,8 @@
     <string name="edit_medication">Edit medication entry</string>
     <string name="edit_child_growth_details">Edit child growth details</string>
     <string name="view_timeline">View timeline</string>
+    <string name="jump_to_bottle">Bottle</string>
+    <string name="jump_to_sleep">Sleep</string>
     <string name="log_time_title">When it happened</string>
     <string name="log_time_now">New entries use the current time.</string>
     <string name="log_time_selected">Next completed entry: %1$s</string>

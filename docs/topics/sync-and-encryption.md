@@ -285,24 +285,30 @@ lost, retries identical bytes after reload, then clears it only in the same
 transaction that saves the signed acceptance. It sends signed GETs, fetches
 genesis manifest objects, and uses storage-independent Rust ready replay to
 verify the epoch-one key, decrypt the accepted batch, and rebuild its record
-projection after reload. The one saved pending operation also overlays the
-verified projection through Rust before acceptance, without advancing the
-public cursor. Rust validates a new edit against that projection before
-sealing; a missing target leaves no outbox entry. The initial manager's
-signing seed and epoch key are saved in that browser profile's IndexedDB for
-use after reload; anyone with access to the profile can read those
-keys. A different edit submitted while the one exact batch is pending is
-rejected visibly rather than treated as a retry. A test-only native CLI
-example verifies the browser's accepted batch, writes a second encrypted
-child batch through the same relay, and Chromium projects it after reload.
+projection after reload. The pending operation and later queued edits overlay
+the verified projection through Rust before acceptance, without advancing
+the public cursor. Rust validates each queued edit against its predecessors.
+IndexedDB keeps one exact sealed batch and an ordered draft queue. After
+signed acceptance, Rust seals the next draft against the new verified head;
+one IndexedDB transaction saves those exact bytes and removes the draft.
+A real-relay Chromium case previews a child creation and later changes
+across reload, then drains the queue in order. One browser upload pass
+handles at most 64 batches; the remainder stays saved for a later pass.
+A missing target leaves no outbox
+entry. The initial manager's signing seed and epoch key are saved in that
+browser profile's IndexedDB for use after reload; anyone with access to
+the profile can read those keys. The low-level staging call refuses a
+different edit while exact bytes are pending; the browser queue saves that
+edit explicitly. A test-only native CLI example verifies the browser's
+accepted batch, writes a second encrypted child batch through the same
+relay, and Chromium projects it after reload.
 This proves initial-epoch wire exchange across native Rust and wasm using the
 same fixture manager credential; it does not exercise separate device
 identities or an independent durable native outbox in that same run. This
 narrow path now replays same-epoch signed controls into the browser data
 view, with a fixture-backed IndexedDB reload check after an invitation.
-It does not yet handle rotations, recipient
-credentials, broader offline edits, rejection repair, or full mixed-client
-convergence.
+It does not yet handle rotations, recipient credentials, queued-edit repair
+after rejection, or full mixed-client convergence.
 The first Android sharing flow uses foreground polling and scheduled
 background work. FCM and APNs may later provide empty background wakes through
 app-owned interfaces to reduce latency when an app is suspended. A missed

@@ -650,19 +650,22 @@ lost response, retries after reload, and atomically clears the outbox only
 when a signed acceptance enters public history. Before upload, Rust overlays
 the saved operation on the verified cursor-one view, including after reload.
 It projects the accepted Family record and rebuilds it after reload.
-Attempting a different edit while that exact upload is pending returns an
-error and preserves the first operation rather than silently dropping the new
-one. A structurally valid edit of an absent record is also rejected before
-sealing and leaves the outbox empty.
+The low-level staging call rejects a different edit while exact upload bytes
+are pending; a separate browser queue now saves later validated operations
+behind that batch. Rust previews their ordered overlay through reload.
+After each signed acceptance, Rust seals the next draft against the new
+verified head, then one transaction saves that envelope and removes the
+draft. A Chromium real-relay case accepts a child creation, queues two
+later changes, and drains them in order. A structurally valid edit of an
+absent record is rejected before sealing and leaves the outbox empty.
 The test-only native CLI example verifies that accepted browser batch from
 signed genesis and its object, authors a second encrypted child batch, and
 Chromium fetches and projects the child after reload. Both use the same
 fixture manager credential; separate device identities remain untested here.
-Controls after genesis, rotations, recipient key storage, broader offline
-edits, rejection repair,
-and durable independent CLI/browser convergence remain open. The first
-manager's signing and epoch keys
-persist in IndexedDB and are reloaded for this narrow proof.
+Controls after genesis, rotations, recipient key storage, queued-edit repair
+after rejection, and durable independent CLI/browser convergence remain open.
+The first manager's signing and epoch keys persist in IndexedDB and are
+reloaded for this narrow proof.
 An uncertain retry returns those bytes after reopen even if the caller's
 current head/key has changed. The initial `FamilySession` stages through
 that path only with its verified manager identity, head, epoch key, and

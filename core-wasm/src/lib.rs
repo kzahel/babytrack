@@ -55,6 +55,7 @@ struct InitialReady {
     chain: ControlChain,
     projection: Projection,
     overlay: Option<Projection>,
+    overlay_operations: Vec<Operation>,
     key: VerifiedEpochKey,
 }
 
@@ -104,6 +105,7 @@ impl WasmInitialFamily {
             chain,
             projection,
             overlay: None,
+            overlay_operations: Vec::new(),
             key,
         });
         Ok(())
@@ -129,6 +131,7 @@ impl WasmInitialFamily {
         ready.chain = chain;
         ready.projection = projection;
         ready.overlay = None;
+        ready.overlay_operations.clear();
         Ok(matches!(outcome, Outcome::Applied))
     }
 
@@ -151,11 +154,12 @@ impl WasmInitialFamily {
         ready.chain = chain;
         ready.projection = projection;
         ready.overlay = None;
+        ready.overlay_operations.clear();
         Ok(())
     }
 
-    /// Preview one durable unsent operation without advancing the verified
-    /// relay cursor. The browser reconstructs this from its saved outbox.
+    /// Add one durable unsent operation to the local preview without advancing
+    /// the verified relay cursor. The browser rebuilds this from saved work.
     pub fn preview_one(&mut self, operation_bytes: &[u8], device_id: &[u8]) -> Result<(), JsError> {
         let ready = self
             .ready
@@ -169,12 +173,14 @@ impl WasmInitialFamily {
         let operation =
             Operation::decode_bound(operation_bytes, &ready.chain.family_id(), &device_id)
                 .map_err(debug_error)?;
-        ready.overlay = Some(
-            ready
-                .projection
-                .with_local_overlay(&[operation])
-                .map_err(debug_error)?,
-        );
+        let mut operations = ready.overlay_operations.clone();
+        operations.push(operation);
+        let overlay = ready
+            .projection
+            .with_local_overlay(&operations)
+            .map_err(debug_error)?;
+        ready.overlay_operations = operations;
+        ready.overlay = Some(overlay);
         Ok(())
     }
 

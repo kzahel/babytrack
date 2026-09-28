@@ -5,6 +5,8 @@
 const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
 const bytes = (value) => Uint8Array.from(value.match(/../g) || [], (pair) => parseInt(pair, 16));
 const sameBytes = (a, b) => a.length === b.length && a.every((byte, index) => byte === b[index]);
+const sameOperations = (a, b) => a.length === b.length &&
+  a.every((operation, index) => sameBytes(operation, b[index]));
 const requestResult = (request) => new Promise((resolve, reject) => {
   request.onsuccess = () => resolve(request.result);
   request.onerror = () => reject(request.error);
@@ -43,7 +45,7 @@ export class PublicStore {
   }
 
   static async open(wasm, name = 'babytrack-public') {
-    const request = indexedDB.open(name, 4);
+    const request = indexedDB.open(name, 5);
     request.onupgradeneeded = () => {
       const database = request.result;
       if (!database.objectStoreNames.contains('families')) {
@@ -60,6 +62,9 @@ export class PublicStore {
       }
       if (!database.objectStoreNames.contains('outbox')) {
         database.createObjectStore('outbox', { keyPath: 'family' });
+      }
+      if (!database.objectStoreNames.contains('queued')) {
+        database.createObjectStore('queued', { keyPath: 'family' });
       }
     };
     return new PublicStore(await requestResult(request), wasm);
@@ -144,6 +149,9 @@ export class PublicStore {
     try {
       const pending = await this.pendingInitial(family);
       if (pending) ready.preview_one(pending.operation, row.deviceId);
+      for (const operation of await this.queuedInitial(family)) {
+        ready.preview_one(operation, row.deviceId);
+      }
       return ready;
     } catch (error) {
       ready.free();
@@ -156,28 +164,39 @@ export class PublicStore {
     return requestResult(transaction.objectStore('outbox').get(family));
   }
 
+  async queuedInitial(family) {
+    const transaction = this.database.transaction('queued', 'readonly');
+    const row = await requestResult(transaction.objectStore('queued').get(family));
+    return row?.operations || [];
+  }
+
   // Stage exact signed bytes before any network request. One pending batch per
   // Family is retried byte-for-byte after a lost response or browser reload.
   async stageInitial(family, operation) {
+    const operationBytes = Uint8Array.from(operation);
     const pending = await this.pendingInitial(family);
     if (pending) {
-      if (!sameBytes(pending.operation, operation)) {
+      if (!sameBytes(pending.operation, operationBytes)) {
         throw new Error('Another browser edit is pending upload');
       }
       return pending;
+    }
+    if ((await this.queuedInitial(family)).length) {
+      throw new Error('Earlier browser edits are waiting for upload');
     }
     const credential = await this.initialCredential(family);
     const ready = await this.loadInitialReady(family, credential.epochKey);
     let envelope, cursor, head;
     try {
-      envelope = ready.prepare_one(operation, credential.deviceId, credential.signingSeed);
+      envelope = ready.prepare_one(operationBytes, credential.deviceId, credential.signingSeed);
       cursor = Number(ready.last_cursor());
       head = hex(ready.head_hash());
     } finally { ready.free(); }
     return new Promise((resolve, reject) => {
-      const transaction = this.database.transaction(['families', 'outbox'], 'readwrite');
+      const transaction = this.database.transaction(['families', 'outbox', 'queued'], 'readwrite');
       const families = transaction.objectStore('families');
       const outbox = transaction.objectStore('outbox');
+      const queued = transaction.objectStore('queued');
       let failure, result;
       transaction.oncomplete = () => resolve(result);
       transaction.onerror = () => reject(failure || transaction.error);
@@ -190,28 +209,140 @@ export class PublicStore {
           transaction.abort();
           return;
         }
-        const pendingRequest = outbox.get(family);
-        pendingRequest.onsuccess = () => {
-          if (pendingRequest.result) {
-            if (!sameBytes(pendingRequest.result.operation, operation)) {
-              failure = new Error('Another browser edit is pending upload');
-              transaction.abort();
-            } else result = pendingRequest.result;
-          } else {
-            result = { family, operation: Uint8Array.from(operation), envelope: Uint8Array.from(envelope) };
-            outbox.add(result);
+        const queuedRequest = queued.get(family);
+        queuedRequest.onsuccess = () => {
+          if (queuedRequest.result?.operations?.length) {
+            failure = new Error('Earlier browser edits are waiting for upload');
+            transaction.abort();
+            return;
           }
+          const pendingRequest = outbox.get(family);
+          pendingRequest.onsuccess = () => {
+            if (pendingRequest.result) {
+              if (!sameBytes(pendingRequest.result.operation, operationBytes)) {
+                failure = new Error('Another browser edit is pending upload');
+                transaction.abort();
+              } else result = pendingRequest.result;
+            } else {
+              result = { family, operation: operationBytes, envelope: Uint8Array.from(envelope) };
+              outbox.add(result);
+            }
+          };
         };
       };
     });
   }
 
-  async uploadInitial(family, post, get) {
+  // Save another validated edit behind the exact in-flight batch or earlier
+  // drafts. Draft bytes stay local until every earlier batch is accepted.
+  async queueInitial(family, operation) {
+    const operationBytes = Uint8Array.from(operation);
     const pending = await this.pendingInitial(family);
-    if (!pending) throw new Error('No pending initial batch');
-    await post(`/v1/families/${family}/batches`, pending.envelope);
-    const progress = await this.pullSaved(family, get);
-    if (await this.pendingInitial(family)) throw new Error('Accepted batch not yet verified');
+    const operations = await this.queuedInitial(family);
+    if (!pending && !operations.length) {
+      await this.stageInitial(family, operationBytes);
+      return { pending: true, queued: 0 };
+    }
+    if ((pending && sameBytes(pending.operation, operationBytes)) ||
+        operations.some((candidate) => sameBytes(candidate, operationBytes))) {
+      throw new Error('Browser edit is already pending');
+    }
+    const credential = await this.initialCredential(family);
+    const ready = await this.loadInitialReady(family, credential.epochKey);
+    let cursor, head;
+    try {
+      cursor = Number(ready.last_cursor());
+      head = hex(ready.head_hash());
+      if (pending) ready.preview_one(pending.operation, credential.deviceId);
+      for (const candidate of operations) ready.preview_one(candidate, credential.deviceId);
+      ready.preview_one(operationBytes, credential.deviceId);
+    } finally { ready.free(); }
+    return new Promise((resolve, reject) => {
+      const transaction = this.database.transaction(['families', 'outbox', 'queued'], 'readwrite');
+      const families = transaction.objectStore('families');
+      const outbox = transaction.objectStore('outbox');
+      const queued = transaction.objectStore('queued');
+      let failure;
+      transaction.oncomplete = () => resolve({ pending: !!pending, queued: operations.length + 1 });
+      transaction.onerror = () => reject(failure || transaction.error);
+      transaction.onabort = () => reject(failure || transaction.error || new Error('transaction aborted'));
+      const metadataRequest = families.get(family);
+      const pendingRequest = outbox.get(family);
+      const queuedRequest = queued.get(family);
+      queuedRequest.onsuccess = () => {
+        const metadata = metadataRequest.result;
+        const actualPending = pendingRequest.result;
+        if (!metadata || metadata.cursor !== cursor || metadata.head !== head ||
+            (!!actualPending !== !!pending) ||
+            (pending && !sameBytes(actualPending.envelope, pending.envelope)) ||
+            !sameOperations(queuedRequest.result?.operations || [], operations)) {
+          failure = new Error('Browser authority or outbox changed before queuing');
+          transaction.abort();
+          return;
+        }
+        queued.put({ family, operations: [...operations, operationBytes] });
+      };
+    });
+  }
+
+  async stageQueuedInitial(family) {
+    const pending = await this.pendingInitial(family);
+    if (pending) return pending;
+    const operations = await this.queuedInitial(family);
+    if (!operations.length) return null;
+    const credential = await this.initialCredential(family);
+    const ready = await this.loadInitialReady(family, credential.epochKey);
+    let envelope, cursor, head;
+    try {
+      envelope = ready.prepare_one(operations[0], credential.deviceId, credential.signingSeed);
+      cursor = Number(ready.last_cursor());
+      head = hex(ready.head_hash());
+    } finally { ready.free(); }
+    return new Promise((resolve, reject) => {
+      const transaction = this.database.transaction(['families', 'outbox', 'queued'], 'readwrite');
+      const families = transaction.objectStore('families');
+      const outbox = transaction.objectStore('outbox');
+      const queued = transaction.objectStore('queued');
+      let failure, result;
+      transaction.oncomplete = () => resolve(result);
+      transaction.onerror = () => reject(failure || transaction.error);
+      transaction.onabort = () => reject(failure || transaction.error || new Error('transaction aborted'));
+      const metadataRequest = families.get(family);
+      const pendingRequest = outbox.get(family);
+      const queuedRequest = queued.get(family);
+      queuedRequest.onsuccess = () => {
+        const metadata = metadataRequest.result;
+        if (!metadata || metadata.cursor !== cursor || metadata.head !== head ||
+            pendingRequest.result ||
+            !sameOperations(queuedRequest.result?.operations || [], operations)) {
+          failure = new Error('Browser authority or outbox changed before staging');
+          transaction.abort();
+          return;
+        }
+        result = { family, operation: Uint8Array.from(operations[0]),
+          envelope: Uint8Array.from(envelope) };
+        outbox.add(result);
+        if (operations.length === 1) queued.delete(family);
+        else queued.put({ family, operations: operations.slice(1) });
+      };
+    });
+  }
+
+  async uploadInitial(family, post, get, maxBatches = 64) {
+    if (!Number.isSafeInteger(maxBatches) || maxBatches < 1) {
+      throw new Error('Invalid batch budget');
+    }
+    let progress;
+    for (let index = 0; index < maxBatches; index++) {
+      const pending = await this.stageQueuedInitial(family);
+      if (!pending) {
+        if (!progress) throw new Error('No pending initial batch');
+        return progress;
+      }
+      await post(`/v1/families/${family}/batches`, pending.envelope);
+      progress = await this.pullSaved(family, get);
+      if (await this.pendingInitial(family)) throw new Error('Accepted batch not yet verified');
+    }
     return progress;
   }
 

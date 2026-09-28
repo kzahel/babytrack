@@ -20,6 +20,7 @@ const minor = fixtures.cases.find((entry) => entry.id === 'CROSSMINORBYTE01').in
 const genesis = full.cases.find((entry) => entry.id === 'GENESIS01');
 const acceptedBatch = full.cases.find((entry) => entry.id === 'BATCHBYTE01');
 const preCreateSet = fixtures.cases.find((entry) => entry.id === 'PRECREATEBYTE01').input.operations_hex[1];
+const preCreateChild = fixtures.cases.find((entry) => entry.id === 'PRECREATEBYTE01').input.operations_hex[0];
 const cborBytes = (value) => {
   if (value.length < 256) return Buffer.concat([Buffer.from([0x58, value.length]), value]);
   const length = Buffer.alloc(3);
@@ -625,8 +626,71 @@ async function run() {
       return result;
     }, { familyHex: input.familyHex, childHex: nativeChildHex });
     assert.deepEqual(relayReload, { cursor: '3', recordType: 'family', childType: 'child' });
+    const queuedChild = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const { relayPost } = await import('/relay-post.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+      const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      const store = await PublicStore.open(wasm, 'babytrack-real-relay-public-smoke');
+      await store.stageInitial(data.familyHex, bytes(data.createChildHex));
+      const queue = await store.queueInitial(data.familyHex, bytes(data.renameChildHex));
+      const ready = await store.loadInitialReadySaved(data.familyHex);
+      const result = { ...queue, cursor: Number(ready.last_cursor()),
+        childType: ready.record_type(bytes(data.childHex)),
+        childNameCbor: hex(ready.field_cbor(bytes(data.childHex), 1n)) };
+      ready.free();
+      const pending = await store.pendingInitial(data.familyHex);
+      await relayPost(`/v1/families/${data.familyHex}/batches`, pending.envelope);
+      const firstAccepted = await store.pullSaved(data.familyHex, relayGet);
+      result.acceptedCursor = firstAccepted.cursor;
+      result.afterAcceptance = await store.queueInitial(data.familyHex, bytes(data.renameAgainHex));
+      store.close();
+      return result;
+    }, { familyHex: input.familyHex, childHex: '0183f9d0000070008000000000000021',
+      createChildHex: preCreateChild.replaceAll('723e4567e89b42d3a456426614174000', input.managerDeviceHex),
+      renameChildHex: preCreateSet
+        .replaceAll('723e4567e89b42d3a456426614174000', input.managerDeviceHex)
+        .replace('0183f9d0000070008000000000000022', '0183f9d0000070008000000000000021'),
+      renameAgainHex: preCreateSet
+        .replaceAll('723e4567e89b42d3a456426614174000', input.managerDeviceHex)
+        .replace('0183f9d0000070008000000000000022', '0183f9d0000070008000000000000021')
+        .replace('0183f9d0000070008000000000000024', '0183f9d0000070008000000000000025')
+        .replace('08831b000001a0dd591dc80050', '08831b000001a0dd591dc80150') });
+    assert.deepEqual(queuedChild, { pending: true, queued: 1, cursor: 3,
+      childType: 'child', childNameCbor: '66467574757265', acceptedCursor: 4,
+      afterAcceptance: { pending: false, queued: 2 } });
+    await page.reload();
+    const drainedQueue = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const { relayPost } = await import('/relay-post.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+      const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      const store = await PublicStore.open(wasm, 'babytrack-real-relay-public-smoke');
+      const before = await store.loadInitialReadySaved(data.familyHex);
+      const visibleBefore = hex(before.field_cbor(bytes(data.childHex), 1n));
+      before.free();
+      const queuedBefore = (await store.queuedInitial(data.familyHex)).length;
+      const progress = await store.uploadInitial(data.familyHex, relayPost, relayGet);
+      const ready = await store.loadInitialReadySaved(data.familyHex);
+      const result = { ...progress, queuedBefore, visibleBefore,
+        pendingAfter: !!(await store.pendingInitial(data.familyHex)),
+        queuedAfter: (await store.queuedInitial(data.familyHex)).length,
+        childNameCbor: hex(ready.field_cbor(bytes(data.childHex), 1n)) };
+      ready.free();
+      store.close();
+      return result;
+    }, { familyHex: input.familyHex, childHex: '0183f9d0000070008000000000000021' });
+    assert.deepEqual(drainedQueue, { cursor: 6, noMoreVisible: true, queuedBefore: 2,
+      visibleBefore: '66467574757265', pendingAfter: false, queuedAfter: 0,
+      childNameCbor: '66467574757265' });
     await context.close();
-    console.log('browser wasm + IndexedDB journal, bidirectional native/browser encrypted exchange, durable retry, reload, rollback, and Family isolation: OK');
+    console.log('browser wasm + IndexedDB journal, queued offline edits, bidirectional native/browser encrypted exchange, durable retry, reload, rollback, and Family isolation: OK');
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));

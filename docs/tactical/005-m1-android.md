@@ -170,7 +170,9 @@ joined Family enters the normal tracker. The duplicate debug child logging,
 history, and backup panel is gone; a joined manager can invite from the
 selected Family's access section, and a joined device can retry sync there.
 The join card remains a developer link-entry and pending-stage surface until
-the ordinary sharing UI gate.
+the ordinary sharing UI gate. A focused real-relay emulator UI check opens a
+fresh invitation link, taps that one action, and verifies the recipient claim
+is committed and saved; the coordinator suites cover the later handshake.
 An admitted manager now exposes an invitation action in the selected Family's
 access section and uses the same foreground and scheduled coordinator to answer
 claims and proofs. A real-relay instrumentation case uses three independent

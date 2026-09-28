@@ -177,6 +177,61 @@ class SharingRelayTest {
     }
 
     @Test
+    fun invitationLinkStartsOneActionJoinThroughTheUi() {
+        wakeEmulatorScreen()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
+            ?: error("relayPublicKey instrumentation argument required")
+        val origin = "http://localhost:8787"
+        val managerDb = context.filesDir.resolve("ui-join-manager-${System.nanoTime()}.db")
+        val family = NativeLocalStore.open(managerDb.absolutePath).use { local ->
+            local.createFamily(System.currentTimeMillis())
+        }
+        val fragment = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            sharing.promote(family, origin, publicKey)
+            sharing.invite(family, origin, 1u.toUByte())
+        }
+        val link = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("babytrack://join$fragment")).apply {
+            addCategory(Intent.CATEGORY_BROWSABLE)
+            setPackage(context.packageName)
+        }
+        ActivityScenario.launch<MainActivity>(link).use {
+            val label = context.getString(R.string.join_or_retry)
+            val deadline = System.currentTimeMillis() + 25_000
+            var clicked = false
+            while (System.currentTimeMillis() < deadline) {
+                val root = instrumentation.uiAutomation.rootInActiveWindow
+                val button = root?.clickTarget(label)
+                if (button != null) {
+                    clicked = button.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    if (clicked) break
+                }
+                root?.scrollForward()
+                Thread.sleep(200)
+            }
+            assertTrue("Invitation link should offer one join action", clicked)
+
+            val saved = context.filesDir.resolve("families.db").absolutePath
+            var committed = false
+            while (System.currentTimeMillis() < deadline) {
+                val key = DeviceWrappingKey(context).loadOrCreate()
+                committed = try {
+                    NativeSharedStore.open(saved).use { core ->
+                        core.recipientFamilies().firstOrNull { it.familyId.contentEquals(family.familyId) }
+                            ?.let { core.recipientFirstJoinAction(it, key) == 0u.toUByte() } ?: false
+                    }
+                } finally {
+                    key.fill(0)
+                }
+                if (committed) break
+                Thread.sleep(200)
+            }
+            assertTrue("The single UI action should commit a saved recipient claim", committed)
+        }
+    }
+
+    @Test
     fun activityRecreationResumesSavedRecipientClaim() {
         wakeEmulatorScreen()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -228,6 +283,18 @@ class SharingRelayTest {
     private fun AccessibilityNodeInfo.containsText(text: String): Boolean {
         if (this.text?.toString()?.contains(text) == true) return true
         return (0 until childCount).any { index -> getChild(index)?.containsText(text) == true }
+    }
+
+    private fun AccessibilityNodeInfo.clickTarget(text: String): AccessibilityNodeInfo? {
+        if (this.text?.toString() == text) {
+            var target: AccessibilityNodeInfo? = this
+            while (target != null && !target.isClickable) target = target.parent
+            if (target != null) return target
+        }
+        for (index in 0 until childCount) {
+            getChild(index)?.clickTarget(text)?.let { return it }
+        }
+        return null
     }
 
     private fun AccessibilityNodeInfo.scrollForward(): Boolean {

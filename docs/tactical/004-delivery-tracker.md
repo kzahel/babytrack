@@ -73,6 +73,8 @@ Ready joined Families now enter the normal Android Family switcher and full
 tracker; pending joins remain outside it. The joined Family uses that tracker
 for logging, backups, immediate sync retry, and a manager's next invitation;
 the old duplicate debug child/history panel is removed.
+A real-relay Android UI check now opens a fresh link, taps the single join
+action, and verifies that its recipient claim was committed and saved.
 The daily-use surface now has a saved-timer home-screen widget and local
 labels for individual enrolled devices. Growth reference data licensing and
 Nara sample mapping remain open for their planned features.

@@ -74,6 +74,29 @@ impl WasmInvitation {
         self.bootstrap.family_id().to_vec()
     }
 
+    pub fn genesis_bytes(&self) -> Result<Vec<u8>, JsError> {
+        self.genesis
+            .clone()
+            .ok_or_else(|| JsError::new("genesis absent"))
+    }
+
+    pub fn relay_public_key(&self) -> Vec<u8> {
+        self.bootstrap.relay_public_key().to_vec()
+    }
+
+    pub fn has_initial_admission(&self, device_id: &[u8]) -> Result<bool, JsError> {
+        let chain = self
+            .chain
+            .as_ref()
+            .ok_or_else(|| JsError::new("genesis absent"))?;
+        if chain.epoch().map_err(debug_error)? != 1 {
+            return Ok(false);
+        }
+        Ok(chain
+            .initial_admission_grant(&fixed(device_id, "device ID")?)
+            .is_some())
+    }
+
     pub fn relay_origin(&self) -> String {
         self.bootstrap.relay_origin().to_owned()
     }
@@ -138,6 +161,38 @@ impl WasmInvitation {
             fixed(device_id, "pending device ID")?,
             &fixed(signing_seed, "pending signing seed")?,
             &path,
+            fixed(request_id, "request ID")?,
+        )
+        .map_err(debug_error)
+    }
+
+    /// An admitted device may use its fully verified sparse authority view
+    /// to bootstrap a fresh full-log read from cursor one.
+    pub fn sign_family_read(
+        &self,
+        exact_path: &str,
+        device_id: &[u8],
+        signing_seed: &[u8],
+        request_id: &[u8],
+    ) -> Result<Vec<u8>, JsError> {
+        let family: String = self
+            .bootstrap
+            .family_id()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        if !exact_path.starts_with(&format!("/v1/families/{family}/")) {
+            return Err(JsError::new("read path belongs to another Family"));
+        }
+        sync_wire::sign_get_with_id(
+            self.bootstrap.family_id(),
+            self.chain
+                .as_ref()
+                .ok_or_else(|| JsError::new("genesis absent"))?
+                .relay_id(),
+            fixed(device_id, "device ID")?,
+            &fixed(signing_seed, "signing seed")?,
+            exact_path,
             fixed(request_id, "request ID")?,
         )
         .map_err(debug_error)

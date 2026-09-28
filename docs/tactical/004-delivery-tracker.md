@@ -69,6 +69,9 @@ checks a relay-fetched committed challenge object and matches the published
 proof bytes from fixture-fed prior controls. A separate browser case saves
 and posts a new proof after a fixture claim and real relay challenge, then
 retries the exact proof after a lost result and reload.
+From a fixture admission, the browser also rebuilds the full relay log,
+hydrates genesis and grant objects, and reopens the epoch-one ready view;
+without a grant it stays pending.
 A test-only native CLI driver now verifies the browser's accepted
 batch and sends an encrypted child back through the same relay; Chromium
 projects it after reload. The first manager credential

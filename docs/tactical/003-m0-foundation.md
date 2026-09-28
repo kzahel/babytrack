@@ -721,6 +721,13 @@ pulls the challenge with its pending-device credential, saves a newly signed
 proof candidate before POST, and retries identical bytes after a lost result
 and reload. The verified proof reaches cursor five; holder grant and a single
 fully dynamic browser-to-holder enrollment remain open.
+For an already committed fixture grant, the browser now carries its verified
+sparse admission into a separate contiguous public-history store. It uses
+the admitted device credential to fetch the full log from genesis, then
+hydrates the signed genesis and addressed grant objects, verifies the epoch
+key in Rust, and reopens a ready data view after reload. A proof without a
+grant cannot activate. A single dynamic browser claim through holder grant
+is still open.
 The first manager's signing and epoch keys persist in IndexedDB and are
 reloaded for this narrow proof.
 An uncertain retry returns those bytes after reopen even if the caller's

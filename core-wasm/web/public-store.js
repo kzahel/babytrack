@@ -531,12 +531,12 @@ export class PublicStore {
   // for an exact signed path; the Rust binding decodes each page and receipt.
   // Every accepted entry commits separately, so a later transport failure
   // leaves the verified prefix available after reload.
-  async pull(family, deviceId, signingSeed, get, maxPages = 4) {
+  async pull(family, deviceId, signingSeed, get, maxPages = 4, signOverride = null) {
     if (!Number.isSafeInteger(maxPages) || maxPages < 1) throw new Error('Invalid page budget');
     const verifier = await this.load(family);
     let noMoreVisible = false;
     try {
-      const read = (path) => get(path, verifier.sign_get(
+      const read = (path) => get(path, signOverride ? signOverride(path) : verifier.sign_get(
         deviceId, signingSeed, path, crypto.getRandomValues(new Uint8Array(16)),
       ));
       for (let pageNumber = 0; pageNumber < maxPages; pageNumber++) {

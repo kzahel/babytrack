@@ -319,6 +319,11 @@ builder. IndexedDB now saves the exact browser proof before POST and checks
 the signed commit after a lost-response retry and reload. The real-relay
 proof case starts from a fixture-provided claim; live holder handoff after a
 browser-generated claim is still open.
+After a verified sparse admission, the browser uses the admitted device key
+to read the full contiguous log from genesis. The browser public store checks
+that log, the genesis objects, and the recipient-addressed grant before Rust
+releases an epoch-one key and data-ready view. It can resume that hydration
+after reload; a committed proof alone cannot become data-ready.
 IndexedDB keeps one exact sealed batch and an ordered draft queue. After
 signed acceptance, Rust seals the next draft against the new verified head;
 one IndexedDB transaction saves those exact bytes and removes the draft.

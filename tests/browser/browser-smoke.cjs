@@ -67,6 +67,17 @@ const proofCandidateHex = Buffer.concat([
   Buffer.from([0xa2, 1]), Buffer.from(proofTransition.unsigned_cbor_hex, 'hex'),
   Buffer.from([2]), Buffer.from(proofTransition.signatures_cbor_hex, 'hex'),
 ]).toString('hex');
+const proofCommittedResponseHex = Buffer.concat([
+  Buffer.from([0xa2, 1, 1, 2]),
+  cborBytes(Buffer.from(proofTransition.committed_cbor_hex, 'hex')),
+]).toString('hex');
+const challengePageHex = Buffer.concat([
+  Buffer.from([0xa6, 1, 1, 2, 0x50]),
+  Buffer.from(chain.test_only_inputs.family_id_hex, 'hex'),
+  Buffer.from([3, 3, 4, 0x81, 0x83, 4, 1]),
+  cborBytes(Buffer.from(chain.transitions[3].committed_cbor_hex, 'hex')),
+  Buffer.from([5, 4, 6, 0xf4]),
+]).toString('hex');
 const input = {
   familyHex: fixtures.base.family_id_hex,
   otherFamilyHex: `ff${fixtures.base.family_id_hex.slice(2)}`,
@@ -102,6 +113,8 @@ const input = {
     chain.transitions.slice(0, 2).map((row) => row.committed_cbor_hex)).toString('hex'),
   claimCandidateHex,
   claimCommittedResponseHex,
+  challengePageHex,
+  proofCommittedResponseHex,
   challengeObjectIdHex: chain.transitions[3].manifest.find((item) => item[0] === 2)[1],
   proofTransitionIdHex,
   proofCandidateHex,
@@ -671,6 +684,7 @@ async function run() {
       const wasm = await import('/babytrack_core_wasm.js');
       await wasm.default('/babytrack_core_wasm_bg.wasm');
       const { InvitationStore } = await import('/invitation-store.js');
+      const { PublicStore } = await import('/public-store.js');
       const { relayPostControl } = await import('/relay-post.js');
       const { relayGet } = await import('/relay-get.js');
       const store = await InvitationStore.open(wasm, fragment, 'babytrack-proof-smoke');
@@ -679,11 +693,17 @@ async function run() {
       const verifier = await store.load();
       const replayed = Number(verifier.control_cursor());
       verifier.free();
+      const publicStore = await PublicStore.open(wasm, 'babytrack-no-grant-smoke');
+      let earlyActivationRejected = false;
+      try { await store.activateFirstEpoch(publicStore, relayGet); }
+      catch { earlyActivationRejected = true; }
+      publicStore.close();
       store.close();
-      return { cursor, polled, replayed };
+      return { cursor, polled, replayed, earlyActivationRejected };
     }, challengeRelay.fragment);
     assert.deepEqual(confirmedProof,
-      { cursor: 5, polled: { cursor: 5, hasMore: false }, replayed: 5 });
+      { cursor: 5, polled: { cursor: 5, hasMore: false }, replayed: 5,
+        earlyActivationRejected: true });
     recipientRelay = await startRelay(true);
     relayPort = recipientRelay.port;
     const browserProof = await page.evaluate(async (data) => {
@@ -725,6 +745,74 @@ async function run() {
     assert.deepEqual(browserProof, { objectId: input.challengeObjectIdHex,
       candidate: input.proofCandidateHex, wrongKeyRejected: true,
       wrongObjectRejected: true });
+    const browserActivation = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { PublicStore } = await import('/public-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g),
+        (pair) => parseInt(pair, 16));
+      const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      const store = await InvitationStore.open(wasm, data.fragment, 'babytrack-activation-smoke');
+      const verifier = new wasm.WasmInvitation(data.fragment);
+      verifier.accept_control_page(bytes(data.issuePrefixPageHex), 0n);
+      verifier.accept_control_response(bytes(data.claimCommittedResponseHex),
+        bytes(data.claimCandidateHex));
+      verifier.accept_control_page(bytes(data.challengePageHex), 3n);
+      verifier.accept_control_response(bytes(data.proofCommittedResponseHex),
+        bytes(data.proofCandidateHex));
+      const write = store.database.transaction(['invitations', 'pages', 'claims', 'proofs'], 'readwrite');
+      const done = new Promise((resolve, reject) => {
+        write.oncomplete = resolve;
+        write.onerror = () => reject(write.error);
+        write.onabort = () => reject(write.error);
+      });
+      write.objectStore('pages').add({ fragment: data.fragment, after: 0,
+        bytes: bytes(data.issuePrefixPageHex) });
+      write.objectStore('pages').add({ fragment: data.fragment, after: 3,
+        bytes: bytes(data.challengePageHex) });
+      write.objectStore('claims').add({ fragment: data.fragment, priorCursor: 2,
+        candidate: bytes(data.claimCandidateHex),
+        committedResponse: bytes(data.claimCommittedResponseHex),
+        deviceId: bytes(data.recipientDeviceHex), signingSeed: bytes(data.recipientSeedHex),
+        agreementPrivate: bytes(data.recipientAgreementHex) });
+      write.objectStore('proofs').add({ fragment: data.fragment, priorCursor: 4,
+        candidate: bytes(data.proofCandidateHex),
+        committedResponse: bytes(data.proofCommittedResponseHex) });
+      write.objectStore('invitations').put({ fragment: data.fragment, cursor: 5,
+        head: hex(verifier.head_hash()), linkedIssue: true });
+      await done;
+      verifier.free();
+      const pending = await store.pullPending(relayGet);
+      const publicStore = await PublicStore.open(wasm, 'babytrack-activated-browser-smoke');
+      const activated = await store.activateFirstEpoch(publicStore, relayGet);
+      const credential = await publicStore.initialCredential(activated.family);
+      publicStore.close();
+      store.close();
+      return { pending, activated, device: hex(credential.deviceId),
+        key: hex(credential.epochKey) };
+    }, { ...input, fragment: recipientRelay.fragment });
+    assert.deepEqual(browserActivation, {
+      pending: { cursor: 6, hasMore: false },
+      activated: { family: input.familyHex, cursor: 6 },
+      device: input.recipientDeviceHex, key: input.controlEpochKeyHex,
+    });
+    await page.reload();
+    const activationReload = await page.evaluate(async (fragment) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { PublicStore } = await import('/public-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const store = await InvitationStore.open(wasm, fragment, 'babytrack-activation-smoke');
+      const publicStore = await PublicStore.open(wasm, 'babytrack-activated-browser-smoke');
+      const result = await store.activateFirstEpoch(publicStore, relayGet);
+      publicStore.close();
+      store.close();
+      return result;
+    }, recipientRelay.fragment);
+    assert.deepEqual(activationReload, { family: input.familyHex, cursor: 6 });
     const admittedBrowser = await page.evaluate(async (data) => {
       const wasm = await import('/babytrack_core_wasm.js');
       await wasm.default('/babytrack_core_wasm_bg.wasm');

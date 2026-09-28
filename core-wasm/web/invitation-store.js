@@ -1,6 +1,8 @@
 // An invitation can read public controls before it has a device credential.
 // Persist the exact pages and replay them through the Rust verifier on load.
 const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
+const sameBytes = (left, right) => left.length === right.length &&
+  left.every((byte, index) => byte === right[index]);
 const result = (request) => new Promise((resolve, reject) => {
   request.onsuccess = () => resolve(request.result);
   request.onerror = () => reject(request.error);
@@ -232,6 +234,45 @@ export class InvitationStore {
       await done;
       return Number(verifier.control_cursor());
     } finally { verifier.free(); }
+  }
+
+  // Once the sparse chain proves this device's grant, rebuild the full
+  // public log before opening any data key. The existing PublicStore owns
+  // contiguous log, object, credential, and encrypted record readiness.
+  async activateFirstEpoch(publicStore, get) {
+    const claim = await this.savedClaim();
+    if (!claim?.committedResponse) throw new Error('Committed claim required for admission');
+    const verifier = await this.load();
+    let family;
+    try {
+      if (!verifier.has_initial_admission(claim.deviceId)) {
+        throw new Error('No verified admission grant for this device');
+      }
+      family = hex(verifier.family_id());
+      const genesis = verifier.genesis_bytes();
+      const relayPublicKey = verifier.relay_public_key();
+      const read = publicStore.database.transaction('families', 'readonly');
+      const metadata = await result(read.objectStore('families').get(family));
+      if (metadata) {
+        if (!sameBytes(metadata.genesis, genesis) ||
+            !sameBytes(metadata.relayPublicKey, relayPublicKey)) {
+          throw new Error('Full-history Family pin differs from invitation');
+        }
+      } else {
+        await publicStore.begin(genesis, relayPublicKey);
+      }
+      await publicStore.pull(family, claim.deviceId, claim.signingSeed, get, 64,
+        (path) => verifier.sign_family_read(path, claim.deviceId, claim.signingSeed,
+          crypto.getRandomValues(new Uint8Array(16))));
+    } finally { verifier.free(); }
+    await publicStore.hydrateGenesis(family, claim.deviceId, claim.signingSeed, get);
+    await publicStore.hydrateInitialGrant(family, claim.deviceId, claim.signingSeed, get);
+    await publicStore.saveAdmittedCredential(family, claim.deviceId,
+      claim.signingSeed, claim.agreementPrivate);
+    const ready = await publicStore.loadInitialReadySaved(family);
+    try {
+      return { family, cursor: Number(ready.last_cursor()) };
+    } finally { ready.free(); }
   }
 
   async pullPending(get, maxPages = 4) {

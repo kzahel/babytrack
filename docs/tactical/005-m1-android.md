@@ -296,6 +296,12 @@ This is still a development flow, not a released product flow.
   and starts timers from the card, then verifies both saved records. A child
   switch hides stale prior-child records while the new
   projection loads; the same check finds zero totals on a second child.
+  Once a Family exists, Family setup actions sit under Family options; a
+  saved pending join remains visible. A single Family or child no longer
+  repeats the target already named in the top bar, while multiple targets
+  retain their switcher chips. Rename, growth details, and add-another-child
+  actions sit under Child options. The command-driven quick UI path opens
+  and closes both panels and passes at 1.5× emulator text scale.
   Preserve unknown fields and exact Family/child targets. Keep clinical
   recommendations out of the UI.
   WHO publishes the growth reference tables, but the terms for bundling those

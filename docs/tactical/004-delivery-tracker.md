@@ -125,6 +125,9 @@ diapers through the Rust core using the viewer's local-day bounds; the
 two-device flow reads that summary after encrypted sync.
 The Today card can start a sleep timer without scrolling through the logging
 form, or stop the latest running timer. Both actions use the shared core.
+The daily Android view now collapses Family and child administration after
+setup while keeping the active target, pending join, Today card, and quick
+actions visible; a 1.5× text emulator check exercises the common log path.
 Completed whole-minute breast feeds can now be corrected for side and
 duration through an atomic shared-core segment update.
 The selected-child timeline groups activity by local day and filters its

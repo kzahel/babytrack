@@ -492,7 +492,8 @@ class SharingRelayTest {
             composeRule.onNodeWithText(context.resources.getQuantityString(
                 R.plurals.shared_pending_device_count, 1, 1)).performScrollTo().assertIsDisplayed()
             assertTrue(composeRule.onAllNodesWithText(button).fetchSemanticsNodes().isEmpty())
-            composeRule.onNodeWithText("Everyday child").performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithText(context.getString(R.string.family_with_child, 1,
+                "Everyday child")).assertIsDisplayed()
             composeRule.onNodeWithText(context.getString(R.string.show_family_access))
                 .performScrollTo().performClick()
             composeRule.onNodeWithText(button).performScrollTo().performClick()

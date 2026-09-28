@@ -615,6 +615,7 @@ private fun TrackerScreen(
     }
     var childName by remember { mutableStateOf("") }
     var showAddChildForm by remember { mutableStateOf(false) }
+    var showChildDetails by remember { mutableStateOf(false) }
     var childRename by remember { mutableStateOf<String?>(null) }
     var pendingChildMetadataEdit by remember { mutableStateOf<PendingChildMetadataEdit?>(null) }
     var childBirthDate by remember { mutableStateOf("") }
@@ -709,6 +710,7 @@ private fun TrackerScreen(
     var receivedFragment by remember { mutableStateOf("") }
     var showJoinForm by remember { mutableStateOf(false) }
     var showShareForm by remember { mutableStateOf(false) }
+    var showFamilySetup by remember { mutableStateOf(false) }
     var showAccessControls by remember { mutableStateOf(false) }
     var joinStage by remember { mutableStateOf<String?>(null) }
     var joinInProgress by remember { mutableStateOf(false) }
@@ -1266,17 +1268,28 @@ private fun TrackerScreen(
                         }.onFailure { message = errorText }
                 }
             }) { Text(stringResource(R.string.make_private_copy)) }
-            Text(stringResource(R.string.families), style = MaterialTheme.typography.titleLarge)
-            families.forEachIndexed { index, item ->
-                FilterChip(
-                    selected = item.familyId.key() == selectedFamily,
-                    onClick = { selectedFamily = item.familyId.key(); selectedChild = null },
-                    label = {
-                        val firstChild = familyChildNames[item.familyId.key()]
-                        Text(if (firstChild == null) stringResource(R.string.family_number, index + 1)
-                            else stringResource(R.string.family_with_child, index + 1, firstChild))
-                    },
-                )
+            if (families.size != 1) {
+                Text(stringResource(R.string.families), style = MaterialTheme.typography.titleLarge)
+                families.forEachIndexed { index, item ->
+                    FilterChip(
+                        selected = item.familyId.key() == selectedFamily,
+                        onClick = {
+                            selectedFamily = item.familyId.key()
+                            selectedChild = null
+                            showChildDetails = false
+                            showAddChildForm = false
+                            childRename = null
+                            childName = ""
+                            childBirthDate = ""
+                            childSex = 3u.toUByte()
+                        },
+                        label = {
+                            val firstChild = familyChildNames[item.familyId.key()]
+                            Text(if (firstChild == null) stringResource(R.string.family_number, index + 1)
+                                else stringResource(R.string.family_with_child, index + 1, firstChild))
+                        },
+                    )
+                }
             }
             removedFamilies.forEach { source ->
                 Card(modifier = Modifier.fillMaxWidth()) {
@@ -1300,22 +1313,33 @@ private fun TrackerScreen(
                     }
                 }
             }
-            OutlinedButton(onClick = {
+            if (family != null) OutlinedButton(onClick = {
+                showFamilySetup = !showFamilySetup
+            }) { Text(stringResource(if (showFamilySetup) R.string.hide_family_setup
+                else R.string.show_family_setup)) }
+            if (family == null || showFamilySetup) OutlinedButton(onClick = {
                 scope.launch {
                     runCatching { withContext(Dispatchers.IO) { store.createFamily(System.currentTimeMillis()) } }
                         .onSuccess { created ->
                             selectedFamily = created.familyId.key()
                             selectedChild = null
+                            showFamilySetup = false
+                            showChildDetails = false
+                            showAddChildForm = false
+                            childRename = null
+                            childName = ""
+                            childBirthDate = ""
+                            childSex = 3u.toUByte()
                             version++
                             message = null
                         }.onFailure { message = errorText }
                 }
             }) { Text(stringResource(R.string.new_family)) }
 
-            if (!joinFirst) joinControls()
+            if (!joinFirst && (family == null || showFamilySetup || recipientFamilies.isNotEmpty())) joinControls()
 
             if (family != null && activeFamilyIsLocal) {
-                if (BuildConfig.DEBUG) {
+                if (showFamilySetup && BuildConfig.DEBUG) {
                     if (!showShareForm) OutlinedButton(
                         onClick = { showShareForm = true },
                     ) { Text(stringResource(R.string.sharing_controls)) }
@@ -1426,14 +1450,24 @@ private fun TrackerScreen(
                     Text(stringResource(R.string.restored_from, savedTime(origin.snapshotUtcMs)))
                     if (origin.knownGap) Text(stringResource(R.string.file_known_gap))
                 }
-                Text(stringResource(R.string.children), style = MaterialTheme.typography.titleLarge)
-                if (children.isEmpty()) Text(stringResource(R.string.no_children))
-                children.forEach { item ->
-                    FilterChip(
-                        selected = item.id.key() == selectedChild,
-                        onClick = { selectedChild = item.id.key() },
-                        label = { Text(item.name) },
-                    )
+                if (children.size != 1) {
+                    Text(stringResource(R.string.children), style = MaterialTheme.typography.titleLarge)
+                    if (children.isEmpty()) Text(stringResource(R.string.no_children))
+                    children.forEach { item ->
+                        FilterChip(
+                            selected = item.id.key() == selectedChild,
+                            onClick = {
+                                selectedChild = item.id.key()
+                                showChildDetails = false
+                                showAddChildForm = false
+                                childRename = null
+                                childName = ""
+                                childBirthDate = ""
+                                childSex = 3u.toUByte()
+                            },
+                            label = { Text(item.name) },
+                        )
+                    }
                 }
                 if (child != null) {
                     if (loadedChildKey == selectedChild && daySummary != null &&
@@ -1495,11 +1529,15 @@ private fun TrackerScreen(
                             scope.launch { scrollState.animateScrollTo(sleepTop) }
                         }) { Text(stringResource(R.string.jump_to_sleep)) }
                     }
-                    if (childRename == null) {
+                    OutlinedButton(onClick = { showChildDetails = !showChildDetails }) {
+                        Text(stringResource(if (showChildDetails) R.string.hide_child_options
+                            else R.string.child_options))
+                    }
+                    if (showChildDetails && childRename == null) {
                         OutlinedButton(onClick = { childRename = child.name }) {
                             Text(stringResource(R.string.rename_child))
                         }
-                    } else {
+                    } else if (showChildDetails) {
                         OutlinedTextField(
                             value = childRename.orEmpty(),
                             onValueChange = { childRename = it.take(16 * 1024) },
@@ -1520,7 +1558,7 @@ private fun TrackerScreen(
                             }
                         }
                     }
-                    OutlinedButton(onClick = {
+                    if (showChildDetails) OutlinedButton(onClick = {
                         pendingChildMetadataEdit = PendingChildMetadataEdit(
                             family, child.id.copyOf(), activeShared,
                             child.birthDay?.let { day ->
@@ -1530,10 +1568,10 @@ private fun TrackerScreen(
                         )
                     }) { Text(stringResource(R.string.edit_child_growth_details)) }
                 }
-                if (children.isNotEmpty() && !showAddChildForm) OutlinedButton(onClick = {
+                if (children.isNotEmpty() && showChildDetails && !showAddChildForm) OutlinedButton(onClick = {
                     showAddChildForm = true
                 }) { Text(stringResource(R.string.add_another_child)) }
-                if (children.isEmpty() || showAddChildForm) {
+                if (children.isEmpty() || (showChildDetails && showAddChildForm)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = childName,
@@ -1554,6 +1592,7 @@ private fun TrackerScreen(
                                     .onSuccess { created ->
                                         selectedChild = created.key()
                                         showAddChildForm = false
+                                        showChildDetails = false
                                         childName = ""
                                         childBirthDate = ""
                                         childSex = 3u.toUByte()

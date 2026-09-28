@@ -8,6 +8,8 @@
     <string name="new_family">New Family</string>
     <string name="join_family">Join a Family</string>
     <string name="sharing_controls">Sharing controls</string>
+    <string name="show_family_setup">Family options</string>
+    <string name="hide_family_setup">Hide Family options</string>
     <string name="show_family_access">Family access</string>
     <string name="hide_family_access">Hide Family access</string>
     <plurals name="shared_device_count">
@@ -21,6 +23,8 @@
     <string name="family_number">Family %1$d</string>
     <string name="family_with_child">Family %1$d · %2$s</string>
     <string name="children">Children</string>
+    <string name="child_options">Child options</string>
+    <string name="hide_child_options">Hide child options</string>
     <string name="child_name">Child’s name</string>
     <string name="new_child_name">New child name</string>
     <string name="birth_date">Birth date (YYYY-MM-DD, optional)</string>

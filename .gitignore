@@ -1,4 +1,5 @@
 /references/
+/local-references/
 /target/
 core-ffi/tests/kotlin/.gradle/
 core-ffi/tests/kotlin/build/

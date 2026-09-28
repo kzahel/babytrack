@@ -4,7 +4,9 @@ Status: in progress on emulators alongside [003 M0 foundation](003-m0-foundation
 The [MVP plan](../mvp-plan.md#milestones) owns scope and milestone order;
 the [event model](../topics/event-model.md) and
 [Family sharing contract](../topics/family-sharing-and-trust.md) own product
-semantics. This tactical owns Android delivery evidence and remaining work.
+semantics. The [Android navigation topic](../topics/android-navigation.md)
+owns the proposed screen map. This tactical owns Android delivery evidence
+and remaining work.
 
 ## Goal and exclusions
 
@@ -257,6 +259,13 @@ This is still a development flow, not a released product flow.
 
 ### 1. Local caregiver flow on one phone
 
+- [ ] Replace the long tracker scroll with the proposed Today, History, and
+  Family navigation shell and an explicit Family/child target header. Move
+  capture into focused forms, then move existing timeline edits, enrollment,
+  access, and file recovery without changing Rust semantics. Check first-run,
+  Back/return state, 1.5× text, target-bound drafts and timers, pending join,
+  and private-copy notice as each route moves. The
+  [navigation topic](../topics/android-navigation.md) owns the route plan.
 - [x] Create and switch local Families, add/select children, log bottle and
   diaper, and inspect a persisted timeline through the shared Rust core on
   an emulator. The UI smoke runs after restart in CI.

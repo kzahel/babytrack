@@ -21,6 +21,8 @@ over a concern from the plan, the plan keeps a short summary and links here.
 - [Event model](event-model.md) — read before changing entities, event types
   or fields, timers, units, time zones and day boundaries, multiple
   children, importers, or the export format.
+- [Android navigation](android-navigation.md) — read before changing M1
+  destinations, first-run, capture, history, Family, or status presentation.
 - [Repository layout](repository-layout.md) — read before scaffolding,
   moving files, changing workspace/build boundaries, or introducing shared
   contracts and test infrastructure. Distinguishes current from future paths.

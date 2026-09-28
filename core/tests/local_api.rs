@@ -2,11 +2,105 @@
 
 use babytrack_core::{
     local_api::{
-        ActivityTime, BreastSegment, GrowthInput, LocalRepository, MeasurementInput, PumpAmounts,
-        temperature_c_operation,
+        ActivityTime, BreastSegment, DayWindow, GrowthInput, LocalRepository, MeasurementInput,
+        PumpAmounts, temperature_c_operation,
     },
     portable_file::parse_readable,
 };
+
+#[test]
+fn local_day_summary_splits_sleep_and_counts_only_selected_current_records() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("day-summary.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let day = 1_790_000_000_000;
+    let family = app.create_family(day - 3_600_000).unwrap();
+    let child = app.add_child(family, "Baby", day - 3_599_999).unwrap();
+    let other = app.add_child(family, "Other", day - 3_599_998).unwrap();
+    let when = |start_utc_ms, saved_at_ms| ActivityTime {
+        start_utc_ms,
+        offset_minutes: 60,
+        saved_at_ms,
+    };
+    app.log_sleep(
+        family,
+        child,
+        when(day - 30 * 60_000, day + 31 * 60_000),
+        day + 30 * 60_000,
+        60,
+    )
+    .unwrap();
+    app.start_sleep(
+        family,
+        child,
+        when(day + 4 * 3_600_000, day + 4 * 3_600_000),
+    )
+    .unwrap();
+    app.log_bottle_ml(
+        family,
+        child,
+        120,
+        2,
+        when(day + 3_600_000, day + 3_600_001),
+    )
+    .unwrap();
+    app.log_bottle_ml(family, other, 90, 2, when(day + 3_600_000, day + 3_600_002))
+        .unwrap();
+    app.log_diaper(
+        family,
+        child,
+        3,
+        when(day + 2 * 3_600_000, day + 2 * 3_600_000 + 1),
+    )
+    .unwrap();
+    app.log_diaper(
+        family,
+        child,
+        4,
+        when(day + 3 * 3_600_000, day + 3 * 3_600_000 + 1),
+    )
+    .unwrap();
+    let deleted = app
+        .log_diaper(
+            family,
+            child,
+            1,
+            when(day + 4 * 3_600_000, day + 4 * 3_600_000 + 1),
+        )
+        .unwrap();
+    app.delete_activity(family, child, deleted, day + 4 * 3_600_000 + 2)
+        .unwrap();
+    let window = DayWindow {
+        start_utc_ms: day,
+        end_utc_ms: day + 23 * 3_600_000,
+        through_utc_ms: day + 5 * 3_600_000,
+    };
+    let summary = app.day_summary(family, child, window).unwrap();
+    assert_eq!(summary.sleep_ms, 90 * 60_000);
+    assert_eq!(summary.feed_count, 1);
+    assert_eq!(summary.bottle_ml, 120);
+    assert_eq!(summary.diaper_count, 2);
+    assert_eq!(summary.wet_diaper_count, 1);
+    assert_eq!(summary.dirty_diaper_count, 1);
+    assert_eq!(
+        app.day_summary(family, other, window).unwrap().bottle_ml,
+        90
+    );
+    assert!(
+        app.day_summary(
+            family,
+            child,
+            DayWindow {
+                end_utc_ms: day,
+                ..window
+            }
+        )
+        .is_err()
+    );
+    drop(app);
+    let app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.day_summary(family, child, window).unwrap(), summary);
+}
 
 #[test]
 fn instant_time_correction_keeps_identity_and_survives_backup() {

@@ -34,6 +34,33 @@ class SharingRelayTest {
     @get:Rule val composeRule = createEmptyComposeRule()
 
     @Test
+    fun selectedChildTodaySummaryUsesSavedLocalEntries() {
+        wakeEmulatorScreen()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = context.filesDir.resolve("families.db")
+        val now = System.currentTimeMillis()
+        val (family, child) = NativeLocalStore.open(db.absolutePath).use { local ->
+            val family = local.createFamily(now)
+            val child = local.addChild(family, "Summary child", now)
+            local.logBottleMl(family, child, 90, 2u.toUByte(), ActivityWhen(now, 0, now))
+            local.logDiaper(family, child, 3u.toUByte(), ActivityWhen(now, 0, now))
+            family to child
+        }
+        context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
+            .edit().putString("family", family.familyId.joinToString("") { "%02x".format(it) })
+            .putString("child", child.joinToString("") { "%02x".format(it) }).commit()
+        ActivityScenario.launch(MainActivity::class.java).use {
+            val feeds = context.getString(R.string.today_feeds, 1L, 90L)
+            val diapers = context.getString(R.string.today_diapers, 1L, 1L, 1L)
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText(feeds).fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText(feeds).performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithText(diapers).performScrollTo().assertIsDisplayed()
+        }
+    }
+
+    @Test
     fun savedDiaperTimeEditOpensAndSavesThroughTracker() {
         wakeEmulatorScreen()
         val context = InstrumentationRegistry.getInstrumentation().targetContext

@@ -266,6 +266,12 @@ This is still a development flow, not a released product flow.
   the two-device relay flow checks the moved interval on the recipient.
   The Android emulator check opens the native date/time pickers, moves the
   completed sleep on the same record, and preserves its duration.
+  A selected-child Today card now shows Rust-computed sleep, feed, bottle,
+  and diaper totals from local or verified shared records, including pending
+  shared edits. The Rust check splits completed sleep at the supplied local
+  midnight boundary, clips an open timer at the current instant, and excludes
+  deleted entries and other children. A Compose check reads saved bottle and
+  diaper totals, and the two-emulator flow checks a shared diaper summary.
   Preserve unknown fields and exact Family/child targets. Keep clinical
   recommendations out of the UI.
   WHO publishes the growth reference tables, but the terms for bundling those

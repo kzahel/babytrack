@@ -89,6 +89,46 @@ pub struct ActivityWhen {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct DayWindowRow {
+    pub start_utc_ms: i64,
+    pub end_utc_ms: i64,
+    pub through_utc_ms: i64,
+}
+
+impl From<DayWindowRow> for local_api::DayWindow {
+    fn from(value: DayWindowRow) -> Self {
+        Self {
+            start_utc_ms: value.start_utc_ms,
+            end_utc_ms: value.end_utc_ms,
+            through_utc_ms: value.through_utc_ms,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct DaySummaryRow {
+    pub sleep_ms: u64,
+    pub feed_count: u64,
+    pub bottle_ml: u64,
+    pub diaper_count: u64,
+    pub wet_diaper_count: u64,
+    pub dirty_diaper_count: u64,
+}
+
+impl From<local_api::DaySummary> for DaySummaryRow {
+    fn from(value: local_api::DaySummary) -> Self {
+        Self {
+            sleep_ms: value.sleep_ms,
+            feed_count: value.feed_count,
+            bottle_ml: value.bottle_ml,
+            diaper_count: value.diaper_count,
+            wet_diaper_count: value.wet_diaper_count,
+            dirty_diaper_count: value.dirty_diaper_count,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct MedicationInput {
     pub name: String,
     pub dose_amount: String,
@@ -1924,6 +1964,32 @@ impl NativeSharedStore {
             devices,
             pending_devices,
         })
+    }
+
+    pub fn shared_day_summary(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        child_id: Vec<u8>,
+        window: DayWindowRow,
+    ) -> Result<DaySummaryRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let ready = ready_session_for(&mut store, family.handle()?, &fixed(&wrapping_key)?)?;
+        let projection = ready.projection_with_pending(&store).map_err(rejected)?;
+        let child_id = fixed(&child_id)?;
+        if projection
+            .record(&child_id)
+            .is_none_or(|child| child.scope != operation::Scope::Child || child.deleted)
+        {
+            return Err(BindingError::InvalidBytes);
+        }
+        local_api::summarize_day(
+            local_api::activities_from_records(projection.records()),
+            child_id,
+            window.into(),
+        )
+        .map(Into::into)
+        .map_err(rejected)
     }
 
     /// A shared file contains the verified prefix and durable local edits.
@@ -4706,6 +4772,20 @@ impl NativeLocalStore {
                 medication_dose_unit: row.medication_dose_unit,
             })
             .collect())
+    }
+
+    pub fn day_summary(
+        &self,
+        family: FamilyRef,
+        child_id: Vec<u8>,
+        window: DayWindowRow,
+    ) -> Result<DaySummaryRow, BindingError> {
+        self.repo
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .day_summary(family.handle()?, fixed(&child_id)?, window.into())
+            .map(Into::into)
+            .map_err(rejected)
     }
 
     pub fn backup(&self, family: FamilyRef, now_ms: i64) -> Result<Vec<u8>, BindingError> {

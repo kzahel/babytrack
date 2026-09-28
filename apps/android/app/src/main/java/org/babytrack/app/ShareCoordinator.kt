@@ -4,6 +4,8 @@ import android.content.Context
 import uniffi.babytrack_core_ffi.FamilyRef
 import uniffi.babytrack_core_ffi.ActivityWhen
 import uniffi.babytrack_core_ffi.BackupFileRow
+import uniffi.babytrack_core_ffi.DaySummaryRow
+import uniffi.babytrack_core_ffi.DayWindowRow
 import uniffi.babytrack_core_ffi.NativeSharedStore
 import uniffi.babytrack_core_ffi.PreparedJoinRow
 import uniffi.babytrack_core_ffi.RecipientSyncRow
@@ -340,6 +342,9 @@ internal class ShareCoordinator(
             wrapping.fill(0)
         }
     }
+
+    fun daySummary(family: FamilyRef, childId: ByteArray, window: DayWindowRow): DaySummaryRow =
+        withWrapping { wrapping -> core.sharedDaySummary(family, wrapping, childId, window) }
 
     fun backupFile(family: FamilyRef, nowMs: Long, password: String?, availableMemory: ULong): BackupFileRow =
         withWrapping { wrapping -> core.sharedBackupFile(family, wrapping, nowMs, password, availableMemory) }

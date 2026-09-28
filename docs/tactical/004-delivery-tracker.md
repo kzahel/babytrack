@@ -120,6 +120,9 @@ encrypted relay and remains in a restored file.
 Completed sleep and pumping sessions can move to a corrected start while
 retaining their duration. Rust updates both endpoints together; interval
 movement reaches the second emulator through encrypted sync.
+The selected-child Today card summarizes sleep, feeds, bottle volume, and
+diapers through the Rust core using the viewer's local-day bounds; the
+two-device flow reads that summary after encrypted sync.
 Completed whole-minute breast feeds can now be corrected for side and
 duration through an atomic shared-core segment update.
 The selected-child timeline groups activity by local day and filters its

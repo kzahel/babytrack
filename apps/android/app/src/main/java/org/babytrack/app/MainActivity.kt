@@ -76,6 +76,8 @@ import uniffi.babytrack_core_ffi.BackupFileRow
 import uniffi.babytrack_core_ffi.BackupInfoRow
 import uniffi.babytrack_core_ffi.BreastSegmentRow
 import uniffi.babytrack_core_ffi.ChildRow
+import uniffi.babytrack_core_ffi.DaySummaryRow
+import uniffi.babytrack_core_ffi.DayWindowRow
 import uniffi.babytrack_core_ffi.FamilyRef
 import uniffi.babytrack_core_ffi.EnteredMeasureRow
 import uniffi.babytrack_core_ffi.GrowthInputRow
@@ -427,6 +429,8 @@ internal data class ScreenData(
     val joinedSnapshot: SharedSnapshotRow?,
     val unusedInvitationIds: List<ByteArray>?,
     val activeSleepCount: Int,
+    val daySummary: DaySummaryRow?,
+    val daySummaryDay: LocalDate?,
 )
 
 private data class PendingInvitationCancel(
@@ -526,6 +530,17 @@ internal fun loadTrackerData(
         snapshot?.activities?.filter { it.childId.contentEquals(child.id) }
             ?: store.timeline(family, child.id)
     } else emptyList()
+    val summaryZone = ZoneId.systemDefault()
+    val summaryDay = LocalDate.now(summaryZone)
+    val window = DayWindowRow(
+        summaryDay.atStartOfDay(summaryZone).toInstant().toEpochMilli(),
+        summaryDay.plusDays(1).atStartOfDay(summaryZone).toInstant().toEpochMilli(),
+        System.currentTimeMillis(),
+    )
+    val daySummary = if (family != null && child != null) {
+        if (shared) sharing.daySummary(family, child.id, window)
+        else store.daySummary(family, child.id, window)
+    } else null
     return ScreenData(
         shown, (removedLocal + removedRecipients).distinctBy { it.familyId.key() },
         familyChildNames, family?.familyId?.key(), localFamily, kids, history,
@@ -534,6 +549,7 @@ internal fun loadTrackerData(
         shared, snapshot, recipients, readyJoined.mapTo(mutableSetOf()) { it.first.familyId.key() },
         joinedSnapshot, unusedInvitationIds,
         runningSleepCount(store, sharing, activeLocal, recipients),
+        daySummary, if (daySummary != null) summaryDay else null,
     )
 }
 
@@ -573,6 +589,8 @@ private fun TrackerScreen(
     var familyChildNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var children by remember { mutableStateOf<List<ChildRow>>(emptyList()) }
     var entries by remember { mutableStateOf<List<ActivityRow>>(emptyList()) }
+    var daySummary by remember { mutableStateOf<DaySummaryRow?>(null) }
+    var daySummaryDay by remember { mutableStateOf<LocalDate?>(null) }
     var revision by remember { mutableStateOf(0uL) }
     var restoredOrigin by remember { mutableStateOf<RestoredOriginRow?>(null) }
     var isShared by remember { mutableStateOf(false) }
@@ -886,6 +904,8 @@ private fun TrackerScreen(
             children = kids
             selectedChild = kids.find { it.id.key() == selectedChild }?.id?.key() ?: kids.firstOrNull()?.id?.key()
             entries = data.entries
+            daySummary = data.daySummary
+            daySummaryDay = data.daySummaryDay
             revision = data.revision
             restoredOrigin = data.restoredOrigin
             isShared = data.shared
@@ -1977,6 +1997,20 @@ private fun TrackerScreen(
                             timelineTop = it.positionInParent().y.roundToInt()
                         },
                         style = MaterialTheme.typography.titleLarge)
+                    if (daySummary != null && daySummaryDay == LocalDate.now(ZoneId.systemDefault())) {
+                        val today = daySummary!!
+                        val sleepMinutes = today.sleepMs.toLong() / 60_000L
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(stringResource(R.string.today_summary), fontWeight = FontWeight.SemiBold)
+                                Text(stringResource(R.string.today_sleep, sleepMinutes / 60, sleepMinutes % 60))
+                                Text(stringResource(R.string.today_feeds, today.feedCount.toLong(),
+                                    today.bottleMl.toLong()))
+                                Text(stringResource(R.string.today_diapers, today.diaperCount.toLong(),
+                                    today.wetDiaperCount.toLong(), today.dirtyDiaperCount.toLong()))
+                            }
+                        }
+                    }
                     listOf(
                         TimelineFilter.ALL to R.string.timeline_all,
                         TimelineFilter.FEEDS to R.string.timeline_feeds,

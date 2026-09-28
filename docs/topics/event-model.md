@@ -209,6 +209,14 @@ the UI offers to merge them rather than guessing.
   duration that crosses midnight between the two days.
   Android's timeline groups current entries by that local start day; its
   category filters do not change the saved records or their order.
+  The selected-child Today summary counts known breast, bottle, and solids
+  feeds by their start day; sums bottle base millilitres; and counts diaper
+  entries, with a both diaper included in both wet and dirty counts. Sleep
+  contributes its overlap with the actual local-day UTC window. An open timer
+  contributes only through the current instant. Deleted entries and other
+  children do not contribute. Distinct overlapping sleep entries add until
+  they are corrected; the card labels this logged sleep. This is tracking
+  arithmetic, not clinical guidance.
 - The MVP uses midnight as day start and has no configurable day boundary.
   Family reports use the viewer's zone too, so caregivers in different zones
   may see different daily totals for the same instants.

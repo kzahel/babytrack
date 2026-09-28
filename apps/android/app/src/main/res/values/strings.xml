@@ -24,6 +24,10 @@
     <string name="rename_child">Rename child</string>
     <string name="no_children">Add a child to start tracking.</string>
     <string name="timeline">Timeline</string>
+    <string name="today_summary">Today</string>
+    <string name="today_sleep">Logged sleep: %1$d h %2$d min</string>
+    <string name="today_feeds">Feeds: %1$d · bottle %2$d mL</string>
+    <string name="today_diapers">Diapers: %1$d · wet %2$d · dirty %3$d</string>
     <string name="no_entries">No entries yet.</string>
     <string name="no_matching_entries">No entries in this view.</string>
     <string name="timeline_all">All</string>

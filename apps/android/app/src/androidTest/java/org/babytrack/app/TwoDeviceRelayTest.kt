@@ -8,6 +8,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.babytrack_core_ffi.FamilyRef
 import uniffi.babytrack_core_ffi.ActivityWhen
+import uniffi.babytrack_core_ffi.DayWindowRow
 import uniffi.babytrack_core_ffi.NativeLocalStore
 import uniffi.babytrack_core_ffi.NativeSharedStore
 import uniffi.babytrack_core_ffi.MedicationInput
@@ -417,6 +418,17 @@ class TwoDeviceRelayTest {
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "diaper" && it.diaperKind == 2u.toUByte()
             })
+            val savedDiaper = sharing.snapshot(family).activities.single { it.kind == "diaper" }
+            val zone = java.time.ZoneId.systemDefault()
+            val day = java.time.Instant.ofEpochMilli(savedDiaper.startUtcMs).atZone(zone).toLocalDate()
+            val daySummary = sharing.daySummary(family, savedDiaper.childId, DayWindowRow(
+                day.atStartOfDay(zone).toInstant().toEpochMilli(),
+                day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli(),
+                System.currentTimeMillis(),
+            ))
+            assertEquals(1uL, daySummary.diaperCount)
+            assertEquals(1uL, daySummary.dirtyDiaperCount)
+            assertEquals(0uL, daySummary.wetDiaperCount)
             assertTrue(sharing.snapshot(family).activities.count { it.kind == "sleep" && it.endUtcMs != null } == 2)
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "sleep" && it.endUtcMs != null &&

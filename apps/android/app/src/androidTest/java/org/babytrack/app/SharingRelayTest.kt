@@ -703,6 +703,7 @@ class SharingRelayTest {
         ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
             assertTrue(sharing.syncAndUpload(manager, origin).ready)
             assertTrue(sharing.snapshot(manager).devices.none { it.deviceId.contentEquals(third.deviceId) })
+            sharing.addChild(manager, "Manager offline before removal", System.currentTimeMillis())
         }
         ShareCoordinator(context, holderDb.absolutePath).use { sharing ->
             val rotatedAgain = sharing.removeDevice(holder, origin, manager.deviceId)
@@ -711,6 +712,15 @@ class SharingRelayTest {
             sharing.addChild(holder, "After second rotation", System.currentTimeMillis())
             assertTrue(sharing.syncRecipientAndUpload(holder).ready)
             assertTrue(sharing.snapshot(holder).children.any { it.name == "After second rotation" })
+        }
+        ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            val removed = sharing.checkInitialManagerRemoval(manager, origin)
+                ?: error("Original manager should verify its removal")
+            val copy = removed.privateCopy ?: error("Offline work needs a private copy")
+            assertTrue(runCatching { sharing.snapshot(manager) }.isFailure)
+            NativeLocalStore.open(managerDb.absolutePath).use { local ->
+                assertTrue(local.children(copy).any { it.name == "Manager offline before removal" })
+            }
         }
     }
 

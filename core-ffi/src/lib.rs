@@ -1509,6 +1509,79 @@ impl NativeSharedStore {
         }))
     }
 
+    /// The original manager is also an ordinary device credential after
+    /// other managers join. Verify its signed removal before any data pull.
+    pub fn check_initial_manager_removal(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        now_ms: i64,
+        transport: Box<dyn RelayReadTransport>,
+    ) -> Result<Option<RemovedDeviceRow>, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let wrapping = fixed(&wrapping_key)?;
+        let manager = ManagerCreation::resume(&store, handle, &wrapping).map_err(rejected)?;
+        let saved = if let Some(saved) = store.saved_removal(handle).map_err(rejected)? {
+            Some(saved)
+        } else {
+            let public = PublicHistorySession::resume(&store, handle).map_err(rejected)?;
+            let path = format!(
+                "/v1/families/{}/control?after={}",
+                lower_hex(&handle.family_id),
+                public.cursor(),
+            );
+            let auth = manager.sign_get(&path).map_err(rejected)?.bytes;
+            let page = transport.get(path, auth)?;
+            public
+                .save_removed_control_page(&mut store, &page)
+                .map_err(rejected)?
+        };
+        let Some(saved) = saved else { return Ok(None) };
+        let public = PublicHistorySession::resume(&store, handle).map_err(rejected)?;
+        let pending_result =
+            if let Some(batch_id) = public.pending_batch_id(&store).map_err(rejected)? {
+                let path = format!(
+                    "/v1/families/{}/batch-results/{}",
+                    lower_hex(&handle.family_id),
+                    lower_hex(&batch_id),
+                );
+                let auth = manager.sign_get(&path).map_err(rejected)?.bytes;
+                match transport.get(path, auth) {
+                    Ok(bytes) => public
+                        .inspect_removed_pending_result(&store, &saved, &bytes)
+                        .unwrap_or(1),
+                    Err(_) => 1,
+                }
+            } else {
+                0
+            };
+        let copy = if let Some(existing) = store
+            .removal_copy_of(handle, saved.transition_id)
+            .map_err(rejected)?
+        {
+            Some(existing)
+        } else {
+            let ready = manager.ready_session(&store).map_err(rejected)?;
+            if ready.has_unsent_local(&store).map_err(rejected)? {
+                Some(
+                    babytrack_core::portable_file::private_copy_after_removal(
+                        &mut store, &ready, &saved, now_ms,
+                    )
+                    .map_err(rejected)?,
+                )
+            } else {
+                None
+            }
+        };
+        Ok(Some(RemovedDeviceRow {
+            verified_cursor: saved.cursor,
+            known_gap: saved.known_gap,
+            private_copy: copy.map(Into::into),
+            pending_result,
+        }))
+    }
+
     /// One bounded sync pass. The platform fetches bytes; Rust signs every
     /// exact path, verifies the full log and manifests, and decides readiness.
     pub fn sync_recipient(

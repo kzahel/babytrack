@@ -1433,7 +1433,11 @@ the removed device's new-data read denial; Android checks the removed state,
 hides its stale shared snapshot, and confirms the original manager still
 syncs. An Android relay case now removes the original manager in a second
 rotation and continues encrypted writes at epoch three. Admitted-manager
-cancellation and broader recovery cases remain open.
+cancellation and broader recovery cases remain open. The removed original
+manager can now fetch a signed public removal proof and save an offline edit
+into one private copy; the three-device Android relay case verifies this.
+Presenting that archived Family and copy destination in the Android tracker
+remains open.
 Ready replay can now start from a later recipient's admission grant at a
 rotated epoch: it verifies that epoch's committed keyring and membership,
 recovers earlier keys, then applies subsequent addressed rotations. A fixed

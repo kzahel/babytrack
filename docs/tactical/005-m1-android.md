@@ -257,7 +257,10 @@ intended Family and child, and remains usable after process death.
   admitted devices from this view; a real-relay case verifies the changed
   recipient role and denial of a later invitation after demotion. Two
   successive key rotations now pass a real-relay case. Pending-device
-  removal and admitted-manager cancellation coverage remain open.
+  removal and admitted-manager cancellation coverage remain open. A removed
+  original manager now has a signed proof and private-copy path through the
+  Rust binding and Android coordinator; its tracker status and copy handoff
+  still need UI wiring.
 - [ ] Make invitation handoff usable through a share/link flow with trusted
   relay pinning and clear pending, accepted, blocked, and removed states.
   The share-sheet receive and custom-link paths now prefill without auto-claiming. Remove

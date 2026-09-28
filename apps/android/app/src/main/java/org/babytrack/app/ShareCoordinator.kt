@@ -271,6 +271,16 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         return snapshot(family)
     }
 
+    fun checkInitialManagerRemoval(family: FamilyRef, origin: String): RemovedDeviceRow? {
+        validateRelayOrigin(origin)
+        val relay = RelayTransport(origin)
+        return withWrapping { wrapping ->
+            core.checkInitialManagerRemoval(family, wrapping, System.currentTimeMillis(), object : RelayReadTransport {
+                override fun get(path: String, auth: ByteArray): ByteArray = relay.get(path, auth)
+            })
+        }
+    }
+
     fun syncRecipient(fragment: String): RecipientSyncRow {
         val family = withWrapping { wrapping ->
             core.resumeJoin(fragment, wrapping)?.family ?: error("No durable recipient claim")

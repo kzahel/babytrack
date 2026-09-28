@@ -429,15 +429,18 @@ async function run() {
       write.objectStore('objects').add({ family: data.familyHex,
         objectId: data.controlPromotionIdHex, bytes: bytes(data.controlPromotionHex) });
       await committed;
+      const staged = await store.stageInitial(data.familyHex, bytes(data.createFamilyOperationHex));
       const ready = await store.loadInitialReadySaved(data.familyHex);
       const result = { cursor: Number(ready.last_cursor()),
-        head: Array.from(ready.head_hash(), (byte) => byte.toString(16).padStart(2, '0')).join('') };
+        head: Array.from(ready.head_hash(), (byte) => byte.toString(16).padStart(2, '0')).join(''),
+        staged: staged.envelope.length > 0,
+        localRecordType: ready.record_type(bytes(data.familyHex)) };
       ready.free();
       store.close();
       return result;
-    }, input);
+    }, { ...input, createFamilyOperationHex: acceptedBatch.inputs.operation_cbor_hex });
     assert.deepEqual(sameEpochReady,
-      { cursor: 2, head: input.controlHeadHex });
+      { cursor: 2, head: input.controlHeadHex, staged: true, localRecordType: 'family' });
 
     const batchPulled = await page.evaluate(async (data) => {
       const wasm = await import('/babytrack_core_wasm.js');

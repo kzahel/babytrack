@@ -70,9 +70,13 @@ readable and protected files. Run them with:
 
 ```sh
 python3 scripts/check_android_ui_smoke.py
+python3 scripts/check_android_ui_smoke.py --quick
 python3 scripts/check_android_recovery_ui.py
 ```
 
-CI runs these against an emulator. A physical phone is still needed for
-one-handed use, large text, night display, actual reboot/widget placement,
-and two-caregiver network behavior.
+Push and PR CI run the quick path through Family setup, diaper logging,
+correction, deletion, and restart, plus the full real-relay instrumentation
+suite and file recovery. The complete local UI walkthrough runs on the daily
+scheduled and manual workflow, and remains available with no flag. A physical
+phone is still needed for one-handed use, large text, night display,
+actual reboot/widget placement, and two-caregiver network behavior.

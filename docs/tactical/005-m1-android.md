@@ -408,11 +408,15 @@ what it contains; daily logging and recovery require no relay account.
 
 ## CI and review handoff
 
-The Android CI job builds APKs. Its emulator job runs the real-relay
-instrumentation suite, the command-driven local UI smoke, and the
-document-picker recovery flow across fresh installations. Expand UI
-checks for sharing and backup only where a failure would escape the core
-integration suite. Record local emulator, physical phone, and observed
+The Android CI job builds APKs. Its emulator job runs the full real-relay
+instrumentation suite, a short command-driven UI path through common local
+logging/edit/delete/restart, and the document-picker recovery flow across
+fresh installations on pushes and PRs. The complete headed UI walkthrough
+runs daily and on manual workflow dispatch; both modes use the same script
+and emulator guard. This keeps broad UI coverage without making every
+feature commit wait for all form interactions. Expand UI checks for sharing
+and backup only where a failure would escape the core integration suite.
+Record local emulator, physical phone, and observed
 remote CI results separately. The M0 end review in [003](003-m0-foundation.md)
 must pass before using real Family data. At the two-phone gate, report
 observable flow status and unresolved risks to the user; routine code and

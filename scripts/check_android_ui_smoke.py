@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import subprocess
@@ -118,7 +119,7 @@ def dismiss_keyboard(target: str) -> None:
         adb(target, "shell", "input", "keyevent", "4")
 
 
-def main() -> None:
+def main(quick: bool = False) -> None:
     target = serial()
     if adb(target, "shell", "getprop", "ro.kernel.qemu").strip() != "1":
         raise RuntimeError("This destructive smoke check runs only on an emulator")
@@ -169,6 +170,9 @@ def main() -> None:
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     find(target, "UITestChild", scroll=True)
     find(target, "No entries yet.", scroll=True)
+    if quick:
+        print("Android UI quick Family, diaper, edit, delete, and restart: OK")
+        return
     scroll_up(target)
     tap(target, "What happened?", scroll=True)
     adb(target, "shell", "input", "text", "Before")
@@ -378,4 +382,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--quick", action="store_true", help="Run the short push/PR UI path")
+    main(parser.parse_args().quick)

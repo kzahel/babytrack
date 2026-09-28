@@ -414,7 +414,11 @@ class SharingRelayTest {
         val origin = "http://localhost:8787"
         val managerDb = context.filesDir.resolve("families.db")
         val recipientDb = context.filesDir.resolve("pending-ui-recipient-${System.nanoTime()}.db")
-        val family = NativeLocalStore.open(managerDb.absolutePath).use { it.createFamily(System.currentTimeMillis()) }
+        val family = NativeLocalStore.open(managerDb.absolutePath).use { local ->
+            val created = local.createFamily(System.currentTimeMillis())
+            local.addChild(created, "Everyday child", System.currentTimeMillis())
+            created
+        }
         val fragment = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
             sharing.promote(family, origin, publicKey)
             sharing.invite(family, origin, 1u.toUByte())
@@ -434,8 +438,15 @@ class SharingRelayTest {
             val label = context.getString(R.string.device_short_id, shortId)
             val button = context.getString(R.string.remove_pending_device, label)
             composeRule.waitUntil(25_000) {
-                composeRule.onAllNodesWithText(button).fetchSemanticsNodes().isNotEmpty()
+                composeRule.onAllNodesWithText(context.getString(R.string.show_family_access))
+                    .fetchSemanticsNodes().isNotEmpty()
             }
+            composeRule.onNodeWithText(context.resources.getQuantityString(
+                R.plurals.shared_pending_device_count, 1, 1)).performScrollTo().assertIsDisplayed()
+            assertTrue(composeRule.onAllNodesWithText(button).fetchSemanticsNodes().isEmpty())
+            composeRule.onNodeWithText("Everyday child").performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithText(context.getString(R.string.show_family_access))
+                .performScrollTo().performClick()
             composeRule.onNodeWithText(button).performScrollTo().performClick()
             val confirm = context.getString(R.string.confirm_remove_pending_device)
             composeRule.waitUntil(15_000) {
@@ -445,9 +456,12 @@ class SharingRelayTest {
             val deadline = System.currentTimeMillis() + 25_000
             var removed = false
             while (System.currentTimeMillis() < deadline) {
-                removed = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
-                    sharing.snapshot(family).pendingDevices.isEmpty()
-                }
+                removed = runCatching {
+                    ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+                        sharing.syncAndUpload(family, origin).ready &&
+                            sharing.snapshot(family).pendingDevices.isEmpty()
+                    }
+                }.getOrDefault(false)
                 if (removed) break
                 Thread.sleep(200)
             }
@@ -611,6 +625,12 @@ class SharingRelayTest {
         val shortId = invitationId.joinToString("") { "%02x".format(it) }.take(8)
         ActivityScenario.launch(MainActivity::class.java).use {
             val button = context.getString(R.string.cancel_invitation, shortId)
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText(context.getString(R.string.show_family_access))
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText(context.getString(R.string.show_family_access))
+                .performScrollTo().performClick()
             composeRule.waitUntil(25_000) {
                 composeRule.onAllNodesWithText(button).fetchSemanticsNodes().isNotEmpty()
             }

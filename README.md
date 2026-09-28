@@ -50,6 +50,8 @@ claim/challenge/proof/admission, and converge both devices through
 the relay. It resumes enrollment after restart, polls while open, schedules
 background sync work, and offers readable or protected backup plus an
 explicit private copy. The real-relay emulator suite covers those flows.
+For a shared Family, pending work remains visible while device and membership
+controls open under Family access, keeping daily logging closer to the top.
 After a grant and verified history load, a joined Family appears in the
 normal tracker; pending joins remain in the join view.
 An emulator check saves readable and protected files through Android's

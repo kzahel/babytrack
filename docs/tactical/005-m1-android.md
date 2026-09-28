@@ -218,6 +218,20 @@ The access list can give each verified device a label stored on this phone;
 the removal control uses that label and the confirmation still shows the
 complete device ID. Labels are only a local recognition aid, not proof of
 which person holds a credential or a change to Family authority.
+The shared tracker now keeps device count, keyless join count, and
+pending/unreadable work visible above the Family selector. The full access
+list, sync retry, membership actions, invitations, and private-copy action
+open under Family access. This leaves the selected child and daily logging
+closer to the top.
+A real-relay Compose check sees the child with access closed, opens the
+panel, and removes a keyless pending device through its existing action.
+Switching Families also clears the displayed invitation link and relay setup
+draft, so a link from the previous Family is never offered under the new one.
+Remote run `36421858205` at `dffde4b` passed its non-emulator jobs, then
+found that the pending-removal UI check took a snapshot between public
+control verification and ready-view catch-up. The check now waits for a
+ready sync before asserting the pending device is gone. Its local full
+real-relay suite passes all 21 cases; the next remote run must confirm it.
 Ready joined Families now appear in the normal Family switcher and use the
 same full tracker, timeline, edits, backup, and analysis export as the
 initial manager Family through the shared Rust API. A keyless pending join

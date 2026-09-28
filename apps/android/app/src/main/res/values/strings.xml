@@ -8,6 +8,16 @@
     <string name="new_family">New Family</string>
     <string name="join_family">Join a Family</string>
     <string name="sharing_controls">Sharing controls</string>
+    <string name="show_family_access">Family access</string>
+    <string name="hide_family_access">Hide Family access</string>
+    <plurals name="shared_device_count">
+        <item quantity="one">%d device has access</item>
+        <item quantity="other">%d devices have access</item>
+    </plurals>
+    <plurals name="shared_pending_device_count">
+        <item quantity="one">%d device waiting to join</item>
+        <item quantity="other">%d devices waiting to join</item>
+    </plurals>
     <string name="family_number">Family %1$d</string>
     <string name="family_with_child">Family %1$d · %2$s</string>
     <string name="children">Children</string>

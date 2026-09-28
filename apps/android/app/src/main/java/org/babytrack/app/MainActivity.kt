@@ -56,6 +56,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -683,6 +684,7 @@ private fun TrackerScreen(
     var receivedFragment by remember { mutableStateOf("") }
     var showJoinForm by remember { mutableStateOf(false) }
     var showShareForm by remember { mutableStateOf(false) }
+    var showAccessControls by remember { mutableStateOf(false) }
     var joinStage by remember { mutableStateOf<String?>(null) }
     var joinInProgress by remember { mutableStateOf(false) }
     var sharedSnapshot by remember { mutableStateOf<SharedSnapshotRow?>(null) }
@@ -700,6 +702,12 @@ private fun TrackerScreen(
     val savedText = stringResource(R.string.saved)
     val restoredText = stringResource(R.string.restored)
     LaunchedEffect(selectedFamily) {
+        showAccessControls = false
+        showShareForm = false
+        shareStage = null
+        invitationFragment = null
+        relayPublicKey = ""
+        inviteAsManager = false
         childName = ""
         childBirthDate = ""
         childSex = 3u.toUByte()
@@ -1075,7 +1083,28 @@ private fun TrackerScreen(
                 stringResource(R.string.shared_upload_blocked),
                 color = MaterialTheme.colorScheme.error,
             )
-            if (activeShared) activeSharedSnapshot?.let { snapshot ->
+            if (activeShared) {
+                activeSharedSnapshot?.let { snapshot ->
+                    Text(pluralStringResource(R.plurals.shared_device_count,
+                        snapshot.devices.size, snapshot.devices.size))
+                    if (snapshot.pendingDevices.isNotEmpty()) {
+                        Text(pluralStringResource(R.plurals.shared_pending_device_count,
+                            snapshot.pendingDevices.size, snapshot.pendingDevices.size))
+                    }
+                    if (snapshot.unsentCount > 0uL) {
+                        Text(stringResource(R.string.shared_pending_changes, snapshot.unsentCount.toLong()))
+                    }
+                    if (snapshot.inertCount > 0uL) {
+                        Text(stringResource(R.string.shared_unreadable_batches, snapshot.inertCount.toLong()),
+                            color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                OutlinedButton(onClick = { showAccessControls = !showAccessControls }) {
+                    Text(stringResource(if (showAccessControls) R.string.hide_family_access
+                        else R.string.show_family_access))
+                }
+            }
+            if (activeShared && showAccessControls) activeSharedSnapshot?.let { snapshot ->
                 SharedHealth(snapshot, deviceLabels, onNameDevice = { target ->
                     val key = deviceLabelKey(snapshot.family.familyId, target)
                     deviceLabelTarget = key
@@ -1200,7 +1229,7 @@ private fun TrackerScreen(
                     }
                 }
             }
-            if (activeShared && family != null) OutlinedButton(onClick = {
+            if (activeShared && showAccessControls && family != null) OutlinedButton(onClick = {
                 scope.launch {
                     runCatching { withContext(Dispatchers.IO) { sharing.privateCopy(family, System.currentTimeMillis()) } }
                         .onSuccess { copy ->
@@ -3315,15 +3344,6 @@ private fun SharedHealth(
         OutlinedButton(onClick = { onNameDevice(device.deviceId) }) {
             Text(stringResource(R.string.name_device))
         }
-    }
-    if (snapshot.unsentCount > 0uL) {
-        Text(stringResource(R.string.shared_pending_changes, snapshot.unsentCount.toLong()))
-    }
-    if (snapshot.inertCount > 0uL) {
-        Text(
-            stringResource(R.string.shared_unreadable_batches, snapshot.inertCount.toLong()),
-            color = MaterialTheme.colorScheme.error,
-        )
     }
 }
 

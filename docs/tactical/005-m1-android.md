@@ -423,8 +423,10 @@ runs daily and on manual workflow dispatch; both modes use the same script
 and emulator guard. This keeps broad UI coverage without making every
 feature commit wait for all form interactions. Expand UI checks for sharing
 and backup only where a failure would escape the core integration suite.
-Record local emulator, physical phone, and observed
-remote CI results separately. The M0 end review in [003](003-m0-foundation.md)
+Remote run `36435229528` at `6deceec` passed the 22-case relay suite, short
+UI path, file recovery, and all required build jobs after this split. Record
+local emulator, physical phone, and observed remote CI results separately.
+The M0 end review in [003](003-m0-foundation.md)
 must pass before using real Family data. At the two-phone gate, report
 observable flow status and unresolved risks to the user; routine code and
 API decisions do not require a separate approval step.

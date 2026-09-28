@@ -95,10 +95,12 @@ import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     private var incomingInvitation by mutableStateOf<String?>(null)
+    private var invitationConsumed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        incomingInvitation = invitationFrom(intent)
+        invitationConsumed = savedInstanceState?.getBoolean("invitation_consumed") ?: false
+        incomingInvitation = if (invitationConsumed) null else invitationFrom(intent)
         runCatching { SharedSyncJobService.schedule(this) }
             .onFailure { Log.w("BabytrackSync", "Could not schedule periodic shared sync", it) }
         val app = application as BabytrackApplication
@@ -115,6 +117,10 @@ class MainActivity : ComponentActivity() {
                     store = app.localStore,
                     sharing = app.sharing,
                     incomingInvitation = incomingInvitation,
+                    onInvitationConsumed = {
+                        invitationConsumed = true
+                        incomingInvitation = null
+                    },
                     readFile = { uri -> contentResolver.openInputStream(uri)?.use {
                         readBounded(it, backupReadLimit(availableMemory()))
                     } },
@@ -149,7 +155,13 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        invitationConsumed = false
         incomingInvitation = invitationFrom(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("invitation_consumed", invitationConsumed)
+        super.onSaveInstanceState(outState)
     }
 }
 
@@ -317,6 +329,7 @@ internal data class ScreenData(
     val shared: Boolean,
     val mainSharedSnapshot: SharedSnapshotRow?,
     val recipients: List<FamilyRef>,
+    val readyRecipientKeys: Set<String>,
     val joinedSnapshot: SharedSnapshotRow?,
     val unusedInvitationIds: List<ByteArray>?,
     val activeSleepCount: Int,
@@ -417,7 +430,8 @@ internal fun loadTrackerData(
         familyChildNames, family?.familyId?.key(), localFamily, kids, history,
         if (!shared) family?.let(store::revision) ?: 0uL else 0uL,
         if (!shared) family?.let(store::restoredOrigin) else null,
-        shared, snapshot, recipients, joinedSnapshot, unusedInvitationIds,
+        shared, snapshot, recipients, readyJoined.mapTo(mutableSetOf()) { it.first.familyId.key() },
+        joinedSnapshot, unusedInvitationIds,
         runningSleepCount(store, sharing, activeLocal, recipients),
     )
 }
@@ -428,6 +442,7 @@ private fun TrackerScreen(
     store: NativeLocalStore,
     sharing: ShareCoordinator,
     incomingInvitation: String?,
+    onInvitationConsumed: () -> Unit,
     readFile: (android.net.Uri) -> ByteArray?,
     writeFile: (android.net.Uri, ByteArray) -> Unit,
     availableMemory: () -> Long,
@@ -546,12 +561,12 @@ private fun TrackerScreen(
     var joinInProgress by remember { mutableStateOf(false) }
     var sharedSnapshot by remember { mutableStateOf<SharedSnapshotRow?>(null) }
     var recipientFamilies by remember { mutableStateOf<List<FamilyRef>>(emptyList()) }
+    var readyRecipientKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var selectedRecipient by remember { mutableStateOf<String?>(null) }
     var inviteAsManager by remember { mutableStateOf(false) }
     LaunchedEffect(incomingInvitation) {
         if (incomingInvitation != null) {
             receivedFragment = incomingInvitation
-            selectedRecipient = null
             showJoinForm = true
         }
     }
@@ -767,6 +782,7 @@ private fun TrackerScreen(
             activeUnusedInvitationIds = data.unusedInvitationIds
             loadedFamilyKey = data.activeFamilyKey
             recipientFamilies = data.recipients
+            readyRecipientKeys = data.readyRecipientKeys
             selectedRecipient = data.recipients.find { it.familyId.key() == selectedRecipient }
                 ?.familyId?.key() ?: data.recipients.firstOrNull()?.familyId?.key()
             sharedSnapshot = data.joinedSnapshot
@@ -846,11 +862,19 @@ private fun TrackerScreen(
                         Text(stringResource(R.string.dev_join_title), style = MaterialTheme.typography.titleMedium)
                         Text(stringResource(R.string.dev_join_description))
                         recipientFamilies.forEachIndexed { index, recipient ->
+                            val ready = recipient.familyId.key() in readyRecipientKeys
                             FilterChip(
                                 selected = recipient.familyId.key() == selectedRecipient,
-                                onClick = { selectedRecipient = recipient.familyId.key() },
-                                label = { Text(stringResource(R.string.joined_family_number, index + 1)) },
+                                onClick = {
+                                    selectedRecipient = recipient.familyId.key()
+                                    joinStage = null
+                                },
+                                label = { Text(stringResource(if (ready) R.string.ready_family_number
+                                    else R.string.joining_family_number, index + 1)) },
                             )
+                        }
+                        if (selectedRecipient != null && selectedRecipient !in readyRecipientKeys) {
+                            Text(stringResource(R.string.saved_join_pending))
                         }
                         OutlinedTextField(
                             value = receivedFragment,
@@ -875,6 +899,7 @@ private fun TrackerScreen(
                                 }.onSuccess { (prepared, result) ->
                                     selectedRecipient = prepared.family.familyId.key()
                                     receivedFragment = ""
+                                    onInvitationConsumed()
                                     version++
                                     val progress = result.getOrNull()
                                     joinStage = when {

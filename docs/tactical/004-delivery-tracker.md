@@ -20,6 +20,12 @@ This tracker adds no product or protocol promises. It does not mark a gate
 complete based on a design review, a passing build, or a model verdict alone.
 Hosting, app-store work, and public release remain M5 work.
 
+Delivery priority is the daily Android tracking, sharing, and recovery flow.
+Use security review for broad direction at the named gates. Track narrower
+edge cases for the gate or a later slice while feature work continues;
+an access or data-retention failure against the agreed Family contract still
+blocks real Family data.
+
 ## Current work card
 
 M0 remains in progress. The implemented first cohort passes the early
@@ -80,6 +86,9 @@ After that action, the Android coordinator makes an immediate pass and
 continues claim, proof, grant, and history loading on foreground and scheduled
 sync opportunities. The debug screen no longer asks caregivers to press
 separate proof, history, challenge, or grant buttons.
+The join card now labels a saved recipient as joining until its verified
+history is usable, including after activity recreation; a confirmed claim
+also consumes the launch link so it does not prefill again.
 Ready joined Families now enter the normal Android Family switcher and full
 tracker; pending joins remain outside it. The joined Family uses that tracker
 for logging, backups, immediate sync retry, and a manager's next invitation;

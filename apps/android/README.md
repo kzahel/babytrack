@@ -27,7 +27,10 @@ password-protected backups and restores either into a new local Family.
    explicit claim action.
 4. The holder and recipient apps advance challenge, proof, grant, and history
    loading on foreground and scheduled sync passes. They do not need to stay
-   open together. The join card shows the pending stage; a verified ready
+   open together. The join card shows the current stage and labels saved
+   recipient Families as joining or ready after restart. A confirmed claim
+   clears the consumed launch link, so reopening the activity shows the saved
+   join attempt; a verified ready
    Family appears in the normal Family switcher. Android runs foreground
    passes every 30 seconds and requests scheduled network work when the OS
    permits, so a suspended app may progress later.

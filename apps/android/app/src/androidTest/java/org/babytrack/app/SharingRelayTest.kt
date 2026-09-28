@@ -323,7 +323,7 @@ class SharingRelayTest {
             addCategory(Intent.CATEGORY_BROWSABLE)
             setPackage(context.packageName)
         }
-        ActivityScenario.launch<MainActivity>(link).use {
+        ActivityScenario.launch<MainActivity>(link).use { scenario ->
             val label = context.getString(R.string.join_or_retry)
             composeRule.waitUntil(25_000) {
                 runCatching { composeRule.onNodeWithText(label).assertIsDisplayed() }.isSuccess
@@ -353,6 +353,16 @@ class SharingRelayTest {
                 Thread.sleep(200)
             }
             assertTrue("The single UI action should commit a saved recipient claim", committed)
+            val joining = context.getString(R.string.joining_family_number, 1)
+            composeRule.waitUntil(25_000) {
+                runCatching { composeRule.onNodeWithText(joining).assertIsDisplayed() }.isSuccess
+            }
+            scenario.recreate()
+            composeRule.waitUntil(25_000) {
+                runCatching { composeRule.onNodeWithText(joining).assertIsDisplayed() }.isSuccess
+            }
+            composeRule.onNodeWithText(context.getString(R.string.saved_join_pending)).assertIsDisplayed()
+            assertEquals(0, composeRule.onAllNodesWithText(fragment).fetchSemanticsNodes().size)
         }
     }
 

@@ -195,7 +195,9 @@
     <string name="delete_entry_warning">Remove this entry from the Family timeline? Shared devices receive the change when they sync.</string>
     <string name="confirm_delete_entry">Delete</string>
     <string name="dev_join_title">Join preview</string>
-    <string name="joined_family_number">Joined Family %1$d</string>
+    <string name="ready_family_number">Ready Family %1$d</string>
+    <string name="joining_family_number">Joining Family %1$d</string>
+    <string name="saved_join_pending">Family data is not ready on this device yet.</string>
     <string name="dev_join_description">Open a one-device invitation link or paste its fragment, then start the join. The app checks for a key holder response and loads verified history while open or during scheduled background work. No further join steps are needed.</string>
     <string name="received_fragment">Invitation fragment</string>
     <string name="join_preparing">Checking invitation and submitting a keyless claim…</string>

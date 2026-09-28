@@ -285,8 +285,13 @@ intended Family and child, and remains usable after process death.
   that its held child is present. A focused UI tap check remains open.
 - [ ] Make invitation handoff usable through a share/link flow with trusted
   relay pinning and clear pending, accepted, blocked, and removed states.
-  The share-sheet receive and custom-link paths now prefill without auto-claiming. Remove
-  debug-only gating after the M0 exit security review passes.
+  The share-sheet receive and custom-link paths now prefill without
+  auto-claiming. Remove debug-only gating after the M0 exit security review
+  passes. The join card now distinguishes saved recipient Families that are
+  still joining from those with verified usable history, including after
+  activity recreation. A confirmed claim consumes the incoming link so it
+  does not prefill again on recreation. A real-relay UI test commits a claim,
+  recreates the activity, and checks the pending label and cleared fragment.
 - [ ] Run the [two-caregiver gate](../mvp-plan.md#testing-and-validation)
   on two physical phones: delayed join, offline edits on both, convergence,
   removal with pending work, private-copy destination, and failed background

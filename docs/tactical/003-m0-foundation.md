@@ -546,8 +546,13 @@ browser recipient case replays fixture-fed admission controls, fetches its
 committed HPKE grant from a disposable real relay with its own signed GET,
 stores its signing/agreement/epoch keys in IndexedDB, then uploads an
 encrypted child entry after browser reload and verifies signed acceptance.
-Browser claim/proof transport, later epochs, and full mixed-client
-convergence remain open.
+An independent browser manager store at the same verified authority head
+pulls that recipient batch from the relay and reads the child name. This
+proves a recipient-authored encrypted event reaches another device without
+sharing the recipient's IndexedDB state. The admission controls and keys
+are still fixture-provisioned. Browser claim/proof transport, later epochs,
+a native CLI recipient exchange, and full mixed-client convergence remain
+open.
 The core now runs eight deterministic seeded encrypted logs with 64 child
 edits each, including deletes, restores, and skewed HLC values. At every
 eighth cursor, a fresh replay matches incremental projection byte-for-byte;

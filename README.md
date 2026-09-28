@@ -26,7 +26,8 @@ through the same relay, and Chromium reads it back. The browser also replays
 same-epoch authority changes before rebuilding its data view; rotation and recipient
 claim/proof transport remain open. An admitted browser recipient can fetch
 its committed HPKE grant with its own signed relay request, save the verified
-credential, and upload an encrypted child after reload.
+credential, and upload an encrypted child after reload. A separate browser
+manager then pulls and decrypts that child through the relay.
 
 The Android debug app logs children, diapers, bottles with milk/content
 choice and mL/US/UK fluid-ounce entry, sleep timers and completed sleep

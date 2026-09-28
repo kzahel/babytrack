@@ -551,6 +551,42 @@ async function run() {
     }, input);
     assert.deepEqual(admittedUpload,
       { cursor: 7, noMoreVisible: true, pending: false, childType: 'child' });
+    const recipientSeenByManager = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g),
+        (pair) => parseInt(pair, 16));
+      const hex = (value) => Array.from(value,
+        (byte) => byte.toString(16).padStart(2, '0')).join('');
+      const store = await PublicStore.open(wasm, 'babytrack-manager-reads-recipient-smoke');
+      const family = await store.begin(bytes(data.controlGenesisHex), bytes(data.relayPublicHex));
+      for (const control of data.admissionControlsHex) {
+        await store.append(family, 'control', bytes(control));
+      }
+      const objectWrite = store.database.transaction('objects', 'readwrite');
+      const objectCommitted = new Promise((resolve, reject) => {
+        objectWrite.oncomplete = resolve;
+        objectWrite.onabort = () => reject(objectWrite.error);
+        objectWrite.onerror = () => reject(objectWrite.error);
+      });
+      objectWrite.objectStore('objects').put({ family,
+        objectId: data.controlPromotionIdHex, bytes: bytes(data.controlPromotionHex) });
+      await objectCommitted;
+      await store.saveInitialCredential(family, bytes(data.managerDeviceHex),
+        bytes(data.managerSeedHex), bytes(data.controlEpochKeyHex));
+      const progress = await store.pullSaved(family, relayGet);
+      const ready = await store.loadInitialReadySaved(family);
+      const child = bytes('0183f9d0000070008000000000000001');
+      const result = { ...progress, childType: ready.record_type(child),
+        childNameCbor: hex(ready.field_cbor(child, 1n)) };
+      ready.free();
+      store.close();
+      return result;
+    }, input);
+    assert.deepEqual(recipientSeenByManager,
+      { cursor: 7, noMoreVisible: true, childType: 'child', childNameCbor: '6442616279' });
     relayPort = relay.port;
 
     const batchPulled = await page.evaluate(async (data) => {

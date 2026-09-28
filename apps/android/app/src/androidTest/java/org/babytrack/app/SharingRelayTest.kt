@@ -333,11 +333,14 @@ class SharingRelayTest {
             val saved = context.filesDir.resolve("families.db").absolutePath
             val claimDeadline = System.currentTimeMillis() + 45_000
             var committed = false
+            var joiningIndex = -1
             while (System.currentTimeMillis() < claimDeadline) {
                 val key = DeviceWrappingKey(context).loadOrCreate()
                 committed = try {
                     NativeSharedStore.open(saved).use { core ->
-                        core.recipientFamilies().firstOrNull { it.familyId.contentEquals(family.familyId) }
+                        val recipients = core.recipientFamilies().filterNot { core.isRemoved(it) }
+                        joiningIndex = recipients.indexOfFirst { it.familyId.contentEquals(family.familyId) }
+                        recipients.getOrNull(joiningIndex)
                             ?.let { core.recipientFirstJoinAction(it, key) == 0u.toUByte() } ?: false
                     }
                 } catch (failure: Exception) {
@@ -353,14 +356,16 @@ class SharingRelayTest {
                 Thread.sleep(200)
             }
             assertTrue("The single UI action should commit a saved recipient claim", committed)
-            val joining = context.getString(R.string.joining_family_number, 1)
+            val joining = context.getString(R.string.joining_family_number, joiningIndex + 1)
             composeRule.waitUntil(25_000) {
                 runCatching { composeRule.onNodeWithText(joining).assertIsDisplayed() }.isSuccess
             }
+            composeRule.onNodeWithText(joining).performClick()
             scenario.recreate()
             composeRule.waitUntil(25_000) {
                 runCatching { composeRule.onNodeWithText(joining).assertIsDisplayed() }.isSuccess
             }
+            composeRule.onNodeWithText(joining).performClick()
             composeRule.onNodeWithText(context.getString(R.string.saved_join_pending)).assertIsDisplayed()
             assertEquals(0, composeRule.onAllNodesWithText(fragment).fetchSemanticsNodes().size)
         }

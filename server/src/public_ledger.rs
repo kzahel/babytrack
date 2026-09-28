@@ -55,6 +55,7 @@ pub(crate) struct PublicLedger {
     challenge_objects: BTreeMap<[u8; 16], [u8; 16]>,
     admissions: BTreeMap<[u8; 16], [u8; 16]>,
     admitted_signers: BTreeMap<[u8; 16], [u8; 32]>,
+    pending_signers: BTreeMap<[u8; 16], [u8; 32]>,
     next_sequences: BTreeMap<[u8; 16], u64>,
     seen_ids: BTreeSet<[u8; 16]>,
 }
@@ -121,6 +122,7 @@ impl PublicLedger {
             challenge_objects: BTreeMap::new(),
             admissions: BTreeMap::new(),
             admitted_signers: BTreeMap::from([(genesis.manager_id, genesis.manager_signing_key)]),
+            pending_signers: BTreeMap::new(),
             next_sequences: BTreeMap::new(),
             seen_ids,
         })
@@ -152,6 +154,7 @@ impl PublicLedger {
         let mut challenged = None;
         let mut challenge_object = None;
         let mut admitted = None;
+        let mut claimed = None;
         let mut rotated = None;
         let next = match receipt.kind {
             2 => {
@@ -174,6 +177,7 @@ impl PublicLedger {
                     return Err(Error::Invalid("claim committed after expiry"));
                 }
                 new_ids.push(prepared.device_id);
+                claimed = Some((prepared.device_id, prepared.signing_public));
                 prepared.next_state
             }
             5 => {
@@ -259,6 +263,9 @@ impl PublicLedger {
             let signing_key = active_signing_key(&next, device)?
                 .ok_or(Error::Invalid("admitted device absent from next state"))?;
             self.admitted_signers.insert(device, signing_key);
+        }
+        if let Some((device, signing_key)) = claimed {
+            self.pending_signers.insert(device, signing_key);
         }
         self.state = next;
         self.head = head;
@@ -456,6 +463,7 @@ impl PublicLedger {
         Ok(self
             .admitted_signers
             .get(&signer_id)
+            .or_else(|| self.pending_signers.get(&signer_id))
             .copied()
             .map(PublicReader::Removed))
     }

@@ -38,6 +38,7 @@ pub mod issue;
 pub mod local_api;
 pub mod membership;
 pub mod operation;
+pub mod pending_remove;
 pub mod portable_file;
 pub mod projection;
 pub mod ready_replay;

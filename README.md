@@ -14,8 +14,8 @@ Real-relay tests admit a later device at the current epoch, hydrate its
 history, and continue encrypted sync. An admitted manager can also invite,
 grant, and remove a third device with key rotation. A manager can cancel an
 unused link, with a verified canceled status for a recipient who opens it.
-Pending-device removal, general browser shared sync, and broader recovery
-coverage remain open.
+Pending-device removal now works through the Android manager access view;
+general browser shared sync and broader recovery coverage remain open.
 The browser harness stages one epoch-one encrypted write in a durable
 outbox and queues later offline edits behind it. Rust previews the saved
 operations locally, then the browser seals each queued edit after signed
@@ -52,6 +52,8 @@ An emulator check saves readable and protected files through Android's
 document picker, reinstalls the app, and restores the saved data. A wrong
 password leaves the new installation without a Family.
 The manager can remove the first recipient from the Android sharing view.
+The manager can also stop a claimed, keyless pending device before admission;
+that device verifies the control and sees that its join ended.
 Managers can also change an admitted device between member and manager roles
 in the debug sharing view; both devices verify the new role through relay sync.
 The removed device verifies a signed removal notice, stops shared writes,

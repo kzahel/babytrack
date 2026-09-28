@@ -82,6 +82,23 @@ internal class ShareCoordinator(
         }
     }
 
+    fun removePendingDevice(
+        family: FamilyRef,
+        origin: String,
+        invitationId: ByteArray,
+        deviceId: ByteArray,
+    ): SharedSnapshotRow {
+        validateRelayOrigin(origin)
+        check(syncAndUpload(family, origin).ready) { "Shared history is not ready" }
+        val relay = RelayTransport(origin)
+        withWrapping { wrapping ->
+            val prepared = core.preparePendingRemoval(family, wrapping, invitationId, deviceId)
+            val response = relay.post("/v1/families/${family.familyId.hex()}/control", prepared.candidateBytes)
+            core.confirmPendingRemoval(family, response)
+        }
+        return snapshot(family)
+    }
+
     fun changeDeviceRole(family: FamilyRef, origin: String, targetDeviceId: ByteArray, newRole: UByte): SharedSnapshotRow {
         validateRelayOrigin(origin)
         check(syncAndUpload(family, origin).ready) { "Shared history is not ready" }

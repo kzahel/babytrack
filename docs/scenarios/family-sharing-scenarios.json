@@ -474,7 +474,8 @@
         "Enrollment committed while Alice invitation remained authorized is not silently undone by her later removal.",
         "Alice removal or demotion invalidates her still-unused invitation before any later redemption.",
         "A committed pending enrollment survives later issuer removal or invitation expiry unless a manager separately removes the pending device.",
-        "Charlie receives a confirmed joined state or a clear unusable invitation state."
+        "Charlie receives a confirmed joined state or a clear unusable invitation state.",
+        "If a manager removes Charlie while he is keyless and pending, Charlie can read and verify the signed removal control, sees that this join stopped, and receives no Family object or batch access."
       ],
       "variants": [
         "enrollment commits first",

@@ -621,7 +621,8 @@ impl EnrollmentAttempt {
             .ok_or(Error::Invalid("recipient challenge absent"))
     }
     /// UI phase from verified public authority only: 1 waiting for claim,
-    /// 2 waiting for holder challenge, 3 challenged, 4 proved, 5 admitted.
+    /// 2 waiting for holder challenge, 3 challenged, 4 proved, 5 admitted,
+    /// 8 verified pending removal before any Family key was granted.
     pub fn pending_phase(&self, store: &SqliteStore) -> Result<u8, Error> {
         let chain =
             shared_history::sparse_enrollment_chain(store, self.family, self.relay_public_key()?)?;
@@ -654,6 +655,25 @@ impl EnrollmentAttempt {
                 } else {
                     4
                 });
+            }
+        }
+        for (_, bytes) in store.enrollment_controls(self.family)? {
+            let Value::Map(root) = cbor::decode(&bytes)? else {
+                continue;
+            };
+            let Value::Map(unsigned) = &root[0].1 else {
+                continue;
+            };
+            if unsigned[5].1 != Value::Integer(9) {
+                continue;
+            }
+            let Value::Map(delta) = &unsigned[6].1 else {
+                continue;
+            };
+            if delta[0].1 == Value::Bytes(self.invitation_id.to_vec())
+                && delta[1].1 == Value::Bytes(self.family.device_id.to_vec())
+            {
+                return Ok(8);
             }
         }
         Ok(1)

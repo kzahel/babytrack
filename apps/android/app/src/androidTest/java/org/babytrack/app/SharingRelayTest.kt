@@ -206,6 +206,112 @@ class SharingRelayTest {
     }
 
     @Test
+    fun managerStopsPendingJoinAfterLostRemovalResponse() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
+            ?: error("relayPublicKey instrumentation argument required")
+        val origin = "http://localhost:8787"
+        val managerDb = context.filesDir.resolve("pending-remove-manager-${System.nanoTime()}.db")
+        val recipientDb = context.filesDir.resolve("pending-remove-recipient-${System.nanoTime()}.db")
+        val family = NativeLocalStore.open(managerDb.absolutePath).use { local ->
+            val created = local.createFamily(System.currentTimeMillis())
+            local.addChild(created, "Still with manager", System.currentTimeMillis())
+            created
+        }
+        val fragment = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            sharing.promote(family, origin, publicKey)
+            sharing.invite(family, origin, 1u.toUByte())
+        }
+        val recipient = ShareCoordinator(context, recipientDb.absolutePath).use { it.claim(fragment).family }
+        val pending = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            assertTrue(sharing.syncAndUpload(family, origin).ready)
+            sharing.snapshot(family).pendingDevices.single()
+        }
+        assertArrayEquals(recipient.deviceId, pending.deviceId)
+        val wrapping = DeviceWrappingKey(context).loadOrCreate()
+        try {
+            val prepared = NativeSharedStore.open(managerDb.absolutePath).use { core ->
+                core.preparePendingRemoval(family, wrapping, pending.invitationId, pending.deviceId)
+            }
+            RelayTransport(origin).post(
+                "/v1/families/${family.familyId.joinToString("") { "%02x".format(it.toInt() and 255) }}/control",
+                prepared.candidateBytes,
+            ) // The committed response is lost before local confirmation.
+        } finally {
+            wrapping.fill(0)
+        }
+        ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            val after = sharing.removePendingDevice(family, origin, pending.invitationId, pending.deviceId)
+            assertTrue(after.pendingDevices.isEmpty())
+            assertEquals(1, after.devices.size)
+            assertEquals("Still with manager", after.children.single().name)
+            assertTrue(sharing.syncAndUpload(family, origin).ready)
+        }
+        ShareCoordinator(context, recipientDb.absolutePath).use { sharing ->
+            val stopped = sharing.advanceRecipient(recipient)
+            assertEquals(8u.toUByte(), stopped.joinPhase)
+            assertTrue(!stopped.awaitingGrant && !stopped.ready)
+            assertTrue(runCatching { sharing.snapshot(recipient) }.isFailure)
+        }
+        ShareCoordinator(context, recipientDb.absolutePath).use { sharing ->
+            assertEquals(8u.toUByte(), sharing.advanceRecipient(recipient).joinPhase)
+        }
+    }
+
+    @Test
+    fun managerStopsPendingDeviceFromAccessUi() {
+        wakeEmulatorScreen()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
+            ?: error("relayPublicKey instrumentation argument required")
+        val origin = "http://localhost:8787"
+        val managerDb = context.filesDir.resolve("families.db")
+        val recipientDb = context.filesDir.resolve("pending-ui-recipient-${System.nanoTime()}.db")
+        val family = NativeLocalStore.open(managerDb.absolutePath).use { it.createFamily(System.currentTimeMillis()) }
+        val fragment = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            sharing.promote(family, origin, publicKey)
+            sharing.invite(family, origin, 1u.toUByte())
+        }
+        val recipient = ShareCoordinator(context, recipientDb.absolutePath).use { it.claim(fragment).family }
+        val pending = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+            assertTrue(sharing.syncAndUpload(family, origin).ready)
+            sharing.snapshot(family).pendingDevices.single()
+        }
+        val familyHex = family.familyId.joinToString("") { "%02x".format(it.toInt() and 255) }
+        context.getSharedPreferences("shared_relay_origins", android.content.Context.MODE_PRIVATE)
+            .edit().putString(familyHex, origin).commit()
+        context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
+            .edit().putString("family", familyHex).commit()
+        ActivityScenario.launch(MainActivity::class.java).use {
+            val shortId = pending.deviceId.joinToString("") { "%02x".format(it.toInt() and 255) }.take(8)
+            val label = context.getString(R.string.device_short_id, shortId)
+            val button = context.getString(R.string.remove_pending_device, label)
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText(button).fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText(button).performScrollTo().performClick()
+            val confirm = context.getString(R.string.confirm_remove_pending_device)
+            composeRule.waitUntil(15_000) {
+                composeRule.onAllNodesWithText(confirm).fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText(confirm).performClick()
+            val deadline = System.currentTimeMillis() + 25_000
+            var removed = false
+            while (System.currentTimeMillis() < deadline) {
+                removed = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
+                    sharing.snapshot(family).pendingDevices.isEmpty()
+                }
+                if (removed) break
+                Thread.sleep(200)
+            }
+            assertTrue("The UI action should commit pending-device removal", removed)
+        }
+        ShareCoordinator(context, recipientDb.absolutePath).use { sharing ->
+            assertEquals(8u.toUByte(), sharing.advanceRecipient(recipient).joinPhase)
+        }
+    }
+
+    @Test
     fun managerCancelsUnusedInvitationBeforeClaim() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")

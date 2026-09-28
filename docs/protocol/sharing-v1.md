@@ -515,9 +515,12 @@ narrow signed invitation status afterward, but no Family data objects. A
 pending device may fetch that chain and its addressed
 challenge HPKE object; an active device may fetch all committed Family
 objects and entries; a removed device may fetch the public control chain,
-its own earlier batch-result receipts, and a removal proof. The relay checks
-Family and signer binding on every path. These are honest-relay read ACLs;
-encryption still protects data if a malicious relay serves extra ciphertext.
+its own earlier batch-result receipts, and a removal proof. After
+`remove_pending`, the former pending device may still fetch authenticated
+public controls to verify the result; it has no Family object, batch, or
+grant access. The relay checks Family and signer binding on every path.
+These are honest-relay read ACLs; encryption still protects data if a
+malicious relay serves extra ciphertext.
 
 | GET path | Exact successful response body |
 |---|---|

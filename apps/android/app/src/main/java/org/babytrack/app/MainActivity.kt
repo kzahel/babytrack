@@ -421,6 +421,13 @@ private data class PendingInvitationCancel(
     val localManager: Boolean,
 )
 
+private data class PendingDeviceRemoval(
+    val family: FamilyRef,
+    val invitationId: ByteArray,
+    val deviceId: ByteArray,
+    val localManager: Boolean,
+)
+
 private data class PendingRoleChange(
     val family: FamilyRef,
     val targetId: ByteArray,
@@ -612,6 +619,7 @@ private fun TrackerScreen(
     var automaticSyncBlocked by remember { mutableStateOf(false) }
     var removalTarget by remember { mutableStateOf<ByteArray?>(null) }
     var cancelInvitationTarget by remember { mutableStateOf<PendingInvitationCancel?>(null) }
+    var pendingDeviceRemoval by remember { mutableStateOf<PendingDeviceRemoval?>(null) }
     var roleChangeTarget by remember { mutableStateOf<PendingRoleChange?>(null) }
     val deviceLabelPrefs = remember { context.getSharedPreferences("device_labels", Context.MODE_PRIVATE) }
     var deviceLabels by remember {
@@ -779,6 +787,7 @@ private fun TrackerScreen(
                 if (progress.removed) sharedSnapshot = null
                 joinStage = when {
                     progress.removed -> removedHistoryMessage(context, progress)
+                    progress.joinPhase == 8u.toUByte() -> context.getString(R.string.pending_join_removed)
                     progress.ready -> context.getString(R.string.history_ready_auto)
                     progress.awaitingGrant -> pendingRecipientMessage(context, progress)
                     else -> context.getString(R.string.history_pending, progress.verifiedCursor.toLong())
@@ -992,6 +1001,7 @@ private fun TrackerScreen(
                                     val progress = result.getOrNull()
                                     joinStage = when {
                                         progress?.ready == true -> context.getString(R.string.history_ready_auto)
+                                        progress?.joinPhase == 8u.toUByte() -> context.getString(R.string.pending_join_removed)
                                         progress?.awaitingGrant == true -> pendingRecipientMessage(context, progress)
                                         progress != null -> context.getString(R.string.history_pending, progress.verifiedCursor.toLong())
                                         result.exceptionOrNull() is InvitationTerminal -> terminalInvitationMessage(
@@ -1067,6 +1077,20 @@ private fun TrackerScreen(
                                 Text(stringResource(if (nextRole == 2.toUByte())
                                     R.string.promote_device else R.string.demote_device, label))
                             }
+                        }
+                    }
+                    if (snapshot.pendingDevices.isNotEmpty()) {
+                        Text(stringResource(R.string.pending_devices), style = MaterialTheme.typography.titleMedium)
+                        snapshot.pendingDevices.forEach { pending ->
+                            val label = deviceLabels[deviceLabelKey(snapshot.family.familyId, pending.deviceId)]
+                                ?.takeIf { it.isNotBlank() }
+                                ?: stringResource(R.string.device_short_id, pending.deviceId.key().take(8))
+                            OutlinedButton(onClick = {
+                                pendingDeviceRemoval = PendingDeviceRemoval(
+                                    family, pending.invitationId.copyOf(), pending.deviceId.copyOf(),
+                                    activeFamilyIsLocal,
+                                )
+                            }) { Text(stringResource(R.string.remove_pending_device, label)) }
                         }
                     }
                     if (BuildConfig.DEBUG) {
@@ -2941,6 +2965,39 @@ private fun TrackerScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { cancelInvitationTarget = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+    pendingDeviceRemoval?.let { target ->
+        val label = deviceLabels[deviceLabelKey(target.family.familyId, target.deviceId)]
+            ?.takeIf { it.isNotBlank() } ?: target.deviceId.key().take(8)
+        AlertDialog(
+            onDismissRequest = { pendingDeviceRemoval = null },
+            title = { Text(stringResource(R.string.remove_pending_device_title)) },
+            text = { Text(stringResource(R.string.remove_pending_device_warning, label)) },
+            confirmButton = {
+                Button(onClick = {
+                    pendingDeviceRemoval = null
+                    scope.launch {
+                        runCatching { withContext(Dispatchers.IO) {
+                            val origin = if (target.localManager)
+                                lastRelayOrigin(target.family) ?: error("Relay origin unavailable")
+                            else sharing.recipientOrigin(target.family)
+                            sharing.removePendingDevice(
+                                target.family, origin, target.invitationId, target.deviceId,
+                            )
+                        } }.onSuccess {
+                            activeSharedSnapshot = it
+                            version++
+                            message = context.getString(R.string.pending_device_removed)
+                        }.onFailure { message = errorText }
+                    }
+                }) { Text(stringResource(R.string.confirm_remove_pending_device)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingDeviceRemoval = null }) {
                     Text(stringResource(R.string.cancel))
                 }
             },

@@ -522,6 +522,18 @@ The next general-device pass follows these ordered implementation proofs:
   invitation, encryption, and rotation at a fixed revision. Fix access and
   retention blockers before expanding mixed-client sync.
 
+The v1 `remove_pending` control now has a durable manager-side builder,
+native binding, and Android access action. It removes exactly the selected
+invitation/device row without rotating the epoch. A claimed recipient that
+was removed before receiving a key may read signed public controls using
+its historical device key, verify the removal, and see that its join ended;
+object and batch reads remain denied. A real-relay emulator case drops the
+accepted manager response, reopens the coordinator, retries the exact
+candidate, and verifies the stopped recipient after restart. A second
+emulator case taps the manager access button. The no-object FS71 vector
+already fixes kind 9 bytes; the broader mixed-client and independent M0
+exit gates remain open.
+
 Gate: the relay and clients enforce the reviewed authority transitions;
 deterministic authority and key-handoff tests pass; the independent review
 has no unresolved access or retention blocker.

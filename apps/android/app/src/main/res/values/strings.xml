@@ -259,6 +259,13 @@
     <string name="remove_device_warning">Device %1$s will stop receiving new Family data after the relay confirms key rotation. It keeps data already stored on that device.</string>
     <string name="confirm_remove_device">Remove access</string>
     <string name="device_removed">Device removal and new key verified.</string>
+    <string name="pending_devices">Waiting to join</string>
+    <string name="remove_pending_device">Stop joining device %1$s</string>
+    <string name="remove_pending_device_title">Stop this device joining?</string>
+    <string name="remove_pending_device_warning">Device %1$s has not received the Family key. Removing its pending access stops this join without changing the current key. It can keep any data it already holds.</string>
+    <string name="confirm_remove_pending_device">Stop join</string>
+    <string name="pending_device_removed">Pending device removal verified.</string>
+    <string name="pending_join_removed">A Family manager stopped this device joining before it received the Family key. Ask for a new invitation if you still need access.</string>
     <string name="cancel">Cancel</string>
     <string name="this_device">This device</string>
     <string name="another_device">Other device</string>

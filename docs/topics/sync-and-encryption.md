@@ -210,6 +210,12 @@ Family-scoped keys and composite local storage identity; files omit keys.
   remove that pending device. The wire contract must enforce these outcomes
   against the ordered control head using relay-signed commit time. A
   malicious relay can extend real-time expiry by lying about that time.
+  A keyless device removed from pending authority may still read signed
+  public controls with its historical device credential to verify the
+  removal. It cannot read Family objects or batches. Android keeps the
+  exact manager removal candidate through an uncertain response and shows
+  the stopped join only after verifying the committed control. No epoch
+  rotation is needed because that device never held the Family key.
 - **Removal.** A manager can remove a holder. The removing device creates
   epoch e+1, grants it to every remaining holder, posts the keyring and the
   new authorization state, and appends a signed removal transition. The

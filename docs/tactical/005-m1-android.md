@@ -288,8 +288,11 @@ intended Family and child, and remains usable after process death.
   and checks that the link becomes unusable. Managers can promote and demote
   admitted devices from this view; a real-relay case verifies the changed
   recipient role and denial of a later invitation after demotion. Two
-  successive key rotations now pass a real-relay case. Pending-device
-  removal and admitted-manager cancellation coverage remain open. A removed
+  successive key rotations now pass a real-relay case. A manager can now
+  stop a claimed keyless pending device from the access view without rotating
+  the Family key. Separate real-relay cases tap the UI action and recover
+  from a lost removal response; the recipient verifies the stopped join
+  after restart. Admitted-manager cancellation coverage remains open. A removed
   original manager now has a signed proof and private-copy path through the
   Rust binding and Android coordinator. The tracker omits that removed source
   from writable Family selection and offers a copy action that reuses an

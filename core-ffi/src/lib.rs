@@ -18,6 +18,7 @@ use babytrack_core::{
     issue::{FirstInviteIssue, LaterInviteIssue},
     local_api::{self, ActivityTime, LocalRepository},
     operation,
+    pending_remove::PendingRemoval,
     role_change::RoleChange,
     shared_history::{PendingBatchResult, PublicHistorySession},
     shared_ready::ReadyFamilySession,
@@ -268,6 +269,19 @@ pub struct PreparedCancelRow {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct PendingDeviceRow {
+    pub invitation_id: Vec<u8>,
+    pub device_id: Vec<u8>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PreparedPendingRemovalRow {
+    pub invitation_id: Vec<u8>,
+    pub device_id: Vec<u8>,
+    pub candidate_bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct PreparedRoleChangeRow {
     pub target_device_id: Vec<u8>,
     pub new_role: u8,
@@ -370,6 +384,7 @@ pub struct SharedSnapshotRow {
     pub inert_count: u64,
     pub recent_inert: Vec<InertBatchRow>,
     pub devices: Vec<SharedDeviceRow>,
+    pub pending_devices: Vec<PendingDeviceRow>,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -688,6 +703,47 @@ impl NativeSharedStore {
     ) -> Result<(), BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
         InviteCancellation::resume(&store, family.handle()?)
+            .map_err(rejected)?
+            .confirm(&mut store, &committed_control(&commit_response)?)
+            .map_err(rejected)
+    }
+
+    /// Remove a verified keyless device from pending authority without an
+    /// epoch rotation. Save the exact candidate before contacting the relay.
+    pub fn prepare_pending_removal(
+        &self,
+        family: FamilyRef,
+        wrapping_key: Vec<u8>,
+        invitation_id: Vec<u8>,
+        device_id: Vec<u8>,
+    ) -> Result<PreparedPendingRemovalRow, BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        let handle = family.handle()?;
+        let key = fixed(&wrapping_key)?;
+        let invitation = fixed(&invitation_id)?;
+        let device = fixed(&device_id)?;
+        let removal = if let Some(holder) = admitted_manager(&mut store, handle, &key)? {
+            PendingRemoval::prepare_for_admitted_manager(&mut store, &holder, invitation, device)
+                .map_err(rejected)?
+        } else {
+            let manager = ManagerCreation::resume(&store, handle, &key).map_err(rejected)?;
+            PendingRemoval::prepare_for_initial_manager(&mut store, &manager, invitation, device)
+                .map_err(rejected)?
+        };
+        Ok(PreparedPendingRemovalRow {
+            invitation_id: removal.invitation_id().to_vec(),
+            device_id: removal.device_id().to_vec(),
+            candidate_bytes: removal.candidate_bytes().to_vec(),
+        })
+    }
+
+    pub fn confirm_pending_removal(
+        &self,
+        family: FamilyRef,
+        commit_response: Vec<u8>,
+    ) -> Result<(), BindingError> {
+        let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
+        PendingRemoval::resume(&store, family.handle()?)
             .map_err(rejected)?
             .confirm(&mut store, &committed_control(&commit_response)?)
             .map_err(rejected)
@@ -1661,10 +1717,10 @@ impl NativeSharedStore {
                     .map_err(rejected)?
                     .cursor(),
                 pending_control_cursor,
-                awaiting_grant: true,
+                awaiting_grant: pending_phase != 8,
                 join_phase: pending_phase,
                 no_more_visible: false,
-                remaining_objects: true,
+                remaining_objects: pending_phase != 8,
                 ready: false,
                 child_count: 0,
                 removed: false,
@@ -1752,8 +1808,8 @@ impl NativeSharedStore {
         }
         let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
         let projection = ready.projection_with_pending(&store).map_err(rejected)?;
-        let devices = PublicHistorySession::resume(&store, family.handle()?)
-            .map_err(rejected)?
+        let public = PublicHistorySession::resume(&store, handle).map_err(rejected)?;
+        let devices = public
             .chain()
             .active_devices()
             .map_err(rejected)?
@@ -1763,6 +1819,37 @@ impl NativeSharedStore {
                 role: device.role,
             })
             .collect();
+        let Value::Map(state) =
+            cbor::decode(&public.chain().state_bytes().map_err(rejected)?).map_err(rejected)?
+        else {
+            return Err(BindingError::InvalidBytes);
+        };
+        let Value::Array(rows) = &state[5].1 else {
+            return Err(BindingError::InvalidBytes);
+        };
+        let pending_devices = rows
+            .iter()
+            .map(|row| {
+                let Value::Array(fields) = row else {
+                    return Err(BindingError::InvalidBytes);
+                };
+                if fields.len() != 9 {
+                    return Err(BindingError::InvalidBytes);
+                }
+                let (Value::Bytes(invitation_id), Value::Bytes(device_id)) =
+                    (&fields[0], &fields[1])
+                else {
+                    return Err(BindingError::InvalidBytes);
+                };
+                if invitation_id.len() != 16 || device_id.len() != 16 {
+                    return Err(BindingError::InvalidBytes);
+                }
+                Ok(PendingDeviceRow {
+                    invitation_id: invitation_id.clone(),
+                    device_id: device_id.clone(),
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let inert_count = projection.inert_batches().len() as u64;
         let recent_inert = projection
             .inert_batches()
@@ -1835,6 +1922,7 @@ impl NativeSharedStore {
             inert_count,
             recent_inert,
             devices,
+            pending_devices,
         })
     }
 

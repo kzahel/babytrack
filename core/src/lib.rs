@@ -8,6 +8,7 @@ pub mod active_pull;
 pub mod analysis_csv;
 pub mod batch;
 pub mod bootstrap;
+pub mod claim;
 pub use babytrack_wire::cbor;
 pub mod control;
 #[cfg(not(target_arch = "wasm32"))]

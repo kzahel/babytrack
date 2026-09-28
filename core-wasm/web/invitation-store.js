@@ -9,6 +9,12 @@ const completed = (transaction) => new Promise((resolve, reject) => {
   transaction.oncomplete = resolve;
   transaction.onabort = () => reject(transaction.error || new Error('transaction aborted'));
 });
+const randomV4 = () => {
+  const id = crypto.getRandomValues(new Uint8Array(16));
+  id[6] = (id[6] & 0x0f) | 0x40;
+  id[8] = (id[8] & 0x3f) | 0x80;
+  return id;
+};
 
 export class InvitationStore {
   constructor(database, wasm, fragment) {
@@ -24,11 +30,18 @@ export class InvitationStore {
         throw new Error('Invitation relay origin differs from this app');
       }
     } finally { probe.free(); }
-    const request = indexedDB.open(name, 1);
+    const request = indexedDB.open(name, 2);
     request.onupgradeneeded = () => {
       const database = request.result;
-      database.createObjectStore('invitations', { keyPath: 'fragment' });
-      database.createObjectStore('pages', { keyPath: ['fragment', 'after'] });
+      if (!database.objectStoreNames.contains('invitations')) {
+        database.createObjectStore('invitations', { keyPath: 'fragment' });
+      }
+      if (!database.objectStoreNames.contains('pages')) {
+        database.createObjectStore('pages', { keyPath: ['fragment', 'after'] });
+      }
+      if (!database.objectStoreNames.contains('claims')) {
+        database.createObjectStore('claims', { keyPath: 'fragment' });
+      }
     };
     return new InvitationStore(await result(request), wasm, fragment);
   }
@@ -36,12 +49,15 @@ export class InvitationStore {
   close() { this.database.close(); }
 
   async load() {
-    const read = this.database.transaction(['invitations', 'pages'], 'readonly');
+    const read = this.database.transaction(['invitations', 'pages', 'claims'], 'readonly');
     const metadataRequest = read.objectStore('invitations').get(this.fragment);
+    const claimRequest = read.objectStore('claims').get(this.fragment);
     const pagesRequest = read.objectStore('pages').getAll(
       IDBKeyRange.bound([this.fragment, 0], [this.fragment, Number.MAX_SAFE_INTEGER]),
     );
-    const [metadata, pages] = await Promise.all([result(metadataRequest), result(pagesRequest)]);
+    const [metadata, pages, claim] = await Promise.all([
+      result(metadataRequest), result(pagesRequest), result(claimRequest),
+    ]);
     const verifier = new this.wasm.WasmInvitation(this.fragment);
     try {
       for (const page of pages) {
@@ -56,6 +72,9 @@ export class InvitationStore {
         throw new Error('Saved invitation prefix differs from pin');
       }
       if (!metadata && pages.length) throw new Error('Invitation pages lack pin');
+      if (claim?.committedResponse) {
+        verifier.accept_claim_response(claim.committedResponse, claim.candidate);
+      }
       return verifier;
     } catch (error) {
       verifier.free();
@@ -67,6 +86,8 @@ export class InvitationStore {
     if (!Number.isInteger(maxPages) || maxPages < 1 || maxPages > 64) {
       throw new Error('Invalid invitation pull limit');
     }
+    const claim = await this.savedClaim();
+    if (claim) throw new Error('Invitation read is closed after claim preparation');
     const verifier = await this.load();
     try {
       let hasMore = true;
@@ -89,6 +110,53 @@ export class InvitationStore {
       }
       return { cursor: Number(verifier.control_cursor()), linkedIssue: verifier.linked_issue(),
         hasMore };
+    } finally { verifier.free(); }
+  }
+
+  async savedClaim() {
+    const read = this.database.transaction('claims', 'readonly');
+    return result(read.objectStore('claims').get(this.fragment));
+  }
+
+  // Persist the exact candidate and private keys before any network write.
+  async prepareClaim() {
+    const prior = await this.savedClaim();
+    if (prior) return prior;
+    const verifier = await this.load();
+    try {
+      const deviceId = randomV4();
+      const signingSeed = crypto.getRandomValues(new Uint8Array(32));
+      const agreementPrivate = crypto.getRandomValues(new Uint8Array(32));
+      const enrollmentNonce = crypto.getRandomValues(new Uint8Array(32));
+      const transitionId = randomV4();
+      const candidate = verifier.prepare_claim(deviceId, signingSeed, agreementPrivate,
+        enrollmentNonce, transitionId);
+      const claim = { fragment: this.fragment, deviceId, signingSeed, agreementPrivate,
+        enrollmentNonce, transitionId, candidate: Uint8Array.from(candidate) };
+      const write = this.database.transaction('claims', 'readwrite');
+      const done = completed(write);
+      write.objectStore('claims').add(claim);
+      await done;
+      return claim;
+    } finally { verifier.free(); }
+  }
+
+  async submitClaim(post) {
+    const claim = await this.savedClaim();
+    if (!claim) throw new Error('Claim must be saved before posting');
+    const verifier = await this.load();
+    try {
+      if (claim.committedResponse) {
+        return { cursor: Number(verifier.control_cursor()), deviceId: claim.deviceId };
+      }
+      const family = hex(verifier.family_id());
+      const response = await post(`/v1/families/${family}/control`, claim.candidate);
+      verifier.accept_claim_response(response, claim.candidate);
+      const write = this.database.transaction('claims', 'readwrite');
+      const done = completed(write);
+      write.objectStore('claims').put({ ...claim, committedResponse: Uint8Array.from(response) });
+      await done;
+      return { cursor: Number(verifier.control_cursor()), deviceId: claim.deviceId };
     } finally { verifier.free(); }
   }
 }

@@ -303,8 +303,11 @@ The browser invitation adapter separately signs a public-control read with
 the link's invitation credential, checks that the linked genesis and issue
 appear in the Rust sparse chain, and persists exact pages with a head pin.
 It replays those pages after reload before preparing any claim. The fragment
-origin must match the browser app origin. Browser claim and proof transport
-are still open.
+origin must match the browser app origin. The pure Rust claim builder is now
+shared with wasm: IndexedDB saves the generated device keys and exact claim
+before POST, and Rust checks that a committed relay result contains that
+candidate before marking it accepted. Lost responses retry the exact saved
+candidate after reload. Browser challenge/proof transport is still open.
 IndexedDB keeps one exact sealed batch and an ordered draft queue. After
 signed acceptance, Rust seals the next draft against the new verified head;
 one IndexedDB transaction saves those exact bytes and removes the draft.

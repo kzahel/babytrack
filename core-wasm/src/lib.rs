@@ -9,6 +9,7 @@ use babytrack_core::{
     batch,
     bootstrap::InvitationBootstrap,
     cbor::{self, Value},
+    claim,
     control_chain::ControlChain,
     crypto,
     operation::Operation,
@@ -116,6 +117,84 @@ impl WasmInvitation {
         self.bootstrap
             .sign_get_with_id(&path, fixed(request_id, "request ID")?)
             .map_err(debug_error)
+    }
+
+    /// The caller saves this exact candidate and its four secrets before POST.
+    pub fn prepare_claim(
+        &self,
+        device_id: &[u8],
+        signing_seed: &[u8],
+        agreement_private: &[u8],
+        enrollment_nonce: &[u8],
+        transition_id: &[u8],
+    ) -> Result<Vec<u8>, JsError> {
+        if !self.linked_issue {
+            return Err(JsError::new("linked invitation issue not verified"));
+        }
+        claim::build_claim(
+            &self.bootstrap,
+            self.chain
+                .as_ref()
+                .ok_or_else(|| JsError::new("genesis absent"))?,
+            claim::ClaimIdentity {
+                family_id: self.bootstrap.family_id(),
+                device_id: fixed(device_id, "device ID")?,
+            },
+            &fixed(signing_seed, "signing seed")?,
+            &fixed(agreement_private, "agreement private key")?,
+            &fixed(enrollment_nonce, "enrollment nonce")?,
+            fixed(transition_id, "transition ID")?,
+        )
+        .map_err(debug_error)
+    }
+
+    /// A 200 response alone is not proof: require the relay-signed committed
+    /// control to contain the exact candidate saved before the POST.
+    pub fn accept_claim_response(
+        &mut self,
+        response: &[u8],
+        candidate: &[u8],
+    ) -> Result<Vec<u8>, JsError> {
+        let value = cbor::decode_with_limits(
+            response,
+            cbor::Limits {
+                max_bytes: 1024 * 1024 + 128,
+                max_depth: 16,
+            },
+        )
+        .map_err(debug_error)?;
+        let Value::Map(wrapper) = value else {
+            return Err(JsError::new("claim result not map"));
+        };
+        if wrapper.len() != 2 || wrapper[0] != (1, Value::Integer(1)) || wrapper[1].0 != 2 {
+            return Err(JsError::new("claim result shape invalid"));
+        }
+        let Value::Bytes(committed) = &wrapper[1].1 else {
+            return Err(JsError::new("claim result missing committed control"));
+        };
+        let Value::Map(root) = cbor::decode(committed).map_err(debug_error)? else {
+            return Err(JsError::new("committed claim not map"));
+        };
+        if root.len() != 4 {
+            return Err(JsError::new("committed claim width invalid"));
+        }
+        let extracted = cbor::encode(&Value::Map(vec![
+            (1, root[0].1.clone()),
+            (2, root[1].1.clone()),
+        ]))
+        .map_err(debug_error)?;
+        if extracted != candidate {
+            return Err(JsError::new("committed claim differs from saved candidate"));
+        }
+        let mut chain = self
+            .chain
+            .clone()
+            .ok_or_else(|| JsError::new("genesis absent"))?;
+        chain.apply_sparse_control(committed).map_err(debug_error)?;
+        self.control_cursor = chain.last_global_cursor();
+        self.chain = Some(chain);
+        self.controls.push(committed.clone());
+        Ok(committed.clone())
     }
 
     /// Apply one bounded sparse control page atomically. Data-batch cursor

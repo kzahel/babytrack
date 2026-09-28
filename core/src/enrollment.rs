@@ -4,7 +4,7 @@
 use crate::{
     bootstrap::{self, InvitationBootstrap, InvitationStatus},
     cbor::{self, Value},
-    control_chain, crypto, hpke,
+    claim, control_chain, crypto, hpke,
     shared_history::{self, PublicHistorySession},
     sqlite_store::{self, EnrollmentRow, FamilyHandle, SqliteStore},
 };
@@ -22,6 +22,7 @@ pub enum Error {
     Random(getrandom::Error),
     Wire(crate::sync_wire::Error),
     Authority(babytrack_wire::authority::Error),
+    Claim(claim::Error),
     Invalid(&'static str),
 }
 impl From<bootstrap::Error> for Error {
@@ -62,6 +63,11 @@ impl From<crate::sync_wire::Error> for Error {
 impl From<babytrack_wire::authority::Error> for Error {
     fn from(value: babytrack_wire::authority::Error) -> Self {
         Self::Authority(value)
+    }
+}
+impl From<claim::Error> for Error {
+    fn from(value: claim::Error) -> Self {
+        Self::Claim(value)
     }
 }
 impl From<shared_history::Error> for Error {
@@ -253,10 +259,13 @@ impl EnrollmentAttempt {
         if chain.head_hash() == candidate_prior_head(&current)? {
             return Ok(attempt);
         }
-        let new_candidate = build_claim(
+        let new_candidate = claim::build_claim(
             bootstrap,
             &chain,
-            attempt.family,
+            claim::ClaimIdentity {
+                family_id: attempt.family.family_id,
+                device_id: attempt.family.device_id,
+            },
             &attempt.device_sign_seed,
             &attempt.device_agreement_private,
             &attempt.enrollment_nonce,
@@ -318,10 +327,13 @@ impl EnrollmentAttempt {
         let device_agreement_private = random::<32>()?;
         let enrollment_nonce = random::<32>()?;
         let transition_id = random_v4()?;
-        let candidate_bytes = build_claim(
+        let candidate_bytes = claim::build_claim(
             bootstrap,
             &chain,
-            family,
+            claim::ClaimIdentity {
+                family_id: family.family_id,
+                device_id: family.device_id,
+            },
             &device_sign_seed,
             &device_agreement_private,
             &enrollment_nonce,
@@ -464,10 +476,13 @@ impl EnrollmentAttempt {
         let device_agreement_private = fixed(&parts[3])?;
         let enrollment_nonce = fixed(&parts[4])?;
         let transition_id = candidate_transition_id(&row.candidate_bytes)?;
-        let rebuilt = build_claim(
+        let rebuilt = claim::build_claim(
             &bootstrap,
             &chain,
-            row.family,
+            claim::ClaimIdentity {
+                family_id: row.family.family_id,
+                device_id: row.family.device_id,
+            },
             &device_sign_seed,
             &device_agreement_private,
             &enrollment_nonce,
@@ -822,134 +837,6 @@ impl EnrollmentAttempt {
             "linked invitation absent from verified state",
         ))
     }
-}
-
-fn build_claim(
-    bootstrap: &InvitationBootstrap,
-    chain: &crate::control_chain::ControlChain,
-    family: FamilyHandle,
-    device_sign_seed: &[u8; 32],
-    device_agreement_private: &[u8; 32],
-    enrollment_nonce: &[u8; 32],
-    transition_id: [u8; 16],
-) -> Result<Vec<u8>, Error> {
-    let sign_public = crypto::signing_public_key(device_sign_seed);
-    let agree_public = hpke::public_key_from_private(device_agreement_private)?;
-    let claim_input = Value::Array(vec![
-        Value::Bytes(family.family_id.to_vec()),
-        Value::Bytes(chain.relay_id().to_vec()),
-        Value::Bytes(bootstrap.invitation_id().to_vec()),
-        Value::Integer(bootstrap.fixed_role().into()),
-        Value::Bytes(family.device_id.to_vec()),
-        Value::Bytes(sign_public.to_vec()),
-        Value::Bytes(agree_public.to_vec()),
-        Value::Integer(1),
-        Value::Bytes(enrollment_nonce.to_vec()),
-        Value::Bytes(chain.head_hash().to_vec()),
-    ]);
-    let claim_hash = crypto::hash("claim", &cbor::encode(&claim_input)?)?;
-    let mut state = cbor::decode(&chain.state_bytes()?)?;
-    let Value::Map(state_fields) = &mut state else {
-        return Err(Error::Invalid("verified authority state not map"));
-    };
-    let Value::Array(invitations) = &mut state_fields[6].1 else {
-        return Err(Error::Invalid("verified invitations not array"));
-    };
-    let row = invitations
-        .iter_mut()
-        .find(|row| {
-            matches!(row, Value::Array(fields) if fields[0] == Value::Bytes(bootstrap.invitation_id().to_vec()))
-        })
-        .ok_or(Error::Invalid("linked invitation missing"))?;
-    let Value::Array(invitation) = row else {
-        unreachable!()
-    };
-    if invitation[5] != Value::Integer(1) {
-        return Err(Error::Invalid("invitation is already consumed"));
-    }
-    invitation[5] = Value::Integer(2);
-    let Value::Array(pending) = &mut state_fields[5].1 else {
-        return Err(Error::Invalid("verified pending state not array"));
-    };
-    pending.push(Value::Array(vec![
-        Value::Bytes(bootstrap.invitation_id().to_vec()),
-        Value::Bytes(family.device_id.to_vec()),
-        Value::Bytes(sign_public.to_vec()),
-        Value::Bytes(agree_public.to_vec()),
-        Value::Integer(1),
-        Value::Integer(bootstrap.fixed_role().into()),
-        Value::Bytes(claim_hash.to_vec()),
-        Value::Null,
-        Value::Null,
-    ]));
-    pending.sort_by(|left, right| {
-        let (Value::Array(left), Value::Array(right)) = (left, right) else {
-            unreachable!()
-        };
-        let (Value::Bytes(left), Value::Bytes(right)) = (&left[0], &right[0]) else {
-            unreachable!()
-        };
-        left.cmp(right)
-    });
-    let delta = Value::Map(vec![
-        (1, Value::Bytes(bootstrap.invitation_id().to_vec())),
-        (2, Value::Bytes(family.device_id.to_vec())),
-        (3, Value::Bytes(sign_public.to_vec())),
-        (4, Value::Bytes(agree_public.to_vec())),
-        (5, Value::Integer(1)),
-        (6, Value::Bytes(enrollment_nonce.to_vec())),
-        (7, Value::Bytes(claim_hash.to_vec())),
-    ]);
-    let mut parts = vec![
-        Value::Integer(1),
-        Value::Bytes(family.family_id.to_vec()),
-        Value::Bytes(chain.relay_id().to_vec()),
-        Value::Bytes(chain.head_hash().to_vec()),
-        Value::Bytes(transition_id.to_vec()),
-        Value::Integer(4),
-        delta,
-        Value::Bytes(crypto::hash("auth-state", &cbor::encode(&state)?)?.to_vec()),
-        Value::Integer(chain.epoch()?.into()),
-    ];
-    let core_hash = crypto::hash(
-        "transition-core",
-        &cbor::encode(&Value::Array(parts.clone()))?,
-    )?;
-    parts.push(Value::Array(vec![]));
-    parts.push(Value::Bytes(core_hash.to_vec()));
-    let unsigned = Value::Map(
-        parts
-            .into_iter()
-            .enumerate()
-            .map(|(index, value)| (index as u64 + 1, value))
-            .collect(),
-    );
-    let unsigned_bytes = cbor::encode(&unsigned)?;
-    let mut signatures = vec![
-        (bootstrap.invitation_id(), bootstrap.invitation_sign_seed()),
-        (family.device_id, *device_sign_seed),
-    ];
-    signatures.sort_by_key(|entry| entry.0);
-    let signatures = Value::Array(
-        signatures
-            .into_iter()
-            .map(|(id, seed)| {
-                Ok(Value::Array(vec![
-                    Value::Bytes(id.to_vec()),
-                    Value::Bytes(
-                        crypto::sign_cbor("control-transition", &unsigned_bytes, &seed)?.to_vec(),
-                    ),
-                ]))
-            })
-            .collect::<Result<Vec<_>, Error>>()?,
-    );
-    let candidate = cbor::encode(&Value::Map(vec![(1, unsigned), (2, signatures)]))?;
-    babytrack_wire::authority::prepare_claim(
-        &candidate,
-        &cbor::decode(&chain.state_bytes()?)?,
-        chain.head_hash(),
-    )?;
-    Ok(candidate)
 }
 
 fn local_aad(family: FamilyHandle, invitation_id: [u8; 16]) -> Result<[u8; 32], Error> {

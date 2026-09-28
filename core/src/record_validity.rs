@@ -265,7 +265,7 @@ fn measure(value: &Value, dimension: Dimension) -> Result<(), &'static str> {
     Ok(())
 }
 
-fn unit_factor(unit: u64) -> (i128, i128) {
+pub(crate) fn unit_factor(unit: u64) -> (i128, i128) {
     match unit {
         1 | 10 | 20 => (1, 1),
         2 => (295_735_295_625, 10_000_000_000),

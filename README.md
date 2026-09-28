@@ -27,7 +27,8 @@ same-epoch authority changes before rebuilding its data view; rotation and recip
 credentials remain open.
 
 The Android debug app logs children, diapers, bottles with milk/content
-choice, sleep timers and completed sleep with optional place, notes, growth
+choice and mL/US/UK fluid-ounce entry, sleep timers and completed sleep
+with optional place, notes, growth
 including head circumference, Celsius, medication, solids, breast-feed
 segments, and pumping entries locally or in a shared Family. Existing pumping
 amounts can be corrected without replacing the entry. Completed entries can

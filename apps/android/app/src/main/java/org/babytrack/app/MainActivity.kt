@@ -211,8 +211,18 @@ private data class PendingBottleEdit(
     val activityId: ByteArray,
     val shared: Boolean,
     val amount: String,
+    val unit: UByte,
     val content: UByte,
 )
+
+private val bottleAmountPattern = Regex("(0|[1-9][0-9]*)(\\.[0-9]+)?")
+
+private fun validBottleAmount(value: String, unit: UByte): Boolean =
+    value.length <= 16 && bottleAmountPattern.matches(value) &&
+        (unit != 1u.toUByte() || !value.contains('.')) &&
+        value.any { it in '1'..'9' } &&
+        (unit != 1u.toUByte() || value.toLongOrNull()?.let { it in 1..1_000_000 } == true)
+
 private data class PendingBreastEdit(
     val family: FamilyRef,
     val childId: ByteArray,
@@ -470,6 +480,7 @@ private fun TrackerScreen(
     var childBirthDate by remember { mutableStateOf("") }
     var childSex by remember { mutableStateOf(3u.toUByte()) }
     var amount by remember { mutableStateOf("") }
+    var bottleUnit by remember { mutableStateOf(1u.toUByte()) }
     var bottleContent by remember { mutableStateOf(2u.toUByte()) }
     var breastMinutes by remember { mutableStateOf("") }
     var breastSide by remember { mutableStateOf(1u.toUByte()) }
@@ -562,6 +573,7 @@ private fun TrackerScreen(
         childBirthDate = ""
         childSex = 3u.toUByte()
         amount = ""
+        bottleUnit = 1u.toUByte()
         bottleContent = 2u.toUByte()
         breastDraftSegments = emptyList()
         breastMinutes = ""
@@ -1352,21 +1364,37 @@ private fun TrackerScreen(
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            1u.toUByte() to R.string.unit_ml,
+                            2u.toUByte() to R.string.unit_us_fl_oz,
+                            3u.toUByte() to R.string.unit_uk_fl_oz,
+                        ).forEach { (unit, label) ->
+                            FilterChip(selected = bottleUnit == unit, onClick = {
+                                if (bottleUnit != unit) {
+                                    bottleUnit = unit
+                                    amount = ""
+                                }
+                            }, label = { Text(stringResource(label)) })
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = amount,
-                            onValueChange = { amount = it.filter(Char::isDigit) },
-                            label = { Text(stringResource(R.string.amount_ml)) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            onValueChange = { amount = it.filter { char ->
+                                char.isDigit() || (bottleUnit != 1u.toUByte() && char == '.')
+                            }.take(16) },
+                            label = { Text(stringResource(R.string.bottle_amount)) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                         )
-                        Button(enabled = (amount.toLongOrNull() ?: 0) > 0, onClick = {
-                            val ml = amount.toLongOrNull() ?: return@Button
+                        Button(enabled = validBottleAmount(amount, bottleUnit), onClick = {
                             val entered = amount
+                            val unit = bottleUnit
                             val content = bottleContent
                             logCompleted(onSaved = { if (amount == entered) amount = "" }) { at ->
-                                if (activeShared) sharing.logBottleMl(family, child.id, ml, content, at)
-                                else store.logBottleMl(family, child.id, ml, content, at)
+                                if (activeShared) sharing.logBottleEntered(family, child.id, entered, unit, content, at)
+                                else store.logBottleEntered(family, child.id, entered, unit, content, at)
                             }
                         }) { Text(stringResource(R.string.log_bottle)) }
                     }
@@ -1787,8 +1815,14 @@ private fun TrackerScreen(
                             previousDay = day
                         }
                         val label = when {
-                            entry.bottleMl != null -> stringResource(R.string.bottle_with_content,
-                                entry.bottleMl!!, stringResource(when (entry.bottleContent) {
+                            entry.bottleMl != null -> stringResource(R.string.bottle_with_entered,
+                                entry.bottleEntered ?: entry.bottleMl.toString(),
+                                stringResource(when (entry.bottleUnit) {
+                                    2u.toUByte() -> R.string.unit_us_fl_oz
+                                    3u.toUByte() -> R.string.unit_uk_fl_oz
+                                    else -> R.string.unit_ml
+                                }),
+                                stringResource(when (entry.bottleContent) {
                                     1u.toUByte() -> R.string.bottle_breast_milk
                                     2u.toUByte() -> R.string.bottle_formula
                                     3u.toUByte() -> R.string.bottle_mixed
@@ -1905,7 +1939,8 @@ private fun TrackerScreen(
                                             entry.childId.copyOf(),
                                             entry.id.copyOf(),
                                             activeShared,
-                                            entry.bottleMl.toString(),
+                                            entry.bottleEntered ?: entry.bottleMl.toString(),
+                                            entry.bottleUnit ?: 1u.toUByte(),
                                             entry.bottleContent ?: 4u.toUByte(),
                                         )
                                     }) { Text(stringResource(R.string.edit_bottle)) }
@@ -2164,10 +2199,25 @@ private fun TrackerScreen(
                 Column {
                     OutlinedTextField(
                         value = target.amount,
-                        onValueChange = { pendingBottleEdit = target.copy(amount = it) },
-                        label = { Text(stringResource(R.string.amount_ml)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        onValueChange = { pendingBottleEdit = target.copy(amount = it.filter { char ->
+                            char.isDigit() || (target.unit != 1u.toUByte() && char == '.')
+                        }.take(16)) },
+                        label = { Text(stringResource(R.string.bottle_amount)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            1u.toUByte() to R.string.unit_ml,
+                            2u.toUByte() to R.string.unit_us_fl_oz,
+                            3u.toUByte() to R.string.unit_uk_fl_oz,
+                        ).forEach { (unit, label) ->
+                            FilterChip(selected = target.unit == unit,
+                                onClick = {
+                                    if (target.unit != unit) pendingBottleEdit = target.copy(amount = "", unit = unit)
+                                },
+                                label = { Text(stringResource(label)) })
+                        }
+                    }
                     listOf(
                         1u.toUByte() to R.string.bottle_breast_milk,
                         2u.toUByte() to R.string.bottle_formula,
@@ -2185,16 +2235,15 @@ private fun TrackerScreen(
                 }
             },
             confirmButton = {
-                val amount = target.amount.toLongOrNull()
-                Button(enabled = amount != null && amount in 1..1_000_000, onClick = {
-                    pendingBottleEdit = null
+                Button(enabled = validBottleAmount(target.amount, target.unit), onClick = {
                     val savedAtMs = System.currentTimeMillis()
-                    change {
-                        val ml = amount ?: error("Bottle amount missing")
-                        if (target.shared) sharing.editBottle(
-                            target.family, target.childId, target.activityId, ml, target.content, savedAtMs,
-                        ) else store.editBottle(
-                            target.family, target.childId, target.activityId, ml, target.content, savedAtMs,
+                    change(onSaved = { pendingBottleEdit = null }) {
+                        if (target.shared) sharing.editBottleEntered(
+                            target.family, target.childId, target.activityId,
+                            target.amount, target.unit, target.content, savedAtMs,
+                        ) else store.editBottleEntered(
+                            target.family, target.childId, target.activityId,
+                            target.amount, target.unit, target.content, savedAtMs,
                         )
                     }
                 }) { Text(stringResource(R.string.save_changes)) }

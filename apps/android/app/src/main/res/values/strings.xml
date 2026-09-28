@@ -52,7 +52,7 @@
     <string name="bottle_formula">Formula</string>
     <string name="bottle_mixed">Mixed</string>
     <string name="bottle_other">Other</string>
-    <string name="bottle_with_content">Bottle · %1$d mL · %2$s</string>
+    <string name="bottle_with_entered">Bottle · %1$s %2$s · %3$s</string>
     <string name="log_breast">Log breast feed</string>
     <string name="breast_left">Left</string>
     <string name="breast_right">Right</string>
@@ -136,7 +136,10 @@
     <string name="dose_unit">Dose unit</string>
     <string name="save_medication">Save medication</string>
     <string name="medication_entry">Medication · %1$s · %2$s %3$s</string>
-    <string name="amount_ml">Amount (mL)</string>
+    <string name="bottle_amount">Bottle amount</string>
+    <string name="unit_ml">mL</string>
+    <string name="unit_us_fl_oz">US fl oz</string>
+    <string name="unit_uk_fl_oz">UK fl oz</string>
     <string name="bottle">Bottle · %1$d mL</string>
     <string name="diaper">Diaper · %1$s</string>
     <string name="backup_title">Save a copy</string>

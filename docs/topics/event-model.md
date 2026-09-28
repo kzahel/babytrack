@@ -69,8 +69,11 @@ hundredths using the published rule, and retains the entered text. Local
 restart/file restore and cross-device encrypted sync preserve these
 measurements. Medication entry records a name and entered dose amount/unit
 as text without a dosing recommendation; local file restore and encrypted
-cross-device sync preserve the fields. Other entered units and advanced
-editing remain M1 work. Solids entry stores one trimmed food per line
+cross-device sync preserve the fields. Bottle logging and correction now
+accept mL, US fl oz, and UK fl oz. The Rust core converts entered decimals
+with the v1 exact factors, while the Android timeline retains and displays
+the entered text and unit. Other entered units and advanced editing remain
+M1 work. Solids entry stores one trimmed food per line
 as the published atomic list and preserves optional entered amount text;
 local file restore and encrypted cross-device sync preserve both.
 The breast-feed path records one to eight completed timed left/right

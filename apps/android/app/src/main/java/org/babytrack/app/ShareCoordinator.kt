@@ -368,6 +368,10 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     fun logBottleMl(family: FamilyRef, childId: ByteArray, amountMl: Long, content: UByte, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedBottleMl(family, wrapping, childId, amountMl, content, time) }
 
+    fun logBottleEntered(family: FamilyRef, childId: ByteArray, entered: String, unit: UByte,
+                         content: UByte, time: ActivityWhen): ByteArray =
+        withWrapping { wrapping -> core.logSharedBottleEntered(family, wrapping, childId, entered, unit, content, time) }
+
     fun logBreastFeed(family: FamilyRef, childId: ByteArray, side: UByte, time: ActivityWhen, endUtcMs: Long): ByteArray =
         withWrapping { wrapping -> core.logSharedBreastFeed(family, wrapping, childId, side, time, endUtcMs) }
 
@@ -421,6 +425,12 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     fun editBottle(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
                    amountMl: Long, content: UByte, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedBottle(family, wrapping, childId, activityId, amountMl, content, savedAtMs) }
+
+    fun editBottleEntered(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+                          entered: String, unit: UByte, content: UByte, savedAtMs: Long): Unit =
+        withWrapping { wrapping -> core.editSharedBottleEntered(
+            family, wrapping, childId, activityId, entered, unit, content, savedAtMs,
+        ) }
 
     fun editBreastFeedSegments(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
                                segments: List<uniffi.babytrack_core_ffi.BreastSegmentRow>, savedAtMs: Long): Unit =

@@ -55,6 +55,8 @@ pub struct Activity {
     pub note: Option<String>,
     pub diaper_kind: Option<u8>,
     pub bottle_ml: Option<i64>,
+    pub bottle_entered: Option<String>,
+    pub bottle_unit: Option<u8>,
     pub bottle_content: Option<u8>,
     pub breast_side: Option<u8>,
     pub breast_segments: Option<Vec<BreastSegment>>,
@@ -246,6 +248,21 @@ impl LocalRepository {
     ) -> Result<[u8; 16], Error> {
         let (activity_id, operation) =
             bottle_operation(family, child_id, amount_ml, content, time)?;
+        self.append_activity(family, child_id, operation, time.saved_at_ms)?;
+        Ok(activity_id)
+    }
+
+    pub fn log_bottle_entered(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        entered: &str,
+        unit: u8,
+        content: u8,
+        time: ActivityTime,
+    ) -> Result<[u8; 16], Error> {
+        let (activity_id, operation) =
+            bottle_entered_operation(family, child_id, entered, unit, content, time)?;
         self.append_activity(family, child_id, operation, time.saved_at_ms)?;
         Ok(activity_id)
     }
@@ -551,6 +568,41 @@ impl LocalRepository {
             .ok_or(Error::Invalid("activity unavailable"))?;
         let operation =
             edit_bottle_operation(family, child_id, activity, amount_ml, content, saved_at_ms)?;
+        self.store.append_local(family, operation, saved_at_ms)?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn edit_bottle_entered(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        entered: &str,
+        unit: u8,
+        content: u8,
+        saved_at_ms: i64,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        if child.scope != Scope::Child || child.deleted {
+            return Err(Error::Invalid("target child unavailable"));
+        }
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("activity unavailable"))?;
+        let operation = edit_bottle_entered_operation(
+            family,
+            child_id,
+            activity,
+            entered,
+            unit,
+            content,
+            saved_at_ms,
+        )?;
         self.store.append_local(family, operation, saved_at_ms)?;
         Ok(())
     }
@@ -1108,24 +1160,52 @@ pub fn bottle_operation(
     content: u8,
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    if !(1..=1_000_000).contains(&amount_ml) || !(1..=4).contains(&content) {
-        return Err(Error::Invalid("bottle amount or content invalid"));
+    bottle_entered_operation(family, child_id, &amount_ml.to_string(), 1, content, time)
+}
+
+fn bottle_measure(entered: &str, unit: u8) -> Result<Value, Error> {
+    let decimal = entered.trim();
+    if decimal.is_empty() || decimal.len() > 16 || !(1..=3).contains(&unit) {
+        return Err(Error::Invalid("bottle amount or unit invalid"));
     }
+    let (numerator, denominator) = crate::record_validity::parse_decimal(decimal)
+        .ok_or(Error::Invalid("bottle decimal invalid"))?;
+    let (factor_num, factor_den) = crate::record_validity::unit_factor(unit.into());
+    let scaled = numerator
+        .checked_mul(factor_num)
+        .ok_or(Error::Invalid("bottle amount overflow"))?;
+    let divisor = denominator
+        .checked_mul(factor_den)
+        .ok_or(Error::Invalid("bottle amount overflow"))?;
+    let base = crate::record_validity::round_ratio(scaled, divisor)
+        .map_err(|_| Error::Invalid("bottle amount overflow"))?;
+    if !(1..=1_000_000).contains(&base) {
+        return Err(Error::Invalid("bottle amount invalid"));
+    }
+    Ok(Value::Map(vec![
+        (1, Value::Integer(base)),
+        (2, Value::Text(decimal.to_owned())),
+        (3, Value::Integer(unit.into())),
+    ]))
+}
+
+pub fn bottle_entered_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    entered: &str,
+    unit: u8,
+    content: u8,
+    time: ActivityTime,
+) -> Result<([u8; 16], NewOperation), Error> {
+    if !(1..=4).contains(&content) {
+        return Err(Error::Invalid("bottle content invalid"));
+    }
+    let measure = bottle_measure(entered, unit)?;
     activity_operation(
         family,
         child_id,
         "feed.bottle",
-        vec![
-            (
-                100,
-                Value::Map(vec![
-                    (1, Value::Integer(amount_ml.into())),
-                    (2, Value::Text(amount_ml.to_string())),
-                    (3, Value::Integer(1)),
-                ]),
-            ),
-            (101, Value::Integer(content.into())),
-        ],
+        vec![(100, measure), (101, Value::Integer(content.into()))],
         time,
     )
 }
@@ -1698,6 +1778,24 @@ pub fn edit_bottle_ml_operation(
     amount_ml: i64,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
+    edit_bottle_measure_operation(
+        family,
+        child_id,
+        activity,
+        &amount_ml.to_string(),
+        1,
+        saved_at_ms,
+    )
+}
+
+fn edit_bottle_measure_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    entered: &str,
+    unit: u8,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
     if activity.scope != Scope::Activity
         || activity.child_id != Some(child_id)
         || activity.record_type != "feed.bottle"
@@ -1706,9 +1804,7 @@ pub fn edit_bottle_ml_operation(
         return Err(Error::Invalid("bottle target unavailable"));
     }
     check_time(saved_at_ms)?;
-    if !(1..=1_000_000).contains(&amount_ml) {
-        return Err(Error::Invalid("bottle amount invalid"));
-    }
+    let measure = bottle_measure(entered, unit)?;
     Ok(NewOperation {
         family_id: family.family_id,
         operation_id: ids::random_v7(saved_at_ms)?,
@@ -1719,15 +1815,30 @@ pub fn edit_bottle_ml_operation(
         hlc: placeholder_hlc(family),
         record_type: None,
         child_id: None,
-        fields: Some(vec![(
-            100,
-            Value::Map(vec![
-                (1, Value::Integer(amount_ml.into())),
-                (2, Value::Text(amount_ml.to_string())),
-                (3, Value::Integer(1)),
-            ]),
-        )]),
+        fields: Some(vec![(100, measure)]),
     })
+}
+
+pub fn edit_bottle_entered_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    entered: &str,
+    unit: u8,
+    content: u8,
+    saved_at_ms: i64,
+) -> Result<NewOperation, Error> {
+    if !(1..=4).contains(&content) {
+        return Err(Error::Invalid("bottle content invalid"));
+    }
+    let mut operation =
+        edit_bottle_measure_operation(family, child_id, activity, entered, unit, saved_at_ms)?;
+    operation
+        .fields
+        .as_mut()
+        .expect("bottle edit has fields")
+        .push((101, Value::Integer(content.into())));
+    Ok(operation)
 }
 
 pub fn edit_bottle_operation(
@@ -1738,17 +1849,15 @@ pub fn edit_bottle_operation(
     content: u8,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if !(1..=4).contains(&content) {
-        return Err(Error::Invalid("bottle content invalid"));
-    }
-    let mut operation =
-        edit_bottle_ml_operation(family, child_id, activity, amount_ml, saved_at_ms)?;
-    operation
-        .fields
-        .as_mut()
-        .expect("bottle edit has fields")
-        .push((101, Value::Integer(content.into())));
-    Ok(operation)
+    edit_bottle_entered_operation(
+        family,
+        child_id,
+        activity,
+        &amount_ml.to_string(),
+        1,
+        content,
+        saved_at_ms,
+    )
 }
 
 pub fn edit_diaper_kind_operation(
@@ -2121,16 +2230,30 @@ fn activity_summary(record: &Record) -> Option<Activity> {
     } else {
         None
     };
-    let bottle_ml = if record.record_type == "feed.bottle" {
+    let (bottle_ml, bottle_entered, bottle_unit) = if record.record_type == "feed.bottle" {
         let Value::Map(measure) = &record.field(100)?.value else {
             return None;
         };
         let Value::Integer(amount) = measure.first()?.1 else {
             return None;
         };
-        i64::try_from(amount).ok()
+        let entered = match &measure.get(1)?.1 {
+            Value::Text(value) => Some(value.clone()),
+            _ => None,
+        };
+        let unit = match measure.get(2)?.1 {
+            Value::Integer(value) => u8::try_from(value)
+                .ok()
+                .filter(|unit| (1..=3).contains(unit)),
+            _ => None,
+        };
+        (
+            i64::try_from(amount).ok(),
+            entered.filter(|_| unit.is_some()),
+            unit,
+        )
     } else {
-        None
+        (None, None, None)
     };
     let bottle_content = if record.record_type == "feed.bottle" {
         match &record.field(101)?.value {
@@ -2273,6 +2396,8 @@ fn activity_summary(record: &Record) -> Option<Activity> {
         },
         diaper_kind,
         bottle_ml,
+        bottle_entered,
+        bottle_unit,
         bottle_content,
         breast_side,
         breast_segments,

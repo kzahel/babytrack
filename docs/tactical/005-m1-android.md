@@ -31,8 +31,10 @@ It can also correct a bottle's whole-millilitre amount on the same event;
 the amount-only core path retains the content code and original time.
 Bottle logging now exposes all four content choices, and the timeline shows
 which was saved. An edit can change amount and content together on the same
-activity. Core restart/file restore, Android UI, and encrypted relay tests
-cover those values.
+activity. Bottle logging and correction also offer mL, US fl oz, and UK fl oz;
+the timeline shows the entered decimal and unit while Rust stores the exact
+rounded millilitres. Core restart/file restore, Android UI, and encrypted
+relay tests cover those values.
 Diaper type corrections likewise update the same activity, preserving its
 original time and any other fields. Local restart/file restore and the
 two-emulator encrypted relay flow cover the correction.

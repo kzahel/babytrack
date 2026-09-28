@@ -140,7 +140,15 @@ export class PublicStore {
 
   async loadInitialReadySaved(family) {
     const row = await this.initialCredential(family);
-    return this.loadInitialReady(family, row.epochKey);
+    const ready = await this.loadInitialReady(family, row.epochKey);
+    try {
+      const pending = await this.pendingInitial(family);
+      if (pending) ready.preview_one(pending.operation, row.deviceId);
+      return ready;
+    } catch (error) {
+      ready.free();
+      throw error;
+    }
   }
 
   async pendingInitial(family) {

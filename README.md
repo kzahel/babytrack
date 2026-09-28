@@ -16,9 +16,10 @@ grant, and remove a third device with key rotation. Later rotations, role
 changes, cancellation, general browser shared sync, and broader recovery coverage
 remain open.
 The browser harness now stages one epoch-one encrypted write in a durable
-outbox, retries it after a lost response, confirms it through signed relay
-reads, and rebuilds the record through the shared Rust core after reload.
-Later controls, recipient credentials, and a browser local edit overlay remain open.
+outbox, previews it locally before acceptance, retries it after a lost
+response, confirms it through signed relay reads, and rebuilds the record
+through the shared Rust core after reload. Later controls and recipient
+credentials remain open.
 
 The Android debug app logs children, diapers, bottles with milk/content
 choice, sleep timers and completed sleep with optional place, notes, growth

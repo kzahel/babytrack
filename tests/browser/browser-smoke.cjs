@@ -448,9 +448,14 @@ async function run() {
       const fetched = await store.hydrateGenesisSaved(family, relayGet);
       const staged = await store.stageInitial(family, bytes(data.operationHex));
       const retry = await store.stageInitial(family, bytes(data.operationHex));
+      const localReady = await store.loadInitialReadySaved(family);
+      const localRecordType = localReady.record_type(bytes(family));
+      const localCursor = localReady.last_cursor().toString();
+      localReady.free();
       store.close();
       return { ...progress, family, fetched, staged: staged.envelope.length > 0,
         exactRetry: staged.envelope.every((value, index) => value === retry.envelope[index]),
+        localRecordType, localCursor,
         wrongKeyRejected, noCredentialAfterDenial };
     }, {
       genesisHex: relay.genesisHex,
@@ -463,6 +468,7 @@ async function run() {
     assert.deepEqual(realRelay, {
       cursor: 1, noMoreVisible: true, family: input.familyHex, fetched: 1,
       staged: true, exactRetry: true, wrongKeyRejected: true, noCredentialAfterDenial: true,
+      localRecordType: 'family', localCursor: '1',
     });
     await page.reload();
     const uploaded = await page.evaluate(async (data) => {
@@ -474,6 +480,9 @@ async function run() {
       const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
       const store = await PublicStore.open(wasm, 'babytrack-real-relay-public-smoke');
       const pendingBefore = await store.pendingInitial(data.familyHex);
+      const beforeReady = await store.loadInitialReadySaved(data.familyHex);
+      const visibleAfterReload = beforeReady.record_type(bytes(data.familyHex));
+      beforeReady.free();
       let lostResponseKept = false;
       try {
         await store.uploadInitial(data.familyHex, async (path, envelope) => {
@@ -489,6 +498,7 @@ async function run() {
       const progress = await store.uploadInitial(data.familyHex, relayPost, relayGet);
       const ready = await store.loadInitialReadySaved(data.familyHex);
       const result = { ...progress, pendingBefore: !!pendingBefore, lostResponseKept,
+        visibleAfterReload,
         pendingAfter: !!(await store.pendingInitial(data.familyHex)),
         recordType: ready.record_type(bytes(data.familyHex)) };
       ready.free();
@@ -496,7 +506,7 @@ async function run() {
       return result;
     }, input);
     assert.deepEqual(uploaded, { cursor: 2, noMoreVisible: true,
-      pendingBefore: true, lostResponseKept: true,
+      pendingBefore: true, lostResponseKept: true, visibleAfterReload: 'family',
       pendingAfter: false, recordType: 'family' });
     await page.reload();
     const relayReload = await page.evaluate(async (data) => {

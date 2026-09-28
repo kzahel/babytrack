@@ -54,6 +54,7 @@ pub struct WasmInitialFamily {
 struct InitialReady {
     chain: ControlChain,
     projection: Projection,
+    overlay: Option<Projection>,
     key: VerifiedEpochKey,
 }
 
@@ -102,6 +103,7 @@ impl WasmInitialFamily {
         self.ready = Some(InitialReady {
             chain,
             projection,
+            overlay: None,
             key,
         });
         Ok(())
@@ -126,7 +128,32 @@ impl WasmInitialFamily {
             .map_err(debug_error)?;
         ready.chain = chain;
         ready.projection = projection;
+        ready.overlay = None;
         Ok(matches!(outcome, Outcome::Applied))
+    }
+
+    /// Preview one durable unsent operation without advancing the verified
+    /// relay cursor. The browser reconstructs this from its saved outbox.
+    pub fn preview_one(&mut self, operation_bytes: &[u8], device_id: &[u8]) -> Result<(), JsError> {
+        let ready = self
+            .ready
+            .as_mut()
+            .ok_or_else(|| JsError::new("manifest objects not yet verified"))?;
+        let device_id = fixed(device_id, "device ID")?;
+        ready
+            .chain
+            .active_signing_public(device_id)
+            .map_err(debug_error)?;
+        let operation =
+            Operation::decode_bound(operation_bytes, &ready.chain.family_id(), &device_id)
+                .map_err(debug_error)?;
+        ready.overlay = Some(
+            ready
+                .projection
+                .with_local_overlay(&[operation])
+                .map_err(debug_error)?,
+        );
+        Ok(())
     }
 
     pub fn last_cursor(&self) -> Result<u64, JsError> {
@@ -218,7 +245,9 @@ impl WasmInitialFamily {
             .as_ref()
             .ok_or_else(|| JsError::new("manifest objects not yet verified"))?;
         Ok(ready
-            .projection
+            .overlay
+            .as_ref()
+            .unwrap_or(&ready.projection)
             .record(&record_id)
             .and_then(|record| record.field(field_id))
             .map_or_else(Vec::new, |field| field.canonical_bytes.clone()))
@@ -231,7 +260,9 @@ impl WasmInitialFamily {
             .as_ref()
             .ok_or_else(|| JsError::new("manifest objects not yet verified"))?;
         Ok(ready
-            .projection
+            .overlay
+            .as_ref()
+            .unwrap_or(&ready.projection)
             .record(&record_id)
             .map(|record| record.record_type.clone()))
     }

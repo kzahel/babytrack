@@ -172,7 +172,7 @@ impl Projection {
 
     /// Preview durable local work on top of the last verified shared state.
     /// This does not advance a relay cursor or publish an operation.
-    pub(crate) fn with_local_overlay(&self, operations: &[Operation]) -> Result<Self, Error> {
+    pub fn with_local_overlay(&self, operations: &[Operation]) -> Result<Self, Error> {
         let mut copy = self.clone();
         let cursor = self.last_cursor.checked_add(1).ok_or(Error::WrongCursor)?;
         for (index, operation) in operations.iter().enumerate() {

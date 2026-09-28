@@ -285,11 +285,13 @@ lost, retries identical bytes after reload, then clears it only in the same
 transaction that saves the signed acceptance. It sends signed GETs, fetches
 genesis manifest objects, and uses storage-independent Rust ready replay to
 verify the epoch-one key, decrypt the accepted batch, and rebuild its record
-projection after reload. The initial manager's signing
+projection after reload. The one saved pending operation also overlays the
+verified projection through Rust before acceptance, without advancing the
+public cursor. The initial manager's signing
 seed and epoch key are saved in that browser profile's IndexedDB so reload
 uses the same credential; anyone with access to the profile can read those
 keys. This narrow path does not yet handle later controls, rotations,
-recipient credentials, local preview of an unsent edit, rejection repair, or
+recipient credentials, broader offline edits, rejection repair, or
 full mixed-client exchange.
 The first Android sharing flow uses foreground polling and scheduled
 background work. FCM and APNs may later provide empty background wakes through

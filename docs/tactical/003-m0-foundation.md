@@ -637,9 +637,11 @@ checks the genesis manifest and epoch-key commitment. Production wasm then
 seals a manager operation with a fresh random batch ID and nonce. Chromium
 stores exact bytes in IndexedDB before upload, retains them after a simulated
 lost response, retries after reload, and atomically clears the outbox only
-when a signed acceptance enters public history. It projects the Family record
-and rebuilds it after reload. Controls after genesis, rotations, recipient
-key storage, unsent-edit preview, rejection repair, and a CLI/browser
+when a signed acceptance enters public history. Before upload, Rust overlays
+the saved operation on the verified cursor-one view, including after reload.
+It projects the accepted Family record and rebuilds it after reload.
+Controls after genesis, rotations, recipient key storage, broader offline
+edits, rejection repair, and a CLI/browser
 encrypted exchange remain open. The first manager's signing and epoch keys
 persist in IndexedDB and are reloaded for this narrow proof.
 An uncertain retry returns those bytes after reopen even if the caller's

@@ -36,9 +36,10 @@ also signs and decodes a bounded public pull. Chromium now fetches an
 accepted encrypted batch through signed GETs from a disposable real relay
 and reloads its saved cursor. It now fetches signed genesis objects and
 projects the decrypted epoch-one record through Rust after reload. A
-production wasm batch enters a durable browser outbox, survives a lost POST
-response and reload, and clears only on signed acceptance. Later controls,
-later-epoch and recipient key storage, unsent-edit preview, rejection repair,
+production wasm batch enters a durable browser outbox, previews locally,
+survives a lost POST response and reload, and clears only on signed
+acceptance. Later controls, later-epoch and recipient key storage, broader
+offline edits, rejection repair,
 and full CLI/browser convergence remain open. The first manager credential
 persists in IndexedDB for this smoke.
 Android local and first-cohort UI work, including solids, completed

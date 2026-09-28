@@ -69,6 +69,9 @@ alongside M0 on emulators; its physical phone gates remain open.
 Growth entry and correction now accept the published mass and length units,
 default to kg/cm, and retain the entered form through local recovery and
 two-device encrypted sync.
+Known activities can now carry an editable optional note without losing their
+type. The Android UI smoke attaches one to a growth entry across restart;
+the two-device flow adds and clears one through encrypted sync.
 The diaper form includes wet, dirty, both, and dry logging choices.
 The top bar names the selected Family and child and has a wet-diaper-now shortcut above the long
 logging form; the Android UI smoke uses it before correcting that entry.

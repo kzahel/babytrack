@@ -27,6 +27,10 @@ emulator check creates a Family and child, logs and deletes a diaper, records
 an alternating breast feed, and verifies both states after restart. The
 timeline can correct a note's text through the shared Rust edit path while
 retaining its Family, child, activity ID, original time, and other fields.
+It can also add, edit, and clear a note on an existing feed, sleep, diaper,
+growth, or other known activity without changing that activity's type.
+Local restore and two-emulator encrypted sync cover this field-level edit;
+the headed UI smoke checks an attached growth note across restart.
 It can also correct a bottle's whole-millilitre amount on the same event;
 the amount-only core path retains the content code and original time.
 Bottle logging now exposes all four content choices, and the timeline shows

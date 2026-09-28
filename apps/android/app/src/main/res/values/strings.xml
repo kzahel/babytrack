@@ -105,6 +105,8 @@
     <string name="note_text">What happened?</string>
     <string name="save_note">Save note</string>
     <string name="edit_note">Edit note</string>
+    <string name="add_activity_note">Add note to entry</string>
+    <string name="activity_note_clear_hint">Clear the text and save to remove this note.</string>
     <string name="save_changes">Save changes</string>
     <string name="edit_bottle">Edit bottle</string>
     <string name="edit_breast">Edit breast feed</string>
@@ -116,6 +118,7 @@
     <string name="edit_temperature">Edit temperature</string>
     <string name="growth_edit_hint">Leave a measurement blank to keep its saved value. Delete the entry to remove it.</string>
     <string name="note_entry">Note · %1$s</string>
+    <string name="activity_note">Note: %1$s</string>
     <string name="log_growth">Log growth</string>
     <string name="weight_g">Weight (g)</string>
     <string name="length_mm">Length (mm)</string>

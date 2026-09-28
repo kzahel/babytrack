@@ -7,6 +7,7 @@ account. A Family can later be shared through the development relay, and an
 invited device gets the same
 tracker after its grant and history are verified. The app saves readable or
 password-protected backups and restores either into a new local Family.
+The timeline can attach, edit, or clear a note on an existing activity.
 
 ## Try sharing on two devices
 

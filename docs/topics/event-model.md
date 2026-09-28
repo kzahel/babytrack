@@ -105,10 +105,13 @@ The Android timeline can delete one activity. The shared core checks its
 Family and child target and records a tombstone operation; the entry leaves
 the current timeline locally and on devices that later sync. Deletion does
 not erase an already received copy or rewrite the historical operation log.
-The timeline can also edit a note's text. The shared core checks the exact
-Family, child, live note type, and text length, then writes a field-set
-operation on the same activity ID. Its original time and unknown fields
-remain intact; the corrected value survives offline replay and file restore.
+The timeline can edit a standalone note's text and attach, edit, or clear the
+published optional note field on any known live activity type. The shared
+core checks the exact Family, child, target type, and text length before a
+field-set operation on the same activity ID. A standalone note cannot be
+cleared to empty; delete its activity instead. An attached note may be
+cleared to null. The activity keeps its type, time, and other fields through
+offline replay, file restore, and encrypted sync.
 Bottle amount correction similarly replaces only the whole-millilitre
 measurement field on the same activity. The core validates its live
 Family/child target and amount, retaining the original time, content code,

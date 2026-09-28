@@ -366,7 +366,7 @@ fn activity_delete_targets_one_child_and_survives_restart() {
 }
 
 #[test]
-fn note_edit_targets_existing_note_and_survives_restart_and_restore() {
+fn activity_notes_keep_type_and_target_through_clear_restart_and_restore() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("edit-note.db");
     let mut app = LocalRepository::open(&path).unwrap();
@@ -389,17 +389,42 @@ fn note_edit_targets_existing_note_and_survives_restart_and_restore() {
         app.edit_note(family, other_child, note, "Wrong", time.saved_at_ms + 1)
             .is_err()
     );
+    app.edit_note(family, child, bottle, " Bottle note ", time.saved_at_ms + 1)
+        .unwrap();
+    assert_eq!(
+        app.timeline(family, child)
+            .unwrap()
+            .iter()
+            .find(|row| row.id == bottle)
+            .unwrap()
+            .note
+            .as_deref(),
+        Some("Bottle note")
+    );
+    app.edit_note(family, child, bottle, " ", time.saved_at_ms + 2)
+        .unwrap();
+    assert_eq!(
+        app.timeline(family, child)
+            .unwrap()
+            .iter()
+            .find(|row| row.id == bottle)
+            .unwrap()
+            .note,
+        None
+    );
+    app.edit_note(family, child, bottle, "After feed", time.saved_at_ms + 3)
+        .unwrap();
     assert!(
-        app.edit_note(family, child, bottle, "Wrong", time.saved_at_ms + 1)
+        app.edit_note(family, child, note, " ", time.saved_at_ms + 4)
             .is_err()
     );
-    assert!(
-        app.edit_note(family, child, note, " ", time.saved_at_ms + 1)
-            .is_err()
-    );
-    app.edit_note(family, child, note, " After ", time.saved_at_ms + 1)
+    app.edit_note(family, child, note, " After ", time.saved_at_ms + 4)
         .unwrap();
     let before = app.timeline(family, child).unwrap();
+    let bottle_row = before.iter().find(|row| row.id == bottle).unwrap();
+    assert_eq!(bottle_row.kind, "feed.bottle");
+    assert_eq!(bottle_row.bottle_ml, Some(90));
+    assert_eq!(bottle_row.note.as_deref(), Some("After feed"));
     assert_eq!(
         before
             .iter()
@@ -417,11 +442,11 @@ fn note_edit_targets_existing_note_and_survives_restart_and_restore() {
             .start_utc_ms,
         time.start_utc_ms
     );
-    let backup = app.backup(family, time.saved_at_ms + 2).unwrap();
+    let backup = app.backup(family, time.saved_at_ms + 5).unwrap();
     drop(app);
     let mut app = LocalRepository::open(&path).unwrap();
     assert_eq!(app.timeline(family, child).unwrap(), before);
-    let restored = app.restore(&backup, time.saved_at_ms + 3).unwrap();
+    let restored = app.restore(&backup, time.saved_at_ms + 6).unwrap();
     assert_eq!(app.timeline(restored, child).unwrap(), before);
 }
 

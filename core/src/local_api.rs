@@ -1851,15 +1851,27 @@ pub fn edit_note_operation(
 ) -> Result<NewOperation, Error> {
     if activity.scope != Scope::Activity
         || activity.child_id != Some(child_id)
-        || activity.record_type != "note"
         || activity.deleted
+        || !matches!(
+            activity.record_type.as_str(),
+            "note"
+                | "feed.breast"
+                | "feed.bottle"
+                | "feed.solids"
+                | "sleep"
+                | "pump"
+                | "diaper"
+                | "growth"
+                | "medication"
+                | "temperature"
+        )
     {
         return Err(Error::Invalid("note target unavailable"));
     }
     check_time(saved_at_ms)?;
     let note = note.trim();
-    if note.is_empty() || note.len() > 4096 {
-        return Err(Error::Invalid("note must contain 1 to 4096 bytes"));
+    if (note.is_empty() && activity.record_type == "note") || note.len() > 4096 {
+        return Err(Error::Invalid("note outside supported length"));
     }
     Ok(NewOperation {
         family_id: family.family_id,
@@ -1871,7 +1883,14 @@ pub fn edit_note_operation(
         hlc: placeholder_hlc(family),
         record_type: None,
         child_id: None,
-        fields: Some(vec![(4, Value::Text(note.to_owned()))]),
+        fields: Some(vec![(
+            4,
+            if note.is_empty() {
+                Value::Null
+            } else {
+                Value::Text(note.to_owned())
+            },
+        )]),
     })
 }
 
@@ -2661,13 +2680,9 @@ fn activity_summary(record: &Record) -> Option<Activity> {
         } else {
             None
         },
-        note: if record.record_type == "note" {
-            let Value::Text(note) = &record.field(4)?.value else {
-                return None;
-            };
-            Some(note.clone())
-        } else {
-            None
+        note: match record.field(4).map(|field| &field.value) {
+            Some(Value::Text(note)) => Some(note.clone()),
+            _ => None,
         },
         diaper_kind,
         bottle_ml,

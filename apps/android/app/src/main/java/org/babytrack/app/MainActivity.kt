@@ -218,6 +218,13 @@ private data class PendingNoteEdit(
     val activityId: ByteArray,
     val shared: Boolean,
     val text: String,
+    val standalone: Boolean,
+    val hadNote: Boolean,
+)
+
+private val noteEditableKinds = setOf(
+    "note", "feed.breast", "feed.bottle", "feed.solids", "sleep", "pump",
+    "diaper", "growth", "medication", "temperature",
 )
 private data class PendingBottleEdit(
     val family: FamilyRef,
@@ -1980,7 +1987,7 @@ private fun TrackerScreen(
                             entry.kind == "sleep" && entry.endUtcMs != null ->
                                 stringResource(R.string.sleep_duration, (entry.endUtcMs!! - entry.startUtcMs) / 60_000)
                             entry.kind == "sleep" -> stringResource(R.string.sleep_running)
-                            entry.note != null -> stringResource(R.string.note_entry, entry.note!!)
+                            entry.kind == "note" && entry.note != null -> stringResource(R.string.note_entry, entry.note!!)
                             entry.kind == "growth" -> {
                                 val parts = listOfNotNull(
                                     growthDisplay(context, entry.growthWeightG, entry.growthWeightEntered,
@@ -2018,6 +2025,9 @@ private fun TrackerScreen(
                             Column(Modifier.padding(12.dp)) {
                                 Text(label, fontWeight = FontWeight.SemiBold)
                                 Text(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(entry.startUtcMs)))
+                                if (entry.kind != "note" && entry.note != null) {
+                                    Text(stringResource(R.string.activity_note, entry.note!!))
+                                }
                                 if (entry.kind == "sleep" && entry.sleepPlace != null) {
                                     val placeLabel = when (entry.sleepPlace!!.toInt()) {
                                         1 -> R.string.sleep_place_crib
@@ -2055,16 +2065,19 @@ private fun TrackerScreen(
                                         )
                                     }) { Text(stringResource(R.string.edit_sleep_place)) }
                                 }
-                                if (entry.kind == "note" && entry.note != null) {
+                                if (entry.kind in noteEditableKinds) {
                                     OutlinedButton(onClick = {
                                         pendingNoteEdit = PendingNoteEdit(
                                             family,
                                             entry.childId.copyOf(),
                                             entry.id.copyOf(),
                                             activeShared,
-                                            entry.note!!,
+                                            entry.note.orEmpty(),
+                                            entry.kind == "note",
+                                            entry.note != null,
                                         )
-                                    }) { Text(stringResource(R.string.edit_note)) }
+                                    }) { Text(stringResource(if (entry.note == null)
+                                        R.string.add_activity_note else R.string.edit_note)) }
                                 }
                                 if (entry.kind == "feed.bottle" && entry.bottleMl != null) {
                                     OutlinedButton(onClick = {
@@ -2301,19 +2314,25 @@ private fun TrackerScreen(
     pendingNoteEdit?.let { target ->
         AlertDialog(
             onDismissRequest = { pendingNoteEdit = null },
-            title = { Text(stringResource(R.string.edit_note)) },
+            title = { Text(stringResource(if (target.hadNote)
+                R.string.edit_note else R.string.add_activity_note)) },
             text = {
-                OutlinedTextField(
-                    value = target.text,
-                    onValueChange = { pendingNoteEdit = target.copy(text = it) },
-                    label = { Text(stringResource(R.string.note_text)) },
-                )
+                Column {
+                    OutlinedTextField(
+                        value = target.text,
+                        onValueChange = { pendingNoteEdit = target.copy(text = it.take(4096)) },
+                        label = { Text(stringResource(R.string.note_text)) },
+                    )
+                    if (!target.standalone && target.hadNote) {
+                        Text(stringResource(R.string.activity_note_clear_hint))
+                    }
+                }
             },
             confirmButton = {
-                Button(enabled = target.text.trim().isNotEmpty(), onClick = {
-                    pendingNoteEdit = null
+                Button(enabled = target.text.trim().isNotEmpty() ||
+                    (!target.standalone && target.hadNote), onClick = {
                     val savedAtMs = System.currentTimeMillis()
-                    change {
+                    change(onSaved = { pendingNoteEdit = null }) {
                         if (target.shared) sharing.editNote(
                             target.family, target.childId, target.activityId, target.text, savedAtMs,
                         ) else store.editNote(

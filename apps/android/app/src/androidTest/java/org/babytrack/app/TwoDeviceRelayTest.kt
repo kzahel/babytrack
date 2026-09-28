@@ -137,10 +137,13 @@ class TwoDeviceRelayTest {
                 ActivityWhen(end - 30 * 60_000L, 0, end), end, 0, 1u.toUByte())
             sharing.logNote(family, sharing.snapshot(family).children.first().id,
                 "Care note marker 67", ActivityWhen(end, 0, end))
-            sharing.logGrowthEntered(family, sharing.snapshot(family).children.first().id,
+            val growthChild = sharing.snapshot(family).children.first().id
+            val growthId = sharing.logGrowthEntered(family, growthChild,
                 GrowthInputRow(EnteredMeasureRow("4.2", 11u.toUByte()),
                     EnteredMeasureRow("54", 21u.toUByte()),
                     EnteredMeasureRow("35", 21u.toUByte())), ActivityWhen(end, 0, end))
+            sharing.editNote(family, growthChild, growthId,
+                "Growth context marker 71", System.currentTimeMillis())
             sharing.logTemperatureC(family, sharing.snapshot(family).children.first().id,
                 "37.50", ActivityWhen(end, 0, end))
             sharing.logMedication(family, sharing.snapshot(family).children.first().id,
@@ -195,17 +198,18 @@ class TwoDeviceRelayTest {
                 it.kind == "growth" && it.growthWeightG == 4_200L && it.growthLengthMm == 540L &&
                     it.growthHeadMm == 350L && it.growthWeightEntered == "4.2" &&
                     it.growthWeightUnit == 11u.toUByte() && it.growthLengthEntered == "54" &&
-                    it.growthLengthUnit == 21u.toUByte()
+                    it.growthLengthUnit == 21u.toUByte() && it.note == "Growth context marker 71"
             })
             val growth = sharing.snapshot(family).activities.single { it.kind == "growth" }
             sharing.editGrowthEntered(family, growth.childId, growth.id,
                 GrowthInputRow(EnteredMeasureRow("4.3", 11u.toUByte()), null,
                     EnteredMeasureRow("35.5", 21u.toUByte())), System.currentTimeMillis())
+            sharing.editNote(family, growth.childId, growth.id, "", System.currentTimeMillis())
             assertTrue(sharing.snapshot(family).activities.any {
                 it.id.contentEquals(growth.id) && it.growthWeightG == 4_300L &&
                     it.growthLengthMm == 540L && it.growthHeadMm == 355L &&
                     it.growthWeightEntered == "4.3" && it.growthHeadEntered == "35.5" &&
-                    it.startUtcMs == growth.startUtcMs
+                    it.note == null && it.startUtcMs == growth.startUtcMs
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "temperature" && it.temperatureC == "37.50"

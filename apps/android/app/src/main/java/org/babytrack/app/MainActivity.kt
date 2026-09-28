@@ -498,6 +498,7 @@ private fun TrackerScreen(
     var showJoinForm by remember { mutableStateOf(false) }
     var showShareForm by remember { mutableStateOf(false) }
     var joinStage by remember { mutableStateOf<String?>(null) }
+    var joinInProgress by remember { mutableStateOf(false) }
     var sharedSnapshot by remember { mutableStateOf<SharedSnapshotRow?>(null) }
     var sharedSelectedChild by remember { mutableStateOf<String?>(null) }
     var recipientFamilies by remember { mutableStateOf<List<FamilyRef>>(emptyList()) }
@@ -851,77 +852,43 @@ private fun TrackerScreen(
                             label = { Text(stringResource(R.string.received_fragment)) },
                             modifier = Modifier.fillMaxWidth(),
                         )
-                        Button(enabled = selectedRecipient != null || receivedFragment.isNotBlank(), onClick = {
+                        Button(enabled = !joinInProgress &&
+                            (receivedFragment.isNotBlank() || selectedRecipient != null &&
+                                sharedSnapshot?.family?.familyId?.key() != selectedRecipient), onClick = {
+                            joinInProgress = true
                             joinStage = context.getString(R.string.join_preparing)
                             scope.launch {
                                 runCatching {
                                     withContext(Dispatchers.IO) {
                                         val recipient = recipientFamilies.find { it.familyId.key() == selectedRecipient }
-                                        if (receivedFragment.isNotBlank()) sharing.claim(receivedFragment.trim())
-                                        else sharing.retryClaim(recipient ?: error("No saved recipient claim"))
+                                        val prepared = if (receivedFragment.isNotBlank()) sharing.claim(receivedFragment.trim())
+                                            else sharing.retryClaim(recipient ?: error("No saved recipient claim"))
+                                        prepared to runCatching { sharing.advanceRecipient(prepared.family) }
                                     }
-                                }.onSuccess { prepared ->
+                                }.onSuccess { (prepared, result) ->
                                     selectedRecipient = prepared.family.familyId.key()
+                                    receivedFragment = ""
                                     version++
-                                    joinStage = context.getString(R.string.join_pending)
+                                    val progress = result.getOrNull()
+                                    joinStage = when {
+                                        progress?.ready == true -> context.getString(R.string.history_ready_auto)
+                                        progress?.awaitingGrant == true -> pendingRecipientMessage(context, progress)
+                                        progress != null -> context.getString(R.string.history_pending, progress.verifiedCursor.toLong())
+                                        result.exceptionOrNull() is InvitationTerminal -> terminalInvitationMessage(
+                                            context, (result.exceptionOrNull() as InvitationTerminal).reason)
+                                        else -> context.getString(R.string.join_progress_delayed)
+                                    }
                                     message = null
                                 }.onFailure { failure ->
                                     joinStage = (failure as? InvitationTerminal)?.reason
                                         ?.let { terminalInvitationMessage(context, it) }
                                         ?: context.getString(R.string.join_retry)
                                     message = if (failure is InvitationTerminal) null else errorText
+                                    version++
                                 }
+                                joinInProgress = false
                             }
                         }) { Text(stringResource(R.string.join_or_retry)) }
-                        OutlinedButton(enabled = selectedRecipient != null || receivedFragment.isNotBlank(), onClick = {
-                            joinStage = context.getString(R.string.proof_preparing)
-                            scope.launch {
-                                runCatching {
-                                    withContext(Dispatchers.IO) {
-                                        val recipient = recipientFamilies.find { it.familyId.key() == selectedRecipient }
-                                        if (recipient != null) sharing.proveChallenge(recipient)
-                                        else sharing.proveChallenge(receivedFragment.trim())
-                                    }
-                                }.onSuccess {
-                                    joinStage = context.getString(R.string.proof_confirmed)
-                                    message = null
-                                }.onFailure {
-                                    joinStage = context.getString(R.string.join_retry)
-                                    message = errorText
-                                }
-                            }
-                        }) { Text(stringResource(R.string.prove_challenge)) }
-                        OutlinedButton(enabled = selectedRecipient != null || receivedFragment.isNotBlank(), onClick = {
-                            joinStage = context.getString(R.string.history_loading)
-                            scope.launch {
-                                runCatching {
-                                    withContext(Dispatchers.IO) {
-                                        val recipient = recipientFamilies.find { it.familyId.key() == selectedRecipient }
-                                        val progress = if (recipient != null) sharing.syncRecipient(recipient)
-                                            else sharing.syncRecipient(receivedFragment.trim())
-                                        progress to if (progress.ready) {
-                                            if (recipient != null) sharing.snapshot(recipient)
-                                            else sharing.snapshotForFragment(receivedFragment.trim())
-                                        } else null
-                                    }
-                                }.onSuccess { (progress, snapshot) ->
-                                    sharedSnapshot = snapshot
-                                    joinStage = if (progress.removed) {
-                                        removedHistoryMessage(context, progress)
-                                    } else if (progress.ready) {
-                                        context.getString(R.string.history_ready, progress.childCount.toLong())
-                                    } else if (progress.awaitingGrant) {
-                                        pendingRecipientMessage(context, progress)
-                                    } else {
-                                        context.getString(R.string.history_pending, progress.verifiedCursor.toLong())
-                                    }
-                                    message = null
-                                }.onFailure {
-                                    joinStage = context.getString(R.string.join_retry)
-                                    message = errorText
-                                }
-                            }
-                        }) { Text(stringResource(R.string.load_shared_history)) }
                         joinStage?.let { Text(it) }
                         sharedSnapshot?.let { snapshot ->
                             Text(stringResource(R.string.shared_children), style = MaterialTheme.typography.titleMedium)
@@ -1190,38 +1157,6 @@ private fun TrackerScreen(
                                     ))
                                 }) { Text(stringResource(R.string.share_invitation)) }
                             }
-                            OutlinedButton(onClick = {
-                                shareStage = context.getString(R.string.challenge_preparing)
-                                scope.launch {
-                                    runCatching {
-                                        withContext(Dispatchers.IO) {
-                                            sharing.respondToClaim(family, relayOrigin.trim())
-                                        }
-                                    }.onSuccess {
-                                        shareStage = context.getString(R.string.challenge_confirmed)
-                                        message = null
-                                    }.onFailure {
-                                        shareStage = context.getString(R.string.share_retry)
-                                        message = errorText
-                                    }
-                                }
-                            }) { Text(stringResource(R.string.respond_to_claim)) }
-                            OutlinedButton(onClick = {
-                                shareStage = context.getString(R.string.admission_preparing)
-                                scope.launch {
-                                    runCatching {
-                                        withContext(Dispatchers.IO) {
-                                            sharing.admitProvedDevice(family, relayOrigin.trim())
-                                        }
-                                    }.onSuccess {
-                                        shareStage = context.getString(R.string.admission_confirmed)
-                                        message = null
-                                    }.onFailure {
-                                        shareStage = context.getString(R.string.share_retry)
-                                        message = errorText
-                                    }
-                                }
-                            }) { Text(stringResource(R.string.admit_device)) }
                             OutlinedButton(onClick = {
                                 scope.launch {
                                     runCatching {

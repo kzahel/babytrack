@@ -163,6 +163,11 @@ before tapping Invite.
 The join screen now names the verified stage: waiting for a holder challenge,
 preparing the recipient proof, waiting for a holder grant, or loading history.
 The later-device emulator flow checks the pending and proved phases.
+The recipient UI now needs one Start or retry join action after a link opens.
+It immediately runs one coordinator pass, then foreground polling and scheduled
+work advance proof and history loading without separate buttons. A ready
+joined Family enters the normal tracker; the join card still exposes a debug
+snapshot and will be simplified before the ordinary sharing UI gate.
 An admitted manager now exposes an invitation action in the joined-Family
 debug view and uses the same foreground and scheduled coordinator to answer
 claims and proofs. A real-relay instrumentation case uses three independent

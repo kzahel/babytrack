@@ -272,8 +272,9 @@ export class PublicStore {
       for (const row of objects) ready.add_object(bytes(row.objectId), row.bytes);
       ready.finish();
       for (const row of rows) {
-        if (row.kind !== 'batch') throw new Error('Later control needs full ready replay');
-        ready.apply_batch(row.bytes, row.receipt);
+        if (row.kind === 'control') ready.apply_control(row.bytes);
+        else if (row.kind === 'batch') ready.apply_batch(row.bytes, row.receipt);
+        else throw new Error('Unknown public entry kind');
       }
       if (ready.last_cursor() !== publicVerifier.last_cursor()) {
         throw new Error('Ready projection differs from verified public cursor');

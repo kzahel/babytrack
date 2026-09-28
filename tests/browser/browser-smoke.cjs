@@ -58,6 +58,9 @@ const input = {
   controlGenesisHex: chain.transitions[0].committed_cbor_hex,
   controlPageHex: controlPage.toString('hex'),
   controlHeadHex: chain.transitions[1].head_hash_hex,
+  controlPromotionIdHex: chain.transitions[0].manifest[0][1],
+  controlPromotionHex: chain.objects_by_id_hex[chain.transitions[0].manifest[0][1]],
+  controlEpochKeyHex: chain.test_only_inputs.epoch_1_key_hex,
   batchPageHex: batchPage.toString('hex'),
   batchResultHex: batchResult.toString('hex'),
   managerDeviceHex: chain.test_only_inputs.manager_device_id_hex,
@@ -406,6 +409,35 @@ async function run() {
       return result;
     }, input);
     assert.deepEqual(pulledReload, { cursor: '2', head: input.controlHeadHex });
+
+    // A signed invitation does not stop the original manager's browser
+    // tracker from replaying or preparing another epoch-one edit.
+    const sameEpochReady = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+      const store = await PublicStore.open(wasm, 'babytrack-public-pull-smoke');
+      await store.saveInitialCredential(data.familyHex, bytes(data.managerDeviceHex),
+        bytes(data.managerSeedHex), bytes(data.controlEpochKeyHex));
+      const write = store.database.transaction('objects', 'readwrite');
+      const committed = new Promise((resolve, reject) => {
+        write.oncomplete = resolve;
+        write.onabort = () => reject(write.error);
+        write.onerror = () => reject(write.error);
+      });
+      write.objectStore('objects').add({ family: data.familyHex,
+        objectId: data.controlPromotionIdHex, bytes: bytes(data.controlPromotionHex) });
+      await committed;
+      const ready = await store.loadInitialReadySaved(data.familyHex);
+      const result = { cursor: Number(ready.last_cursor()),
+        head: Array.from(ready.head_hash(), (byte) => byte.toString(16).padStart(2, '0')).join('') };
+      ready.free();
+      store.close();
+      return result;
+    }, input);
+    assert.deepEqual(sameEpochReady,
+      { cursor: 2, head: input.controlHeadHex });
 
     const batchPulled = await page.evaluate(async (data) => {
       const wasm = await import('/babytrack_core_wasm.js');

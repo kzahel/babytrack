@@ -535,6 +535,9 @@ continue across both restarts in all three first-cohort flow variants.
 This exercises durable relay state, not an OS power cut or all transaction
 boundaries. Browser shared outbox, more clients, and the bounded fault
 matrix remain open.
+The browser IndexedDB harness now replays a signed same-epoch invitation
+through the Rust authority and data view after reload. A rotation still
+requires verified new epoch keys and is outside this initial-manager path.
 The core now runs eight deterministic seeded encrypted logs with 64 child
 edits each, including deletes, restores, and skewed HLC values. At every
 eighth cursor, a fresh replay matches incremental projection byte-for-byte;

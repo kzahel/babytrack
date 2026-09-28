@@ -21,8 +21,9 @@ outbox, previews it locally before acceptance, retries it after a lost
 response, confirms it through signed relay reads, and rebuilds the record
 through the shared Rust core after reload. A test-only native Rust driver
 verifies that browser batch, authors an encrypted child through the same
-relay, and Chromium reads it back. Later controls and recipient credentials
-remain open.
+relay, and Chromium reads it back. The browser also replays same-epoch
+authority changes before rebuilding its data view; rotation and recipient
+credentials remain open.
 
 The Android debug app logs children, diapers, bottles with milk/content
 choice, sleep timers and completed sleep with optional place, notes, growth

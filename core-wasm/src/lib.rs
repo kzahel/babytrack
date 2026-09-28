@@ -40,8 +40,8 @@ pub struct WasmPublicFamily {
 
 /// Epoch-one initial manager data view. The signed genesis, committed
 /// manifest objects, key commitment, and every batch receipt must verify
-/// before record fields become visible. Later controls and rotations are
-/// intentionally outside this narrow first-cohort entry point.
+/// before record fields become visible. Same-epoch authority changes can
+/// advance this view; rotation requires a separately verified keyring.
 #[wasm_bindgen]
 pub struct WasmInitialFamily {
     genesis: Vec<u8>,
@@ -130,6 +130,28 @@ impl WasmInitialFamily {
         ready.projection = projection;
         ready.overlay = None;
         Ok(matches!(outcome, Outcome::Applied))
+    }
+
+    /// Replay a signed same-epoch authority change in the global cursor
+    /// stream. A rotation cannot use the initial manager key-only view.
+    pub fn apply_control(&mut self, committed_bytes: &[u8]) -> Result<(), JsError> {
+        let ready = self
+            .ready
+            .as_mut()
+            .ok_or_else(|| JsError::new("manifest objects not yet verified"))?;
+        let mut chain = ready.chain.clone();
+        chain.apply_control(committed_bytes).map_err(debug_error)?;
+        chain
+            .verify_initial_epoch_key(&self.epoch_key)
+            .map_err(debug_error)?;
+        let mut projection = ready.projection.clone();
+        projection
+            .advance_control(chain.last_global_cursor())
+            .map_err(debug_error)?;
+        ready.chain = chain;
+        ready.projection = projection;
+        ready.overlay = None;
+        Ok(())
     }
 
     /// Preview one durable unsent operation without advancing the verified

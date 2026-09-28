@@ -42,7 +42,8 @@ and reloads its saved cursor. It now fetches signed genesis objects and
 projects the decrypted epoch-one record through Rust after reload. A
 production wasm batch enters a durable browser outbox, previews locally,
 survives a lost POST response and reload, and clears only on signed
-acceptance. Later controls, later-epoch and recipient key storage, broader
+acceptance. The browser data view also replays a same-epoch invitation after
+reload. Later-epoch and recipient key storage, broader
 offline edits, rejection repair, and full CLI/browser convergence remain
 open. A test-only native CLI driver now verifies the browser's accepted
 batch and sends an encrypted child back through the same relay; Chromium

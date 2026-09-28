@@ -1,120 +1,73 @@
 # Android development build
 
-The debug app tracks local Families and runs the first two-device sharing
-handoff on a development relay: promotion, invitation, claim, challenge,
-proof, grant, and recipient history verification. Both devices can edit and
-sync; each can save a shared backup or make an independent private copy.
-Once a child is selected, the top bar names its Family and child and offers
-**Wet now** for a wet-diaper log without scrolling through setup controls.
-While the app is in the foreground it polls the relay every 30 seconds. A
-persisted Android job also requests network sync when the OS allows it.
-After reboot, a receiver restores the ongoing sleep-timer notification from
-the local journal without waiting for network sync.
-The manager can remove the first recipient. After verifying a signed
-removal, that device stops shared writes and automatically makes a private
-Family copy when it has pending changes. The release manifest does not allow
-cleartext HTTP; sharing controls remain in the debug UI while broader
-membership and the M0 security gate are open.
+The debug app logs a Family's children, feeds, diapers, sleep, pumping,
+growth, medication, temperature, solids, and notes through the shared Rust
+core. Local tracking works without a relay or account. A Family can later be
+shared through the development relay, and an invited device gets the same
+tracker after its grant and history are verified. The app saves readable or
+password-protected backups and restores either into a new local Family.
 
-To exercise the current relay slice on an emulator:
+## Try sharing on two devices
 
-1. Create a private 32-byte relay seed file and start `babytrack-server` with
-   a persistent SQLite path and `127.0.0.1:8787` bind address. The server
-   prints its **public** relay key; keep the seed file private.
-2. Run `adb reverse tcp:8787 tcp:8787`, then install the debug APK built by
-   `apps/android/gradlew :app:assembleDebug`.
-3. Open **Sharing controls**. In **Sharing setup preview**, enter
-   `http://localhost:8787` and the printed 64-digit relay public key.
-   Use **Set up or retry sharing**, then
-   **Create or retry invitation**. Exact prepared bytes survive process
-   restart and uncertain POST responses; a confirmed invite yields a
-   one-device fragment.
-4. On a receiving debug app, choose **Join a Family** and paste that fragment
-   in **Join preview**. The app
-   signs an authenticated read, verifies the invitation-linked public
-   controls in Rust, and submits the exact durable claim. It reports waiting
-   for a key holder; this stage does not provide shared data yet. Retrying
-   after restart resubmits the saved claim without rereading through the
-   invitation credential, whose read access closes at claim commit.
-5. On the holder's debug screen, use **Respond to pending device**. The app
-   verifies the claim, commits a challenge addressed to the recipient, and
-   reports that it is waiting for the recipient's proof. Retrying after
-   restart reuses the exact saved challenge.
-6. On the recipient's debug screen, use **Prove device key**. Rust verifies
-   and opens only the challenge addressed to this device, then commits a
-   durable proof. Retrying after restart uses the exact saved proof.
-7. On the holder's debug screen, use **Grant device access**. Rust verifies
-   the proof against the saved challenge and commits the encrypted grant.
-   The recipient remains pending until it loads and verifies the full history.
-8. On the recipient's debug screen, use **Load shared history**. A bounded
-   sync pass verifies signed control and batch history, fetches required
-   encrypted objects, and opens the grant. It reports the verified cursor or
-   readiness; repeat after a pending result. The joined Family then appears
-   in the normal Family switcher with the full tracker; pending joins stay
-   in the join view. Adding a child or wet diaper saves
-   offline in the Rust shared outbox; **Sync shared Family** uploads the next
-   signed batches and verifies the relay log. The manager can use the same
-   button for its Family. A newly shared manager Family uses the shared Rust
-   view and edit path; the local-only API rejects it. A lost upload response
-   keeps exact batch bytes for retry. A signed rejection is checked against
-   verified history before the outbox may be resealed; other rejections keep
-   the local operation pending.
-9. After app restart, select the joined Family in the join preview to resume
-   proof, history loading, or manual sync without pasting the invitation
-   again. The manager's relay origin is saved after sharing is confirmed.
-   If both apps run at different times, each foreground or scheduled pass
-   advances the next verified protocol step. A failed pass leaves local work
-   saved and shows delayed or blocked status until resolved.
-10. The tracking screen can save a growth entry with whole grams and
-    millimetres, a Celsius decimal entry, and a medication name with entered
-    dose amount/unit. The same Rust operation path is used for local and
-    shared Families; the two-emulator test verifies
-    the recipient's entries on the manager's device. The manager can remove
-    that first recipient; pending edits on the removed device become an
-    independent private Family copy.
-11. A device granted manager access can create another invitation from its
-    joined-Family debug view. Its foreground and scheduled sync passes answer
-    the next device's claim and proof. The real-relay instrumentation suite
-    checks this with three separate stores and an encrypted edit from the
-    admitted manager. The same flow removes that third device, rotates the
-    Family key for remaining holders, and stops presenting the removed
-    device's old snapshot as active shared data. This remains a debug flow;
-    later rotations, role changes, and invitation cancellation are pending.
+1. Create a private 32-byte relay seed file. Start `babytrack-server` with a
+   persistent SQLite path, that seed file, and a reachable bind address. It
+   prints a 64-digit **public** relay key; keep the seed private. For an
+   emulator connected to a laptop relay at `127.0.0.1:8787`, run
+   `adb reverse tcp:8787 tcp:8787` and use `http://localhost:8787` in the app.
+   For physical phones, use an origin reachable from both phones.
+2. Build and install the debug APK with
+   `apps/android/gradlew :app:assembleDebug`. On the first phone, create a
+   Family and child. Open **Sharing controls**, enter the exact relay origin
+   and printed public key, and tap **Set up or retry sharing**. The app shows
+   confirmation only after verifying the signed genesis.
+3. Choose **Member** or **Manager**, then tap **Create or retry invitation**.
+   Share the one-use link with the second phone using **Share invitation**.
+   The recipient can open the link or paste its fragment under **Join a
+   Family**. Opening a link prefills the form; **Start or retry join** is the
+   explicit claim action.
+4. The holder and recipient apps advance challenge, proof, grant, and history
+   loading on foreground and scheduled sync passes. They do not need to stay
+   open together. The join card shows the pending stage; a verified ready
+   Family appears in the normal Family switcher. Android runs foreground
+   passes every 30 seconds and requests scheduled network work when the OS
+   permits, so a suspended app may progress later.
+5. Log on either phone, including while offline. A saved shared edit remains
+   local until a signed relay result confirms it. The access section shows
+   verified devices and pending writes. A manager can invite another device,
+   label devices on this phone, change admitted roles, cancel an unused link,
+   or remove an admitted device. Removal rotates the Family key. After
+   verifying removal, a device stops shared writes and preserves pending
+   edits in a private Family copy. The removed original manager also sees an
+   access-ended card with a private-copy action.
 
-The on-device integration test calls the same Keystore and transport adapter
-through a real relay. With an emulator running, build both APKs with
-`apps/android/gradlew :app:assembleDebug :app:assembleDebugAndroidTest`, then
-run `bash scripts/check_android_relay_emulator.sh`. The script starts a
-disposable relay. To use an already running relay, set
-`BABYTRACK_RELAY_PUBLIC_KEY` to its public key. For a direct instrumentation
-run after `adb reverse` and both APK installs, use:
+The relay and public key are manual debug setup. Debug builds allow local
+cleartext HTTP; the release manifest does not. Physical two-phone use and
+the end-of-M0 security gate remain open, so this is a development flow.
+
+## Automated checks
+
+The real-relay Android instrumentation suite uses separate device stores and
+a disposable relay. With an emulator running, build both APKs and run:
 
 ```sh
-adb shell am instrument -w -e relayPublicKey PUBLIC_KEY_HEX \
-  org.babytrack.app.test/androidx.test.runner.AndroidJUnitRunner
+apps/android/gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+bash scripts/check_android_relay_emulator.sh
 ```
 
-The separate `python3 scripts/check_android_ui_smoke.py` check installs the
-debug APK, clears its data on an emulator, then uses the visible UI to create
-a Family and child, log a wet diaper, and verify both after app restart.
-Set `ANDROID_SERIAL` when multiple emulators are attached. CI runs it after
-the relay instrumentation suite.
+Set `ANDROID_SERIAL` when multiple emulators are attached. The runner starts
+its own relay; set `BABYTRACK_RELAY_PUBLIC_KEY` to use an already running
+relay. The suite covers delayed joining, encrypted edits, later invitations,
+role changes, two rotations, removal, offline work, and private copies.
 
-The test creates its own Family, promotes a child record, commits an invite,
-reopens its store, and retries both requests. A separate recipient store then
-claims the invitation and retries after restart with the same device identity
-and candidate bytes. The holder then commits and retries the challenge; the
-recipient fetches its addressed object and commits and retries its proof. The
-holder commits and retries admission. The recipient loads the full history,
-including the manager's child, then reopens the store and verifies readiness
-again. All three handoff steps are retried after later controls have
-committed. The recipient then saves a child and diaper offline, uploads them,
-and the manager pulls them. The manager saves another child, uploads it, and
-the recipient pulls it. The test reopens the recipient store and resumes by
-Family identity without the fragment. It also drops one accepted upload
-response and recovers through the signed log. A second test alternates
-manager and recipient foreground passes to finish the join without another
-manual holder action. A third test forces the scheduled background job and
-checks that a saved manager edit uploads without the UI. Android CI now runs
-the suite in an emulator against a disposable relay; its remote result is
-unverified until an Actions run is inspected.
+The command-driven local UI check creates and edits records through visible
+controls; the document-picker recovery check reinstalls the app and restores
+readable and protected files. Run them with:
+
+```sh
+python3 scripts/check_android_ui_smoke.py
+python3 scripts/check_android_recovery_ui.py
+```
+
+CI runs these against an emulator. A physical phone is still needed for
+one-handed use, large text, night display, actual reboot/widget placement,
+and two-caregiver network behavior.

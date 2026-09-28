@@ -228,10 +228,13 @@ This is still a development flow, not a released product flow.
   Preserve unknown fields and exact Family/child targets. Keep clinical
   recommendations out of the UI.
   WHO publishes the growth reference tables, but the terms for bundling those
-  tables in this MIT app need resolution before adding percentile data. Check
-  the [WHO standards](https://www.who.int/tools/child-growth-standards/standards)
-  and [WHO reuse terms](https://www.who.int/about/policies/publishing/data-policy/terms-and-conditions)
-  for the exact source chosen; do not silently copy a restricted table.
+  tables in this MIT app need resolution before adding percentile data. The
+  [WHO standards](https://www.who.int/tools/child-growth-standards/standards)
+  are available, but the [dataset terms](https://www.who.int/about/policies/publishing/data-policy/terms-and-conditions)
+  restrict commercial-product use and the [copyright guidance](https://www.who.int/about/policies/publishing/copyright)
+  calls for permission in a commercial context. Resolve the specific table's
+  rights or obtain permission before bundling reference data; continue growth
+  logging and editing meanwhile.
 - [ ] Run local logging, Family switching, and restart on a physical Android
   phone. Check accessible labels, large text, dark night use, startup size
   and latency, and the common feed/diaper path with one hand. On 2026-09-28,

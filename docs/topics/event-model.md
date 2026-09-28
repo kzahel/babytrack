@@ -131,6 +131,13 @@ activity ID. A blank value in the Android edit leaves that measurement as it
 was; deleting the entry removes all its measurements from the timeline.
 
 Growth percentiles are computed from WHO tables when shown, never stored.
+No WHO reference table is bundled yet. WHO's published dataset terms permit
+reuse for public-health purposes with attribution but restrict use alongside
+promotion of a commercial product; its general copyright page also calls for
+permission in a commercial context. Those terms are not an MIT grant for the
+tables. Resolve the specific table's reuse rights or obtain permission before
+adding reference data to this repository or a distributed build. Growth
+logging and correction remain usable without the percentile display.
 Wake-window hints are computed from sleep events on the device.
 Freezer milk inventory is outside the MVP; pumping records do not imply a
 stock ledger or `stash.add`/`stash.use` operations.

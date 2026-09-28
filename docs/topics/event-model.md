@@ -196,6 +196,12 @@ the UI offers to merge them rather than guessing.
   Interval entries keep their separate end and segment rules; this correction
   does not silently move an interval endpoint. The editor targets the saved
   Family, child, and activity and rejects future times.
+  A completed sleep or pumping session may also be moved to a corrected start
+  time while retaining its duration. One operation sets both start and end,
+  including their recorded offsets; the core rejects an open sleep timer,
+  reversed interval, future end, or wrong Family/child target. Android picks
+  the new start in the viewing device's time zone and derives the matching
+  end. Breast-feed segments are not moved by this control.
 - Lists and timelines show each event at the local time it was logged, with
   a marker when that offset differs from the viewing device's current one.
 - A day is a calendar day in the viewing device's current time zone. Events

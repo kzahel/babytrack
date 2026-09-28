@@ -86,6 +86,8 @@
     <string name="log_time_future">Choose a time that has already passed.</string>
     <string name="edit_entry_time">Edit time</string>
     <string name="choose_entry_time">Choose date and time</string>
+    <string name="move_completed_session">Move session</string>
+    <string name="session_end_time">Ends %1$s</string>
     <string name="birth_date_edit_hint">Leave the date blank to keep the saved birth date.</string>
     <string name="pump_edit_hint">Enter separate left/right amounts or one total. Clear the other fields when switching.</string>
     <string name="log_solids">Log solids</string>

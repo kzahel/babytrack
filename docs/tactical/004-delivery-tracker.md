@@ -117,6 +117,9 @@ the Android timeline and analysis CSV show that choice.
 Caregivers can also correct the time of a saved instantaneous entry without
 replacing its record; the shared-core edit reaches another device through the
 encrypted relay and remains in a restored file.
+Completed sleep and pumping sessions can move to a corrected start while
+retaining their duration. Rust updates both endpoints together; interval
+movement reaches the second emulator through encrypted sync.
 Completed whole-minute breast feeds can now be corrected for side and
 duration through an atomic shared-core segment update.
 The selected-child timeline groups activity by local day and filters its

@@ -37,7 +37,8 @@ Celsius or Fahrenheit temperature, medication, solids, breast-feed
 segments, and pumping entries locally or in a shared Family. Existing pumping
 amounts can be corrected without replacing the entry. Completed entries can
 be logged at an earlier time, saved instantaneous entries can have their time
-corrected, and bottle amount/content can be corrected on
+corrected, completed sleep and pumping sessions can move without changing
+duration, and bottle amount/content can be corrected on
 the same event. A home-screen widget
 shows saved running sleep timers, and the access list can label each enrolled
 device on this phone. Child birth date and growth-chart sex can be corrected

@@ -188,9 +188,13 @@ class TwoDeviceRelayTest {
                 correctedEnd, 0, System.currentTimeMillis())
             sharing.editSleepPlace(family, completedSleep.childId, completedSleep.id,
                 2u.toUByte(), System.currentTimeMillis())
+            val movedSleepStart = completedSleep.startUtcMs - 3_600_000L
+            sharing.moveCompletedInterval(family, completedSleep.childId, completedSleep.id,
+                ActivityWhen(movedSleepStart, 60, System.currentTimeMillis()),
+                movedSleepStart + 20 * 60_000L, 60)
             assertTrue(sharing.snapshot(family).activities.any {
-                it.id.contentEquals(completedSleep.id) && it.startUtcMs == completedSleep.startUtcMs &&
-                    it.endUtcMs == correctedEnd && it.sleepPlace == 2u.toUByte()
+                it.id.contentEquals(completedSleep.id) && it.startUtcMs == movedSleepStart &&
+                    it.endUtcMs == movedSleepStart + 20 * 60_000L && it.sleepPlace == 2u.toUByte()
             })
             assertTrue(sharing.snapshot(family).activities.any { it.note == "Care note marker 67" })
             assertTrue(String(sharing.analysisCsv(family)).contains("Care note marker 67"))
@@ -290,9 +294,14 @@ class TwoDeviceRelayTest {
             }
             sharing.editPumpAmounts(family, pump.childId, pump.id,
                 PumpInput(null, null, 40), System.currentTimeMillis())
+            val movedPumpStart = pump.startUtcMs - 3_600_000L
+            sharing.moveCompletedInterval(family, pump.childId, pump.id,
+                ActivityWhen(movedPumpStart, 60, System.currentTimeMillis()),
+                movedPumpStart + (pump.endUtcMs!! - pump.startUtcMs), 60)
             assertTrue(sharing.snapshot(family).activities.any {
                 it.id.contentEquals(pump.id) && it.pumpLeftMl == null && it.pumpRightMl == null &&
-                    it.pumpTotalMl == 40L && it.startUtcMs == pump.startUtcMs && it.endUtcMs == pump.endUtcMs
+                    it.pumpTotalMl == 40L && it.startUtcMs == movedPumpStart &&
+                    it.endUtcMs == movedPumpStart + (pump.endUtcMs!! - pump.startUtcMs)
             })
             val note = sharing.snapshot(family).activities.single { it.note == "Care note marker 67" }
             val otherChild = sharing.snapshot(family).children.single { !it.id.contentEquals(note.childId) }
@@ -376,7 +385,8 @@ class TwoDeviceRelayTest {
                     it.bottleContent == 3u.toUByte() && it.offsetMinutes == 60.toShort()
             })
             assertTrue(sharing.snapshot(family).activities.any {
-                it.kind == "sleep" && it.endUtcMs != null && it.sleepPlace == 2u.toUByte()
+                it.kind == "sleep" && it.endUtcMs != null && it.sleepPlace == 2u.toUByte() &&
+                    it.endUtcMs!! - it.startUtcMs == 20 * 60_000L && it.offsetMinutes == 60.toShort()
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "feed.solids" && it.solidsFoods == listOf("Apple", "Rice") &&
@@ -389,7 +399,7 @@ class TwoDeviceRelayTest {
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "pump" && it.pumpTotalMl == 40L &&
-                    it.pumpLeftMl == null && it.pumpRightMl == null
+                    it.pumpLeftMl == null && it.pumpRightMl == null && it.offsetMinutes == 60.toShort()
             })
             assertTrue(sharing.snapshot(family).activities.any {
                 it.kind == "medication" && it.medicationName == "Corrected medicine" &&

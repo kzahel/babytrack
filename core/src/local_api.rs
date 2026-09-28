@@ -574,6 +574,39 @@ impl LocalRepository {
         Ok(())
     }
 
+    pub fn move_completed_interval(
+        &mut self,
+        family: FamilyHandle,
+        child_id: [u8; 16],
+        activity_id: [u8; 16],
+        time: ActivityTime,
+        end_utc_ms: i64,
+        end_offset_minutes: i16,
+    ) -> Result<(), Error> {
+        self.ensure_local_surface(family)?;
+        let projection = self.store.load_local(family)?;
+        let child = projection
+            .record(&child_id)
+            .ok_or(Error::Invalid("target child unavailable"))?;
+        if child.scope != Scope::Child || child.deleted {
+            return Err(Error::Invalid("target child unavailable"));
+        }
+        let activity = projection
+            .record(&activity_id)
+            .ok_or(Error::Invalid("activity unavailable"))?;
+        let operation = move_completed_interval_operation(
+            family,
+            child_id,
+            activity,
+            time,
+            end_utc_ms,
+            end_offset_minutes,
+        )?;
+        self.store
+            .append_local(family, operation, time.saved_at_ms)?;
+        Ok(())
+    }
+
     pub fn edit_bottle_ml(
         &mut self,
         family: FamilyHandle,
@@ -1976,6 +2009,63 @@ pub fn edit_instant_time_operation(
                 Value::Integer(offset_minutes.into()),
             ]),
         )]),
+    })
+}
+
+/// Move one completed sleep or pump interval in a single field-set operation.
+/// The caller chooses both endpoint offsets; Android preserves the duration.
+pub fn move_completed_interval_operation(
+    family: FamilyHandle,
+    child_id: [u8; 16],
+    activity: &Record,
+    time: ActivityTime,
+    end_utc_ms: i64,
+    end_offset_minutes: i16,
+) -> Result<NewOperation, Error> {
+    if activity.scope != Scope::Activity
+        || activity.child_id != Some(child_id)
+        || activity.deleted
+        || !matches!(activity.record_type.as_str(), "sleep" | "pump")
+        || !matches!(
+            activity.field(2).map(|field| &field.value),
+            Some(Value::Array(_))
+        )
+    {
+        return Err(Error::Invalid("completed interval target unavailable"));
+    }
+    check_time(time.saved_at_ms)?;
+    if time.start_utc_ms < 0 || end_utc_ms <= time.start_utc_ms || end_utc_ms > time.saved_at_ms {
+        return Err(Error::Invalid("completed interval time invalid"));
+    }
+    if !(-840..=840).contains(&time.offset_minutes) || !(-840..=840).contains(&end_offset_minutes) {
+        return Err(Error::Invalid("recorded offset outside v1 range"));
+    }
+    Ok(NewOperation {
+        family_id: family.family_id,
+        operation_id: ids::random_v7(time.saved_at_ms)?,
+        record_id: activity.id,
+        scope: Scope::Activity,
+        kind: Kind::Set,
+        author_device_id: family.device_id,
+        hlc: placeholder_hlc(family),
+        record_type: None,
+        child_id: None,
+        fields: Some(vec![
+            (
+                1,
+                Value::Array(vec![
+                    Value::Integer(time.start_utc_ms.into()),
+                    Value::Integer(time.offset_minutes.into()),
+                ]),
+            ),
+            (
+                2,
+                Value::Array(vec![
+                    Value::Integer(end_utc_ms.into()),
+                    Value::Integer(end_offset_minutes.into()),
+                ]),
+            ),
+        ]),
     })
 }
 

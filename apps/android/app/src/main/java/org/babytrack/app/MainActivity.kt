@@ -229,13 +229,16 @@ private val noteEditableKinds = setOf(
 private val instantTimeEditableKinds = setOf(
     "note", "feed.bottle", "feed.solids", "diaper", "growth", "medication", "temperature",
 )
-private data class PendingInstantTimeEdit(
+private data class PendingTimeEdit(
     val family: FamilyRef,
     val childId: ByteArray,
     val activityId: ByteArray,
     val shared: Boolean,
     val startUtcMs: Long,
     val offsetMinutes: Short,
+    val intervalDurationMs: Long? = null,
+    val movedEndUtcMs: Long? = null,
+    val movedEndOffsetMinutes: Short? = null,
 )
 private data class PendingBottleEdit(
     val family: FamilyRef,
@@ -642,7 +645,7 @@ private fun TrackerScreen(
     var deviceLabelDraft by remember { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<PendingActivityDelete?>(null) }
     var pendingNoteEdit by remember { mutableStateOf<PendingNoteEdit?>(null) }
-    var pendingInstantTimeEdit by remember { mutableStateOf<PendingInstantTimeEdit?>(null) }
+    var pendingTimeEdit by remember { mutableStateOf<PendingTimeEdit?>(null) }
     var pendingBottleEdit by remember { mutableStateOf<PendingBottleEdit?>(null) }
     var pendingBreastEdit by remember { mutableStateOf<PendingBreastEdit?>(null) }
     var pendingDiaperEdit by remember { mutableStateOf<PendingDiaperEdit?>(null) }
@@ -722,7 +725,7 @@ private fun TrackerScreen(
         pendingChildMetadataEdit = null
         pendingDelete = null
         pendingNoteEdit = null
-        pendingInstantTimeEdit = null
+        pendingTimeEdit = null
         pendingBottleEdit = null
         pendingBreastEdit = null
         pendingDiaperEdit = null
@@ -2136,11 +2139,21 @@ private fun TrackerScreen(
                                 }
                                 if (entry.kind in instantTimeEditableKinds) {
                                     OutlinedButton(onClick = {
-                                        pendingInstantTimeEdit = PendingInstantTimeEdit(
+                                        pendingTimeEdit = PendingTimeEdit(
                                             family, entry.childId.copyOf(), entry.id.copyOf(),
                                             activeShared, entry.startUtcMs, entry.offsetMinutes,
                                         )
                                     }) { Text(stringResource(R.string.edit_entry_time)) }
+                                }
+                                if ((entry.kind == "sleep" || entry.kind == "pump") &&
+                                    entry.endUtcMs != null && entry.endUtcMs!! > entry.startUtcMs) {
+                                    OutlinedButton(onClick = {
+                                        pendingTimeEdit = PendingTimeEdit(
+                                            family, entry.childId.copyOf(), entry.id.copyOf(),
+                                            activeShared, entry.startUtcMs, entry.offsetMinutes,
+                                            intervalDurationMs = entry.endUtcMs!! - entry.startUtcMs,
+                                        )
+                                    }) { Text(stringResource(R.string.move_completed_session)) }
                                 }
                                 if (entry.kind == "feed.bottle" && entry.bottleMl != null) {
                                     OutlinedButton(onClick = {
@@ -2374,27 +2387,42 @@ private fun TrackerScreen(
             },
         )
     }
-    pendingInstantTimeEdit?.let { target ->
+    pendingTimeEdit?.let { target ->
         AlertDialog(
-            onDismissRequest = { pendingInstantTimeEdit = null },
-            title = { Text(stringResource(R.string.edit_entry_time)) },
+            onDismissRequest = { pendingTimeEdit = null },
+            title = { Text(stringResource(if (target.intervalDurationMs == null)
+                R.string.edit_entry_time else R.string.move_completed_session)) },
             text = {
                 Column {
                     Text(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
                         .format(Date(target.startUtcMs)))
+                    target.intervalDurationMs?.let { duration ->
+                        val end = target.movedEndUtcMs ?: target.startUtcMs + duration
+                        Text(stringResource(R.string.session_end_time,
+                            DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(end))))
+                    }
                     OutlinedButton(onClick = {
                         val current = java.util.Calendar.getInstance().apply { timeInMillis = target.startUtcMs }
                         DatePickerDialog(context, { _, year, month, day ->
                             TimePickerDialog(context, { _, hour, minute ->
-                                if (pendingInstantTimeEdit === target) {
+                                if (pendingTimeEdit === target) {
                                     val selected = LocalDateTime.of(year, month + 1, day, hour, minute)
                                         .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                                    if (selected > System.currentTimeMillis()) {
+                                    val movedEnd = target.intervalDurationMs?.let { duration ->
+                                        runCatching { Math.addExact(selected, duration) }.getOrNull()
+                                    }
+                                    if (selected > System.currentTimeMillis() ||
+                                        target.intervalDurationMs != null &&
+                                        (movedEnd == null || movedEnd > System.currentTimeMillis())) {
                                         message = context.getString(R.string.log_time_future)
                                     } else {
-                                        pendingInstantTimeEdit = target.copy(
+                                        pendingTimeEdit = target.copy(
                                             startUtcMs = selected,
                                             offsetMinutes = (TimeZone.getDefault().getOffset(selected) / 60_000).toShort(),
+                                            movedEndUtcMs = movedEnd,
+                                            movedEndOffsetMinutes = movedEnd?.let {
+                                                (TimeZone.getDefault().getOffset(it) / 60_000).toShort()
+                                            },
                                         )
                                         message = null
                                     }
@@ -2409,10 +2437,20 @@ private fun TrackerScreen(
                 }
             },
             confirmButton = {
-                Button(onClick = {
+                Button(enabled = target.intervalDurationMs == null ||
+                    target.movedEndUtcMs != null && target.movedEndOffsetMinutes != null, onClick = {
                     val savedAtMs = System.currentTimeMillis()
-                    change(onSaved = { pendingInstantTimeEdit = null }) {
-                        if (target.shared) sharing.editInstantTime(
+                    change(onSaved = { pendingTimeEdit = null }) {
+                        val end = target.movedEndUtcMs
+                        val endOffset = target.movedEndOffsetMinutes
+                        if (target.intervalDurationMs != null && end != null && endOffset != null) {
+                            val time = ActivityWhen(target.startUtcMs, target.offsetMinutes, savedAtMs)
+                            if (target.shared) sharing.moveCompletedInterval(
+                                target.family, target.childId, target.activityId, time, end, endOffset,
+                            ) else store.moveCompletedInterval(
+                                target.family, target.childId, target.activityId, time, end, endOffset,
+                            )
+                        } else if (target.shared) sharing.editInstantTime(
                             target.family, target.childId, target.activityId,
                             target.startUtcMs, target.offsetMinutes, savedAtMs,
                         ) else store.editInstantTime(
@@ -2423,7 +2461,7 @@ private fun TrackerScreen(
                 }) { Text(stringResource(R.string.save_changes)) }
             },
             dismissButton = {
-                OutlinedButton(onClick = { pendingInstantTimeEdit = null }) {
+                OutlinedButton(onClick = { pendingTimeEdit = null }) {
                     Text(stringResource(R.string.cancel))
                 }
             },

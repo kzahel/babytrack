@@ -451,6 +451,12 @@ internal class ShareCoordinator(
             family, wrapping, childId, activityId, ActivityWhen(startUtcMs, offsetMinutes, savedAtMs),
         ) }
 
+    fun moveCompletedInterval(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+                              time: ActivityWhen, endUtcMs: Long, endOffsetMinutes: Short): Unit =
+        withWrapping { wrapping -> core.moveSharedCompletedInterval(
+            family, wrapping, childId, activityId, time, endUtcMs, endOffsetMinutes,
+        ) }
+
     fun editBottleMl(family: FamilyRef, childId: ByteArray, activityId: ByteArray, amountMl: Long, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedBottleMl(family, wrapping, childId, activityId, amountMl, savedAtMs) }
 

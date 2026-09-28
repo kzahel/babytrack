@@ -260,6 +260,12 @@ This is still a development flow, not a released product flow.
   offset, restart, and backup restore; the two-device relay flow checks a
   corrected bottle time on the recipient, and a Compose tap check exercises
   the Android edit dialog. Interval edits remain type-specific.
+  Completed sleep and pumping sessions now have a move action that keeps
+  their duration and changes both endpoints atomically through Rust. A core
+  check covers wrong targets, running timers, restart, and file restore;
+  the two-device relay flow checks the moved interval on the recipient.
+  The Android emulator check opens the native date/time pickers, moves the
+  completed sleep on the same record, and preserves its duration.
   Preserve unknown fields and exact Family/child targets. Keep clinical
   recommendations out of the UI.
   WHO publishes the growth reference tables, but the terms for bundling those

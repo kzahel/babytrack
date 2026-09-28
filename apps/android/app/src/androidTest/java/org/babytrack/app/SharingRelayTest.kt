@@ -12,6 +12,7 @@ import android.os.ParcelFileDescriptor
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -63,6 +64,60 @@ class SharingRelayTest {
                     it.offsetMinutes == 180.toShort()
             })
         }
+    }
+
+    @Test
+    fun completedSleepMoveRequiresChoosingAStartTime() {
+        wakeEmulatorScreen()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = context.filesDir.resolve("families.db")
+        val now = System.currentTimeMillis()
+        val originalStart = now - 60 * 60_000L - now % 60_000L + 45_000L
+        val (family, child, activity) = NativeLocalStore.open(db.absolutePath).use { local ->
+            val family = local.createFamily(now)
+            val child = local.addChild(family, "Move sleep child", now)
+            val activity = local.logSleep(family, child,
+                ActivityWhen(originalStart, 0, now), originalStart + 20 * 60_000L, 0)
+            Triple(family, child, activity)
+        }
+        context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
+            .edit().putString("family", family.familyId.joinToString("") { "%02x".format(it) })
+            .putString("child", child.joinToString("") { "%02x".format(it) }).commit()
+        ActivityScenario.launch(MainActivity::class.java).use {
+            val move = context.getString(R.string.move_completed_session)
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText(move).fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText(move).performScrollTo().performClick()
+            composeRule.onNodeWithText(context.getString(R.string.choose_entry_time)).assertIsDisplayed()
+            composeRule.onNodeWithText(context.getString(R.string.save_changes)).assertIsNotEnabled()
+            composeRule.onNodeWithText(context.getString(R.string.choose_entry_time)).performClick()
+            clickNativePositiveDialogButton()
+            clickNativePositiveDialogButton()
+            composeRule.onNodeWithText(context.getString(R.string.save_changes)).performClick()
+        }
+        NativeLocalStore.open(db.absolutePath).use { local ->
+            assertTrue(local.timeline(family, child).any {
+                it.id.contentEquals(activity) && it.startUtcMs != originalStart &&
+                    it.startUtcMs in (originalStart - 60_000L)..originalStart &&
+                    it.endUtcMs == it.startUtcMs + 20 * 60_000L
+            })
+        }
+    }
+
+    private fun clickNativePositiveDialogButton() {
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val deadline = System.currentTimeMillis() + 10_000
+        while (System.currentTimeMillis() < deadline) {
+            val button = automation.rootInActiveWindow
+                ?.findAccessibilityNodeInfosByViewId("android:id/button1")?.firstOrNull()
+            if (button != null && button.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                Thread.sleep(250)
+                return
+            }
+            Thread.sleep(50)
+        }
+        error("Native date or time picker confirmation did not appear")
     }
 
     @Test

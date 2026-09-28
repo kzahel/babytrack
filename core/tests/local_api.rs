@@ -63,6 +63,116 @@ fn instant_time_correction_keeps_identity_and_survives_backup() {
 }
 
 #[test]
+fn moving_completed_sleep_and_pump_keeps_duration_and_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("move-interval.db");
+    let mut app = LocalRepository::open(&path).unwrap();
+    let family = app.create_family(1_790_000_000_000).unwrap();
+    let other_family = app.create_family(1_790_000_000_001).unwrap();
+    let child = app.add_child(family, "Baby", 1_790_000_000_002).unwrap();
+    let other_child = app.add_child(family, "Other", 1_790_000_000_003).unwrap();
+    let start = 1_790_000_000_004;
+    let saved_at = start + 30 * 60_000;
+    let time = ActivityTime {
+        start_utc_ms: start,
+        offset_minutes: 60,
+        saved_at_ms: saved_at,
+    };
+    let sleep = app
+        .log_sleep_with_place(family, child, time, start + 20 * 60_000, 60, Some(2))
+        .unwrap();
+    let pump = app
+        .log_pump(
+            family,
+            child,
+            PumpAmounts {
+                left_ml: Some(20),
+                right_ml: None,
+                total_ml: None,
+            },
+            time,
+            start + 10 * 60_000,
+        )
+        .unwrap();
+    let running = app.start_sleep(family, child, time).unwrap();
+    let moved = ActivityTime {
+        start_utc_ms: start - 3_600_000,
+        offset_minutes: -60,
+        saved_at_ms: saved_at + 1,
+    };
+    for (target_family, target_child, target_activity, target_time, end) in [
+        (
+            other_family,
+            child,
+            sleep,
+            moved,
+            moved.start_utc_ms + 20 * 60_000,
+        ),
+        (
+            family,
+            other_child,
+            sleep,
+            moved,
+            moved.start_utc_ms + 20 * 60_000,
+        ),
+        (
+            family,
+            child,
+            running,
+            moved,
+            moved.start_utc_ms + 20 * 60_000,
+        ),
+        (family, child, sleep, moved, moved.start_utc_ms),
+        (family, child, sleep, moved, moved.saved_at_ms + 1),
+    ] {
+        assert!(
+            app.move_completed_interval(
+                target_family,
+                target_child,
+                target_activity,
+                target_time,
+                end,
+                -60,
+            )
+            .is_err()
+        );
+    }
+    app.move_completed_interval(
+        family,
+        child,
+        sleep,
+        moved,
+        moved.start_utc_ms + 20 * 60_000,
+        -60,
+    )
+    .unwrap();
+    app.move_completed_interval(
+        family,
+        child,
+        pump,
+        moved,
+        moved.start_utc_ms + 10 * 60_000,
+        -60,
+    )
+    .unwrap();
+    let rows = app.timeline(family, child).unwrap();
+    let sleep_row = rows.iter().find(|row| row.id == sleep).unwrap();
+    assert_eq!(sleep_row.start_utc_ms, moved.start_utc_ms);
+    assert_eq!(sleep_row.end_utc_ms, Some(moved.start_utc_ms + 20 * 60_000));
+    assert_eq!(sleep_row.sleep_place, Some(2));
+    let pump_row = rows.iter().find(|row| row.id == pump).unwrap();
+    assert_eq!(pump_row.start_utc_ms, moved.start_utc_ms);
+    assert_eq!(pump_row.end_utc_ms, Some(moved.start_utc_ms + 10 * 60_000));
+    assert_eq!(pump_row.pump_left_ml, Some(20));
+    let backup = app.backup(family, moved.saved_at_ms + 1).unwrap();
+    drop(app);
+    let mut app = LocalRepository::open(&path).unwrap();
+    assert_eq!(app.timeline(family, child).unwrap(), rows);
+    let restored = app.restore(&backup, moved.saved_at_ms + 2).unwrap();
+    assert_eq!(app.timeline(restored, child).unwrap(), rows);
+}
+
+#[test]
 fn child_birth_day_and_sex_survive_restart_and_file_restore() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("child-metadata.db");

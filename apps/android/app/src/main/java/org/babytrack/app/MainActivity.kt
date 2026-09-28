@@ -500,10 +500,8 @@ private fun TrackerScreen(
     var joinStage by remember { mutableStateOf<String?>(null) }
     var joinInProgress by remember { mutableStateOf(false) }
     var sharedSnapshot by remember { mutableStateOf<SharedSnapshotRow?>(null) }
-    var sharedSelectedChild by remember { mutableStateOf<String?>(null) }
     var recipientFamilies by remember { mutableStateOf<List<FamilyRef>>(emptyList()) }
     var selectedRecipient by remember { mutableStateOf<String?>(null) }
-    var sharedChildName by remember { mutableStateOf("") }
     var inviteAsManager by remember { mutableStateOf(false) }
     LaunchedEffect(incomingInvitation) {
         if (incomingInvitation != null) {
@@ -780,6 +778,22 @@ private fun TrackerScreen(
                     deviceLabelTarget = key
                     deviceLabelDraft = deviceLabels[key].orEmpty()
                 })
+                if (!activeFamilyIsLocal) {
+                    Text(stringResource(R.string.shared_manual_sync))
+                    OutlinedButton(onClick = {
+                        scope.launch {
+                            runCatching { withContext(Dispatchers.IO) {
+                                sharing.syncRecipientAndUpload(snapshot.family)
+                            } }.onSuccess { progress ->
+                                version++
+                                message = sharedSyncMessage(context, progress)
+                            }.onFailure {
+                                message = if (it is SharedUploadBlocked)
+                                    context.getString(R.string.shared_upload_blocked) else errorText
+                            }
+                        }
+                    }) { Text(stringResource(R.string.sync_shared)) }
+                }
                 if (family != null && snapshot.devices.any {
                     it.deviceId.contentEquals(family.deviceId) && it.role == 2.toUByte()
                 }) {
@@ -789,6 +803,53 @@ private fun TrackerScreen(
                             ?: stringResource(R.string.device_short_id, device.deviceId.key().take(8))
                         OutlinedButton(onClick = { removalTarget = device.deviceId }) {
                             Text(stringResource(R.string.remove_device, label))
+                        }
+                    }
+                    if (BuildConfig.DEBUG && !activeFamilyIsLocal) {
+                        Text(stringResource(R.string.invite_manager), style = MaterialTheme.typography.titleMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = !inviteAsManager,
+                                onClick = { inviteAsManager = false },
+                                label = { Text(stringResource(R.string.invite_member)) },
+                            )
+                            FilterChip(
+                                selected = inviteAsManager,
+                                onClick = { inviteAsManager = true },
+                                label = { Text(stringResource(R.string.invite_manager)) },
+                            )
+                        }
+                        OutlinedButton(onClick = {
+                            shareStage = context.getString(R.string.invite_preparing)
+                            scope.launch {
+                                runCatching { withContext(Dispatchers.IO) {
+                                    sharing.invite(
+                                        snapshot.family,
+                                        sharing.recipientOrigin(snapshot.family),
+                                        if (inviteAsManager) 2u.toUByte() else 1u.toUByte(),
+                                    )
+                                } }.onSuccess { fragment ->
+                                    invitationFragment = fragment
+                                    shareStage = context.getString(R.string.invite_confirmed)
+                                    message = null
+                                }.onFailure {
+                                    shareStage = context.getString(R.string.share_retry)
+                                    message = errorText
+                                }
+                            }
+                        }) { Text(stringResource(R.string.create_invite)) }
+                        shareStage?.let { Text(it) }
+                        invitationFragment?.let { fragment ->
+                            SelectionContainer { Text(fragment) }
+                            OutlinedButton(onClick = {
+                                val send = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, invitationLink(fragment))
+                                }
+                                context.startActivity(Intent.createChooser(
+                                    send, context.getString(R.string.share_invitation),
+                                ))
+                            }) { Text(stringResource(R.string.share_invitation)) }
                         }
                     }
                 }
@@ -890,178 +951,6 @@ private fun TrackerScreen(
                             }
                         }) { Text(stringResource(R.string.join_or_retry)) }
                         joinStage?.let { Text(it) }
-                        sharedSnapshot?.let { snapshot ->
-                            Text(stringResource(R.string.shared_children), style = MaterialTheme.typography.titleMedium)
-                            Text(stringResource(R.string.shared_manual_sync))
-                            SharedHealth(snapshot, deviceLabels, onNameDevice = { target ->
-                                val key = deviceLabelKey(snapshot.family.familyId, target)
-                                deviceLabelTarget = key
-                                deviceLabelDraft = deviceLabels[key].orEmpty()
-                            })
-                            if (snapshot.family.familyId.key() == selectedRecipient &&
-                                sharing.isAdmittedManager(snapshot.family)) {
-                                Text(stringResource(R.string.invite_manager), style = MaterialTheme.typography.titleMedium)
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    FilterChip(
-                                        selected = !inviteAsManager,
-                                        onClick = { inviteAsManager = false },
-                                        label = { Text(stringResource(R.string.invite_member)) },
-                                    )
-                                    FilterChip(
-                                        selected = inviteAsManager,
-                                        onClick = { inviteAsManager = true },
-                                        label = { Text(stringResource(R.string.invite_manager)) },
-                                    )
-                                }
-                                OutlinedButton(onClick = {
-                                    shareStage = context.getString(R.string.invite_preparing)
-                                    scope.launch {
-                                        runCatching { withContext(Dispatchers.IO) {
-                                            sharing.invite(
-                                                snapshot.family,
-                                                sharing.recipientOrigin(snapshot.family),
-                                                if (inviteAsManager) 2u.toUByte() else 1u.toUByte(),
-                                            )
-                                        } }.onSuccess { fragment ->
-                                            invitationFragment = fragment
-                                            shareStage = context.getString(R.string.invite_confirmed)
-                                            message = null
-                                        }.onFailure {
-                                            shareStage = context.getString(R.string.share_retry)
-                                            message = errorText
-                                        }
-                                    }
-                                }) { Text(stringResource(R.string.create_invite)) }
-                                shareStage?.let { Text(it) }
-                                invitationFragment?.let { fragment ->
-                                    SelectionContainer { Text(fragment) }
-                                    OutlinedButton(onClick = {
-                                        val send = Intent(Intent.ACTION_SEND).apply {
-                                            type = "text/plain"
-                                            putExtra(Intent.EXTRA_TEXT, invitationLink(fragment))
-                                        }
-                                        context.startActivity(Intent.createChooser(
-                                            send, context.getString(R.string.share_invitation),
-                                        ))
-                                    }) { Text(stringResource(R.string.share_invitation)) }
-                                }
-                            }
-                            OutlinedButton(onClick = {
-                                scope.launch {
-                                    runCatching { withContext(Dispatchers.IO) {
-                                        sharing.privateCopy(snapshot.family, System.currentTimeMillis())
-                                    } }.onSuccess { copy ->
-                                        selectedFamily = copy.familyId.key()
-                                        selectedChild = null
-                                        version++
-                                        message = context.getString(R.string.private_copy_created)
-                                    }.onFailure { message = errorText }
-                                }
-                            }) { Text(stringResource(R.string.make_private_copy)) }
-                            Text(stringResource(R.string.shared_backup_description))
-                            FilterChip(
-                                selected = protectBackup,
-                                onClick = { protectBackup = !protectBackup },
-                                label = { Text(stringResource(R.string.protect_backup)) },
-                            )
-                            if (protectBackup) OutlinedTextField(
-                                value = backupPassword,
-                                onValueChange = { backupPassword = it },
-                                label = { Text(stringResource(R.string.backup_password)) },
-                                visualTransformation = PasswordVisualTransformation(),
-                                singleLine = true,
-                            )
-                            OutlinedButton(
-                                enabled = !protectBackup || backupPassword.isNotEmpty(),
-                                onClick = {
-                                    scope.launch {
-                                        val protected = protectBackup
-                                        val password = backupPassword
-                                        runCatching { withContext(Dispatchers.IO) {
-                                            sharing.backupFile(
-                                                snapshot.family, System.currentTimeMillis(),
-                                                if (protected) password else null,
-                                                availableMemory().toULong(),
-                                            )
-                                        } }.onSuccess {
-                                            pendingBackup = it
-                                            backupPassword = ""
-                                            saveLauncher.launch(if (protected) protectedFilename else filename)
-                                        }.onFailure { message = errorText }
-                                    }
-                                },
-                            ) { Text(stringResource(R.string.save_backup)) }
-                            OutlinedButton(onClick = {
-                                scope.launch {
-                                    runCatching {
-                                        withContext(Dispatchers.IO) {
-                                            val progress = sharing.syncRecipientAndUpload(snapshot.family)
-                                            progress to sharing.snapshot(snapshot.family)
-                                        }
-                                    }.onSuccess { (progress, updated) ->
-                                        sharedSnapshot = updated
-                                        joinStage = sharedSyncMessage(context, progress)
-                                        message = null
-                                    }.onFailure { message = if (it is SharedUploadBlocked) context.getString(R.string.shared_upload_blocked) else errorText }
-                                }
-                            }) { Text(stringResource(R.string.sync_shared)) }
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedTextField(
-                                    value = sharedChildName,
-                                    onValueChange = { sharedChildName = it },
-                                    label = { Text(stringResource(R.string.child_name)) },
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Button(enabled = sharedChildName.isNotBlank(), onClick = {
-                                    val name = sharedChildName.trim()
-                                    scope.launch {
-                                        runCatching {
-                                            withContext(Dispatchers.IO) {
-                                                sharing.addChild(snapshot.family, name, System.currentTimeMillis())
-                                                sharing.snapshot(snapshot.family)
-                                            }
-                                        }.onSuccess { updated ->
-                                            sharedSnapshot = updated
-                                            sharedChildName = ""
-                                            message = null
-                                        }.onFailure { message = errorText }
-                                    }
-                                }) { Text(stringResource(R.string.add_child)) }
-                            }
-                            snapshot.children.forEach { item ->
-                                FilterChip(
-                                    selected = item.id.key() == sharedSelectedChild,
-                                    onClick = { sharedSelectedChild = item.id.key() },
-                                    label = { Text(item.name) },
-                                )
-                            }
-                            val target = sharedSelectedChild ?: snapshot.children.firstOrNull()?.id?.key()
-                            snapshot.children.find { it.id.key() == target }?.let { child ->
-                                Button(onClick = {
-                                    scope.launch {
-                                        runCatching {
-                                            withContext(Dispatchers.IO) {
-                                                sharing.logDiaper(snapshot.family, child.id, 1u.toUByte(), nowTime())
-                                                sharing.snapshot(snapshot.family)
-                                            }
-                                        }.onSuccess { sharedSnapshot = it; message = null }
-                                            .onFailure { message = errorText }
-                                    }
-                                }) { Text(stringResource(R.string.wet)) }
-                            }
-                            snapshot.activities.filter { it.childId.key() == target }.forEach { entry ->
-                                Card(Modifier.fillMaxWidth()) {
-                                    Text(
-                                        stringResource(
-                                            R.string.shared_entry,
-                                            entry.kind,
-                                            DateFormat.getDateTimeInstance().format(Date(entry.startUtcMs)),
-                                        ),
-                                        modifier = Modifier.padding(12.dp),
-                                    )
-                                }
-                            }
-                        }
                     }
                 }
             }

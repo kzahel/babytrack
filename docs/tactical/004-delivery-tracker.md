@@ -70,7 +70,9 @@ continues claim, proof, grant, and history loading on foreground and scheduled
 sync opportunities. The debug screen no longer asks caregivers to press
 separate proof, history, challenge, or grant buttons.
 Ready joined Families now enter the normal Android Family switcher and full
-tracker; pending joins remain outside it.
+tracker; pending joins remain outside it. The joined Family uses that tracker
+for logging, backups, immediate sync retry, and a manager's next invitation;
+the old duplicate debug child/history panel is removed.
 The daily-use surface now has a saved-timer home-screen widget and local
 labels for individual enrolled devices. Growth reference data licensing and
 Nara sample mapping remain open for their planned features.

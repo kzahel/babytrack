@@ -210,7 +210,6 @@
     <string name="history_removed_unsent">This device’s removal was verified. Offline edits were saved in a new private Family; they were never uploaded to the old one.</string>
     <string name="history_removed_accepted">This device’s removal was verified. The last upload was accepted before removal. Locally held history was saved in a new private Family.</string>
     <string name="history_removed_rejected">This device’s removal was verified. The last upload was rejected; pending edits were saved in a new private Family.</string>
-    <string name="shared_children">Verified shared children</string>
     <string name="shared_devices">Devices with verified access</string>
     <string name="remove_device">Remove %1$s</string>
     <string name="remove_device_title">Remove shared access?</string>
@@ -235,7 +234,6 @@
     <string name="shared_upload_uncertain">The relay response is uncertain. Changes remain saved here; sync will verify the exact result before retrying.</string>
     <string name="shared_upload_blocked">The relay rejected a saved shared batch. These edits are still on this device but have not been shared. Keep this device and save a private copy while access is available.</string>
     <string name="shared_unreadable_batches">%1$d verified shared batches could not be read. Some shared history may be missing.</string>
-    <string name="shared_entry">%1$s · %2$s</string>
     <string name="sleep_widget_none">No sleep timer running</string>
     <string name="sleep_widget_one">1 sleep timer running</string>
     <string name="sleep_widget_many">%1$d sleep timers running</string>

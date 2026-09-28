@@ -5,6 +5,8 @@ map and navigation behavior. [005](../tactical/005-m1-android.md) owns the
 delivery steps and test evidence. The [event model](event-model.md) and
 [Family sharing contract](family-sharing-and-trust.md) own data and access
 semantics; this layout does not change them.
+The [interface design and localization topic](interface-design-and-localization.md)
+owns the visual system and translation-ready UI rules for these routes.
 
 ## Reference and current problem
 

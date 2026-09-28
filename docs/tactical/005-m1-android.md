@@ -5,8 +5,9 @@ The [MVP plan](../mvp-plan.md#milestones) owns scope and milestone order;
 the [event model](../topics/event-model.md) and
 [Family sharing contract](../topics/family-sharing-and-trust.md) own product
 semantics. The [Android navigation topic](../topics/android-navigation.md)
-owns the proposed screen map. This tactical owns Android delivery evidence
-and remaining work.
+owns the proposed screen map; [interface design and localization](../topics/interface-design-and-localization.md)
+owns presentation rules. This tactical owns Android delivery evidence and
+remaining work.
 
 ## Goal and exclusions
 
@@ -266,6 +267,12 @@ This is still a development flow, not a released product flow.
   Back/return state, 1.5× text, target-bound drafts and timers, pending join,
   and private-copy notice as each route moves. The
   [navigation topic](../topics/android-navigation.md) owns the route plan.
+- [ ] Apply the [interface design and localization](../topics/interface-design-and-localization.md)
+  rules while migrating each route: semantic color and type hierarchy,
+  localized resources/plurals, flexible large-text and RTL layouts,
+  locale-aware date and decimal input, and accessible status labels. The
+  first light/dark palette and matching widget surfaces are in place;
+  activity components and input migration remain.
 - [x] Create and switch local Families, add/select children, log bottle and
   diaper, and inspect a persisted timeline through the shared Rust core on
   an emulator. The UI smoke runs after restart in CI.

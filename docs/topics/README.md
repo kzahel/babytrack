@@ -23,6 +23,9 @@ over a concern from the plan, the plan keeps a short summary and links here.
   children, importers, or the export format.
 - [Android navigation](android-navigation.md) — read before changing M1
   destinations, first-run, capture, history, Family, or status presentation.
+- [Interface design and localization](interface-design-and-localization.md)
+  — read before changing visual tokens, screen composition, UI copy,
+  locale-sensitive input/display, accessibility labels, or RTL behavior.
 - [Repository layout](repository-layout.md) — read before scaffolding,
   moving files, changing workspace/build boundaries, or introducing shared
   contracts and test infrastructure. Distinguishes current from future paths.

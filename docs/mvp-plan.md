@@ -110,6 +110,8 @@ those details.
   [Family sharing](topics/family-sharing-and-trust.md) for the guarantees.
 - **Locale.** Externalize all user-facing strings from the first screen;
   launch is English only. Amounts, weights, and lengths use metric storage.
+  Screen and input rules live in
+  [interface design and localization](topics/interface-design-and-localization.md).
 - **Abuse.** The accountless hosted relay needs per-Family storage quotas and
   per-Family/per-IP rate limits. Add App Attest/Play Integrity only if abuse
   appears, never in the F-Droid build.

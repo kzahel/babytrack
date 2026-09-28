@@ -11,6 +11,7 @@ npm ci --prefix tests/browser --ignore-scripts
 cargo build -p babytrack-core-wasm --features fixture-api --target wasm32-unknown-unknown --locked
 cargo build -p babytrack-server --locked
 cargo build -p babytrack-cli --example browser_exchange --locked
+cargo build -p babytrack-cli --example seed_browser_recipient --locked
 wasm-bindgen --target web --out-dir "$scratch_dir" \
   target/wasm32-unknown-unknown/debug/babytrack_core_wasm.wasm
-node tests/browser/browser-smoke.cjs "$scratch_dir" target/debug/babytrack-server target/debug/examples/browser_exchange
+node tests/browser/browser-smoke.cjs "$scratch_dir" target/debug/babytrack-server target/debug/examples/browser_exchange target/debug/examples/seed_browser_recipient

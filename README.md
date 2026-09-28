@@ -24,7 +24,9 @@ bytes; reload preserves the queue and verified record view. A test-only
 native Rust driver verifies that browser batch, authors an encrypted child
 through the same relay, and Chromium reads it back. The browser also replays
 same-epoch authority changes before rebuilding its data view; rotation and recipient
-credentials remain open.
+claim/proof transport remain open. An admitted browser recipient can fetch
+its committed HPKE grant with its own signed relay request, save the verified
+credential, and upload an encrypted child after reload.
 
 The Android debug app logs children, diapers, bottles with milk/content
 choice and mL/US/UK fluid-ounce entry, sleep timers and completed sleep

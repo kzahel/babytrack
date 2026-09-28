@@ -9,8 +9,9 @@ const { chromium } = require('playwright');
 const generatedDir = process.argv[2];
 const relayBin = process.argv[3];
 const nativeExchangeBin = process.argv[4];
-if (!generatedDir || !relayBin || !nativeExchangeBin) {
-  throw new Error('pass wasm-bindgen web output, relay binary, and native exchange binary');
+const seedRecipientBin = process.argv[5];
+if (!generatedDir || !relayBin || !nativeExchangeBin || !seedRecipientBin) {
+  throw new Error('pass wasm-bindgen web output, relay binary, native exchange, and recipient seeder');
 }
 const fixtures = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/negative-batch-v1.json')));
 const full = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/full-wire-v1.json')));
@@ -41,6 +42,8 @@ const batchResult = Buffer.concat([
   Buffer.from([0xa2, 1, 1, 2]),
   cborBytes(Buffer.from(acceptedBatch.expect.accepted_receipt_cbor_hex, 'hex')),
 ]);
+const admission = chain.transitions[5];
+const grantIdHex = admission.manifest.find((item) => item[0] === 4)[1];
 const input = {
   familyHex: fixtures.base.family_id_hex,
   otherFamilyHex: `ff${fixtures.base.family_id_hex.slice(2)}`,
@@ -66,6 +69,12 @@ const input = {
   batchResultHex: batchResult.toString('hex'),
   managerDeviceHex: chain.test_only_inputs.manager_device_id_hex,
   managerSeedHex: chain.test_only_inputs.manager_sign_seed_hex,
+  recipientDeviceHex: chain.test_only_inputs.recipient_device_id_hex,
+  recipientSeedHex: chain.test_only_inputs.recipient_sign_seed_hex,
+  recipientAgreementHex: chain.test_only_inputs.recipient_agreement_seed_hex,
+  admissionControlsHex: chain.transitions.slice(1, 6).map((row) => row.committed_cbor_hex),
+  grantIdHex,
+  recipientOperationHex: chain.batch.operation_cbor_hex,
   promotionIdHex: apiGenesis.inputs.promotion_id_hex,
 };
 
@@ -108,10 +117,15 @@ const server = http.createServer((request, response) => {
   fs.createReadStream(path.join(generatedDir, name)).pipe(response);
 });
 
-async function startRelay() {
+async function startRelay(recipient = false) {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'babytrack-browser-relay-'));
   const seedPath = path.join(temporary, 'seed');
   fs.writeFileSync(seedPath, Buffer.from(genesis.inputs.relay_sign_seed_hex, 'hex'));
+  if (recipient) {
+    const seeded = spawnSync(path.resolve(seedRecipientBin), [path.join(temporary, 'relay.db')],
+      { encoding: 'utf8' });
+    assert.equal(seeded.status, 0, `Could not seed recipient relay: ${seeded.stderr}`);
+  }
   const reservation = http.createServer();
   await new Promise((resolve) => reservation.listen(0, '127.0.0.1', resolve));
   const port = reservation.address().port;
@@ -127,6 +141,8 @@ async function startRelay() {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     if (!ready) throw new Error('Disposable relay did not start');
+    if (recipient) return { child, temporary, port,
+      genesisHex: chain.transitions[0].committed_cbor_hex };
     const post = async (url, hexBody) => {
       const response = await fetch(base + url, {
         method: 'POST', headers: { 'Content-Type': 'application/cbor' },
@@ -154,6 +170,7 @@ async function run() {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   let browser;
   let relay;
+  let recipientRelay;
   try {
     relay = await startRelay();
     relayPort = relay.port;
@@ -442,6 +459,99 @@ async function run() {
     }, { ...input, createFamilyOperationHex: acceptedBatch.inputs.operation_cbor_hex });
     assert.deepEqual(sameEpochReady,
       { cursor: 2, head: input.controlHeadHex, staged: true, localRecordType: 'family' });
+
+    recipientRelay = await startRelay(true);
+    relayPort = recipientRelay.port;
+    const admittedBrowser = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+      const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      const store = await PublicStore.open(wasm, 'babytrack-admitted-browser-smoke');
+      const family = await store.begin(bytes(data.controlGenesisHex), bytes(data.relayPublicHex));
+      for (const control of data.admissionControlsHex) await store.append(family, 'control', bytes(control));
+      let shortcutRejected = false;
+      try {
+        await store.saveInitialCredential(family, bytes(data.recipientDeviceHex),
+          bytes(data.recipientSeedHex), bytes(data.controlEpochKeyHex));
+      } catch { shortcutRejected = true; }
+      let missingGrantRejected = false;
+      try {
+        await store.saveAdmittedCredential(family, bytes(data.recipientDeviceHex),
+          bytes(data.recipientSeedHex), bytes(data.recipientAgreementHex));
+      } catch { missingGrantRejected = true; }
+      const fetchedId = await store.hydrateInitialGrant(family, bytes(data.recipientDeviceHex),
+        bytes(data.recipientSeedHex), relayGet);
+      let wrongKeyRejected = false;
+      try {
+        await store.saveAdmittedCredential(family, bytes(data.recipientDeviceHex),
+          bytes(data.recipientSeedHex), new Uint8Array(32));
+      } catch { wrongKeyRejected = true; }
+      await store.saveAdmittedCredential(family, bytes(data.recipientDeviceHex),
+        bytes(data.recipientSeedHex), bytes(data.recipientAgreementHex));
+      const credential = await store.initialCredential(family);
+      const promotion = store.database.transaction('objects', 'readwrite');
+      const committed = new Promise((resolve, reject) => {
+        promotion.oncomplete = resolve;
+        promotion.onabort = () => reject(promotion.error);
+        promotion.onerror = () => reject(promotion.error);
+      });
+      promotion.objectStore('objects').put({ family,
+        objectId: data.controlPromotionIdHex, bytes: bytes(data.controlPromotionHex) });
+      await committed;
+      const ready = await store.loadInitialReadySaved(family);
+      const cursor = Number(ready.last_cursor());
+      ready.free();
+      const staged = await store.stageInitial(family, bytes(data.recipientOperationHex));
+      store.close();
+      return { shortcutRejected, missingGrantRejected, wrongKeyRejected, fetchedId,
+        credentialDevice: hex(credential.deviceId), credentialKey: hex(credential.epochKey),
+        agreementSaved: hex(credential.agreementPrivate) === data.recipientAgreementHex,
+        cursor, staged: staged.envelope.length > 0 };
+    }, input);
+    assert.deepEqual(admittedBrowser, {
+      shortcutRejected: true, missingGrantRejected: true, wrongKeyRejected: true,
+      fetchedId: input.grantIdHex,
+      credentialDevice: input.recipientDeviceHex, credentialKey: input.controlEpochKeyHex,
+      agreementSaved: true, cursor: 6, staged: true,
+    });
+    await page.reload();
+    const admittedReload = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const store = await PublicStore.open(wasm, 'babytrack-admitted-browser-smoke');
+      const pending = await store.pendingInitial(data.familyHex);
+      const ready = await store.loadInitialReadySaved(data.familyHex);
+      const result = { pending: pending?.envelope.length > 0,
+        cursor: Number(ready.last_cursor()), agreementSaved:
+          (await store.initialCredential(data.familyHex)).agreementPrivate.length === 32 };
+      ready.free();
+      store.close();
+      return result;
+    }, input);
+    assert.deepEqual(admittedReload, { pending: true, cursor: 6, agreementSaved: true });
+    const admittedUpload = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const { relayPost } = await import('/relay-post.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+      const store = await PublicStore.open(wasm, 'babytrack-admitted-browser-smoke');
+      const progress = await store.uploadInitial(data.familyHex, relayPost, relayGet);
+      const ready = await store.loadInitialReadySaved(data.familyHex);
+      const result = { ...progress, pending: !!(await store.pendingInitial(data.familyHex)),
+        childType: ready.record_type(bytes('0183f9d0000070008000000000000001')) };
+      ready.free();
+      store.close();
+      return result;
+    }, input);
+    assert.deepEqual(admittedUpload,
+      { cursor: 7, noMoreVisible: true, pending: false, childType: 'child' });
+    relayPort = relay.port;
 
     const batchPulled = await page.evaluate(async (data) => {
       const wasm = await import('/babytrack_core_wasm.js');
@@ -740,13 +850,14 @@ async function run() {
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));
-    if (relay) {
-      if (relay.child.exitCode == null) {
-        const stopped = new Promise((resolve) => relay.child.once('exit', resolve));
-        relay.child.kill();
+    for (const instance of [recipientRelay, relay]) {
+      if (!instance) continue;
+      if (instance.child.exitCode == null) {
+        const stopped = new Promise((resolve) => instance.child.once('exit', resolve));
+        instance.child.kill();
         await stopped;
       }
-      fs.rmSync(relay.temporary, { recursive: true, force: true });
+      fs.rmSync(instance.temporary, { recursive: true, force: true });
     }
   }
 }

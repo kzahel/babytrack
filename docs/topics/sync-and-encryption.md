@@ -306,12 +306,16 @@ edit explicitly. A test-only native CLI example verifies the browser's
 accepted batch, writes a second encrypted child batch through the same
 relay, and Chromium projects it after reload.
 This proves initial-epoch wire exchange across native Rust and wasm using the
-same fixture manager credential; it does not exercise separate device
-identities or an independent durable native outbox in that same run. This
-narrow path now replays same-epoch signed controls into the browser data
-view, with a fixture-backed IndexedDB reload check after an invitation.
-It does not yet handle rotations, recipient credentials, queued-edit repair
-after rejection, or full mixed-client convergence.
+same fixture manager credential; it does not exercise an independent durable
+native outbox in that run. A separate browser recipient fixture now replays
+the signed admission chain, fetches its addressed HPKE grant over a real
+relay using its own signing key, and lets Rust verify the grant against its
+agreement key and epoch commitment. IndexedDB saves the recipient signing,
+agreement, and epoch keys together. After reload, Chromium uploads that
+recipient's encrypted child operation and clears its outbox only after
+signed acceptance. The control ancestry before the grant is fixture-fed;
+browser claim/proof, rotation, queued-edit repair after rejection, and full
+independent CLI/browser convergence remain open.
 The first Android sharing flow uses foreground polling and scheduled
 background work. FCM and APNs may later provide empty background wakes through
 app-owned interfaces to reduce latency when an app is suspended. A missed

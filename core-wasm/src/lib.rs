@@ -389,12 +389,58 @@ impl WasmPublicFamily {
         self.chain.relay_id().to_vec()
     }
 
+    pub fn initial_manager_device_id(&self) -> Vec<u8> {
+        self.chain.initial_manager_device_id().to_vec()
+    }
+
     pub fn last_cursor(&self) -> u64 {
         self.chain.last_global_cursor()
     }
 
     pub fn head_hash(&self) -> Vec<u8> {
         self.chain.head_hash().to_vec()
+    }
+
+    /// Open a recipient's committed epoch-one grant. The object and private
+    /// key are checked against the signed control chain before a data key is
+    /// released to the browser's local credential store.
+    pub fn open_initial_grant(
+        &self,
+        device_id: &[u8],
+        agreement_private: &[u8],
+        grant_object: &[u8],
+    ) -> Result<Vec<u8>, JsError> {
+        if self.chain.epoch().map_err(debug_error)? != 1 {
+            return Err(JsError::new("rotated Family requires a verified keyring"));
+        }
+        let device_id = fixed(device_id, "device ID")?;
+        self.chain
+            .active_signing_public(device_id)
+            .map_err(debug_error)?;
+        let grant = self
+            .chain
+            .initial_admission_grant(&device_id)
+            .ok_or_else(|| JsError::new("recipient has no committed admission grant"))?;
+        let key = grant
+            .open(
+                grant_object,
+                &fixed(agreement_private, "agreement private key")?,
+            )
+            .map_err(debug_error)?;
+        self.chain
+            .verify_initial_epoch_key(&key.bytes_for_storage())
+            .map_err(debug_error)?;
+        Ok(key.bytes_for_storage().to_vec())
+    }
+
+    pub fn initial_grant_id(&self, device_id: &[u8]) -> Result<Vec<u8>, JsError> {
+        let device_id = fixed(device_id, "device ID")?;
+        Ok(self
+            .chain
+            .initial_admission_grant(&device_id)
+            .ok_or_else(|| JsError::new("recipient has no committed admission grant"))?
+            .grant_id()
+            .to_vec())
     }
 
     pub fn sign_get(

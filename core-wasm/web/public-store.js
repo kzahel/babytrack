@@ -105,6 +105,9 @@ export class PublicStore {
   async saveInitialCredential(family, deviceId, signingSeed, epochKey) {
     const publicVerifier = await this.load(family);
     try {
+      if (!sameBytes(publicVerifier.initial_manager_device_id(), deviceId)) {
+        throw new Error('Initial credential belongs to the genesis manager');
+      }
       const path = `/v1/families/${family}/log?after=${publicVerifier.last_cursor()}`;
       publicVerifier.sign_get(deviceId, signingSeed, path,
         crypto.getRandomValues(new Uint8Array(16)));
@@ -124,6 +127,57 @@ export class PublicStore {
       epochKey: Uint8Array.from(epochKey),
     });
     await done;
+  }
+
+  // An admitted browser device receives its epoch-one key only from a
+  // committed, recipient-addressed HPKE grant. Keep its agreement key for
+  // later verified rotations, in the same transaction as the credential.
+  async saveAdmittedCredential(family, deviceId, signingSeed, agreementPrivate) {
+    const verifier = await this.load(family);
+    let epochKey;
+    try {
+      const grantId = hex(verifier.initial_grant_id(deviceId));
+      const read = this.database.transaction('objects', 'readonly');
+      const grant = await requestResult(read.objectStore('objects').get([family, grantId]));
+      if (!grant) throw new Error('Committed admission grant object is not saved');
+      epochKey = verifier.open_initial_grant(deviceId, agreementPrivate, grant.bytes);
+      const path = `/v1/families/${family}/log?after=${verifier.last_cursor()}`;
+      verifier.sign_get(deviceId, signingSeed, path,
+        crypto.getRandomValues(new Uint8Array(16)));
+    } finally { verifier.free(); }
+    const transaction = this.database.transaction('credentials', 'readwrite');
+    const done = transactionDone(transaction);
+    transaction.objectStore('credentials').put({
+      family, deviceId: Uint8Array.from(deviceId), signingSeed: Uint8Array.from(signingSeed),
+      agreementPrivate: Uint8Array.from(agreementPrivate), epochKey: Uint8Array.from(epochKey),
+    });
+    await done;
+  }
+
+  async hydrateInitialGrant(family, deviceId, signingSeed, get) {
+    const verifier = await this.load(family);
+    try {
+      const grantId = verifier.initial_grant_id(deviceId);
+      const objectId = hex(grantId);
+      const transaction = this.database.transaction(['entries', 'objects'], 'readonly');
+      const rows = await requestResult(transaction.objectStore('entries').getAll(
+        IDBKeyRange.bound([family, 1], [family, Number.MAX_SAFE_INTEGER]),
+      ));
+      const committed = rows.find((row) => row.kind === 'control' &&
+        this.wasm.manifest_object_ids(row.bytes).some((_, index, ids) =>
+          index % 16 === 0 && sameBytes(ids.slice(index, index + 16), grantId)));
+      if (!committed) throw new Error('Admission grant is absent from signed history');
+      const path = `/v1/families/${family}/objects/${objectId}`;
+      const auth = verifier.sign_get(deviceId, signingSeed, path,
+        crypto.getRandomValues(new Uint8Array(16)));
+      const response = await get(path, auth);
+      const object = this.wasm.verified_manifest_object(committed.bytes, grantId, response);
+      const write = this.database.transaction('objects', 'readwrite');
+      const done = transactionDone(write);
+      write.objectStore('objects').put({ family, objectId, bytes: object });
+      await done;
+      return objectId;
+    } finally { verifier.free(); }
   }
 
   async initialCredential(family) {

@@ -186,6 +186,9 @@ impl ControlChain {
     pub fn relay_id(&self) -> [u8; 32] {
         self.genesis.relay_id()
     }
+    pub fn initial_manager_device_id(&self) -> [u8; 16] {
+        self.genesis.manager_device_id()
+    }
     pub fn epoch(&self) -> Result<u32, Error> {
         self.current_epoch()?
             .try_into()

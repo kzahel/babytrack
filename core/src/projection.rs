@@ -75,6 +75,15 @@ pub struct VerifiedEpochKey {
     pub(crate) bytes: [u8; 32],
 }
 
+impl VerifiedEpochKey {
+    /// Client storage adapters persist this only after authority and the
+    /// committed grant have been verified. Importers must reverify the key
+    /// commitment before using saved bytes.
+    pub fn bytes_for_storage(&self) -> [u8; 32] {
+        self.bytes
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LocalError {
     WrongFamily,

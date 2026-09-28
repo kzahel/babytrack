@@ -56,8 +56,11 @@ The real-relay case uses two distinct dependent edits and loses a queued
 upload response after acceptance; reload retries the exact saved envelope
 before the remaining edit drains.
 The browser data view also replays a same-epoch invitation after reload.
-Later-epoch and recipient key storage, rejection repair, and full CLI/browser convergence remain
-open. A test-only native CLI driver now verifies the browser's accepted
+An independent browser recipient now fetches its committed grant from a
+disposable relay with its own signed request, saves the verified keys, and
+uploads an encrypted child after reload. Its earlier admission controls are
+fixture-fed. Later epochs, browser claim/proof transport, rejection repair,
+and full CLI/browser convergence remain open. A test-only native CLI driver now verifies the browser's accepted
 batch and sends an encrypted child back through the same relay; Chromium
 projects it after reload. The first manager credential
 persists in IndexedDB for this smoke.

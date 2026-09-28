@@ -541,8 +541,13 @@ requires verified new epoch keys and is outside this initial-manager path.
 Its real-relay queue case uses two distinct dependent edits, loses the
 response after the first queued upload is accepted, and checks that the
 saved envelope is retried exactly after reload before the final edit drains.
-This covers an uncertain queued upload for the initial manager, while
-recipient browser keys and later epochs remain open.
+This covers an uncertain queued upload for the initial manager. A separate
+browser recipient case replays fixture-fed admission controls, fetches its
+committed HPKE grant from a disposable real relay with its own signed GET,
+stores its signing/agreement/epoch keys in IndexedDB, then uploads an
+encrypted child entry after browser reload and verifies signed acceptance.
+Browser claim/proof transport, later epochs, and full mixed-client
+convergence remain open.
 The core now runs eight deterministic seeded encrypted logs with 64 child
 edits each, including deletes, restores, and skewed HLC values. At every
 eighth cursor, a fresh replay matches incremental projection byte-for-byte;
@@ -666,9 +671,11 @@ absent record is rejected before sealing and leaves the outbox empty.
 The test-only native CLI example verifies that accepted browser batch from
 signed genesis and its object, authors a second encrypted child batch, and
 Chromium fetches and projects the child after reload. Both use the same
-fixture manager credential; separate device identities remain untested here.
-Controls after genesis, rotations, recipient key storage, queued-edit repair
-after rejection, and durable independent CLI/browser convergence remain open.
+fixture manager credential. A second real-relay case uses an independently
+admitted browser recipient credential for a signed grant fetch and encrypted
+upload after reload. Its admission controls are fixture-fed, so browser
+claim/proof transport, rotations, queued-edit repair after rejection, and
+durable independent CLI/browser convergence remain open.
 The first manager's signing and epoch keys persist in IndexedDB and are
 reloaded for this narrow proof.
 An uncertain retry returns those bytes after reopen even if the caller's

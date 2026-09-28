@@ -18,6 +18,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performClick
@@ -130,6 +132,41 @@ class SharingRelayTest {
     }
 
     @Test
+    fun changingChildDiscardsAnUnsentCaptureDraft() {
+        wakeEmulatorScreen()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = context.filesDir.resolve("families.db")
+        val now = System.currentTimeMillis()
+        val (family, first) = NativeLocalStore.open(db.absolutePath).use { local ->
+            val family = local.createFamily(now)
+            val first = local.addChild(family, "Draft first", now)
+            local.addChild(family, "Draft second", now)
+            family to first
+        }
+        context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
+            .edit().putString("family", family.familyId.hex())
+            .putString("child", first.hex()).commit()
+        ActivityScenario.launch(MainActivity::class.java).use {
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText("Draft first", substring = true)
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText(context.getString(R.string.add_activity)).performClick()
+            composeRule.onNodeWithText(context.getString(R.string.log_bottle)).performClick()
+            composeRule.onNode(hasSetTextAction()).performTextInput("47")
+            composeRule.onNodeWithContentDescription(context.getString(R.string.back)).performClick()
+            composeRule.onNodeWithContentDescription(context.getString(R.string.switch_target))
+                .performClick()
+            composeRule.onNodeWithText("Draft second").performClick()
+            composeRule.onNodeWithText(context.getString(R.string.add_activity)).performClick()
+            composeRule.onNodeWithText(context.getString(R.string.log_bottle)).performClick()
+            val draft = composeRule.onNode(hasSetTextAction()).fetchSemanticsNode()
+                .config[SemanticsProperties.EditableText].text
+            assertEquals("", draft)
+        }
+    }
+
+    @Test
     fun deletedEntryCanBeUndoneFromTheTracker() {
         wakeEmulatorScreen()
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -189,8 +226,8 @@ class SharingRelayTest {
             .edit().putString("family", family.familyId.joinToString("") { "%02x".format(it) })
             .putString("child", child.joinToString("") { "%02x".format(it) }).commit()
         ActivityScenario.launch(MainActivity::class.java).use {
-            val feeds = context.getString(R.string.today_feeds, 1L, 90L)
-            val diapers = context.getString(R.string.today_diapers, 1L, 1L, 1L)
+            val feeds = context.resources.getQuantityString(R.plurals.today_feeds, 1, 1L, 90L)
+            val diapers = context.resources.getQuantityString(R.plurals.today_diapers, 1, 1L, 1L, 1L)
             val timeText = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
             val lastTime = timeText.format(Date(now))
             val sleepTime = timeText.format(Date(now - 600_000L))
@@ -221,7 +258,8 @@ class SharingRelayTest {
             composeRule.onNodeWithText("Other summary child").performScrollTo().performClick()
             openTab(R.string.nav_today)
             composeRule.waitUntil(25_000) {
-                composeRule.onAllNodesWithText(context.getString(R.string.today_feeds, 0L, 0L))
+                composeRule.onAllNodesWithText(context.resources.getQuantityString(
+                    R.plurals.today_feeds, 0, 0L, 0L))
                     .fetchSemanticsNodes().isNotEmpty()
             }
             assertTrue(composeRule.onAllNodesWithText(context.getString(R.string.last_feed,

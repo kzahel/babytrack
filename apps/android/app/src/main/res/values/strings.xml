@@ -24,6 +24,8 @@
     <string name="event_note">Note</string>
     <string name="back">Back</string>
     <string name="local_only">On this device</string>
+    <string name="first_run_intro">Create a Family to track offline, join from an invitation, or restore a backup. No account is needed.</string>
+    <string name="shared_family_short">Shared Family</string>
     <string name="shared_family">Shared Family · syncs while open and during scheduled background work</string>
     <string name="automatic_sync_delayed">Shared sync is delayed. Local entries stay saved; retry when connected.</string>
     <string name="families">Families</string>
@@ -68,8 +70,14 @@
     <string name="show_all_days">Show all days</string>
     <string name="today_summary">Today</string>
     <string name="today_sleep">Logged sleep: %1$d h %2$d min</string>
-    <string name="today_feeds">Feeds: %1$d · bottle %2$d mL</string>
-    <string name="today_diapers">Diapers: %1$d · wet %2$d · dirty %3$d</string>
+    <plurals name="today_feeds">
+        <item quantity="one">%1$d feed · bottle %2$d mL</item>
+        <item quantity="other">%1$d feeds · bottle %2$d mL</item>
+    </plurals>
+    <plurals name="today_diapers">
+        <item quantity="one">%1$d diaper · wet %2$d · dirty %3$d</item>
+        <item quantity="other">%1$d diapers · wet %2$d · dirty %3$d</item>
+    </plurals>
     <string name="last_feed">Last feed: %1$s</string>
     <string name="last_diaper">Last diaper: %1$s</string>
     <string name="running_sleep_since">Sleep running since %1$s</string>

@@ -151,9 +151,9 @@ caregiver switched to another child.
 The diaper form now exposes the core's dry kind alongside wet, dirty, and
 both, in two rows that fit larger text. The headed UI smoke logs a dry diaper
 and reads it back from the timeline.
-The top bar names the selected Family and child and offers a wet-diaper-now action,
-so the common quick log is reachable without scrolling past setup and sharing
-controls. It uses the current time while leaving a separately chosen
+The top bar names the selected Family and child; Today's two-row quick-log
+area offers a wet-diaper-now action without crowding the target at larger
+text sizes. It uses the current time while leaving a separately chosen
 backdated-entry time intact. The headed UI smoke uses this action for its
 first diaper, then corrects and deletes that same entry.
 After the first child exists, the child-creation fields collapse behind an
@@ -270,9 +270,23 @@ This is still a development flow, not a released product flow.
   The route shell, focused capture selector/forms, compact History rows, and
   Today recent entries, a two-column activity chooser, header target
   switching, a History day picker, and an expandable Family data section
-  are implemented. The quick emulator UI
-  flow and the 25-case real-relay Android suite pass on the route shell. Finish
-  large-text/RTL and target-bound draft checks before closing this slice.
+  are implemented. The full emulator UI walkthrough passed logging,
+  correction, filters, Family/child selection, and restart on this route
+  shell. The 26-case real-relay Android suite and the file recovery UI pass.
+  A focused Compose check discards an unsent bottle amount when the child
+  changes.
+  The 1.5× capture chooser and target header were checked on the emulator;
+  first-run copy now explains offline creation, joining, and recovery.
+  With the emulator's system locale set to `ar-XB` and restarted, Today,
+  Capture, History, and Family mirrored their navigation and controls without
+  clipping. Finish remaining target-bound draft checks before closing this
+  slice.
+  After the relay suite left a synthetic app database that raised a core
+  lock-poisoning error on startup, the foreground polling path now reports
+  delayed sync instead of terminating the activity. The clean-profile UI
+  path still passes. The synthetic database is retained only in gitignored
+  local QA files for a later core investigation; this does not establish a
+  recovery path for an affected real database.
 - [ ] Apply the [interface design and localization](../topics/interface-design-and-localization.md)
   rules while migrating each route: semantic color and type hierarchy,
   localized resources/plurals, flexible large-text and RTL layouts,
@@ -280,7 +294,10 @@ This is still a development flow, not a released product flow.
   first light/dark palette and matching widget surfaces are in place.
   Birth dates now use a localized picker, and bottle/growth/temperature
   entries accept comma decimals before canonicalizing for Rust. Finish
-  summary plurals, large-text/RTL validation, and accessible status labels.
+  remaining count/duration grammar, expanded pseudolocale copy, and
+  accessible status labels. Per-app pseudo-locale `ar-XB` alone did not
+  mirror the UI; a restarted system locale did, and the main routes were
+  inspected in that mode.
 - [x] Create and switch local Families, add/select children, log bottle and
   diaper, and inspect a persisted timeline through the shared Rust core on
   an emulator. The UI smoke runs after restart in CI.

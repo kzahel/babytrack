@@ -901,20 +901,42 @@ private fun TrackerScreen(
                 val stages = mutableMapOf<String, uniffi.babytrack_core_ffi.RecipientSyncRow>()
                 val terminals = mutableMapOf<String, InvitationTerminalReason>()
                 val removals = mutableMapOf<String, RemovedDeviceRow>()
-                for (family in store.families()) {
-                    val origin = lastRelayOrigin(family)
-                    if (origin != null && sharing.isShared(family) && !sharing.isRemoved(family)) {
+                val localFamilies = runCatching { store.families() }.getOrElse {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    Log.w("BabytrackSync", "Could not list local Families", it)
+                    failed = true
+                    emptyList()
+                }
+                for (family in localFamilies) {
+                    val origin = lastRelayOrigin(family) ?: continue
+                    val canAdvance = runCatching {
+                        sharing.isShared(family) && !sharing.isRemoved(family)
+                    }.getOrElse {
+                        if (it is kotlinx.coroutines.CancellationException) throw it
+                        Log.w("BabytrackSync", "Could not read shared Family state", it)
+                        failed = true
+                        false
+                    }
+                    if (canAdvance) {
                         runCatching { sharing.advanceManager(family, origin) }
                             .onFailure {
+                                if (it is kotlinx.coroutines.CancellationException) throw it
                                 if (it is VerifiedManagerRemoval) removals[family.familyId.key()] = it.result
                                 else { failed = true; if (it is SharedUploadBlocked) blocked = true }
                             }
                     }
                 }
-                for (family in sharing.recipientFamilies()) {
+                val recipients = runCatching { sharing.recipientFamilies() }.getOrElse {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    Log.w("BabytrackSync", "Could not list joining Families", it)
+                    failed = true
+                    emptyList()
+                }
+                for (family in recipients) {
                     runCatching { sharing.advanceRecipient(family) }
                         .onSuccess { stages[family.familyId.key()] = it }
                         .onFailure {
+                            if (it is kotlinx.coroutines.CancellationException) throw it
                             if (it is InvitationTerminal) terminals[family.familyId.key()] = it.reason
                             else { failed = true; if (it is SharedUploadBlocked) blocked = true }
                         }
@@ -1135,21 +1157,6 @@ private fun TrackerScreen(
                         }
                     } else Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 },
-                actions = {
-                    if (family != null && child != null && route == TrackerDestination.TODAY) {
-                        val description = stringResource(R.string.quick_wet_diaper_description)
-                        TextButton(
-                            modifier = Modifier.semantics { contentDescription = description },
-                            onClick = {
-                                change {
-                                    val at = nowTime()
-                                    if (activeShared) sharing.logDiaper(family, child.id, 1u.toUByte(), at)
-                                    else store.logDiaper(family, child.id, 1u.toUByte(), at)
-                                }
-                            },
-                        ) { Text(stringResource(R.string.quick_wet_diaper)) }
-                    }
-                },
             )
         },
         bottomBar = {
@@ -1256,7 +1263,11 @@ private fun TrackerScreen(
         ) {
             if (route == TrackerDestination.FAMILY) {
             if (joinFirst) joinControls()
-            Text(stringResource(if (activeShared) R.string.shared_family else R.string.local_only), style = MaterialTheme.typography.labelMedium)
+            if (family == null && !joinFirst) Text(stringResource(R.string.first_run_intro))
+            if (family != null) Text(
+                stringResource(if (activeShared) R.string.shared_family else R.string.local_only),
+                style = MaterialTheme.typography.labelMedium,
+            )
             if (automaticSyncDelayed && !automaticSyncBlocked) Text(stringResource(R.string.automatic_sync_delayed))
             if (automaticSyncBlocked) Text(
                 stringResource(R.string.shared_upload_blocked),
@@ -1626,6 +1637,12 @@ private fun TrackerScreen(
                 }
                 }
                 if (child != null && route == TrackerDestination.TODAY) {
+                    Text(stringResource(if (activeShared) R.string.shared_family_short else R.string.local_only),
+                        style = MaterialTheme.typography.labelMedium)
+                    if (automaticSyncDelayed && !automaticSyncBlocked) Text(
+                        stringResource(R.string.automatic_sync_delayed), color = MaterialTheme.colorScheme.error)
+                    if (automaticSyncBlocked) Text(stringResource(R.string.shared_upload_blocked),
+                        color = MaterialTheme.colorScheme.error)
                     if (loadedChildKey == selectedChild && daySummary != null &&
                         daySummaryDay == LocalDate.now(ZoneId.systemDefault())) {
                         val today = daySummary!!
@@ -1642,9 +1659,10 @@ private fun TrackerScreen(
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(stringResource(R.string.today_summary), fontWeight = FontWeight.SemiBold)
                                 Text(stringResource(R.string.today_sleep, sleepMinutes / 60, sleepMinutes % 60))
-                                Text(stringResource(R.string.today_feeds, today.feedCount.toLong(),
-                                    today.bottleMl.toLong()))
-                                Text(stringResource(R.string.today_diapers, today.diaperCount.toLong(),
+                                Text(pluralStringResource(R.plurals.today_feeds,
+                                    today.feedCount.toInt(), today.feedCount.toLong(), today.bottleMl.toLong()))
+                                Text(pluralStringResource(R.plurals.today_diapers,
+                                    today.diaperCount.toInt(), today.diaperCount.toLong(),
                                     today.wetDiaperCount.toLong(), today.dirtyDiaperCount.toLong()))
                                 lastFeed?.let { Text(stringResource(R.string.last_feed, savedTime(it.startUtcMs))) }
                                 lastDiaper?.let { Text(stringResource(R.string.last_diaper, savedTime(it.startUtcMs))) }
@@ -1676,20 +1694,32 @@ private fun TrackerScreen(
                     }
                     Text(stringResource(R.string.quick_log), style = MaterialTheme.typography.titleMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val description = stringResource(R.string.quick_wet_diaper_description)
+                        OutlinedButton(onClick = {
+                            change {
+                                val at = nowTime()
+                                if (activeShared) sharing.logDiaper(family, child.id, 1u.toUByte(), at)
+                                else store.logDiaper(family, child.id, 1u.toUByte(), at)
+                            }
+                        }, modifier = Modifier.weight(1f).semantics { contentDescription = description }) {
+                            Text(stringResource(R.string.quick_wet_diaper))
+                        }
                         OutlinedButton(onClick = {
                             captureKind = CaptureKind.BOTTLE
                             destination = TrackerDestination.CAPTURE
                         }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.event_bottle)) }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = {
                             captureKind = CaptureKind.DIAPER
                             destination = TrackerDestination.CAPTURE
                         }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.event_diaper)) }
-                    }
-                    Button(onClick = {
-                        captureKind = null
-                        destination = TrackerDestination.CAPTURE
-                    }, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(R.string.add_activity))
+                        Button(onClick = {
+                            captureKind = null
+                            destination = TrackerDestination.CAPTURE
+                        }, modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.add_activity))
+                        }
                     }
                     Text(stringResource(R.string.recent_entries), style = MaterialTheme.typography.titleMedium)
                     val recentEntries = if (loadedChildKey == selectedChild)

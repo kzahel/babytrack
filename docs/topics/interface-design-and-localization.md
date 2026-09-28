@@ -105,8 +105,9 @@ device counts, and locale-aware `DateFormat` for many display times. Birth
 dates use the platform date picker and render in the device locale. Bottle,
 growth, and temperature fields accept comma or dot decimals and normalize
 only at the Rust boundary; saved entered values render with the viewer's
-decimal separator. The core's canonical format remains unchanged. Summary
-strings with multiple counts still need plural grammar review.
+decimal separator. The core's canonical format remains unchanged. Today feed
+and diaper counts use Android plurals; remaining count and duration copy
+still needs a translation grammar review.
 
 ## Validation and reconsideration
 

@@ -448,6 +448,11 @@ async function run() {
       const fetched = await store.hydrateGenesisSaved(family, relayGet);
       const staged = await store.stageInitial(family, bytes(data.operationHex));
       const retry = await store.stageInitial(family, bytes(data.operationHex));
+      const other = bytes(data.operationHex);
+      other[other.length - 1] ^= 1;
+      let otherEditBlocked = false;
+      try { await store.stageInitial(family, other); }
+      catch (error) { otherEditBlocked = error.message === 'Another browser edit is pending upload'; }
       const localReady = await store.loadInitialReadySaved(family);
       const localRecordType = localReady.record_type(bytes(family));
       const localCursor = localReady.last_cursor().toString();
@@ -455,7 +460,7 @@ async function run() {
       store.close();
       return { ...progress, family, fetched, staged: staged.envelope.length > 0,
         exactRetry: staged.envelope.every((value, index) => value === retry.envelope[index]),
-        localRecordType, localCursor,
+        otherEditBlocked, localRecordType, localCursor,
         wrongKeyRejected, noCredentialAfterDenial };
     }, {
       genesisHex: relay.genesisHex,
@@ -468,6 +473,7 @@ async function run() {
     assert.deepEqual(realRelay, {
       cursor: 1, noMoreVisible: true, family: input.familyHex, fetched: 1,
       staged: true, exactRetry: true, wrongKeyRejected: true, noCredentialAfterDenial: true,
+      otherEditBlocked: true,
       localRecordType: 'family', localCursor: '1',
     });
     await page.reload();

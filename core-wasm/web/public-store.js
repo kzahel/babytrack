@@ -160,7 +160,12 @@ export class PublicStore {
   // Family is retried byte-for-byte after a lost response or browser reload.
   async stageInitial(family, operation) {
     const pending = await this.pendingInitial(family);
-    if (pending) return pending;
+    if (pending) {
+      if (!sameBytes(pending.operation, operation)) {
+        throw new Error('Another browser edit is pending upload');
+      }
+      return pending;
+    }
     const credential = await this.initialCredential(family);
     const ready = await this.loadInitialReady(family, credential.epochKey);
     let envelope, cursor, head;
@@ -188,7 +193,10 @@ export class PublicStore {
         const pendingRequest = outbox.get(family);
         pendingRequest.onsuccess = () => {
           if (pendingRequest.result) {
-            result = pendingRequest.result;
+            if (!sameBytes(pendingRequest.result.operation, operation)) {
+              failure = new Error('Another browser edit is pending upload');
+              transaction.abort();
+            } else result = pendingRequest.result;
           } else {
             result = { family, operation: Uint8Array.from(operation), envelope: Uint8Array.from(envelope) };
             outbox.add(result);

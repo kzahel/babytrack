@@ -290,7 +290,9 @@ verified projection through Rust before acceptance, without advancing the
 public cursor. The initial manager's signing
 seed and epoch key are saved in that browser profile's IndexedDB so reload
 uses the same credential; anyone with access to the profile can read those
-keys. This narrow path does not yet handle later controls, rotations,
+keys. A different edit submitted while the one exact batch is pending is
+rejected visibly rather than treated as a retry. This narrow path does not
+yet handle later controls, rotations,
 recipient credentials, broader offline edits, rejection repair, or
 full mixed-client exchange.
 The first Android sharing flow uses foreground polling and scheduled

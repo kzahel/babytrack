@@ -640,6 +640,9 @@ lost response, retries after reload, and atomically clears the outbox only
 when a signed acceptance enters public history. Before upload, Rust overlays
 the saved operation on the verified cursor-one view, including after reload.
 It projects the accepted Family record and rebuilds it after reload.
+Attempting a different edit while that exact upload is pending returns an
+error and preserves the first operation rather than silently dropping the new
+one.
 Controls after genesis, rotations, recipient key storage, broader offline
 edits, rejection repair, and a CLI/browser
 encrypted exchange remain open. The first manager's signing and epoch keys

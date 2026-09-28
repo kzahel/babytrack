@@ -7,7 +7,10 @@ const { chromium } = require('playwright');
 const generatedDir = process.argv[2];
 if (!generatedDir) throw new Error('pass wasm-bindgen web output directory');
 const fixtures = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/negative-batch-v1.json')));
+const full = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/full-wire-v1.json')));
 const minor = fixtures.cases.find((entry) => entry.id === 'CROSSMINORBYTE01').input;
+const genesis = full.cases.find((entry) => entry.id === 'GENESIS01');
+const acceptedBatch = full.cases.find((entry) => entry.id === 'BATCHBYTE01');
 const input = {
   familyHex: fixtures.base.family_id_hex,
   otherFamilyHex: `ff${fixtures.base.family_id_hex.slice(2)}`,
@@ -19,6 +22,10 @@ const input = {
   operationHex: minor.operation_hex,
   envelopeHex: minor.envelope_cbor_hex,
   recordHex: '0183f9d0000070008000000000000011',
+  publicGenesisHex: genesis.expect.control_object_hex,
+  relayPublicHex: genesis.expect.relay_public_key_hex,
+  acceptedEnvelopeHex: acceptedBatch.expect.envelope_cbor_hex,
+  acceptedReceiptHex: acceptedBatch.expect.accepted_receipt_cbor_hex,
 };
 
 const server = http.createServer((request, response) => {
@@ -28,9 +35,9 @@ const server = http.createServer((request, response) => {
     return;
   }
   const name = request.url.slice(1);
-  if (name === 'local-store.js') {
+  if (name === 'local-store.js' || name === 'public-store.js') {
     response.writeHead(200, { 'Content-Type': 'text/javascript' });
-    fs.createReadStream(path.join(__dirname, '../../core-wasm/web/local-store.js')).pipe(response);
+    fs.createReadStream(path.join(__dirname, '../../core-wasm/web', name)).pipe(response);
     return;
   }
   if (!['babytrack_core_wasm.js', 'babytrack_core_wasm_bg.wasm'].includes(name)) {
@@ -219,8 +226,57 @@ async function run() {
     assert.deepEqual(localReload, {
       primaryIndex: '1', otherIndex: '0', name: [0x64, 0x42, 0x61, 0x62, 0x79], otherName: [],
     });
+
+    const publicFirst = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+      const store = await PublicStore.open(wasm, 'babytrack-public-authority-smoke');
+      const family = await store.begin(bytes(data.publicGenesisHex), bytes(data.relayPublicHex));
+      const badReceipt = bytes(data.acceptedReceiptHex);
+      badReceipt[badReceipt.length - 1] ^= 1;
+      let forgedRejected = false;
+      try { await store.append(family, 'batch', bytes(data.acceptedEnvelopeHex), badReceipt); }
+      catch { forgedRejected = true; }
+      const before = await store.load(family);
+      const beforeCursor = before.last_cursor().toString();
+      before.free();
+      const cursor = await store.append(family, 'batch', bytes(data.acceptedEnvelopeHex),
+        bytes(data.acceptedReceiptHex));
+      let duplicateRejected = false;
+      try { await store.append(family, 'batch', bytes(data.acceptedEnvelopeHex),
+        bytes(data.acceptedReceiptHex)); }
+      catch { duplicateRejected = true; }
+      store.close();
+      return { family, beforeCursor, cursor, forgedRejected, duplicateRejected };
+    }, input);
+    assert.deepEqual(publicFirst, {
+      family: input.familyHex, beforeCursor: '1', cursor: 2,
+      forgedRejected: true, duplicateRejected: true,
+    });
+
+    await page.reload();
+    const publicReload = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const store = await PublicStore.open(wasm, 'babytrack-public-authority-smoke');
+      const verifier = await store.load(data.familyHex);
+      const result = { cursor: verifier.last_cursor().toString(),
+        head: Array.from(verifier.head_hash(), (byte) => byte.toString(16).padStart(2, '0')).join('') };
+      verifier.free();
+      let otherAbsent = false;
+      try { await store.load(data.otherFamilyHex); }
+      catch { otherAbsent = true; }
+      store.close();
+      return { ...result, otherAbsent };
+    }, input);
+    assert.deepEqual(publicReload, {
+      cursor: '2', head: genesis.expect.control_head_hex, otherAbsent: true,
+    });
     await context.close();
-    console.log('browser wasm + IndexedDB batch and local journal reload, rollback, and Family isolation: OK');
+    console.log('browser wasm + IndexedDB local journal and public authority reload, rollback, and Family isolation: OK');
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));

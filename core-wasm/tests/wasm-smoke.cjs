@@ -4,7 +4,7 @@ const path = require('node:path');
 
 const bindingPath = process.argv[2];
 if (!bindingPath) throw new Error('pass generated wasm-bindgen Node module path');
-const { WasmFamily, ed25519_public_key, seal_one } = require(path.resolve(bindingPath));
+const { WasmFamily, WasmPublicFamily, ed25519_public_key, seal_one } = require(path.resolve(bindingPath));
 const vectors = JSON.parse(fs.readFileSync(path.join(__dirname, '../../tests/vectors/negative-batch-v1.json')));
 const full = JSON.parse(fs.readFileSync(path.join(__dirname, '../../tests/vectors/full-wire-v1.json')));
 const hex = (value) => Buffer.from(value, 'hex');
@@ -72,6 +72,22 @@ const sealed = seal_one(
   hex(genesis.inputs.manager_sign_seed_hex),
 );
 assert.equal(Buffer.from(sealed).toString('hex'), fixedBatch.expect.envelope_cbor_hex);
+const publicFamily = new WasmPublicFamily(
+  hex(genesis.expect.control_object_hex), hex(genesis.expect.relay_public_key_hex),
+);
+assert.equal(Buffer.from(publicFamily.family_id()).toString('hex'), genesis.inputs.family_id_hex);
+assert.equal(Buffer.from(publicFamily.head_hash()).toString('hex'), genesis.expect.control_head_hex);
+publicFamily.apply_batch(sealed, hex(fixedBatch.expect.accepted_receipt_cbor_hex));
+assert.equal(publicFamily.last_cursor(), 2n);
+const denied = new WasmPublicFamily(
+  hex(genesis.expect.control_object_hex), hex(genesis.expect.relay_public_key_hex),
+);
+const alteredReceipt = hex(fixedBatch.expect.accepted_receipt_cbor_hex);
+alteredReceipt[alteredReceipt.length - 1] ^= 1;
+assert.throws(() => denied.apply_batch(sealed, alteredReceipt));
+assert.equal(denied.last_cursor(), 1n);
+publicFamily.free();
+denied.free();
 const afterControl = new WasmFamily(familyId);
 afterControl.advance_control(1n);
 assert.equal(afterControl.apply_envelope(

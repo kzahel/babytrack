@@ -7,7 +7,9 @@ use babytrack_core::{
     batch, crypto,
     projection::{Outcome, Projection},
 };
-use babytrack_core::{operation::Operation, projection::LocalProjection};
+use babytrack_core::{
+    control_chain::ControlChain, operation::Operation, projection::LocalProjection,
+};
 use wasm_bindgen::prelude::*;
 
 #[cfg(feature = "fixture-api")]
@@ -21,6 +23,58 @@ pub struct WasmLocalFamily {
     projection: LocalProjection,
     family_id: [u8; 16],
     device_id: [u8; 16],
+}
+
+/// Public relay authority replay. Encrypted record projection and local
+/// outbox handling are separate steps, but every committed cursor is checked
+/// against the same Rust control chain used by native clients and the relay.
+#[wasm_bindgen]
+pub struct WasmPublicFamily {
+    chain: ControlChain,
+}
+
+#[wasm_bindgen]
+impl WasmPublicFamily {
+    #[wasm_bindgen(constructor)]
+    pub fn new(genesis_bytes: &[u8], relay_public_key: &[u8]) -> Result<Self, JsError> {
+        let chain =
+            ControlChain::from_genesis(genesis_bytes, fixed(relay_public_key, "relay public key")?)
+                .map_err(debug_error)?;
+        Ok(Self { chain })
+    }
+
+    pub fn apply_control(&mut self, committed_bytes: &[u8]) -> Result<(), JsError> {
+        self.chain
+            .apply_control(committed_bytes)
+            .map_err(debug_error)
+    }
+
+    pub fn apply_batch(
+        &mut self,
+        envelope_bytes: &[u8],
+        receipt_bytes: &[u8],
+    ) -> Result<(), JsError> {
+        self.chain
+            .apply_public_batch(envelope_bytes, receipt_bytes)
+            .map(|_| ())
+            .map_err(debug_error)
+    }
+
+    pub fn family_id(&self) -> Vec<u8> {
+        self.chain.family_id().to_vec()
+    }
+
+    pub fn relay_id(&self) -> Vec<u8> {
+        self.chain.relay_id().to_vec()
+    }
+
+    pub fn last_cursor(&self) -> u64 {
+        self.chain.last_global_cursor()
+    }
+
+    pub fn head_hash(&self) -> Vec<u8> {
+        self.chain.head_hash().to_vec()
+    }
 }
 
 #[wasm_bindgen]

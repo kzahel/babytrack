@@ -623,6 +623,12 @@ Chromium smoke covers reload, duplicate rejection, and wrong-Family append
 rollback. Materialized projection, browser HLC, general shared replay,
 browser outbox, and private copy remain open. Native SQLite now also reserves a random
 batch ID and nonce and persists exact signed envelope bytes in one transaction.
+The browser also has a separate production public-authority journal. Its wasm
+verifier uses the Rust control chain for signed genesis, controls, and batch
+acceptance; IndexedDB stores exact bytes with cursor/head atomically and
+rebuilds the verifier after reload. The Chromium smoke rejects a forged
+receipt and duplicate batch without advancing the durable pin. It does not
+yet decrypt/project shared records or stage a browser outbox.
 An uncertain retry returns those bytes after reopen even if the caller's
 current head/key has changed. The initial `FamilySession` stages through
 that path only with its verified manager identity, head, epoch key, and
@@ -771,8 +777,10 @@ fork checks remain open.
 `bash scripts/check_browser_smoke.sh` launches Playwright's isolated Chromium
 shell, loads the wasm binding, and checks IndexedDB reload, an aborted
 multi-store transaction, and Family-scoped keys and rows. It uses fixture
-keys for encrypted batches and the reusable local-only journal adapter;
-complete browser sync storage and cross-language vector coverage remain open.
+keys for encrypted batches and the reusable local-only journal adapter. A
+production public-authority adapter also verifies a signed acceptance through
+Rust and replays it after browser reload; complete browser sync storage and
+cross-language vector coverage remain open.
 
 Every agreed FS case gets a deterministic core/relay action binding with
 assertions for local state, shared state, pending outbox, visible status, and

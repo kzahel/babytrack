@@ -180,7 +180,9 @@ scrolling. The prefilled invitation input stays one line so a long link
 cannot push that action below a short viewport; opening the link also
 returns the tracker scroll to the top. A 1080×1600 emulator check exercises
 the action. The invitation-cancel UI check uses Compose semantics to find
-and scroll to its action.
+and scroll to its action. Required CI run `36381384108` passed the 14-test
+relay suite and tracker/recovery UI smokes on its second attempt; the first
+attempt lost ADB during the tracker smoke after relay tests passed.
 An admitted manager now exposes an invitation action in the selected Family's
 access section and uses the same foreground and scheduled coordinator to answer
 claims and proofs. A real-relay instrumentation case uses three independent

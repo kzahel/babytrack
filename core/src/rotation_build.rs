@@ -2,6 +2,8 @@
 //! for every remaining active device. The caller durably saves this proposal
 //! before sending any object to the relay.
 
+use std::collections::BTreeMap;
+
 use rand_chacha::{ChaCha20Rng, rand_core::SeedableRng};
 
 use crate::{
@@ -63,8 +65,7 @@ pub struct RotationProposal {
     pub new_epoch_key: [u8; 32],
 }
 
-/// The current implementation prepares a first rotation from epoch one.
-/// Later rotations require the complete verified prior-key map as input.
+/// Compatibility entry for the first rotation's fixed byte-vector tests.
 pub fn prepare_first_removal(
     chain: &ControlChain,
     family: FamilyHandle,
@@ -72,12 +73,36 @@ pub fn prepare_first_removal(
     epoch_one_key: [u8; 32],
     target_id: [u8; 16],
 ) -> Result<RotationProposal, Error> {
-    if family.family_id != chain.family_id() || chain.epoch()? != 1 {
+    if chain.epoch()? != 1 {
         return Err(Error::Invalid(
             "first rotation requires matching epoch-one Family",
         ));
     }
-    chain.verify_initial_epoch_key(&epoch_one_key)?;
+    prepare_removal(
+        chain,
+        family,
+        manager_signing_seed,
+        &BTreeMap::from([(1, epoch_one_key)]),
+        target_id,
+    )
+}
+
+/// Build one rotation from a fully verified, contiguous history keyring.
+pub fn prepare_removal(
+    chain: &ControlChain,
+    family: FamilyHandle,
+    manager_signing_seed: [u8; 32],
+    prior_keys: &BTreeMap<u32, [u8; 32]>,
+    target_id: [u8; 16],
+) -> Result<RotationProposal, Error> {
+    if family.family_id != chain.family_id() {
+        return Err(Error::Invalid("rotation belongs to another Family"));
+    }
+    chain.verify_epoch_keys(prior_keys)?;
+    let next_epoch = chain
+        .epoch()?
+        .checked_add(1)
+        .ok_or(Error::Invalid("rotation epoch overflow"))?;
     let state = cbor::decode(&chain.state_bytes()?)?;
     let Value::Map(mut next) = state else {
         return Err(Error::Invalid("auth state is not a map"));
@@ -123,7 +148,7 @@ pub fn prepare_first_removal(
         return Err(Error::Invalid("cannot remove final manager"));
     }
     let recipients = active.clone();
-    next[3].1 = Value::Integer(2);
+    next[3].1 = Value::Integer(next_epoch.into());
     let Value::Array(pending) = &mut next[5].1 else {
         return Err(Error::Invalid("pending devices are not an array"));
     };
@@ -150,14 +175,14 @@ pub fn prepare_first_removal(
     let membership_id = random_v4()?;
     let keyring_id = random_v4()?;
     let new_key = random::<32>()?;
-    if new_key == epoch_one_key {
+    if prior_keys.values().any(|key| *key == new_key) {
         return Err(Error::Invalid("new epoch key repeated old key"));
     }
     let commitment = crypto::hash(
         "epoch-key",
         &cbor::encode(&Value::Array(vec![
             Value::Bytes(family.family_id.to_vec()),
-            Value::Integer(2),
+            Value::Integer(next_epoch.into()),
             Value::Bytes(new_key.to_vec()),
         ]))?,
     )?;
@@ -174,7 +199,7 @@ pub fn prepare_first_removal(
         8,
         &delta,
         &next_state,
-        2,
+        next_epoch,
     )?;
     let membership_plain = cbor::encode(&Value::Map(vec![
         (1, Value::Bytes(transition_id.to_vec())),
@@ -183,7 +208,7 @@ pub fn prepare_first_removal(
             3,
             Value::Bytes(crypto::hash("auth-state", &cbor::encode(&next_state)?)?.to_vec()),
         ),
-        (4, Value::Integer(2)),
+        (4, Value::Integer(next_epoch.into())),
         (5, delta.clone()),
     ]))?;
     let membership_nonce = random::<24>()?;
@@ -206,13 +231,13 @@ pub fn prepare_first_removal(
         Value::Bytes(chain.head_hash().to_vec()),
         Value::Bytes(transition_id.to_vec()),
         Value::Bytes(crypto::hash("auth-state", &cbor::encode(&next_state)?)?.to_vec()),
-        Value::Integer(2),
+        Value::Integer(next_epoch.into()),
         Value::Bytes(commitment.to_vec()),
         delta.clone(),
     ]))?;
     let grant_plain = cbor::encode(&Value::Array(vec![
         Value::Integer(1),
-        Value::Integer(2),
+        Value::Integer(next_epoch.into()),
         Value::Bytes(new_key.to_vec()),
     ]))?;
     let mut objects = vec![(1, membership_id, membership)];
@@ -273,10 +298,17 @@ pub fn prepare_first_removal(
     }
     let keyring_plain = cbor::encode(&Value::Array(vec![
         Value::Integer(1),
-        Value::Array(vec![Value::Array(vec![
-            Value::Integer(1),
-            Value::Bytes(epoch_one_key.to_vec()),
-        ])]),
+        Value::Array(
+            prior_keys
+                .iter()
+                .map(|(epoch, key)| {
+                    Value::Array(vec![
+                        Value::Integer((*epoch).into()),
+                        Value::Bytes(key.to_vec()),
+                    ])
+                })
+                .collect(),
+        ),
     ]))?;
     let keyring_nonce = random::<24>()?;
     let keyring_aad = crypto::hash("keyring-aad", &core_hash)?;
@@ -297,7 +329,7 @@ pub fn prepare_first_removal(
         8,
         delta,
         next_state,
-        2,
+        next_epoch,
         &objects,
         &manager_signing_seed,
     )?;

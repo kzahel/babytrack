@@ -1,4 +1,4 @@
-//! Durable first active-device removal. Save one exact proposal before any
+//! Durable active-device removal. Save one exact proposal before any
 //! network stage/commit; a retry never creates another epoch key or grant.
 
 use crate::{
@@ -81,6 +81,7 @@ impl From<getrandom::Error> for Error {
 pub struct FirstRemoval {
     family: FamilyHandle,
     target_id: [u8; 16],
+    new_epoch: u32,
     transition_id: [u8; 16],
     candidate_bytes: Vec<u8>,
     objects: Vec<RemovalObject>,
@@ -130,21 +131,25 @@ impl FirstRemoval {
         let family = ready.family();
         if store.prepared_control(family, 8)?.is_some() {
             let saved = Self::resume_with(store, family, wrapping_key)?;
-            if saved.target_id != target_id {
-                return Err(Error::Invalid("another removal is already prepared"));
+            if committed_matches(store, family, &saved.candidate_bytes)? {
+                store.delete_prepared_control(family, 8, saved.transition_id)?;
+            } else {
+                if saved.target_id != target_id {
+                    return Err(Error::Invalid("another removal is already prepared"));
+                }
+                return Ok(saved);
             }
-            return Ok(saved);
         }
         let public = PublicHistorySession::resume(store, family)?;
         if ready.observed_cursor() != public.cursor() || ready.observed_head() != public.head_hash()
         {
             return Err(Error::Invalid("holder view behind public authority"));
         }
-        let proposal = rotation_build::prepare_first_removal(
+        let proposal = rotation_build::prepare_removal(
             public.chain(),
             family,
             signing_seed,
-            ready.current_key().bytes,
+            &ready.epoch_keys(),
             target_id,
         )?;
         let secret_nonce = random::<24>()?;
@@ -231,11 +236,20 @@ impl FirstRemoval {
         if delta.len() != 3 || fixed::<16>(&delta[0].1)? != target_id {
             return Err(Error::Invalid("removal target mismatch"));
         }
+        let Value::Integer(epoch) = unsigned[8].1 else {
+            return Err(Error::Invalid("removal epoch missing"));
+        };
+        let new_epoch: u32 = epoch
+            .try_into()
+            .map_err(|_| Error::Invalid("removal epoch outside u32"))?;
+        if new_epoch < 2 {
+            return Err(Error::Invalid("removal epoch too low"));
+        }
         let commitment = crypto::hash(
             "epoch-key",
             &cbor::encode(&Value::Array(vec![
                 Value::Bytes(family.family_id.to_vec()),
-                Value::Integer(2),
+                Value::Integer(new_epoch.into()),
                 Value::Bytes(new_key.to_vec()),
             ]))?,
         )?;
@@ -263,7 +277,7 @@ impl FirstRemoval {
             }
         }
         let public = PublicHistorySession::resume(store, family)?;
-        if public.chain().epoch()? == 1 {
+        if public.chain().epoch()?.checked_add(1) == Some(new_epoch) {
             if public.head_hash() != fixed::<32>(&unsigned[3].1)? {
                 return Err(Error::Invalid("prepared removal head is stale"));
             }
@@ -275,6 +289,7 @@ impl FirstRemoval {
         Ok(Self {
             family,
             target_id,
+            new_epoch,
             transition_id: row.transition_id,
             candidate_bytes: row.candidate_bytes,
             objects,
@@ -337,7 +352,7 @@ impl FirstRemoval {
             return Err(Error::Invalid("committed removal candidate mismatch"));
         }
         let mut public = PublicHistorySession::resume(store, self.family)?;
-        if public.chain().epoch()? == 1 {
+        if public.chain().epoch()?.checked_add(1) == Some(self.new_epoch) {
             public.accept_control(store, committed)?;
         } else if !committed_matches(store, self.family, &self.candidate_bytes)? {
             return Err(Error::Invalid("different removal already committed"));

@@ -1431,8 +1431,9 @@ own enrollment. The admitted manager can also remove that third device at
 epoch one, granting the rotated key to remaining holders. The CLI checks
 the removed device's new-data read denial; Android checks the removed state,
 hides its stale shared snapshot, and confirms the original manager still
-syncs. Later rotations, admitted-manager cancellation, and broader recovery
-cases remain open.
+syncs. An Android relay case now removes the original manager in a second
+rotation and continues encrypted writes at epoch three. Admitted-manager
+cancellation and broader recovery cases remain open.
 Ready replay can now start from a later recipient's admission grant at a
 rotated epoch: it verifies that epoch's committed keyring and membership,
 recovers earlier keys, then applies subsequent addressed rotations. A fixed

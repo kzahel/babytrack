@@ -704,6 +704,14 @@ class SharingRelayTest {
             assertTrue(sharing.syncAndUpload(manager, origin).ready)
             assertTrue(sharing.snapshot(manager).devices.none { it.deviceId.contentEquals(third.deviceId) })
         }
+        ShareCoordinator(context, holderDb.absolutePath).use { sharing ->
+            val rotatedAgain = sharing.removeDevice(holder, origin, manager.deviceId)
+            assertEquals(1, rotatedAgain.devices.size)
+            assertArrayEquals(holder.deviceId, rotatedAgain.devices.single().deviceId)
+            sharing.addChild(holder, "After second rotation", System.currentTimeMillis())
+            assertTrue(sharing.syncRecipientAndUpload(holder).ready)
+            assertTrue(sharing.snapshot(holder).children.any { it.name == "After second rotation" })
+        }
     }
 
     @Test

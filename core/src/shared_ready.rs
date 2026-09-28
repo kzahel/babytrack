@@ -88,6 +88,7 @@ pub struct ReadyFamilySession {
     relay_id: [u8; 32],
     active_epoch: u32,
     current_key: VerifiedEpochKey,
+    earlier_keys: BTreeMap<u32, VerifiedEpochKey>,
     signing_public: [u8; 32],
     next_sequence: u64,
 }
@@ -336,6 +337,7 @@ impl ReadyFamilySession {
             relay_id: chain.relay_id(),
             active_epoch,
             current_key,
+            earlier_keys: keys,
             signing_public,
             next_sequence,
         })
@@ -457,6 +459,14 @@ impl ReadyFamilySession {
 
     pub(crate) fn current_key(&self) -> &VerifiedEpochKey {
         &self.current_key
+    }
+
+    pub(crate) fn epoch_keys(&self) -> BTreeMap<u32, [u8; 32]> {
+        self.earlier_keys
+            .iter()
+            .map(|(epoch, key)| (*epoch, key.bytes))
+            .chain([(self.active_epoch, self.current_key.bytes)])
+            .collect()
     }
 }
 

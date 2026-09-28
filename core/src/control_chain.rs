@@ -334,6 +334,29 @@ impl ControlChain {
         })
     }
 
+    /// Check that a ready holder retained exactly the committed keys needed
+    /// for a new rotation keyring, including every historical epoch.
+    pub fn verify_epoch_keys(&self, keys: &BTreeMap<u32, [u8; 32]>) -> Result<(), Error> {
+        let current = self.epoch()?;
+        if keys.len() != current as usize {
+            return Err(Error::Invalid("rotation key history incomplete"));
+        }
+        for epoch in 1..=current {
+            let key = keys
+                .get(&epoch)
+                .ok_or(Error::Invalid("rotation epoch key missing"))?;
+            let bytes = cbor::encode(&Value::Array(vec![
+                Value::Bytes(self.genesis.family_id().to_vec()),
+                Value::Integer(epoch.into()),
+                Value::Bytes(key.to_vec()),
+            ]))?;
+            if Some(crypto::hash("epoch-key", &bytes)?) != self.epochs.commitment_for_epoch(epoch) {
+                return Err(Error::Invalid("rotation epoch key commitment mismatch"));
+            }
+        }
+        Ok(())
+    }
+
     /// Open a committed rotation only after every active recipient grant,
     /// the complete history keyring, and its encrypted membership agree.
     pub fn open_rotation_for(

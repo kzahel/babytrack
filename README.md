@@ -14,8 +14,8 @@ Real-relay tests admit a later device at the current epoch, hydrate its
 history, and continue encrypted sync. An admitted manager can also invite,
 grant, and remove a third device with key rotation. A manager can cancel an
 unused link, with a verified canceled status for a recipient who opens it.
-Later rotations, pending-device removal, general browser shared sync, and broader recovery coverage
-remain open.
+Pending-device removal, general browser shared sync, and broader recovery
+coverage remain open.
 The browser harness now stages one epoch-one encrypted write in a durable
 outbox, previews it locally before acceptance, retries it after a lost
 response, confirms it through signed relay reads, and rebuilds the record
@@ -55,7 +55,8 @@ After relay restart and epoch rotation, the manager issues a later link and
 a fresh recipient installation joins through automatic wake steps, then
 uploads an encrypted event the manager reads. An Android real-relay test
 also covers an admitted manager inviting and granting another device,
-followed by an encrypted edit. This remains a debug build;
+followed by an encrypted edit, role changes, and two successive key
+rotations. This remains a debug build;
 physical-phone and end-of-M0 security gates have not passed.
 Scenario files still include symbolic expectations.
 

@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
@@ -8,7 +8,10 @@ const { chromium } = require('playwright');
 
 const generatedDir = process.argv[2];
 const relayBin = process.argv[3];
-if (!generatedDir || !relayBin) throw new Error('pass wasm-bindgen web output and relay binary');
+const nativeExchangeBin = process.argv[4];
+if (!generatedDir || !relayBin || !nativeExchangeBin) {
+  throw new Error('pass wasm-bindgen web output, relay binary, and native exchange binary');
+}
 const fixtures = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/negative-batch-v1.json')));
 const full = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/full-wire-v1.json')));
 const chain = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/contiguous-chain-v1.json')));
@@ -59,6 +62,7 @@ const input = {
   batchResultHex: batchResult.toString('hex'),
   managerDeviceHex: chain.test_only_inputs.manager_device_id_hex,
   managerSeedHex: chain.test_only_inputs.manager_sign_seed_hex,
+  promotionIdHex: apiGenesis.inputs.promotion_id_hex,
 };
 
 let relayPort;
@@ -509,17 +513,67 @@ async function run() {
       }
       const progress = await store.uploadInitial(data.familyHex, relayPost, relayGet);
       const ready = await store.loadInitialReadySaved(data.familyHex);
+      const accepted = await new Promise((resolve, reject) => {
+        const request = store.database.transaction('entries', 'readonly')
+          .objectStore('entries').get([data.familyHex, 2]);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      const verifier = await store.load(data.familyHex);
+      const credential = await store.initialCredential(data.familyHex);
+      const objectPath = `/v1/families/${data.familyHex}/objects/${data.promotionIdHex}`;
+      const objectAuth = verifier.sign_get(credential.deviceId, credential.signingSeed,
+        objectPath, crypto.getRandomValues(new Uint8Array(16)));
+      const objectResponse = await relayGet(objectPath, objectAuth);
+      verifier.free();
       const result = { ...progress, pendingBefore: !!pendingBefore, lostResponseKept,
         visibleAfterReload,
         pendingAfter: !!(await store.pendingInitial(data.familyHex)),
-        recordType: ready.record_type(bytes(data.familyHex)) };
+        recordType: ready.record_type(bytes(data.familyHex)),
+        nativeEnvelopeHex: hex(accepted.bytes), nativeReceiptHex: hex(accepted.receipt),
+        nativeObjectHex: hex(objectResponse) };
       ready.free();
       store.close();
       return result;
     }, input);
-    assert.deepEqual(uploaded, { cursor: 2, noMoreVisible: true,
+    const { nativeEnvelopeHex, nativeReceiptHex, nativeObjectHex, ...uploadedStatus } = uploaded;
+    assert.deepEqual(uploadedStatus, { cursor: 2, noMoreVisible: true,
       pendingBefore: true, lostResponseKept: true, visibleAfterReload: 'family',
       pendingAfter: false, recordType: 'family' });
+    const native = spawnSync(path.resolve(nativeExchangeBin), [
+      relay.genesisHex, input.relayPublicHex, genesis.inputs.epoch_key_hex,
+      input.managerSeedHex, apiGenesis.inputs.promotion_id_hex,
+      nativeObjectHex, nativeEnvelopeHex, nativeReceiptHex,
+    ], { encoding: 'utf8', maxBuffer: 1024 * 1024 });
+    assert.equal(native.status, 0, `Native browser exchange: ${native.stderr}`);
+    const [nativeEnvelopeHex2, nativeChildHex] = native.stdout.trim().split(' ');
+    assert.match(nativeEnvelopeHex2, /^[0-9a-f]+$/);
+    assert.match(nativeChildHex, /^[0-9a-f]{32}$/);
+    const nativeUpload = await fetch(`http://127.0.0.1:${relay.port}/v1/families/${input.familyHex}/batches`, {
+      method: 'POST', headers: { 'Content-Type': 'application/cbor' },
+      body: Buffer.from(nativeEnvelopeHex2, 'hex'),
+    });
+    assert.equal(nativeUpload.status, 200,
+      `Native batch upload: ${Buffer.from(await nativeUpload.arrayBuffer()).toString('hex')}`);
+    const nativeInBrowser = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+      const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      const store = await PublicStore.open(wasm, 'babytrack-real-relay-public-smoke');
+      const progress = await store.pullSaved(data.familyHex, relayGet);
+      const ready = await store.loadInitialReadySaved(data.familyHex);
+      const result = { ...progress, childType: ready.record_type(bytes(data.childHex)),
+        childNameCbor: hex(ready.field_cbor(bytes(data.childHex), 1n)) };
+      ready.free();
+      store.close();
+      return result;
+    }, { familyHex: input.familyHex, childHex: nativeChildHex });
+    assert.deepEqual(nativeInBrowser, { cursor: 3, noMoreVisible: true,
+      childType: 'child', childNameCbor: '704d69786564436c69656e744368696c64' });
     await page.reload();
     const relayReload = await page.evaluate(async (data) => {
       const wasm = await import('/babytrack_core_wasm.js');
@@ -529,14 +583,15 @@ async function run() {
       const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
       const ready = await store.loadInitialReadySaved(data.familyHex);
       const result = { cursor: ready.last_cursor().toString(),
-        recordType: ready.record_type(bytes(data.familyHex)) };
+        recordType: ready.record_type(bytes(data.familyHex)),
+        childType: ready.record_type(bytes(data.childHex)) };
       ready.free();
       store.close();
       return result;
-    }, { familyHex: input.familyHex });
-    assert.deepEqual(relayReload, { cursor: '2', recordType: 'family' });
+    }, { familyHex: input.familyHex, childHex: nativeChildHex });
+    assert.deepEqual(relayReload, { cursor: '3', recordType: 'family', childType: 'child' });
     await context.close();
-    console.log('browser wasm + IndexedDB journal, signed relay GET, durable initial batch upload, encrypted projection, reload, rollback, and Family isolation: OK');
+    console.log('browser wasm + IndexedDB journal, bidirectional native/browser encrypted exchange, durable retry, reload, rollback, and Family isolation: OK');
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));

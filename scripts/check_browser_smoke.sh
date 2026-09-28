@@ -10,6 +10,7 @@ trap 'rm -rf "$scratch_dir"' EXIT
 npm ci --prefix tests/browser --ignore-scripts
 cargo build -p babytrack-core-wasm --features fixture-api --target wasm32-unknown-unknown --locked
 cargo build -p babytrack-server --locked
+cargo build -p babytrack-cli --example browser_exchange --locked
 wasm-bindgen --target web --out-dir "$scratch_dir" \
   target/wasm32-unknown-unknown/debug/babytrack_core_wasm.wasm
-node tests/browser/browser-smoke.cjs "$scratch_dir" target/debug/babytrack-server
+node tests/browser/browser-smoke.cjs "$scratch_dir" target/debug/babytrack-server target/debug/examples/browser_exchange

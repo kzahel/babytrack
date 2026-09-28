@@ -292,10 +292,14 @@ sealing; a missing target leaves no outbox entry. The initial manager's
 signing seed and epoch key are saved in that browser profile's IndexedDB for
 use after reload; anyone with access to the profile can read those
 keys. A different edit submitted while the one exact batch is pending is
-rejected visibly rather than treated as a retry. This narrow path does not
-yet handle later controls, rotations,
-recipient credentials, broader offline edits, rejection repair, or
-full mixed-client exchange.
+rejected visibly rather than treated as a retry. A test-only native CLI
+example verifies the browser's accepted batch, writes a second encrypted
+child batch through the same relay, and Chromium projects it after reload.
+This proves initial-epoch wire exchange across native Rust and wasm; it does
+not exercise an independent durable native outbox in that same run. This
+narrow path does not yet handle later controls, rotations, recipient
+credentials, broader offline edits, rejection repair, or full mixed-client
+convergence.
 The first Android sharing flow uses foreground polling and scheduled
 background work. FCM and APNs may later provide empty background wakes through
 app-owned interfaces to reduce latency when an app is suspended. A missed

@@ -28,7 +28,7 @@ emulators exercise join, encrypted sync,
 removal, and private-copy recovery. An admitted manager also invites and
 grants to a third device, then removes it with key rotation, through relay
 HTTP and Android instrumentation.
-Role changes, cancellation, browser shared
+Role changes, cancellation, general browser shared
 outbox, complete vector coverage, and the M0 exit review remain open.
 The browser now persists a Rust-verified public control and accepted-batch
 history in IndexedDB, with reload and forged-receipt rollback checks. It
@@ -39,8 +39,10 @@ projects the decrypted epoch-one record through Rust after reload. A
 production wasm batch enters a durable browser outbox, previews locally,
 survives a lost POST response and reload, and clears only on signed
 acceptance. Later controls, later-epoch and recipient key storage, broader
-offline edits, rejection repair,
-and full CLI/browser convergence remain open. The first manager credential
+offline edits, rejection repair, and full CLI/browser convergence remain
+open. A test-only native CLI driver now verifies the browser's accepted
+batch and sends an encrypted child back through the same relay; Chromium
+projects it after reload. The first manager credential
 persists in IndexedDB for this smoke.
 Android local and first-cohort UI work, including solids, completed
 multi-segment breast-feed, pumping logs, and note, bottle, diaper, pumping,

@@ -644,9 +644,12 @@ Attempting a different edit while that exact upload is pending returns an
 error and preserves the first operation rather than silently dropping the new
 one. A structurally valid edit of an absent record is also rejected before
 sealing and leaves the outbox empty.
-Controls after genesis, rotations, recipient key storage, broader offline
-edits, rejection repair, and a CLI/browser
-encrypted exchange remain open. The first manager's signing and epoch keys
+The test-only native CLI example verifies that accepted browser batch from
+signed genesis and its object, authors a second encrypted child batch, and
+Chromium fetches and projects the child after reload. Controls after genesis,
+rotations, recipient key storage, broader offline edits, rejection repair,
+and durable independent CLI/browser convergence remain open. The first
+manager's signing and epoch keys
 persist in IndexedDB and are reloaded for this narrow proof.
 An uncertain retry returns those bytes after reopen even if the caller's
 current head/key has changed. The initial `FamilySession` stages through
@@ -802,7 +805,9 @@ Rust and replays it after browser reload. The same smoke starts a disposable
 relay and fetches an accepted batch through signed browser GETs; complete
 browser sync storage and cross-language vector coverage remain open. It also
 stages a production encrypted write, loses the POST response, retries exact
-bytes after reload, and clears its outbox on signed acceptance.
+bytes after reload, and clears its outbox on signed acceptance. The native
+CLI example opens those browser bytes and contributes an encrypted child
+that Chromium then reads through the same relay.
 
 Every agreed FS case gets a deterministic core/relay action binding with
 assertions for local state, shared state, pending outbox, visible status, and

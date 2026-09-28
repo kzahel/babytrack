@@ -2551,7 +2551,7 @@ private fun TrackerScreen(
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     GrowthUnitChoices(R.string.weight_unit, massUnits, target.weightUnit) {
-                        pendingGrowthEdit = target.copy(weight = "", weightUnit = it)
+                        if (target.weightUnit != it) pendingGrowthEdit = target.copy(weight = "", weightUnit = it)
                     }
                     OutlinedTextField(
                         value = target.weight,
@@ -2561,7 +2561,7 @@ private fun TrackerScreen(
                         singleLine = true,
                     )
                     GrowthUnitChoices(R.string.length_unit, lengthUnits, target.lengthUnit) {
-                        pendingGrowthEdit = target.copy(length = "", lengthUnit = it)
+                        if (target.lengthUnit != it) pendingGrowthEdit = target.copy(length = "", lengthUnit = it)
                     }
                     OutlinedTextField(
                         value = target.length,
@@ -2571,7 +2571,7 @@ private fun TrackerScreen(
                         singleLine = true,
                     )
                     GrowthUnitChoices(R.string.head_unit, lengthUnits, target.headUnit) {
-                        pendingGrowthEdit = target.copy(head = "", headUnit = it)
+                        if (target.headUnit != it) pendingGrowthEdit = target.copy(head = "", headUnit = it)
                     }
                     OutlinedTextField(
                         value = target.head,

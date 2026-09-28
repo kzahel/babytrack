@@ -308,6 +308,9 @@ shared with wasm: IndexedDB saves the generated device keys and exact claim
 before POST, and Rust checks that a committed relay result contains that
 candidate before marking it accepted. Lost responses retry the exact saved
 candidate after reload. Browser challenge/proof transport is still open.
+Once the claim commits, subsequent browser control reads use the saved
+pending-device key and continue the same verified sparse cursor. Repeated
+empty polls leave the durable prefix unchanged.
 IndexedDB keeps one exact sealed batch and an ordered draft queue. After
 signed acceptance, Rust seals the next draft against the new verified head;
 one IndexedDB transaction saves those exact bytes and removes the draft.

@@ -60,8 +60,9 @@ An independent browser recipient now fetches its committed grant from a
 disposable relay with its own signed request, saves the verified keys, and
 uploads an encrypted child after reload. Its earlier admission controls are
 fixture-fed. A separate browser invitation path now verifies a live relay
-prefix, saves a Rust-built claim and device keys before POST, and retries
-the exact candidate after a lost result. Later epochs, browser challenge/proof
+prefix, saves a Rust-built claim and device keys before POST, retries
+the exact candidate after a lost result, and polls as the pending device.
+Later epochs, browser challenge/proof
 transport, rejection repair,
 and full CLI/browser convergence remain open. A test-only native CLI driver now verifies the browser's accepted
 batch and sends an encrypted child back through the same relay; Chromium

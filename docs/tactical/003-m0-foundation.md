@@ -705,6 +705,10 @@ reload. A simulated lost commit response retries the saved bytes and reaches
 the same committed cursor. Browser challenge/proof transport and handoff into
 an admitted data view remain open; the admitted recipient case still starts
 from fixture-fed controls.
+After claim commit, the browser switches from the consumed invitation
+credential to its saved pending-device signing key for exact control reads.
+The real relay accepts repeated empty pending polls after reload without
+duplicating a page; challenge delivery and proof remain the next slice.
 The first manager's signing and epoch keys persist in IndexedDB and are
 reloaded for this narrow proof.
 An uncertain retry returns those bytes after reopen even if the caller's

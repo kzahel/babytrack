@@ -119,6 +119,30 @@ impl WasmInvitation {
             .map_err(debug_error)
     }
 
+    /// Once the claim commits, invitation reads close. The saved pending
+    /// device signs the same exact control path with its own credential.
+    pub fn sign_pending_control_read(
+        &self,
+        after: u64,
+        device_id: &[u8],
+        signing_seed: &[u8],
+        request_id: &[u8],
+    ) -> Result<Vec<u8>, JsError> {
+        let path = self.control_read_path(after)?;
+        sync_wire::sign_get_with_id(
+            self.bootstrap.family_id(),
+            self.chain
+                .as_ref()
+                .ok_or_else(|| JsError::new("genesis absent"))?
+                .relay_id(),
+            fixed(device_id, "pending device ID")?,
+            &fixed(signing_seed, "pending signing seed")?,
+            &path,
+            fixed(request_id, "request ID")?,
+        )
+        .map_err(debug_error)
+    }
+
     /// The caller saves this exact candidate and its four secrets before POST.
     pub fn prepare_claim(
         &self,

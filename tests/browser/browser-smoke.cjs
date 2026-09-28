@@ -536,7 +536,10 @@ async function run() {
       const wasm = await import('/babytrack_core_wasm.js');
       await wasm.default('/babytrack_core_wasm_bg.wasm');
       const { InvitationStore } = await import('/invitation-store.js');
+      const { relayGet } = await import('/relay-get.js');
       const store = await InvitationStore.open(wasm, data.fragment, 'babytrack-invitation-smoke');
+      const pending = await store.pullPending(relayGet);
+      const pendingRetry = await store.pullPending(relayGet);
       const verifier = await store.load();
       const result = { cursor: Number(verifier.control_cursor()),
         linkedIssue: verifier.linked_issue() };
@@ -562,9 +565,11 @@ async function run() {
       let tamperRejected = false;
       try { (await store.load()).free(); } catch { tamperRejected = true; }
       store.close();
-      return { ...result, wrongOriginRejected, tamperRejected };
+      return { ...result, pending, pendingRetry, wrongOriginRejected, tamperRejected };
     }, { fragment: invitationRelay.fragment, wrongOrigin: chain.bootstrap.fragment });
     assert.deepEqual(invitationReload, { cursor: 3, linkedIssue: true,
+      pending: { cursor: 3, hasMore: false },
+      pendingRetry: { cursor: 3, hasMore: false },
       wrongOriginRejected: true, tamperRejected: true });
     recipientRelay = await startRelay(true);
     relayPort = recipientRelay.port;

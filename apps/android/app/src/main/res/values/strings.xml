@@ -33,6 +33,8 @@
     <string name="timeline_care">Growth &amp; care</string>
     <string name="timeline_notes">Notes</string>
     <string name="log_diaper">Log diaper</string>
+    <string name="quick_wet_diaper">Wet now</string>
+    <string name="quick_wet_diaper_description">Log a wet diaper now</string>
     <string name="wet">Wet</string>
     <string name="dirty">Dirty</string>
     <string name="both">Both</string>

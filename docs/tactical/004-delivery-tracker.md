@@ -48,6 +48,8 @@ and medication corrections, plus child name and growth-detail, growth-entry,
 and completed sleep corrections, runs
 alongside M0 on emulators; its physical phone gates remain open.
 The diaper form includes wet, dirty, both, and dry logging choices.
+The top bar names the selected Family and child and has a wet-diaper-now shortcut above the long
+logging form; the Android UI smoke uses it before correcting that entry.
 After the first child, its creation fields collapse behind an add-another
 action so common logging begins higher on the screen.
 Running and completed sleep can carry an optional place through the shared

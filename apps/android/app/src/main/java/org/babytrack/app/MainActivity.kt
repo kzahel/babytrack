@@ -41,6 +41,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
@@ -55,7 +56,10 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
@@ -728,7 +732,35 @@ private fun TrackerScreen(
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.screen_title)) }) },
+        topBar = {
+            TopAppBar(
+                title = {
+                    val familyNumber = families.indexOfFirst { it.familyId.key() == selectedFamily } + 1
+                    Text(
+                        if (child != null && familyNumber > 0) {
+                            stringResource(R.string.family_with_child, familyNumber, child.name)
+                        } else stringResource(R.string.screen_title),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                actions = {
+                    if (family != null && child != null) {
+                        val description = stringResource(R.string.quick_wet_diaper_description)
+                        TextButton(
+                            modifier = Modifier.semantics { contentDescription = description },
+                            onClick = {
+                                change {
+                                    val at = nowTime()
+                                    if (activeShared) sharing.logDiaper(family, child.id, 1u.toUByte(), at)
+                                    else store.logDiaper(family, child.id, 1u.toUByte(), at)
+                                }
+                            },
+                        ) { Text(stringResource(R.string.quick_wet_diaper)) }
+                    }
+                },
+            )
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         Column(

@@ -129,6 +129,11 @@ caregiver switched to another child.
 The diaper form now exposes the core's dry kind alongside wet, dirty, and
 both, in two rows that fit larger text. The headed UI smoke logs a dry diaper
 and reads it back from the timeline.
+The top bar names the selected Family and child and offers a wet-diaper-now action,
+so the common quick log is reachable without scrolling past setup and sharing
+controls. It uses the current time while leaving a separately chosen
+backdated-entry time intact. The headed UI smoke uses this action for its
+first diaper, then corrects and deletes that same entry.
 After the first child exists, the child-creation fields collapse behind an
 explicit add-another-child action so daily logging starts higher on the
 screen. A Family with no children still shows the initial setup form; the

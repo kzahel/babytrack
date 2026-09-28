@@ -127,7 +127,7 @@ def main() -> None:
     tap(target, "View timeline", scroll=True)
     find(target, "No entries yet.")
     scroll_up(target, 12)
-    tap(target, "Wet", scroll=True)
+    tap(target, "Wet now")
     find(target, "Diaper · Wet", scroll=True)
     tap(target, "Edit diaper type", scroll=True)
     tap(target, "Dirty")

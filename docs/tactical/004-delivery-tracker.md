@@ -65,6 +65,10 @@ flow drains before the second device reads the manager's new child.
 Android can now share an invitation link through the system chooser. Opening
 that link or receiving a raw fragment through the text share target prefills
 an explicit join action without claiming automatically.
+After that action, the Android coordinator makes an immediate pass and
+continues claim, proof, grant, and history loading on foreground and scheduled
+sync opportunities. The debug screen no longer asks caregivers to press
+separate proof, history, challenge, or grant buttons.
 Ready joined Families now enter the normal Android Family switcher and full
 tracker; pending joins remain outside it.
 The daily-use surface now has a saved-timer home-screen widget and local
@@ -98,7 +102,7 @@ scrolls to that action; the complete local recovery flow and remote run
 | Next dependent slice | The first-cohort recheck and [focused general-authority advisory](003-m0-foundation.md#general-authority-advisory-pass-at-98fa0ea) passed. Relay restart replays public controls and accepted batch authority; a signed private checkpoint covers rejected-result and staging-reservation sets. Signed GETs, batch POSTs, manager controls, and later control HTTP writes use that ledger under a SQLite writer lock. Later enrollment after removal and epoch rotation passes on separate emulators. A second admitted manager now invites, grants, and removes a third device with rotation through relay HTTP and Android instrumentation. Later rotations, role changes, cancellation, browser outbox beyond the initial manager, and M0 exit review remain. |
 | Next independent review | Run one broader end-of-M0 recovery and mixed-client gate after its executable coverage closes. Focused advisory findings remain open without serial rechecks during feature development. Prioritize usable tracking and browser shared sync before another review cycle. |
 | Open advisory | The [automatic-status recheck](003-m0-foundation.md#advisory-automatic-status-recheck-at-ad42d78) found an own-claim lost-response ambiguity and a concurrent status-write race. FS37/FS77 regressions and repair remain due before real Family data. Durable streaming of large control history also remains open. |
-| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, local Android UI smoke, and document-picker recovery jobs are required on every push/PR. Run `36365855794` at `bc302c7` passed every required job, including the browser durable outbox and real-relay Android emulator. The browser pending-edit preview and Android quick-log slices pass locally; their remote run is pending. |
+| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, local Android UI smoke, and document-picker recovery jobs are required on every push/PR. Run `36365855794` at `bc302c7` passed every required job. The browser pending-edit preview, mixed native/browser relay exchange, and one-action Android join pass focused local checks; their combined remote run is pending. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.

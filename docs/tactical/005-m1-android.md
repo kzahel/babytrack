@@ -259,8 +259,9 @@ intended Family and child, and remains usable after process death.
   successive key rotations now pass a real-relay case. Pending-device
   removal and admitted-manager cancellation coverage remain open. A removed
   original manager now has a signed proof and private-copy path through the
-  Rust binding and Android coordinator; its tracker status and copy handoff
-  still need UI wiring.
+  Rust binding and Android coordinator. The tracker omits that removed source
+  from writable Family selection and offers a copy action that reuses an
+  existing removal copy. A focused UI tap check remains open.
 - [ ] Make invitation handoff usable through a share/link flow with trusted
   relay pinning and clear pending, accepted, blocked, and removed states.
   The share-sheet receive and custom-link paths now prefill without auto-claiming. Remove

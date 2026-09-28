@@ -51,6 +51,9 @@ The removed device verifies a signed removal notice, stops shared writes,
 and automatically copies pending edits into a private Family. A disposable
 relay and two separate emulator installations exercise the first-cohort
 join, reciprocal edits, offline pending work, removal, and private copy.
+If the original manager is later removed by a co-manager, it also verifies
+the notice, preserves offline edits in a private copy, and shows an
+access-ended Family card in the tracker.
 After relay restart and epoch rotation, the manager issues a later link and
 a fresh recipient installation joins through automatic wake steps, then
 uploads an encrypted event the manager reads. An Android real-relay test

@@ -1436,8 +1436,9 @@ rotation and continues encrypted writes at epoch three. Admitted-manager
 cancellation and broader recovery cases remain open. The removed original
 manager can now fetch a signed public removal proof and save an offline edit
 into one private copy; the three-device Android relay case verifies this.
-Presenting that archived Family and copy destination in the Android tracker
-remains open.
+The Android tracker excludes that source from writable Family selection,
+offers an access-ended copy action, and reuses the saved removal copy. A
+focused UI tap check of that card remains open.
 Ready replay can now start from a later recipient's admission grant at a
 rotated epoch: it verifies that epoch's committed keyring and membership,
 recovers earlier keys, then applies subsequent addressed rotations. A fixed

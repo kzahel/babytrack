@@ -208,6 +208,7 @@
     <string name="history_removed">This device’s removal was verified. The shared Family is read only here; you can still export its locally held data.</string>
     <string name="history_removed_copied">This device’s removal was verified. Delivery of the last upload is unconfirmed; locally held edits were saved in a new private Family. The original shared Family is read only.</string>
     <string name="history_removed_unsent">This device’s removal was verified. Offline edits were saved in a new private Family; they were never uploaded to the old one.</string>
+    <string name="removed_family_card">Access ended for shared Family %1$s. Locally held history is still available. Make an independent copy to continue logging.</string>
     <string name="history_removed_accepted">This device’s removal was verified. The last upload was accepted before removal. Locally held history was saved in a new private Family.</string>
     <string name="history_removed_rejected">This device’s removal was verified. The last upload was rejected; pending edits were saved in a new private Family.</string>
     <string name="shared_devices">Devices with verified access</string>

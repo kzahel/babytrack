@@ -80,6 +80,7 @@ import uniffi.babytrack_core_ffi.FamilyRef
 import uniffi.babytrack_core_ffi.NativeLocalStore
 import uniffi.babytrack_core_ffi.MedicationInput
 import uniffi.babytrack_core_ffi.PumpInput
+import uniffi.babytrack_core_ffi.RemovedDeviceRow
 import uniffi.babytrack_core_ffi.RestoredOriginRow
 import uniffi.babytrack_core_ffi.SharedSnapshotRow
 import uniffi.babytrack_core_ffi.SharedSyncRow
@@ -294,6 +295,7 @@ private data class PendingTemperatureEdit(
 )
 internal data class ScreenData(
     val families: List<FamilyRef>,
+    val removedFamilies: List<FamilyRef>,
     val familyChildNames: Map<String, String>,
     val activeFamilyKey: String?,
     val activeFamilyIsLocal: Boolean,
@@ -357,13 +359,17 @@ internal fun loadTrackerData(
     selectedRecipient: String?,
 ): ScreenData {
     val local = store.families()
+    val removedLocal = local.filter { sharing.isShared(it) && sharing.isRemoved(it) }
+    val activeLocal = local.filterNot { candidate ->
+        removedLocal.any { it.familyId.contentEquals(candidate.familyId) }
+    }
     val recipients = sharing.recipientFamilies()
     val recipient = recipients.find { it.familyId.key() == selectedRecipient } ?: recipients.firstOrNull()
     val readyJoined = recipients.mapNotNull { candidate ->
         runCatching { candidate to sharing.snapshot(candidate) }.getOrNull()
     }
     val familyChildNames = mutableMapOf<String, String>()
-    for (candidate in local) {
+    for (candidate in activeLocal) {
         val firstChild = runCatching {
             if (sharing.isShared(candidate)) sharing.snapshot(candidate).children.firstOrNull()?.name
             else store.children(candidate).firstOrNull()?.name
@@ -376,9 +382,9 @@ internal fun loadTrackerData(
     val joinedSnapshot = readyJoined.find {
         it.first.familyId.key() == recipient?.familyId?.key()
     }?.second
-    val shown = local + readyJoined.map { it.first }
+    val shown = activeLocal + readyJoined.map { it.first }
     val family = shown.find { it.familyId.key() == selectedFamily } ?: shown.firstOrNull()
-    val localFamily = family != null && local.any { it.familyId.key() == family.familyId.key() }
+    val localFamily = family != null && activeLocal.any { it.familyId.key() == family.familyId.key() }
     val recipientSnapshot = readyJoined.find { it.first.familyId.key() == family?.familyId?.key() }?.second
     val shared = recipientSnapshot != null || (family?.let(sharing::isShared) ?: false)
     val snapshot = recipientSnapshot ?: if (shared) sharing.snapshot(family ?: error("Shared Family absent")) else null
@@ -392,11 +398,11 @@ internal fun loadTrackerData(
             ?: store.timeline(family, child.id)
     } else emptyList()
     return ScreenData(
-        shown, familyChildNames, family?.familyId?.key(), localFamily, kids, history,
+        shown, removedLocal, familyChildNames, family?.familyId?.key(), localFamily, kids, history,
         if (!shared) family?.let(store::revision) ?: 0uL else 0uL,
         if (!shared) family?.let(store::restoredOrigin) else null,
         shared, snapshot, recipients, joinedSnapshot, unusedInvitationIds,
-        runningSleepCount(store, sharing, local, recipients),
+        runningSleepCount(store, sharing, activeLocal, recipients),
     )
 }
 
@@ -431,6 +437,7 @@ private fun TrackerScreen(
         if (it) version++
     }
     var families by remember { mutableStateOf<List<FamilyRef>>(emptyList()) }
+    var removedFamilies by remember { mutableStateOf<List<FamilyRef>>(emptyList()) }
     var familyChildNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var children by remember { mutableStateOf<List<ChildRow>>(emptyList()) }
     var entries by remember { mutableStateOf<List<ActivityRow>>(emptyList()) }
@@ -600,16 +607,20 @@ private fun TrackerScreen(
     val damagedBackupError = stringResource(R.string.damaged_backup_error)
     LaunchedEffect(foreground, selectedRecipient) {
         if (foreground) while (isActive) {
-            val (syncResult, terminalReasons) = withContext(Dispatchers.IO) {
+            val (syncResult, terminalReasons, managerRemovals) = withContext(Dispatchers.IO) {
                 var failed = false
                 var blocked = false
                 val stages = mutableMapOf<String, uniffi.babytrack_core_ffi.RecipientSyncRow>()
                 val terminals = mutableMapOf<String, InvitationTerminalReason>()
+                val removals = mutableMapOf<String, RemovedDeviceRow>()
                 for (family in store.families()) {
                     val origin = lastRelayOrigin(family)
-                    if (origin != null && sharing.isShared(family)) {
+                    if (origin != null && sharing.isShared(family) && !sharing.isRemoved(family)) {
                         runCatching { sharing.advanceManager(family, origin) }
-                            .onFailure { failed = true; if (it is SharedUploadBlocked) blocked = true }
+                            .onFailure {
+                                if (it is VerifiedManagerRemoval) removals[family.familyId.key()] = it.result
+                                else { failed = true; if (it is SharedUploadBlocked) blocked = true }
+                            }
                     }
                 }
                 for (family in sharing.recipientFamilies()) {
@@ -620,7 +631,7 @@ private fun TrackerScreen(
                             else { failed = true; if (it is SharedUploadBlocked) blocked = true }
                         }
                 }
-                Triple(failed, blocked, stages) to terminals
+                Triple(Triple(failed, blocked, stages), terminals, removals)
             }
             automaticSyncDelayed = syncResult.first
             automaticSyncBlocked = syncResult.second
@@ -629,6 +640,19 @@ private fun TrackerScreen(
                 joinStage = terminalInvitationMessage(context, reason)
                 showJoinForm = true
                 sharedSnapshot = null
+            }
+            managerRemovals[selectedFamily]?.let { removed ->
+                removed.privateCopy?.let { copy ->
+                    selectedFamily = copy.familyId.key()
+                    selectedChild = null
+                }
+                message = when {
+                    removed.privateCopy == null -> context.getString(R.string.history_removed)
+                    removed.pendingResult == 2.toUByte() -> context.getString(R.string.history_removed_accepted)
+                    removed.pendingResult == 3.toUByte() -> context.getString(R.string.history_removed_rejected)
+                    removed.pendingResult == 0.toUByte() -> context.getString(R.string.history_removed_unsent)
+                    else -> context.getString(R.string.history_removed_copied)
+                }
             }
             recipientStages[selectedRecipient]?.let { progress ->
                 if (progress.removed) sharedSnapshot = null
@@ -709,6 +733,7 @@ private fun TrackerScreen(
             val all = data.families
             val kids = data.children
             families = all
+            removedFamilies = data.removedFamilies
             familyChildNames = data.familyChildNames
             selectedFamily = all.find { it.familyId.key() == selectedFamily }?.familyId?.key() ?: all.firstOrNull()?.familyId?.key()
             activeFamilyIsLocal = data.activeFamilyIsLocal
@@ -926,6 +951,28 @@ private fun TrackerScreen(
                             else stringResource(R.string.family_with_child, index + 1, firstChild))
                     },
                 )
+            }
+            removedFamilies.forEach { source ->
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(stringResource(R.string.removed_family_card, source.familyId.key().take(8)))
+                        OutlinedButton(onClick = {
+                            scope.launch {
+                                runCatching { withContext(Dispatchers.IO) {
+                                    sharing.privateCopy(source, System.currentTimeMillis())
+                                } }.onSuccess { copy ->
+                                    selectedFamily = copy.familyId.key()
+                                    selectedChild = null
+                                    version++
+                                    message = context.getString(R.string.private_copy_created)
+                                }.onFailure { message = errorText }
+                            }
+                        }) { Text(stringResource(R.string.make_private_copy)) }
+                    }
+                }
             }
             OutlinedButton(onClick = {
                 scope.launch {

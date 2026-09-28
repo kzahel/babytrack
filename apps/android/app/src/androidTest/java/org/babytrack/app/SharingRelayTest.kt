@@ -720,6 +720,13 @@ class SharingRelayTest {
             assertTrue(runCatching { sharing.snapshot(manager) }.isFailure)
             NativeLocalStore.open(managerDb.absolutePath).use { local ->
                 assertTrue(local.children(copy).any { it.name == "Manager offline before removal" })
+                val screen = loadTrackerData(local, sharing,
+                    manager.familyId.joinToString("") { "%02x".format(it) }, null, null)
+                assertTrue(screen.removedFamilies.any { it.familyId.contentEquals(manager.familyId) })
+                assertTrue(screen.families.none { it.familyId.contentEquals(manager.familyId) })
+                assertTrue(screen.families.any { it.familyId.contentEquals(copy.familyId) })
+                assertArrayEquals(copy.familyId,
+                    sharing.privateCopy(manager, System.currentTimeMillis()).familyId)
             }
         }
     }

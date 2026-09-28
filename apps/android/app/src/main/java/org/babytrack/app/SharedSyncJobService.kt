@@ -29,9 +29,9 @@ class SharedSyncJobService : JobService() {
                         for (family in local.families()) {
                             if (Thread.currentThread().isInterrupted) return@use
                             val origin = origins.getString(family.familyId.keyForJob(), null)
-                            if (origin != null && sharing.isShared(family)) {
+                            if (origin != null && sharing.isShared(family) && !sharing.isRemoved(family)) {
                                 runCatching { sharing.advanceManager(family, origin) }
-                                    .onFailure { failed = true }
+                                    .onFailure { if (it !is VerifiedManagerRemoval) failed = true }
                             }
                         }
                         for (family in sharing.recipientFamilies()) {

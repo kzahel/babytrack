@@ -1846,12 +1846,29 @@ impl NativeSharedStore {
         now_ms: i64,
     ) -> Result<FamilyRef, BindingError> {
         let mut store = self.store.lock().map_err(|_| BindingError::LockPoisoned)?;
-        let ready = ready_session_for(&mut store, family.handle()?, &fixed(&wrapping_key)?)?;
+        let handle = family.handle()?;
+        if let Some(removal) = store.saved_removal(handle).map_err(rejected)?
+            && let Some(copy) = store
+                .removal_copy_of(handle, removal.transition_id)
+                .map_err(rejected)?
+        {
+            return Ok(copy.into());
+        }
+        let ready = ready_session_for(&mut store, handle, &fixed(&wrapping_key)?)?;
         Ok(
             babytrack_core::portable_file::private_copy_shared(&mut store, &ready, now_ms)
                 .map_err(rejected)?
                 .into(),
         )
+    }
+
+    pub fn is_removed(&self, family: FamilyRef) -> Result<bool, BindingError> {
+        self.store
+            .lock()
+            .map_err(|_| BindingError::LockPoisoned)?
+            .saved_removal(family.handle()?)
+            .map(|saved| saved.is_some())
+            .map_err(rejected)
     }
 
     pub fn is_shared(&self, family: FamilyRef) -> Result<bool, BindingError> {

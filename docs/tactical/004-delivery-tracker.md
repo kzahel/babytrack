@@ -30,7 +30,8 @@ grants to a third device, then removes it with key rotation, through relay
 HTTP and Android instrumentation. The same manager removes the original
 manager in a second rotation and continues writing at epoch three.
 The removed original manager now verifies its own removal and saves pending
-work into a private copy through the core; tracker presentation is pending.
+work into a private copy through the core. The tracker excludes the removed
+source from writable Family selection and offers an access-ended copy action.
 Pending-device removal, admitted-manager cancellation coverage, general browser shared
 outbox, complete vector coverage, and the M0 exit review remain open.
 The browser now persists a Rust-verified public control and accepted-batch

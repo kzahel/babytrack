@@ -19,6 +19,8 @@ import uniffi.babytrack_core_ffi.controlPageProgress
 import uniffi.babytrack_core_ffi.validateRelayOrigin
 
 internal class SharedUploadBlocked : IllegalStateException("Signed relay rejection retained the saved batch")
+internal class VerifiedManagerRemoval(val result: RemovedDeviceRow) :
+    IllegalStateException("Original manager removal verified")
 internal enum class InvitationTerminalReason { CLAIMED, CANCELED, EXPIRED, ISSUER_INVALID }
 internal class InvitationTerminal(val reason: InvitationTerminalReason) :
     IllegalStateException("Verified invitation terminal status: $reason")
@@ -323,6 +325,7 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
         withWrapping { wrapping -> core.privateCopyShared(family, wrapping, nowMs) }
 
     fun isShared(family: FamilyRef): Boolean = core.isShared(family)
+    fun isRemoved(family: FamilyRef): Boolean = core.isRemoved(family)
 
     fun snapshotForFragment(fragment: String): SharedSnapshotRow {
         val wrapping = keys.loadOrCreate()
@@ -468,6 +471,11 @@ internal class ShareCoordinator(context: Context, databasePath: String) : AutoCl
     fun syncAndUpload(family: FamilyRef, origin: String): SharedSyncRow {
         validateRelayOrigin(origin)
         val relay = RelayTransport(origin)
+        if (core.recipientFamilies().none {
+            it.familyId.contentEquals(family.familyId) && it.deviceId.contentEquals(family.deviceId)
+        }) {
+            checkInitialManagerRemoval(family, origin)?.let { throw VerifiedManagerRemoval(it) }
+        }
         return withWrapping { wrapping ->
             val reads = object : RelayReadTransport {
                 override fun get(path: String, auth: ByteArray): ByteArray = relay.get(path, auth)

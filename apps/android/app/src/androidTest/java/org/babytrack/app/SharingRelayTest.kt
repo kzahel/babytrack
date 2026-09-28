@@ -213,8 +213,9 @@ class SharingRelayTest {
             assertTrue("Invitation link should offer one join action", clicked)
 
             val saved = context.filesDir.resolve("families.db").absolutePath
+            val claimDeadline = System.currentTimeMillis() + 25_000
             var committed = false
-            while (System.currentTimeMillis() < deadline) {
+            while (System.currentTimeMillis() < claimDeadline) {
                 val key = DeviceWrappingKey(context).loadOrCreate()
                 committed = try {
                     NativeSharedStore.open(saved).use { core ->

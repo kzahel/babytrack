@@ -38,6 +38,7 @@ pub mod issue;
 pub mod local_api;
 pub mod membership;
 pub mod operation;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod pending_remove;
 pub mod portable_file;
 pub mod projection;

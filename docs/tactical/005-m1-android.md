@@ -292,7 +292,9 @@ intended Family and child, and remains usable after process death.
   stop a claimed keyless pending device from the access view without rotating
   the Family key. Separate real-relay cases tap the UI action and recover
   from a lost removal response; the recipient verifies the stopped join
-  after restart. Admitted-manager cancellation coverage remains open. A removed
+  after restart. An admitted manager also cancels an unused invitation in the
+  three-device real-relay flow, and a fresh link-only attempt verifies the
+  canceled reason. A removed
   original manager now has a signed proof and private-copy path through the
   Rust binding and Android coordinator. The tracker omits that removed source
   from writable Family selection and offers a copy action that reuses an

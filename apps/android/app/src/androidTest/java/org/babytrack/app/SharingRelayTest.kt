@@ -838,6 +838,34 @@ class SharingRelayTest {
             assertTrue(sharing.syncRecipientAndUpload(third).ready)
             assertTrue(sharing.snapshot(third).children.any { it.name == "Holder child" })
         }
+        val fourthDb = context.filesDir.resolve("handoff-fourth-$suffix.db")
+        val fourthLink = ShareCoordinator(context, holderDb.absolutePath).use { sharing ->
+            sharing.invite(holder, origin, 1u.toUByte())
+        }
+        val fourth = ShareCoordinator(context, fourthDb.absolutePath).use { it.claim(fourthLink).family }
+        ShareCoordinator(context, holderDb.absolutePath).use { sharing ->
+            assertTrue(sharing.syncRecipientAndUpload(holder).ready)
+            val pendingFourth = sharing.snapshot(holder).pendingDevices.single {
+                it.deviceId.contentEquals(fourth.deviceId)
+            }
+            val after = sharing.removePendingDevice(
+                holder, origin, pendingFourth.invitationId, fourth.deviceId,
+            )
+            assertTrue(after.pendingDevices.none { it.deviceId.contentEquals(fourth.deviceId) })
+        }
+        ShareCoordinator(context, fourthDb.absolutePath).use { sharing ->
+            assertEquals(8u.toUByte(), sharing.advanceRecipient(fourth).joinPhase)
+        }
+        val unusedLink = ShareCoordinator(context, holderDb.absolutePath).use { sharing ->
+            val link = sharing.invite(holder, origin, 1u.toUByte())
+            sharing.cancelInvitation(holder, origin, sharing.unusedInvitationIds(holder).single())
+            link
+        }
+        val canceledDb = context.filesDir.resolve("handoff-canceled-$suffix.db")
+        ShareCoordinator(context, canceledDb.absolutePath).use { sharing ->
+            assertEquals(InvitationTerminalReason.CANCELED,
+                (runCatching { sharing.claim(unusedLink) }.exceptionOrNull() as? InvitationTerminal)?.reason)
+        }
         ShareCoordinator(context, holderDb.absolutePath).use { sharing ->
             val promoted = sharing.changeDeviceRole(holder, origin, third.deviceId, 2u.toUByte())
             assertEquals(2u.toUByte(), promoted.devices.single {

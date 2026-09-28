@@ -11,9 +11,16 @@ import android.app.job.JobScheduler
 import android.os.ParcelFileDescriptor
 import android.widget.FrameLayout
 import android.widget.TextView
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.babytrack_core_ffi.NativeLocalStore
@@ -23,6 +30,7 @@ import uniffi.babytrack_core_ffi.previewInvitation
 
 @RunWith(AndroidJUnit4::class)
 class SharingRelayTest {
+    @get:Rule val composeRule = createEmptyComposeRule()
 
     @Test
     fun localTimerNotificationTracksSavedStartAndStop() {
@@ -220,27 +228,15 @@ class SharingRelayTest {
         val shortId = invitationId.joinToString("") { "%02x".format(it) }.take(8)
         ActivityScenario.launch(MainActivity::class.java).use {
             val button = context.getString(R.string.cancel_invitation, shortId)
-            val deadline = System.currentTimeMillis() + 25_000
-            var clicked = false
-            var scanForward = true
-            while (System.currentTimeMillis() < deadline) {
-                val root = instrumentation.uiAutomation.rootInActiveWindow
-                clicked = root?.clickTarget(button)?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
-                if (clicked) break
-                if (root?.scroll(scanForward) != true) scanForward = !scanForward
-                Thread.sleep(200)
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText(button).fetchSemanticsNodes().isNotEmpty()
             }
-            assertTrue("Unused invitation should have a cancel action", clicked)
+            composeRule.onNodeWithText(button).performScrollTo().performClick()
             val confirm = context.getString(R.string.confirm_cancel_invitation)
-            val confirmDeadline = System.currentTimeMillis() + 15_000
-            var confirmed = false
-            while (System.currentTimeMillis() < confirmDeadline) {
-                confirmed = instrumentation.uiAutomation.rootInActiveWindow
-                    ?.clickTarget(confirm)?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
-                if (confirmed) break
-                Thread.sleep(200)
+            composeRule.waitUntil(15_000) {
+                composeRule.onAllNodesWithText(confirm).fetchSemanticsNodes().isNotEmpty()
             }
-            assertTrue("Cancellation should require explicit confirmation", confirmed)
+            composeRule.onNodeWithText(confirm).performClick()
             val committedDeadline = System.currentTimeMillis() + 25_000
             var canceled = false
             while (System.currentTimeMillis() < committedDeadline) {
@@ -329,18 +325,10 @@ class SharingRelayTest {
         }
         ActivityScenario.launch<MainActivity>(link).use {
             val label = context.getString(R.string.join_or_retry)
-            val deadline = System.currentTimeMillis() + 25_000
-            var clicked = false
-            while (System.currentTimeMillis() < deadline) {
-                val root = instrumentation.uiAutomation.rootInActiveWindow
-                val button = root?.clickTarget(label)
-                if (button != null) {
-                    clicked = button.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                    if (clicked) break
-                }
-                Thread.sleep(200)
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty()
             }
-            assertTrue("Invitation link should bring its one join action into view", clicked)
+            composeRule.onNodeWithText(label).assertIsDisplayed().performClick()
 
             val saved = context.filesDir.resolve("families.db").absolutePath
             val claimDeadline = System.currentTimeMillis() + 25_000
@@ -416,30 +404,10 @@ class SharingRelayTest {
         return (0 until childCount).any { index -> getChild(index)?.containsText(text) == true }
     }
 
-    private fun AccessibilityNodeInfo.clickTarget(text: String): AccessibilityNodeInfo? {
-        if (this.text?.toString() == text) {
-            var target: AccessibilityNodeInfo? = this
-            while (target != null && !target.isClickable) target = target.parent
-            if (target != null) return target
-        }
-        for (index in 0 until childCount) {
-            getChild(index)?.clickTarget(text)?.let { return it }
-        }
-        return null
-    }
-
     private fun AccessibilityNodeInfo.scrollForward(): Boolean {
         if (isScrollable && performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) return true
         return (0 until childCount).any { index -> getChild(index)?.scrollForward() == true }
     }
-
-    private fun AccessibilityNodeInfo.scrollBackward(): Boolean {
-        if (isScrollable && performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)) return true
-        return (0 until childCount).any { index -> getChild(index)?.scrollBackward() == true }
-    }
-
-    private fun AccessibilityNodeInfo.scroll(forward: Boolean): Boolean =
-        if (forward) scrollForward() else scrollBackward()
 
     private fun wakeEmulatorScreen() {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation

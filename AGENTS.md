@@ -148,7 +148,8 @@ have real-relay authority and encrypted exchange tests. The Playwright
 Chromium smoke exercises wasm and IndexedDB with fixture data across reload
 and rollback. Its local
 journal adapter also exercises validated operation append, duplicate
-rejection, Family isolation, and reload. Add gates for the remaining
-behavior with M0 work. `core/tests/sqlite_store.rs` covers
-native local-only append, restart replay, HLC transaction, and Family
-isolation; accepted shared history and outbox are not implemented yet.
+rejection, Family isolation, and reload. Native SQLite tests cover local
+append, shared history, and durable outbox. The current evidence and
+remaining gates live in [003](docs/tactical/003-m0-foundation.md),
+[004](docs/tactical/004-delivery-tracker.md), and
+[005](docs/tactical/005-m1-android.md).

@@ -175,7 +175,9 @@ fresh invitation link, taps that one action, and verifies the recipient claim
 is committed and saved; the coordinator suites cover the later handshake.
 Deep links place this join card first until history is ready, so the one
 action and pending stage are visible without searching through the tracker;
-the focused UI check taps it without scrolling.
+the focused Compose UI check asserts it is visible and taps it without
+scrolling. The invitation-cancel UI check also uses Compose semantics to
+find and scroll to its action.
 An admitted manager now exposes an invitation action in the selected Family's
 access section and uses the same foreground and scheduled coordinator to answer
 claims and proofs. A real-relay instrumentation case uses three independent

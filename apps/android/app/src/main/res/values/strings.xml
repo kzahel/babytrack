@@ -28,6 +28,9 @@
     <string name="today_sleep">Logged sleep: %1$d h %2$d min</string>
     <string name="today_feeds">Feeds: %1$d · bottle %2$d mL</string>
     <string name="today_diapers">Diapers: %1$d · wet %2$d · dirty %3$d</string>
+    <string name="last_feed">Last feed: %1$s</string>
+    <string name="last_diaper">Last diaper: %1$s</string>
+    <string name="running_sleep_since">Sleep running since %1$s</string>
     <string name="no_entries">No entries yet.</string>
     <string name="no_matching_entries">No entries in this view.</string>
     <string name="timeline_all">All</string>

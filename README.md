@@ -39,8 +39,9 @@ amounts can be corrected without replacing the entry. Completed entries can
 be logged at an earlier time, saved instantaneous entries can have their time
 corrected, completed sleep and pumping sessions can move without changing
 duration, and bottle amount/content can be corrected on
-the same event. A selected-child Today card shows sleep, feed, bottle,
-and diaper totals. A home-screen widget
+the same event. A selected-child Today card above the logging forms shows
+sleep, feed, bottle, and diaper totals, recent feed/diaper times, and a
+running sleep stop action. A home-screen widget
 shows saved running sleep timers, and the access list can label each enrolled
 device on this phone. Child birth date and growth-chart sex can be corrected
 on the existing child. The app can promote

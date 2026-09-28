@@ -272,6 +272,12 @@ This is still a development flow, not a released product flow.
   midnight boundary, clips an open timer at the current instant, and excludes
   deleted entries and other children. A Compose check reads saved bottle and
   diaper totals, and the two-emulator flow checks a shared diaper summary.
+  The card now sits immediately below the selected child, ahead of the long
+  logging form. It shows the last saved feed and diaper times across the
+  child's history and provides a stop action for the latest running sleep.
+  The focused emulator check stops that timer from the card and verifies the
+  saved end. A child switch hides stale prior-child records while the new
+  projection loads; the same check finds zero totals on a second child.
   Preserve unknown fields and exact Family/child targets. Keep clinical
   recommendations out of the UI.
   WHO publishes the growth reference tables, but the terms for bundling those

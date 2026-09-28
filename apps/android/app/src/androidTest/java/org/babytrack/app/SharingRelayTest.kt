@@ -16,6 +16,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import org.junit.Assert.assertArrayEquals
@@ -28,6 +29,8 @@ import uniffi.babytrack_core_ffi.NativeLocalStore
 import uniffi.babytrack_core_ffi.NativeSharedStore
 import uniffi.babytrack_core_ffi.ActivityWhen
 import uniffi.babytrack_core_ffi.previewInvitation
+import java.text.DateFormat
+import java.util.Date
 
 @RunWith(AndroidJUnit4::class)
 class SharingRelayTest {
@@ -39,12 +42,14 @@ class SharingRelayTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val db = context.filesDir.resolve("families.db")
         val now = System.currentTimeMillis()
-        val (family, child) = NativeLocalStore.open(db.absolutePath).use { local ->
+        val (family, child, timer) = NativeLocalStore.open(db.absolutePath).use { local ->
             val family = local.createFamily(now)
             val child = local.addChild(family, "Summary child", now)
             local.logBottleMl(family, child, 90, 2u.toUByte(), ActivityWhen(now, 0, now))
             local.logDiaper(family, child, 3u.toUByte(), ActivityWhen(now, 0, now))
-            family to child
+            val timer = local.startSleep(family, child, ActivityWhen(now - 600_000L, 0, now))
+            local.addChild(family, "Other summary child", now)
+            Triple(family, child, timer)
         }
         context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
             .edit().putString("family", family.familyId.joinToString("") { "%02x".format(it) })
@@ -52,11 +57,38 @@ class SharingRelayTest {
         ActivityScenario.launch(MainActivity::class.java).use {
             val feeds = context.getString(R.string.today_feeds, 1L, 90L)
             val diapers = context.getString(R.string.today_diapers, 1L, 1L, 1L)
+            val timeText = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+            val lastTime = timeText.format(Date(now))
+            val sleepTime = timeText.format(Date(now - 600_000L))
             composeRule.waitUntil(25_000) {
                 composeRule.onAllNodesWithText(feeds).fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onNodeWithText(feeds).performScrollTo().assertIsDisplayed()
             composeRule.onNodeWithText(diapers).performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithText(context.getString(R.string.last_feed, lastTime))
+                .performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithText(context.getString(R.string.last_diaper, lastTime))
+                .performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithText(context.getString(R.string.running_sleep_since,
+                sleepTime)).performScrollTo().assertIsDisplayed()
+            composeRule.onAllNodesWithText(context.getString(R.string.stop_sleep)).onFirst()
+                .performScrollTo().performClick()
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText(context.getString(R.string.running_sleep_since,
+                    sleepTime)).fetchSemanticsNodes().isEmpty()
+            }
+            composeRule.onNodeWithText("Other summary child").performScrollTo().performClick()
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText(context.getString(R.string.today_feeds, 0L, 0L))
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+            assertTrue(composeRule.onAllNodesWithText(context.getString(R.string.last_feed,
+                lastTime)).fetchSemanticsNodes().isEmpty())
+        }
+        NativeLocalStore.open(db.absolutePath).use { local ->
+            assertTrue(local.timeline(family, child).any {
+                it.id.contentEquals(timer) && it.endUtcMs != null
+            })
         }
     }
 

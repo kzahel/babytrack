@@ -417,6 +417,7 @@ internal data class ScreenData(
     val removedFamilies: List<FamilyRef>,
     val familyChildNames: Map<String, String>,
     val activeFamilyKey: String?,
+    val activeChildKey: String?,
     val activeFamilyIsLocal: Boolean,
     val children: List<ChildRow>,
     val entries: List<ActivityRow>,
@@ -543,7 +544,7 @@ internal fun loadTrackerData(
     } else null
     return ScreenData(
         shown, (removedLocal + removedRecipients).distinctBy { it.familyId.key() },
-        familyChildNames, family?.familyId?.key(), localFamily, kids, history,
+        familyChildNames, family?.familyId?.key(), child?.id?.key(), localFamily, kids, history,
         if (!shared) family?.let(store::revision) ?: 0uL else 0uL,
         if (!shared) family?.let(store::restoredOrigin) else null,
         shared, snapshot, recipients, readyJoined.mapTo(mutableSetOf()) { it.first.familyId.key() },
@@ -597,6 +598,7 @@ private fun TrackerScreen(
     var activeSharedSnapshot by remember { mutableStateOf<SharedSnapshotRow?>(null) }
     var activeUnusedInvitationIds by remember { mutableStateOf<List<ByteArray>?>(emptyList()) }
     var loadedFamilyKey by remember { mutableStateOf<String?>(null) }
+    var loadedChildKey by remember { mutableStateOf<String?>(null) }
     var activeFamilyIsLocal by remember { mutableStateOf(false) }
     var saveStatusVersion by remember { mutableStateOf(0) }
     val selectionPrefs = remember { context.getSharedPreferences("tracker_selection", Context.MODE_PRIVATE) }
@@ -912,6 +914,7 @@ private fun TrackerScreen(
             activeSharedSnapshot = data.mainSharedSnapshot
             activeUnusedInvitationIds = data.unusedInvitationIds
             loadedFamilyKey = data.activeFamilyKey
+            loadedChildKey = data.activeChildKey
             recipientFamilies = data.recipients
             readyRecipientKeys = data.readyRecipientKeys
             selectedRecipient = data.recipients.find { it.familyId.key() == selectedRecipient }
@@ -927,6 +930,7 @@ private fun TrackerScreen(
     }
     val family = families.find { it.familyId.key() == selectedFamily }
     val child = children.find { it.id.key() == selectedChild }
+        ?.takeIf { loadedFamilyKey == selectedFamily }
     val activeShared = isShared && loadedFamilyKey == selectedFamily
     val completed = remember(selectedFamily, saveStatusVersion) { family?.let(lastSave) }
     val filename = stringResource(R.string.backup_filename)
@@ -1377,6 +1381,42 @@ private fun TrackerScreen(
                     )
                 }
                 if (child != null) {
+                    if (loadedChildKey == selectedChild && daySummary != null &&
+                        daySummaryDay == LocalDate.now(ZoneId.systemDefault())) {
+                        val today = daySummary!!
+                        val sleepMinutes = today.sleepMs.toLong() / 60_000L
+                        val lastFeed = entries.filter {
+                            it.kind == "feed.breast" || it.kind == "feed.bottle" || it.kind == "feed.solids"
+                        }
+                            .maxByOrNull { it.startUtcMs }
+                        val lastDiaper = entries.filter { it.kind == "diaper" }
+                            .maxByOrNull { it.startUtcMs }
+                        val runningSleep = entries.filter { it.kind == "sleep" && it.endUtcMs == null }
+                            .maxByOrNull { it.startUtcMs }
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(stringResource(R.string.today_summary), fontWeight = FontWeight.SemiBold)
+                                Text(stringResource(R.string.today_sleep, sleepMinutes / 60, sleepMinutes % 60))
+                                Text(stringResource(R.string.today_feeds, today.feedCount.toLong(),
+                                    today.bottleMl.toLong()))
+                                Text(stringResource(R.string.today_diapers, today.diaperCount.toLong(),
+                                    today.wetDiaperCount.toLong(), today.dirtyDiaperCount.toLong()))
+                                lastFeed?.let { Text(stringResource(R.string.last_feed, savedTime(it.startUtcMs))) }
+                                lastDiaper?.let { Text(stringResource(R.string.last_diaper, savedTime(it.startUtcMs))) }
+                                runningSleep?.let { timer ->
+                                    Text(stringResource(R.string.running_sleep_since, savedTime(timer.startUtcMs)))
+                                    Button(onClick = {
+                                        val end = System.currentTimeMillis()
+                                        val endOffset = (TimeZone.getDefault().getOffset(end) / 60_000).toShort()
+                                        change {
+                                            if (activeShared) sharing.stopSleep(family, timer.childId, timer.id, end, endOffset)
+                                            else store.stopSleep(family, timer.childId, timer.id, end, endOffset, end)
+                                        }
+                                    }) { Text(stringResource(R.string.stop_sleep)) }
+                                }
+                            }
+                        }
+                    }
                     OutlinedButton(onClick = {
                         scope.launch { scrollState.animateScrollTo(timelineTop) }
                     }) { Text(stringResource(R.string.view_timeline)) }
@@ -1997,20 +2037,6 @@ private fun TrackerScreen(
                             timelineTop = it.positionInParent().y.roundToInt()
                         },
                         style = MaterialTheme.typography.titleLarge)
-                    if (daySummary != null && daySummaryDay == LocalDate.now(ZoneId.systemDefault())) {
-                        val today = daySummary!!
-                        val sleepMinutes = today.sleepMs.toLong() / 60_000L
-                        Card(Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(stringResource(R.string.today_summary), fontWeight = FontWeight.SemiBold)
-                                Text(stringResource(R.string.today_sleep, sleepMinutes / 60, sleepMinutes % 60))
-                                Text(stringResource(R.string.today_feeds, today.feedCount.toLong(),
-                                    today.bottleMl.toLong()))
-                                Text(stringResource(R.string.today_diapers, today.diaperCount.toLong(),
-                                    today.wetDiaperCount.toLong(), today.dirtyDiaperCount.toLong()))
-                            }
-                        }
-                    }
                     listOf(
                         TimelineFilter.ALL to R.string.timeline_all,
                         TimelineFilter.FEEDS to R.string.timeline_feeds,
@@ -2027,9 +2053,10 @@ private fun TrackerScreen(
                             }
                         }
                     }
-                    val visibleEntries = entries.filter { timelineFilter.includes(it.kind) }
+                    val currentEntries = if (loadedChildKey == selectedChild) entries else emptyList()
+                    val visibleEntries = currentEntries.filter { timelineFilter.includes(it.kind) }
                     if (visibleEntries.isEmpty()) Text(stringResource(
-                        if (entries.isEmpty()) R.string.no_entries else R.string.no_matching_entries))
+                        if (currentEntries.isEmpty()) R.string.no_entries else R.string.no_matching_entries))
                     var previousDay: LocalDate? = null
                     visibleEntries.forEach { entry ->
                         val day = Instant.ofEpochMilli(entry.startUtcMs)

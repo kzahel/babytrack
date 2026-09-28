@@ -139,14 +139,7 @@ jobs:
           arch: x86_64
           target: default
           disable-animations: true
-          script: |
-            bash scripts/check_android_relay_emulator.sh
-            if [ "$GITHUB_EVENT_NAME" = "schedule" ] || [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-              python3 scripts/check_android_ui_smoke.py
-            else
-              python3 scripts/check_android_ui_smoke.py --quick
-            fi
-            python3 scripts/check_android_recovery_ui.py
+          script: bash scripts/check_android_ci_emulator.sh
 
   required:
     name: Required checks

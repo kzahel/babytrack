@@ -24,6 +24,6 @@ tactical with its current status.
   owns the two-physical-phone gate and remaining daily-use UI, import,
   accessibility, and recovery work.
 - [006: M2 responsive web client](006-m2-web.md) — local preview and
-  native-managed first, later, and rotated-epoch joins implemented; web-origin
-  sharing and web trust-boundary gate remain open; verified removal, private
-  copy, and file recovery pass browser UI flows.
+  native-managed first, later, and rotated-epoch joins implemented; their
+  bounded web trust review passed. Web-origin sharing remains open; verified
+  removal, private copy, and file recovery pass browser UI flows.

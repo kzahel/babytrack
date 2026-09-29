@@ -371,9 +371,10 @@ touches an app store until M5.
    browser join/sync flow, including later key epochs, are in
    [006](tactical/006-m2-web.md); verified removal and private-copy recovery
    also pass a real-relay flow, as does readable file recovery into a new
-   local Family. Web-origin sharing and the web trust-boundary gate remain
-   open. A
-   disposable-data, opt-in preview may be deployed early for flow checks
+   local Family. The bounded native-managed web trust review passed at
+   `fa2bcee`; web-origin sharing remains open and needs its own boundary
+   recheck when implemented. A disposable-data, opt-in preview may be
+   deployed early for flow checks
    while public hosting remains M5.
 4. **M3, iOS on our own devices.** Parity with Android, including Live
    Activities, run from Xcode. Free provisioning profiles expire after 7 days

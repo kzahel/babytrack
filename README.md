@@ -30,10 +30,11 @@ Family/child creation, diaper, bottle, note, and timed left/right breast
 feeding with pause and same-entry correction. A browser profile can now join
 an Android-managed Family through an invitation, receive encrypted history,
 and log or edit while offline for later relay upload. First, later, and
-rotated-epoch joins pass a real-relay UI smoke. Creating shared
-Families and invitations in web and the web trust-boundary review remain M2
-work. Verified removal with a pending browser edit creates one independent
-local copy and leaves the old Family as an archive. Readable browser exports
+rotated-epoch joins pass a real-relay UI smoke. The bounded native-managed web
+trust review passed. Creating shared Families and invitations in web remains
+M2 work and needs its own boundary recheck. Verified removal with a pending
+browser edit creates one independent local copy and leaves the old Family as
+an archive. Readable browser exports
 restore current state into a new local Family.
 See [006](docs/tactical/006-m2-web.md).
 

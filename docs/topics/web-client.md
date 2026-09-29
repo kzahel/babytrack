@@ -1,8 +1,8 @@
 # Web client
 
 Status: M2 local tracking, native-managed shared joining, verified removal,
-and readable file recovery are implemented; web-origin sharing and the
-security gate remain open.
+and readable file recovery are implemented; their bounded web trust review
+passed. Web-origin sharing remains open.
 The [MVP plan](../mvp-plan.md#milestones) owns milestone scope and the
 [Family sharing contract](family-sharing-and-trust.md) owns access promises.
 [006](../tactical/006-m2-web.md) owns delivery evidence.
@@ -92,8 +92,10 @@ equal `location.origin`. Product web and relay routes therefore share one
 canonical HTTPS origin; separate hostnames would require a reviewed protocol
 and client change. The hosted code can access decrypted Family data while it
 runs, so compromised delivered code can compromise a browser installation.
-Review CSP, served assets, key storage, and same-origin routing at the M2
-security gate before relying on web sharing with real data.
+The bounded native-managed web trust review is recorded in
+[006](../tactical/006-m2-web.md#bounded-native-managed-web-gate-at-fa2bcee).
+Review any new browser-origin authority path before relying on it with real
+data.
 
 ## Validation and reconsideration
 

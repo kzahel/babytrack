@@ -483,6 +483,11 @@ for visual review, without a brittle pixel-diff gate at this maturity.
 Remote run `36435229528` at `6deceec` passed the 22-case relay suite, short
 UI path, file recovery, and all required build jobs after this split. Record
 local emulator, physical phone, and observed remote CI results separately.
+At `fa2bcee`, required run `36581133204` passed on attempt 2. Attempt 1's
+unchanged emulator test timed out waiting 25 seconds for the pending-device
+removal confirmation in `managerStopsPendingDeviceFromAccessUi`; the rerun
+passed. If this recurs, capture the screen semantics and relay outcome at the
+wait before changing product behavior or widening timeouts.
 The M0 end review in [003](003-m0-foundation.md)
 must pass before using real Family data. At the two-phone gate, report
 observable flow status and unresolved risks to the user; routine code and

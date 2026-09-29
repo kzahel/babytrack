@@ -26,7 +26,7 @@ port, new activity types, or pixel-diff approval gate in this workstream.
 2. [x] Separate the Activity/platform entry point and state/action controller
    from rendering; extract focused capture forms and shared presentation
    helpers. Keep side effects in the controller.
-3. [ ] Extract Today, History, Family, and child-profile presentation with
+3. [x] Extract Today, History, Family, and child-profile presentation with
    explicit state/action boundaries. Preserve existing route and dialog
    behavior; expose fixture-renderable screen content.
 4. [ ] Add deterministic synthetic fixtures for first run/empty, typical day,
@@ -64,3 +64,9 @@ Implementation and validation results will be recorded with each slice.
   Android unit tests and both debug APK builds pass locally (Java 17,
   offline dependencies). The existing controller retains the save/timer and
   edit actions; Family/dialog extraction and gallery rendering follow.
+
+- Slice 3: Family, shared chrome, child profiles, and correction dialogs now
+  expose rendering boundaries. Capture/correction action adapters and
+  remembered drafts are separated from route/platform coordination; the
+  route retains the coroutine scope so navigation does not cancel a save.
+  MainActivity is 148 lines. Android unit tests and both APK builds pass.

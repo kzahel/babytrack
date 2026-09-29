@@ -10,8 +10,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -50,8 +50,9 @@ import java.time.temporal.ChronoUnit
 import java.util.Date
 
 internal fun childAgeLabel(context: Context, birthDate: String): String {
-    val birth = runCatching { LocalDate.parse(birthDate) }.getOrNull()
-        ?: return context.getString(R.string.child_age_unknown)
+    val birth =
+        runCatching { LocalDate.parse(birthDate) }.getOrNull()
+            ?: return context.getString(R.string.child_age_unknown)
     val today = LocalDate.now(ZoneId.systemDefault())
     if (birth.isAfter(today)) return context.getString(R.string.child_age_unknown)
     val period = Period.between(birth, today)
@@ -66,23 +67,33 @@ internal fun childAgeLabel(context: Context, birthDate: String): String {
             val months = period.years * 12 + period.months
             context.resources.getQuantityString(R.plurals.child_age_months, months, months)
         }
-        else -> context.resources.getQuantityString(R.plurals.child_age_years, period.years, period.years)
+        else ->
+            context.resources.getQuantityString(
+                R.plurals.child_age_years,
+                period.years,
+                period.years,
+            )
     }
 }
 
 internal fun birthDateLabel(context: Context, isoDate: String): String =
     runCatching {
-        val instant = LocalDate.parse(isoDate).atStartOfDay(ZoneId.systemDefault()).toInstant()
-        DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date.from(instant))
-    }.getOrElse { context.getString(R.string.birth_date_not_set) }
+            val instant = LocalDate.parse(isoDate).atStartOfDay(ZoneId.systemDefault()).toInstant()
+            DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date.from(instant))
+        }
+        .getOrElse { context.getString(R.string.birth_date_not_set) }
 
 private fun chooseBirthDate(context: Context, isoDate: String, onSelected: (String) -> Unit) {
     val day = runCatching { LocalDate.parse(isoDate) }.getOrElse { LocalDate.now() }
-    DatePickerDialog(context, { _, year, month, date ->
-        onSelected(LocalDate.of(year, month + 1, date).toString())
-    }, day.year, day.monthValue - 1, day.dayOfMonth).apply {
-        datePicker.maxDate = System.currentTimeMillis()
-    }.show()
+    DatePickerDialog(
+            context,
+            { _, year, month, date -> onSelected(LocalDate.of(year, month + 1, date).toString()) },
+            day.year,
+            day.monthValue - 1,
+            day.dayOfMonth,
+        )
+        .apply { datePicker.maxDate = System.currentTimeMillis() }
+        .show()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -101,80 +112,173 @@ internal fun ChildProfileScreen(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Scaffold(
-                topBar = {
-                    TopAppBar(
-                        title = { Text(stringResource(if (editing) R.string.edit_child_profile else R.string.create_child_profile)) },
-                        navigationIcon = {
-                            IconButton(onClick = onDismiss) {
-                                Icon(painterResource(R.drawable.ic_back), contentDescription = stringResource(R.string.back))
-                            }
-                        },
-                    )
-                },
-                bottomBar = {
-                    Surface(Modifier.navigationBarsPadding(), shadowElevation = 8.dp) {
-                        Column {
-                            Button(
-                                onClick = onSave,
-                                enabled = name.isNotBlank() && !saving,
-                                modifier = Modifier.fillMaxWidth().padding(16.dp).heightIn(min = 56.dp),
-                            ) { Text(stringResource(if (editing) R.string.save_changes else R.string.add_child)) }
-                            Spacer(Modifier.height(40.dp))
-                        }
-                    }
-                },
-            ) { padding: PaddingValues ->
-                Column(
-                    modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())
-                        .padding(horizontal = 20.dp, vertical = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
-                ) {
-                    Box(
-                        modifier = Modifier.align(Alignment.CenterHorizontally).size(88.dp)
-                            .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        ChildProfileContent(
+            ChildProfileUiState(
+                editing,
+                name,
+                birthDate,
+                sex,
+                saving,
+                canClearBirthDate,
+                childAgeLabel(context, birthDate),
+            ),
+            ChildProfileActions(
+                onNameChange,
+                { chooseBirthDate(context, birthDate, onBirthDateChange) },
+                onBirthDateChange,
+                onSexChange,
+                onSave,
+                onDismiss,
+            ),
+        )
+    }
+}
+
+internal data class ChildProfileUiState(
+    val editing: Boolean,
+    val name: String,
+    val birthDate: String,
+    val sex: UByte,
+    val saving: Boolean,
+    val canClearBirthDate: Boolean,
+    val ageLabel: String,
+)
+
+internal data class ChildProfileActions(
+    val onNameChange: (String) -> Unit = {},
+    val onChooseBirthDate: () -> Unit = {},
+    val onBirthDateChange: (String) -> Unit = {},
+    val onSexChange: (UByte) -> Unit = {},
+    val onSave: () -> Unit = {},
+    val onDismiss: () -> Unit = {},
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ChildProfileContent(
+    state: ChildProfileUiState,
+    actions: ChildProfileActions,
+    scrollState: androidx.compose.foundation.ScrollState = rememberScrollState(),
+) {
+    val context = LocalContext.current
+    val editing = state.editing
+    val name = state.name
+    val birthDate = state.birthDate
+    val sex = state.sex
+    val saving = state.saving
+    val canClearBirthDate = state.canClearBirthDate
+    val ageLabel = state.ageLabel
+    val onNameChange = actions.onNameChange
+    val onChooseBirthDate = actions.onChooseBirthDate
+    val onBirthDateChange = actions.onBirthDateChange
+    val onSexChange = actions.onSexChange
+    val onSave = actions.onSave
+    val onDismiss = actions.onDismiss
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
                         Text(
-                            name.trim().firstOrNull()?.uppercase() ?: "?",
-                            style = MaterialTheme.typography.headlineLarge,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            stringResource(
+                                if (editing) R.string.edit_child_profile
+                                else R.string.create_child_profile
+                            )
                         )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                painterResource(R.drawable.ic_back),
+                                contentDescription = stringResource(R.string.back),
+                            )
+                        }
+                    },
+                )
+            },
+            bottomBar = {
+                Surface(Modifier.navigationBarsPadding(), shadowElevation = 8.dp) {
+                    Column {
+                        Button(
+                            onClick = onSave,
+                            enabled = name.isNotBlank() && !saving,
+                            modifier = Modifier.fillMaxWidth().padding(16.dp).heightIn(min = 56.dp),
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (editing) R.string.save_changes else R.string.add_child
+                                )
+                            )
+                        }
+                        Spacer(Modifier.height(40.dp))
                     }
+                }
+            },
+        ) { padding: PaddingValues ->
+            Column(
+                modifier =
+                    Modifier.fillMaxSize()
+                        .padding(padding)
+                        .verticalScroll(scrollState)
+                        .padding(horizontal = 20.dp, vertical = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                Box(
+                    modifier =
+                        Modifier.align(Alignment.CenterHorizontally)
+                            .size(88.dp)
+                            .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Text(
-                        childAgeLabel(context, birthDate),
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        name.trim().firstOrNull()?.uppercase() ?: "?",
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
-                    HorizontalDivider()
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { onNameChange(it.take(16 * 1024)) },
-                        label = { Text(stringResource(R.string.child_name)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(stringResource(R.string.birth_date), fontWeight = FontWeight.SemiBold)
-                        OutlinedButton(
-                            onClick = { chooseBirthDate(context, birthDate, onBirthDateChange) },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                        ) { Text(birthDateLabel(context, birthDate)) }
-                        if (birthDate.isNotBlank() && canClearBirthDate) TextButton(
-                            onClick = { onBirthDateChange("") },
-                        ) { Text(stringResource(R.string.clear_birth_date)) }
+                }
+                Text(
+                    ageLabel,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                HorizontalDivider()
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { onNameChange(it.take(16 * 1024)) },
+                    label = { Text(stringResource(R.string.child_name)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.birth_date), fontWeight = FontWeight.SemiBold)
+                    OutlinedButton(
+                        onClick = onChooseBirthDate,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) {
+                        Text(birthDateLabel(context, birthDate))
                     }
-                    HorizontalDivider()
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(stringResource(R.string.growth_chart_sex), fontWeight = FontWeight.SemiBold)
-                        listOf(
+                    if (birthDate.isNotBlank() && canClearBirthDate)
+                        TextButton(onClick = { onBirthDateChange("") }) {
+                            Text(stringResource(R.string.clear_birth_date))
+                        }
+                }
+                HorizontalDivider()
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        stringResource(R.string.growth_chart_sex),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    listOf(
                             1u.toUByte() to R.string.sex_female,
                             2u.toUByte() to R.string.sex_male,
                             3u.toUByte() to R.string.sex_unspecified,
-                        ).forEach { (code, label) ->
+                        )
+                        .forEach { (code, label) ->
                             FilterChip(
                                 selected = sex == code,
                                 onClick = { onSexChange(code) },
@@ -182,7 +286,6 @@ internal fun ChildProfileScreen(
                                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                             )
                         }
-                    }
                 }
             }
         }

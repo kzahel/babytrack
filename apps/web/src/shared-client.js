@@ -154,6 +154,19 @@ export async function rememberJoin(wasm, value) {
   return fragment;
 }
 
+export async function approveJoin(wasm, fragment) {
+  const store = await InvitationStore.open(wasm, fragment, invitationDatabase);
+  try { await store.approve(); } finally { store.close(); }
+}
+
+export async function dismissJoin(wasm, fragment) {
+  const store = await InvitationStore.open(wasm, fragment, invitationDatabase);
+  try {
+    if (await store.isApproved()) throw new Error('Joining already started');
+    await store.forget();
+  } finally { store.close(); }
+}
+
 // Each call advances as far as the verified relay history allows. A waiting
 // stage remains durable in IndexedDB and can be retried after either device
 // comes online; the fragment is never placed in localStorage.
@@ -161,6 +174,7 @@ export async function advanceJoin(wasm, fragment) {
   const invitation = await InvitationStore.open(wasm, fragment, invitationDatabase);
   const publicStore = await PublicStore.open(wasm, publicDatabase);
   try {
+    if (!await invitation.isApproved()) return { stage: 'confirmJoin' };
     let claim = await invitation.savedClaim();
     if (!claim) {
       const progress = await invitation.pull(relayGet, 16);

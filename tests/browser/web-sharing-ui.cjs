@@ -84,8 +84,16 @@ async function run() {
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const failures = [];
+    const controlPosts = [];
     page.on('pageerror', (error) => failures.push(error.message));
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().includes('/control')) controlPosts.push(request.url());
+    });
     await page.goto(origin + '/' + fragment);
+    await page.getByText('Invitation ready to join').waitFor();
+    assert.equal(controlPosts.length, 0, 'opening a link consumed an invitation');
+    await page.getByText('Joining gives this browser access to the Family history').waitFor();
+    await page.getByRole('button', { name: 'Join this Family' }).click();
     await page.getByText('Claim sent · waiting for the manager device').waitFor();
     assert.equal(new URL(page.url()).hash, '', 'invitation secret remained in URL');
     holder('challenge');
@@ -122,6 +130,8 @@ async function run() {
     const secondPage = await second.newPage();
     secondPage.on('pageerror', (error) => failures.push(error.message));
     await secondPage.goto(origin + '/' + later.stdout.trim());
+    await secondPage.getByText('Invitation ready to join').waitFor();
+    await secondPage.getByRole('button', { name: 'Join this Family' }).click();
     await secondPage.getByText('Claim sent · waiting for the manager device').waitFor();
     holder('later_challenge');
     await secondPage.getByRole('button', { name: 'Resume joining' }).click();
@@ -171,6 +181,8 @@ async function run() {
     const thirdPage = await third.newPage();
     thirdPage.on('pageerror', (error) => failures.push(error.message));
     await thirdPage.goto(origin + '/' + rotatedIssue.stdout.trim());
+    await thirdPage.getByText('Invitation ready to join').waitFor();
+    await thirdPage.getByRole('button', { name: 'Join this Family' }).click();
     await thirdPage.getByText('Claim sent · waiting for the manager device').waitFor();
     holder('later_challenge');
     await thirdPage.getByRole('button', { name: 'Resume joining' }).click();

@@ -2,7 +2,8 @@ import init, * as wasm from './generated/babytrack_core_wasm.js';
 import wasmUrl from './generated/babytrack_core_wasm_bg.wasm?url';
 import { LocalStore } from '../../../core-wasm/web/local-store.js';
 import { sharedFamilies, sharedSnapshot, syncShared, pendingJoins, rememberJoin,
-  advanceJoin, sharedStatus, writeShared, copyRemoved, exportSharedReadable } from './shared-client.js';
+  advanceJoin, approveJoin, dismissJoin, sharedStatus, writeShared, copyRemoved,
+  exportSharedReadable } from './shared-client.js';
 
 const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
 const bytes = (value) => Uint8Array.from(value.match(/../g) || [], (pair) => parseInt(pair, 16));
@@ -62,6 +63,16 @@ export async function pendingInvitations() {
 export async function continueInvitation(fragment) {
   await open();
   return advanceJoin(wasm, fragment);
+}
+
+export async function approveInvitation(fragment) {
+  await open();
+  return approveJoin(wasm, fragment);
+}
+
+export async function dismissInvitation(fragment) {
+  await open();
+  return dismissJoin(wasm, fragment);
 }
 
 export async function syncFamily(family) {

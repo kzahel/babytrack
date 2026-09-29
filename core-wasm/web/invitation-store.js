@@ -54,12 +54,29 @@ export class InvitationStore {
     const store = new InvitationStore(await result(request), wasm, fragment);
     const write = store.database.transaction('drafts', 'readwrite');
     const done = completed(write);
-    write.objectStore('drafts').put({ fragment, lastTouched: Date.now() });
+    const drafts = write.objectStore('drafts');
+    const prior = await result(drafts.get(fragment));
+    drafts.put({ ...prior, fragment, lastTouched: Date.now() });
     await done;
     return store;
   }
 
   close() { this.database.close(); }
+
+  async isApproved() {
+    const read = this.database.transaction('drafts', 'readonly');
+    const draft = await result(read.objectStore('drafts').get(this.fragment));
+    return !!draft?.approved;
+  }
+
+  async approve() {
+    const write = this.database.transaction('drafts', 'readwrite');
+    const done = completed(write);
+    const drafts = write.objectStore('drafts');
+    const prior = await result(drafts.get(this.fragment));
+    drafts.put({ ...prior, fragment: this.fragment, approved: true, lastTouched: Date.now() });
+    await done;
+  }
 
   static async pendingFragments(name = 'babytrack-invitations') {
     const request = indexedDB.open(name);

@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { copy as c, ageLabel } from './strings.js';
   import { families, createFamily, snapshot, addChild, logActivity, logBreastFeed, editBreastFeed,
-    rememberInvitation, pendingInvitations, continueInvitation, syncFamily,
+    rememberInvitation, pendingInvitations, continueInvitation, approveInvitation,
+    dismissInvitation, syncFamily,
     familySyncStatus, copyRemovedFamily, exportFamily, restoreFamily } from './core.js';
   import { readDraft, persistDraft, tapSide, completedSegments, sideTotals,
     durationLabel, editableSegments, rebuiltSegments } from './breast-timer.js';
@@ -113,8 +114,23 @@
     await run(async () => {
       pendingFragment = await rememberInvitation(invitationInput);
       invitationInput = '';
+      await approveInvitation(pendingFragment);
       joinStage = c.joining;
       await poll();
+    });
+  }
+  async function confirmJoin() {
+    await run(async () => {
+      await approveInvitation(pendingFragment);
+      joinStage = c.joining;
+      await poll();
+    });
+  }
+  async function dismissJoin() {
+    await run(async () => {
+      await dismissInvitation(pendingFragment);
+      pendingFragment = '';
+      joinStage = '';
     });
   }
   async function makeFamily() {
@@ -312,7 +328,9 @@
             <label>{c.invitationLink}<input type="text" inputmode="url" required bind:value={invitationInput} /></label>
             <button class="secondary" type="submit">{c.join}</button>
           </form>
-          {#if pendingFragment}<p role="status">{joinStage || c.joining}</p><button class="text-action" onclick={poll}>{c.pendingJoinResume}</button>{/if}
+          {#if pendingFragment}<p role="status">{joinStage || c.joining}</p>
+            {#if joinStage === c.confirmJoin}<p class="muted">{c.joinHistoryWarning}</p><button class="primary" onclick={confirmJoin}>{c.joinThisFamily}</button><button class="text-action" onclick={dismissJoin}>{c.dismissInvitation}</button>
+            {:else}<button class="text-action" onclick={poll}>{c.pendingJoinResume}</button>{/if}{/if}
         </section>
         <section class="panel"><h2>{c.restoreBackup}</h2><p class="muted">{c.restoreDescription}</p>
           <label>{c.restoreFile}<input type="file" accept=".jsonl,.json" onchange={(event) => {
@@ -477,7 +495,9 @@
               <label>{c.invitationLink}<input type="text" inputmode="url" required bind:value={invitationInput} /></label>
               <button class="secondary" type="submit">{c.join}</button>
             </form>
-            {#if pendingFragment}<p role="status">{joinStage || c.joining}</p><button class="text-action" onclick={poll}>{c.pendingJoinResume}</button>{/if}
+            {#if pendingFragment}<p role="status">{joinStage || c.joining}</p>
+              {#if joinStage === c.confirmJoin}<p class="muted">{c.joinHistoryWarning}</p><button class="primary" onclick={confirmJoin}>{c.joinThisFamily}</button><button class="text-action" onclick={dismissJoin}>{c.dismissInvitation}</button>
+              {:else}<button class="text-action" onclick={poll}>{c.pendingJoinResume}</button>{/if}{/if}
           </div>
         </section>
       {/if}

@@ -264,7 +264,8 @@ class SharingRelayTest {
             composeRule.onNodeWithContentDescription(context.getString(R.string.back)).performClick()
             composeRule.onNodeWithContentDescription(context.getString(R.string.switch_target))
                 .performClick()
-            composeRule.onNodeWithText("Draft second").performClick()
+            composeRule.onNodeWithText("Draft second")
+                .performSemanticsAction(SemanticsActions.OnClick)
             composeRule.waitUntil(25_000) {
                 context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
                     .getString("child", null) == second.hex()

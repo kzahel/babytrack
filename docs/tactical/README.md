@@ -29,5 +29,5 @@ tactical with its current status.
   bounded web trust review passed. Web-origin sharing remains open; verified
   removal, private copy, and file recovery pass browser UI flows.
 - [007: Android screen extraction and fixture gallery](007-android-screen-gallery.md)
-  — planned; prepares the existing Android screens for redesign with explicit
+  — in progress; prepares the existing Android screens for redesign with explicit
   presentation boundaries and an emulator-free scrolling screenshot gallery.

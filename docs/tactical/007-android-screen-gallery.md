@@ -1,6 +1,6 @@
 # 007: Android screen extraction and fixture gallery
 
-Status: planned, 2026-09-29. This is preparation for a later redesign, not a
+Status: in progress, 2026-09-29. This is preparation for a later redesign, not a
 visual redesign or an M1 physical-phone gate. [005](005-m1-android.md) owns
 the caregiver-app delivery gates. [Android navigation](../topics/android-navigation.md)
 owns route behavior; [interface design](../topics/interface-design-and-localization.md)
@@ -22,8 +22,8 @@ port, new activity types, or pixel-diff approval gate in this workstream.
 
 ## Ordered delivery slices
 
-1. [ ] Record the plan and owning-topic decisions; commit before extraction.
-2. [ ] Separate the Activity/platform entry point and state/action controller
+1. [x] Record the plan and owning-topic decisions; commit before extraction.
+2. [x] Separate the Activity/platform entry point and state/action controller
    from rendering; extract focused capture forms and shared presentation
    helpers. Keep side effects in the controller.
 3. [ ] Extract Today, History, Family, and child-profile presentation with
@@ -57,3 +57,10 @@ port, new activity types, or pixel-diff approval gate in this workstream.
 ## Evidence
 
 Implementation and validation results will be recorded with each slice.
+
+- Slice 1: plan committed at `7d6956c`.
+- Slice 2: Activity entry points are separated from `TrackerRoute`; Capture,
+  Today, and History render explicit state and named callbacks. Existing
+  Android unit tests and both debug APK builds pass locally (Java 17,
+  offline dependencies). The existing controller retains the save/timer and
+  edit actions; Family/dialog extraction and gallery rendering follow.

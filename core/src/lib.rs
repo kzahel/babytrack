@@ -58,6 +58,7 @@ pub mod shared_ready;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod sqlite_store;
 pub mod sync_wire;
+pub mod web_actions;
 
 mod ids;
 mod record_validity;

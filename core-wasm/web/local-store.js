@@ -32,13 +32,23 @@ export class LocalStore {
 
   close() { this.database.close(); }
 
-  async createFamily(family, device) {
+  async createFamily(family, device, initialOperation = null) {
     const projection = new this.wasm.WasmLocalFamily(bytes(family), bytes(device));
+    let operationId = null;
+    if (initialOperation) operationId = hex(projection.append_operation(initialOperation, 1n));
     projection.free();
-    const transaction = this.database.transaction('families', 'readwrite');
+    const transaction = this.database.transaction(['families', 'operations'], 'readwrite');
     const done = transactionDone(transaction);
-    transaction.objectStore('families').add({ family, device, lastIndex: 0 });
+    transaction.objectStore('families').add({ family, device, lastIndex: initialOperation ? 1 : 0 });
+    if (initialOperation) transaction.objectStore('operations').add({
+      family, index: 1, operationId, operation: initialOperation,
+    });
     await done;
+  }
+
+  async families() {
+    const transaction = this.database.transaction('families', 'readonly');
+    return requestResult(transaction.objectStore('families').getAll());
   }
 
   async load(family) {

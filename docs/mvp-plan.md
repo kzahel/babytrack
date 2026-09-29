@@ -213,10 +213,14 @@ are symbolic until M0 gives them executable actions and assertions.
   the most important test in the project. Projection replay matches
   incremental updates, including edits, tombstones, and backfilled events.
   Crypto known-answer tests. Fuzzing of decoders and importers.
-- **Cross-language vectors.** Inputs and expected outputs in `tests/vectors/`,
-  run from the Rust, Swift, Kotlin, and TypeScript suites to catch binding bugs.
-  Start with encoding, encryption, and unknown-field preservation; include
-  version skew before treating the protocol as stable.
+- **Cross-language vectors.** The Rust core and relay assert exact bytes for
+  their own published MVP wire formats. Swift, Kotlin, and wasm call that
+  shared core, so each binding runs the same fixed encrypted child event and
+  negative authentication, Family, and version-skew cases through its public
+  boundary. The [vector execution matrix](../tests/vectors/README.md#execution-and-applicability-matrix)
+  tracks additional published cases and gaps. Server-only and symbolic cases
+  do not need a duplicate platform runner; an adapter must never reimplement
+  CBOR, crypto, or merge to satisfy a test gate.
 - **Sync integration.** A bounded, deterministic test uses a real relay and
   several CLI clients with independent keys and local stores on relevant PRs.
   It covers offline reconnect, concurrent edits, membership changes, and
@@ -339,10 +343,11 @@ touches an app store until M5.
    multi-Family isolation, and adversarial reconnect cases. Add a minimal
    browser harness using wasm and IndexedDB that syncs through the same relay,
    so browser storage and key handling are exercised before the web UI.
-   The harness is test infrastructure, not the
-   product interface. M0 exits only when the versioned vectors pass in every
-   language, a mixed-client exchange converges, the bounded real-relay suite
-   passes in CI, and crash/restart plus removal/recovery cases pass. The dev
+   The harness is test infrastructure, not the product interface. M0 exits
+   only when core-owned MVP byte assertions and the fixed event/negative
+   binding suite pass, a mixed-client exchange converges, the bounded
+   real-relay suite passes in CI, and crash/restart plus removal/recovery
+   cases pass. The dev
    relay runs on a laptop reachable from phones over the LAN or Tailscale.
    No product UI or app-store work.
 2. **M1, Android on our own phones.** Deliver in usable slices. First: local

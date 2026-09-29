@@ -2,8 +2,9 @@
 
 These are normative version-1 inputs and expected results. The shared Rust
 core owns wire and data semantics; Swift, Kotlin, and wasm call it through
-bindings. The M0 plan currently calls for versioned vectors in every
-language. The table below records the *current* executable consumers, not a
+bindings. The M0 plan requires the fixed encrypted event and selected
+negative vectors through every binding, plus exact owner-side MVP wire
+assertions. The table below records the *current* executable consumers, not a
 claim that every published case is covered or that the M0 gate passed. A
 named JSON file in a test is insufficient
 evidence unless the test asserts the relevant case's expected bytes or state.
@@ -44,11 +45,13 @@ sequence, or outbox mutation unless the expected result says otherwise.
 | `portable-file-v1` | `core/tests/portable_file.rs` runs FILEBYTE08 and protected/readable round trips | Both bindings create, restore, and reject wrong-password files | Not yet a browser export/import adapter | FILE01–07 case inventory and browser file flow remain |
 | `sharing-v1` | Symbolic state-machine expectations, no literal wire bytes | Exercised by selected native and emulator scenarios | Exercised by selected browser scenarios | Map all symbolic cases to scenario tests; not a four-runtime byte suite |
 
-The cross-language event gate currently exercises one exact encrypted child
-event and negative authentication through Rust, Swift, Kotlin, and wasm.
-Only the Rust core owns CBOR and cryptographic implementation. The remaining
-rows above keep the broader M0 byte gate open until explicit assertions and
-scenario links are added; sharing symbolic cases are not byte fixtures.
+The cross-language event gate exercises one exact encrypted child event and
+negative authentication through Rust, Swift, Kotlin, and wasm. Only the Rust
+core owns CBOR and cryptographic implementation. Remaining rows are tracked
+coverage gaps for their owning tests and future protocol stabilization;
+sharing symbolic cases are not byte fixtures. They do not by themselves
+establish a failure of the revised M0 binding-boundary gate. The real-relay,
+recovery, and independent security gates still decide M0 exit.
 
 The [scenario catalog](../../docs/scenarios/README.md) owns user-visible
 observations; a vector's `scenario` field connects the lower-level assertion

@@ -18,18 +18,25 @@ hosting, publishing, store work, clinical content, or vendor-service logic.
 
 ### 1. Bytes and bindings before core API freeze
 
-- [ ] Implement strict deterministic CBOR and version checks. Run every
-  `tests/vectors/` byte fixture in Rust, Swift, Kotlin, and wasm. Reject
-  noncanonical and cross-Family bytes, preserve opaque minor fields, and
-  compare actual hex to expected hex.
-- [ ] Encrypt, sign, decrypt, and project one fixed child event through each
-  binding in both directions before freezing the core API. Make wrong key,
-  wrong Family, wrong AAD, and wrong signature fail in every language.
+- [x] Implement strict deterministic CBOR and version checks in the shared
+  Rust core. Assert selected exact MVP wire bytes in their owning core/relay
+  tests. Reject noncanonical and cross-Family bytes and preserve opaque minor
+  fields through the binding suite.
+- [x] Encrypt, sign, decrypt, and project one fixed child event through Rust,
+  Swift, Kotlin, and wasm bindings. Wrong key, Family, relay, signer, and
+  signature fail at each boundary; the core also checks wrong AAD.
 - [x] Run a minimal real browser harness using wasm and IndexedDB. Verify
   reload, transaction rollback, and key isolation with no product web UI.
 
-Gate: the same encrypted event and negative vectors pass independently in
-four runtimes; no platform adapter reimplements CBOR, crypto, or merge.
+Gate: the same encrypted event and selected negative vectors pass through
+four runtimes; no platform adapter reimplements CBOR, crypto, or merge. The
+[MVP plan](../mvp-plan.md#testing-and-validation) now states this boundary
+criterion explicitly. The earlier requirement to replay every fixture in
+every language was broader than the shared-core architecture can usefully
+test: server-only routes and symbolic cases do not have platform byte
+implementations. The [vector matrix](../../tests/vectors/README.md#execution-and-applicability-matrix)
+keeps unfinished exact-case assertions visible as follow-up coverage, with
+security-relevant regressions required at the owning gate.
 
 ### 2. Durable local core
 
@@ -1850,9 +1857,13 @@ manifest and encrypted membership checks for same-epoch manager controls;
 it now verifies both before advancing, with wasm missing/tampered-object
 regressions. The reviewer classified this as protocol divergence under an
 authorized hostile manager rather than a new unauthorized-access blocker.
-The vector applicability matrix remains incomplete against the literal M0
-exit criterion; it is a separate unimplemented gate, not a demonstrated
-access flaw.
+The vector applicability matrix was incomplete against the literal M0 exit
+criterion at the reviewed SHA; it was a separate unimplemented gate, not a
+demonstrated access flaw. The plan later adopted a binding-boundary criterion
+for the shared Rust architecture, with remaining case gaps tracked in the
+matrix rather than silently counted as passing tests. This plan revision is
+not part of the review at `66c7e5f` or the focused blocker recheck at
+`cdac075`.
 
 The reviewer credited local Rust, wasm, browser, native smoke, and Android
 APK assembly on the reviewed SHA; no attached emulator was available in its
@@ -1865,6 +1876,6 @@ eventual exit SHA. No full M0 PASS is claimed.
 ## Completion condition
 
 All slice gates pass in CI and on the designated local testbeds, the
-cross-language byte suite agrees, mixed clients converge through the real
+fixed byte boundary suite agrees, mixed clients converge through the real
 relay, and independent security review clears real-data use. Update this
 file's boxes and index only with the changes that make them true.

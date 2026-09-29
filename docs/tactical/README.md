@@ -11,14 +11,15 @@ tactical with its current status.
 - [002: Repository scaffolding](002-repository-scaffold.md) — complete;
   Rust workspace, build checks, and read-only CI added and validated in an
   isolated source copy. Does not close M-1 or implement product behavior.
-- [003: M0 executable foundation](003-m0-foundation.md) — in progress;
-  Rust canonical CBOR, operation, crypto/HPKE, batch bytes, and local-only
-  projection, SQLite, and browser local journal cases run; full binding,
-  storage, relay, membership, and recovery gates remain.
+- [003: M0 executable foundation](003-m0-foundation.md) — bounded exit
+  complete; shared-core bindings, durable native/browser storage, encrypted
+  relay, joining, removal/private copy, recovery, and mixed-client exchange
+  passed the required CI suite and independent security gate. Extended
+  coverage and scale work is tracked in its post-M0 queue.
 - [004: Autonomous delivery tracker](004-delivery-tracker.md) — active
   coordination; tracks the next M0 proof, security-review handoffs, CI
   growth, and progress toward a usable M1 Android UI. Detailed completion
   status stays with each implementation tactical.
-- [005: M1 Android caregiver app](005-m1-android.md) — in progress on
-  emulators alongside M0; owns local and two-caregiver Android flow, physical
-  phone gates, and remaining UI, logging, and recovery work.
+- [005: M1 Android caregiver app](005-m1-android.md) — emulator flows pass;
+  owns the two-physical-phone gate and remaining daily-use UI, import,
+  accessibility, and recovery work.

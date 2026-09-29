@@ -28,155 +28,30 @@ blocks real Family data.
 
 ## Current work card
 
-M0 remains in progress. The implemented first cohort passes the early
-authority recheck and focused general-authority advisory. Two separate
-emulators exercise join, encrypted sync,
-removal, and private-copy recovery. An admitted manager also invites and
-grants to a third device, then removes it with key rotation, through relay
-HTTP and Android instrumentation. The same manager removes the original
-manager in a second rotation and continues writing at epoch three.
-The removed original manager now verifies its own removal and saves pending
-work into a private copy through the core. The tracker excludes removed
-sources from writable Family selection and offers an access-ended copy action
-for managers and recipients. A removed recipient without pending edits can
-copy its held history and continue locally.
-Pending-device removal, admitted-manager cancellation coverage, general browser shared
-outbox, tracked vector case gaps, and the M0 exit review remain open.
-The browser now persists a Rust-verified public control and accepted-batch
-history in IndexedDB, with reload and forged-receipt rollback checks. It
-also signs and decodes a bounded public pull. Chromium now fetches an
-accepted encrypted batch through signed GETs from a disposable real relay
-and reloads its saved cursor. It now fetches signed genesis objects and
-projects the decrypted epoch-one record through Rust after reload. A
-production wasm batch enters a durable browser outbox, previews locally,
-survives a lost POST response and reload, and clears only on signed
-acceptance. Later offline edits now queue behind that exact batch, preview
-through Rust after reload, and seal one by one after signed acceptance.
-The real-relay case uses two distinct dependent edits and loses a queued
-upload response after acceptance; reload retries the exact saved envelope
-before the remaining edit drains.
-The browser data view also replays a same-epoch invitation after reload.
-An independent browser recipient now fetches its committed grant from a
-disposable relay with its own signed request, saves the verified keys, and
-uploads an encrypted child after reload. Its earlier admission controls are
-fixture-fed. A separate browser invitation path now verifies a live relay
-prefix, saves a Rust-built claim and device keys before POST, retries
-the exact candidate after a lost result, and polls as the pending device.
-Later-device admission after rotation, rejection repair, and offline fault
-cases remain open.
-Chromium now also replays the published rotation through a disposable relay,
-fetches its committed grant, keyring, and membership objects, authors an
-epoch-two batch, and reopens that accepted history after reload. Dynamic
-native/browser rotation and old-epoch pending-batch repair remain for the
-M0 exit gate.
-The wasm proof builder now
-checks a relay-fetched committed challenge object and matches the published
-proof bytes from fixture-fed prior controls. A separate browser case saves
-and posts a new proof after a fixture claim and real relay challenge, then
-retries the exact proof after a lost result and reload.
-From a fixture admission, the browser also rebuilds the full relay log,
-hydrates genesis and grant objects, and reopens the epoch-one ready view;
-without a grant it stays pending.
-A live browser claim now proceeds through a separately stored native holder
-challenge and grant, followed by full browser history hydration and one
-encrypted child batch in each direction. Both clients use relay HTTP after
-the disposable relay is seeded; a relay restart after grant preserves that
-exchange. Offline fault cases and later epochs remain
-for the M0 exit gate.
-A test-only native CLI driver now verifies the browser's accepted
-batch and sends an encrypted child back through the same relay; Chromium
-projects it after reload. The first manager credential
-persists in IndexedDB for this smoke.
-Android local and first-cohort UI work, including solids, completed
-multi-segment breast-feed, pumping logs, and note, bottle, diaper, pumping,
-and medication corrections, plus child name and growth-detail, growth-entry,
-and completed sleep corrections, runs
-alongside M0 on emulators; its physical phone gates remain open.
-Growth entry and correction now accept the published mass and length units,
-default to kg/cm, and retain the entered form through local recovery and
-two-device encrypted sync.
-Known activities can now carry an editable optional note without losing their
-type. The Android UI smoke attaches one to a growth entry across restart;
-the two-device flow adds and clears one through encrypted sync.
-The diaper form includes wet, dirty, both, and dry logging choices.
-The top bar names the selected Family and child and has a wet-diaper-now shortcut above the long
-logging form; the Android UI smoke uses it before correcting that entry.
-After the first child, its creation fields collapse behind an add-another
-action so common logging begins higher on the screen.
-Running and completed sleep can carry an optional place through the shared
-core, Android timeline, backup, and encrypted relay sync.
-The Android tracker can also correct or clear that place on the same sleep
-entry, including an open timer.
-The two-device relay flow also caught a routine offline backlog above the
-old sixteen-upload foreground cap. Android now attempts up to 64 uploads per
-pass and keeps excess work pending for later sync; the test verifies this
-flow drains before the second device reads the manager's new child.
-Android can now share an invitation link through the system chooser. Opening
-that link or receiving a raw fragment through the text share target prefills
-an explicit join action without claiming automatically.
-After that action, the Android coordinator makes an immediate pass and
-continues claim, proof, grant, and history loading on foreground and scheduled
-sync opportunities. The debug screen no longer asks caregivers to press
-separate proof, history, challenge, or grant buttons.
-The join card now labels a saved recipient as joining until its verified
-history is usable, including after activity recreation; a confirmed claim
-also consumes the launch link so it does not prefill again.
-Ready joined Families now enter the normal Android Family switcher and full
-tracker; pending joins remain outside it. The joined Family uses that tracker
-for logging, backups, immediate sync retry, and a manager's next invitation;
-the old duplicate debug child/history panel is removed.
-A real-relay Android UI check now opens a fresh link, taps the single join
-action, and verifies that its recipient claim was committed and saved.
-The debug manager access section can list and cancel unused invitation links.
-A real-relay UI test confirms the tap and signed cancellation; a separate
-relay test checks exact preparation across reopen and another invitation
-after a lost cancellation response.
-The daily-use surface now has a saved-timer home-screen widget and local
-labels for individual enrolled devices. Growth reference data licensing and
-Nara sample mapping remain open for their planned features.
-Caregivers can backdate one completed entry at a time. Bottle logging and
-correction expose the four published content codes through the shared core;
-the Android timeline and analysis CSV show that choice.
-Caregivers can also correct the time of a saved instantaneous entry without
-replacing its record; the shared-core edit reaches another device through the
-encrypted relay and remains in a restored file.
-Completed sleep and pumping sessions can move to a corrected start while
-retaining their duration. Rust updates both endpoints together; interval
-movement reaches the second emulator through encrypted sync.
-The selected-child Today card summarizes sleep, feeds, bottle volume, and
-diapers through the Rust core using the viewer's local-day bounds; the
-two-device flow reads that summary after encrypted sync.
-The Today card can start a sleep timer without scrolling through the logging
-form, or stop the latest running timer. Both actions use the shared core.
-The daily Android view now collapses Family and child administration after
-setup while keeping the active target, pending join, Today card, and quick
-actions visible; a 1.5× text emulator check exercises the common log path.
-Completed whole-minute breast feeds can now be corrected for side and
-duration through an atomic shared-core segment update.
-The selected-child timeline groups activity by local day and filters its
-view. Growth entries now carry optional head circumference through local
-restore, encrypted sync, the Android form, and analysis CSV.
-An Android emulator recovery check now saves readable and protected files
-through the system picker and restores each after reinstall. It verifies the
-saved point, rejects a truncated readable file and a wrong protected-file
-password, and leaves the Family list untouched on either denial.
-Physical-phone and provider-failure checks remain.
-The Android tracker now retains the selected Family and child across process
-restart, with a two-Family emulator UI check. Remote run `36356278973`
-confirmed the concurrent SQLite fresh-open repair and passed the relay and
-general UI paths. Its recovery check reached a protected-file preview, then
-could not find the confirm button below the viewport. The picker test now
-scrolls to that action; the complete local recovery flow and remote run
-`36357854875` at `9f1fcd9` pass.
+The bounded [M0 foundation gate](003-m0-foundation.md#bounded-m0-exit-at-4f5ef18)
+is complete at `4f5ef18`. Required CI run
+[`36512725562`](https://github.com/kzahel/babytrack/actions/runs/36512725562)
+passed Rust, native bindings, browser wasm/IndexedDB with a relay plaintext
+scan, Android APK, 26 real-relay instrumentation tests, quick UI, backup
+recovery, navigation capture, and the aggregate gate. The independent full
+review and focused recheck found no reproducible U1-U8 access or retention
+defect; their evidence failures were closed by that run. The reviewer verdicts
+and implementation disposition are recorded in 003.
+
+M1 Android is the active user-flow milestone. The emulator build logs and
+shares without an account, advances joins on separate wakes, handles role
+changes, removal and a private copy, and saves/restores readable or protected
+files. The next meaningful validation is the
+[two-physical-phone gate](005-m1-android.md). Extended vector inventory,
+long-history join hydration, production Swift shared-sync, and later browser
+rotation are tracked in the [post-M0 queue](003-m0-foundation.md#coverage-after-the-bounded-m0-exit).
 
 | Field | Current answer |
 |---|---|
-| Active implementation owner | [003 M0 foundation](003-m0-foundation.md) for protocol and [005 M1 Android](005-m1-android.md) for the caregiver app. |
-| Next demonstrable proof | The Android local UI creates Families and children, records bottle, solids, completed alternating breast feed, diaper, sleep timer, completed sleep, note, growth, Celsius, and medication entries, shows a timeline with confirmed activity deletion, and saves/restores readable or password-protected files through Rust. A disposable relay and two separate emulators pass first-cohort join, a recipient timer stopped by the manager, recipient growth, temperature, medication, solids, and alternating breast feed read by the manager, reciprocal edits and one deletion, offline work, removal, and automatic private copy; note, medication, and solids markers are absent from relay storage and logs. A real-relay Compose test taps the removed recipient's private-copy action and finds its held child in a new local Family. Foreground polling and a scheduled job advance sharing; normal job timing is OS controlled. |
-| Next dependent slice | The first-cohort recheck and [focused general-authority advisory](003-m0-foundation.md#general-authority-advisory-pass-at-98fa0ea) passed. Relay restart replays public controls and accepted batch authority; a signed private checkpoint covers rejected-result and staging-reservation sets. Signed GETs, batch POSTs, manager controls, and later control HTTP writes use that ledger under a SQLite writer lock. Later enrollment after removal and epoch rotation passes on separate emulators. A second admitted manager now invites, grants, and removes a third device through relay HTTP and Android instrumentation, then removes the original manager in a second rotation and writes at epoch three. Initial and admitted managers can cancel unused invitations. An admitted manager can promote and demote an active device, and the recipient verifies the role after sync. A manager can stop a keyless pending device, and the device verifies that its join ended. A browser recipient fetches its grant, uploads an encrypted child, and an independent browser manager pulls and decrypts it. A dynamic browser/native first-cohort join now reaches grant and exchanges encrypted child batches in both directions over relay HTTP, including relay restart after grant. Offline fault cases and the M0 exit review remain. |
-| Next independent review | The [full M0 exit review](003-m0-foundation.md#full-m0-exit-review-at-8713457) at `8713457` found no reproducible U1-U8 access or retention blocker but returned FAIL on missing final-revision CI and missing relay plaintext-marker assertions in required CI. The browser real-relay job now scans database and logs after a restart and encrypted child upload. A required CI run on the final SHA remains before M0 can close; production Swift shared-sync and very long Android joins are tracked later work. |
-| Open advisory | The [MVP baseline preflight](003-m0-foundation.md#advisory-mvp-baseline-preflight-at-014f79b) found an own-claim lost-response ambiguity. The exact saved-claim retry now remains possible after a committed response is lost; the concurrent status-write race and durable streaming of large control history remain for the M0 exit gate. |
-| CI signal today | Rust, native-binding, browser, Android APK, real-relay emulator, short Android UI smoke, and document-picker recovery jobs are required on every push/PR. Run `36447264766` at `770b132` passed every required job, including the Android relay suite and browser mixed-client flow. The longer UI walkthrough runs daily or on manual dispatch. Physical phones and the M0 exit gate remain open. |
+| Active implementation owner | [005 M1 Android](005-m1-android.md) for caregiver flows and physical-phone validation; [003 M0](003-m0-foundation.md) preserves the completed foundation gate and follow-ups. |
+| Next demonstrable proof | On two Android phones, complete accountless join and history load with delayed wakes, reciprocal offline edits, reconnect, verified removal, private-copy continuation, and readable/protected file recovery. Use the existing emulator scripts as the baseline. |
+| Security review | [Full review](003-m0-foundation.md#full-m0-exit-review-at-8713457) and [focused recheck](003-m0-foundation.md#focused-m0-evidence-recheck-at-c3b04d6) found no code-level U1-U8 blocker. The exact-revision CI evidence closed the formal evidence failure. New trust boundaries receive their named later reviews. |
+| CI signal | [Run 36512725562](https://github.com/kzahel/babytrack/actions/runs/36512725562) passed all required jobs at `4f5ef18`; local one- and two-emulator relay flows also passed. Physical-phone, real power-loss, and long-history scale claims remain open. |
 
 Update this card when the active slice changes. Do not copy fine-grained
 checklists from its owning tactical.
@@ -232,10 +107,13 @@ Focused advisories may be tracked to that gate without serial review loops.
 | Automatic-status recheck, run at `3f19890` | Do automatic claim retry and first terminal cause remain correct after the previous fixes? Focused FAIL on automatic Android callers dropping verified terminal outcomes; see the [record](003-m0-foundation.md#advisory-later-invitation-automatic-status-recheck-at-3f19890). | 003 slice 3; durable status repair and recheck due |
 | Automatic-status recheck, run at `ad42d78` | Does durable signed status remain honest across lost claim responses and concurrent callers? Focused FAIL on own-claim ambiguity and status insertion race; see the [record](003-m0-foundation.md#advisory-automatic-status-recheck-at-ad42d78). | 003 slice 3; track for M0 exit, continue independent MVP feature work |
 | MVP baseline preflight, run at `014f79b` | Do current MVP flows have an immediate access or data-loss blocker? Advisory FAIL on saved own-claim ambiguity; see the [record](003-m0-foundation.md#advisory-mvp-baseline-preflight-at-014f79b). | FS37 Android repair exercised locally; no serial recheck, broader M0 exit remains |
-| M0 exit, before real Family data | Can crash/retry, pending work, restore, or cross-Family access violate the agreed promises? | [End-of-M0 gate](../mvp-plan.md#security-review-gates), 003 slice 4 |
+| M0 exit, completed at `4f5ef18` | Can crash/retry, pending work, restore, or cross-Family access violate the agreed promises? The reviews found no code-level blocker; the [required CI run](https://github.com/kzahel/babytrack/actions/runs/36512725562) closed their evidence gaps. | [End-of-M0 record](003-m0-foundation.md#bounded-m0-exit-at-4f5ef18) |
 | New web/watch boundary and M5 | Does the new client or deployment boundary change the threat model or user-visible guarantees? | Later milestone tacticals and MVP plan |
 
 ## CI growth and evidence
+
+The entries below preserve CI development history. The current required
+result is in the work card above.
 
 The [current workflow](../../.github/workflows/scaffold.yml) checks Rust,
 native bindings, wasm/browser storage, Android build and real-relay emulator

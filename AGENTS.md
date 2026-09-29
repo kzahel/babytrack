@@ -16,19 +16,14 @@ in tacticals, exact protocol formats in `docs/protocol/`, and test
 expectations in scenario/vector files. Summaries link to the owner. If two
 documents contradict, reconcile them or ask; do not silently pick one.
 
-Status: M0 implementation in progress. The Rust core has canonical bytes,
-cryptography, durable local/shared journals, signed sync, rotating removal,
-and later-device admission at the current epoch. The development relay
-authorizes opaque encrypted batches and signed membership controls. The
-Android debug app logs, syncs, handles removal/private copy, and completes a
-later recipient join after epoch rotation through separate automatic wakes
-on two emulators. An admitted manager can invite, grant, remove, and change
-another device's role through the real relay. Two successive rotations and
-unused-invitation cancellation pass local relay flows. Pending-device
-removal and broader recovery cases remain open.
-The first-cohort authority security recheck passed at `82c0f4c`; browser
-shared sync beyond the first manager, the end-of-M0 security gate, and
-physical-phone validation remain open.
+Status: the bounded M0 foundation gate passed at `4f5ef18`; see
+[003](docs/tactical/003-m0-foundation.md#bounded-m0-exit-at-4f5ef18) for
+the exact CI run, independent review disposition, and post-M0 coverage
+queue. The Rust core, opaque relay, native bindings, browser harness, and
+Android debug app exercise local tracking, encrypted join and sync, role
+changes, rotation/removal, private copy, and backup recovery. The required
+CI run passed, including real-relay Android UI/recovery checks. M1
+physical-phone validation and broader scale/platform work remain open.
 `babytrack` is a code name.
 
 The working tree may contain concurrent human or agent changes. Do not revert,

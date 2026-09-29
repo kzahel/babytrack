@@ -1,6 +1,9 @@
 # MVP implementation plan
 
-Status: agreed direction, September 2026; M0 implementation is in progress.
+Status: agreed direction, September 2026; the bounded M0 exit passed at
+`4f5ef18`. [003](tactical/003-m0-foundation.md#bounded-m0-exit-at-4f5ef18)
+owns the gate evidence and post-M0 coverage queue. M1 physical-phone
+validation is next.
 Owns scope, stack, milestone sequencing, and review gates. Read the
 [topic index](topics/README.md) for detailed decisions and the
 [tactical index](tactical/README.md) for current work. The
@@ -349,7 +352,10 @@ touches an app store until M5.
    real-relay suite passes in CI, and crash/restart plus removal/recovery
    cases pass. The dev
    relay runs on a laptop reachable from phones over the LAN or Tailscale.
-   No product UI or app-store work.
+   No product UI or app-store work is required for this gate. The bounded
+   exit passed at `4f5ef18`; extended vectors, long-history hydration,
+   later-platform adapters, and physical power-loss campaigns remain in
+   their owning later gates.
 2. **M1, Android on our own phones.** Deliver in usable slices. First: local
    Family creation, children, basic feed/diaper logging, timeline, Family
    switcher, and a recoverable export/backup path on one phone. Next: sharing,

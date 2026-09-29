@@ -1,6 +1,7 @@
 # 005: M1 Android caregiver app
 
-Status: in progress on emulators alongside [003 M0 foundation](003-m0-foundation.md).
+Status: emulator flows pass; the bounded [003 M0 foundation](003-m0-foundation.md#bounded-m0-exit-at-4f5ef18)
+gate is complete. Two physical Android phones are the next validation point.
 The [MVP plan](../mvp-plan.md#milestones) owns scope and milestone order;
 the [event model](../topics/event-model.md) and
 [Family sharing contract](../topics/family-sharing-and-trust.md) own product

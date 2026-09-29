@@ -5,81 +5,25 @@ opt-in sharing that is always end-to-end encrypted. Planned clients include
 native phone/watch apps and a web client.
 `babytrack` is a working name.
 
-**Status: M0 implementation in progress.** The Rust core has canonical
-CBOR, tested crypto and cross-language batch vectors, durable local/shared
-SQLite replay, browser IndexedDB local storage, and signed encrypted sync.
-The development relay admits an initial cohort, accepts encrypted batches,
-and verifies a recipient removal with epoch rotation and revoked data access.
-Real-relay tests admit a later device at the current epoch, hydrate its
-history, and continue encrypted sync. An admitted manager can also invite,
-grant, and remove a third device with key rotation. A manager can cancel an
-unused link, with a verified canceled status for a recipient who opens it.
-Pending-device removal now works through the Android manager access view;
-general browser shared sync and broader recovery coverage remain open.
-The browser harness stages one epoch-one encrypted write in a durable
-outbox and queues later offline edits behind it. Rust previews the saved
-operations locally, then the browser seals each queued edit after signed
-acceptance of its predecessor. A lost response retries the exact outbox
-bytes; reload preserves the queue and verified record view. A test-only
-native Rust driver verifies that browser batch, authors an encrypted child
-through the same relay, and Chromium reads it back. The browser also replays
-same-epoch authority changes before rebuilding its data view; rotation and recipient
-claim/proof transport remain open. An admitted browser recipient can fetch
-its committed HPKE grant with its own signed relay request, save the verified
-credential, and upload an encrypted child after reload. A separate browser
-manager then pulls and decrypts that child through the relay.
+**Status: bounded M0 foundation complete.** The shared Rust core owns
+canonical records, local and shared journals, cryptography, membership, sync,
+and portable files. The relay accepts opaque encrypted batches and signed
+controls; it cannot read Family events. Swift, Kotlin, and wasm bindings run
+the fixed encrypted event and selected negative cases. A real browser harness
+uses IndexedDB, survives reload and rejected writes, exchanges encrypted
+events with an independent native client, and verifies an epoch rotation.
 
-The Android debug app logs children, diapers, bottles with milk/content
-choice and mL/US/UK fluid-ounce entry, sleep timers and completed sleep
-with optional place, standalone and attached notes, growth including head
-circumference and entered mass/length units,
-Celsius or Fahrenheit temperature, medication, solids, breast-feed
-segments, and pumping entries locally or in a shared Family. Existing pumping
-amounts can be corrected without replacing the entry. Completed entries can
-be logged at an earlier time, saved instantaneous entries can have their time
-corrected, completed sleep and pumping sessions can move without changing
-duration, and bottle amount/content can be corrected on
-the same event. A selected-child Today card above the logging forms shows
-sleep, feed, bottle, and diaper totals, recent feed/diaper times, and a
-running sleep stop action. A deleted timeline entry has a brief Undo action
-that restores its same record. A home-screen widget
-shows saved running sleep timers, and the access list can label each enrolled
-device on this phone. Child birth date and growth-chart sex can be corrected
-on the existing child. The app can promote
-a Family, invite another device, complete keyless
-claim/challenge/proof/admission, and converge both devices through
-the relay. It resumes enrollment after restart, polls while open, schedules
-background sync work, and offers readable or protected backup plus an
-explicit private copy. The real-relay emulator suite covers those flows.
-For a shared Family, pending work remains visible while device and membership
-controls open under Family access, keeping daily logging closer to the top.
-After a grant and verified history load, a joined Family appears in the
-normal tracker; pending joins remain in the join view.
-An emulator check saves readable and protected files through Android's
-document picker, reinstalls the app, and restores the saved data. A wrong
-password leaves the new installation without a Family.
-The manager can remove the first recipient from the Android sharing view.
-The manager can also stop a claimed, keyless pending device before admission;
-that device verifies the control and sees that its join ended.
-Managers can also change an admitted device between member and manager roles
-in the debug sharing view; both devices verify the new role through relay sync.
-The removed device verifies a signed removal notice, stops shared writes,
-and automatically copies pending edits into a private Family. A disposable
-relay and two separate emulator installations exercise the first-cohort
-join, reciprocal edits, offline pending work, removal, and private copy.
-If the original manager is later removed by a co-manager, it also verifies
-the notice, preserves offline edits in a private copy, and shows an
-access-ended Family card in the tracker. A removed recipient without pending
-edits can use the same card to continue from its locally held history in a
-private copy.
-After relay restart and epoch rotation, the manager issues a later link and
-a fresh recipient installation joins through automatic wake steps, then
-uploads an encrypted event the manager reads. An Android real-relay test
-also covers an admitted manager inviting and granting another device,
-followed by an encrypted edit, role changes, and two successive key
-rotations. This remains a debug build;
-physical-phone and end-of-M0 security gates have not passed.
-Scenario files still include symbolic expectations.
+The Android developer build supports accountless local tracking, encrypted
+sharing, delayed join, device removal with private-copy recovery, and readable
+or password-protected backup/restore. One- and two-emulator relay flows cover
+join, reciprocal edits, background retry, removal, and recovery. The
+[required CI run](https://github.com/kzahel/babytrack/actions/runs/36512725562)
+passed the bounded M0 gate, including the relay plaintext-marker check and
+Android UI/recovery scripts. The [M0 tactical](docs/tactical/003-m0-foundation.md#bounded-m0-exit-at-4f5ef18)
+records the independent security reviews, their evidence disposition, and
+post-M0 coverage queue. The [M1 Android tactical](docs/tactical/005-m1-android.md)
+owns the remaining caregiver UX and physical-phone validation. No physical
+phone result or public release is claimed.
 
 ## Product and architecture
 

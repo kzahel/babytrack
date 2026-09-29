@@ -32,6 +32,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -44,6 +45,7 @@ import uniffi.babytrack_core_ffi.NativeSharedStore
 import uniffi.babytrack_core_ffi.ActivityWhen
 import uniffi.babytrack_core_ffi.previewInvitation
 import java.text.DateFormat
+import java.time.LocalDate
 import java.util.Date
 
 @RunWith(AndroidJUnit4::class)
@@ -91,6 +93,71 @@ class SharingRelayTest {
             composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onAllNodesWithText(text).onFirst().performScrollTo().performClick()
+    }
+
+    @Test
+    fun childCreationOpensProfileAndSavesName() {
+        wakeEmulatorScreen()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val database = context.filesDir.resolve("families.db")
+        val family = NativeLocalStore.open(database.absolutePath).use {
+            it.createFamily(System.currentTimeMillis())
+        }
+        context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
+            .edit().putString("family", family.familyId.hex()).remove("child").commit()
+        ActivityScenario.launch(MainActivity::class.java).use {
+            composeRule.onNodeWithText(context.getString(R.string.add_child))
+                .performScrollTo().performClick()
+            composeRule.onNodeWithText(context.getString(R.string.create_child_profile))
+                .assertIsDisplayed()
+            composeRule.onNodeWithText(context.getString(R.string.child_age_unknown))
+                .assertIsDisplayed()
+            composeRule.onNodeWithText(context.getString(R.string.child_name))
+                .performTextInput("Profile child")
+            composeRule.onAllNodesWithText(context.getString(R.string.add_child)).onLast().performClick()
+            composeRule.waitUntil(25_000) {
+                NativeLocalStore.open(database.absolutePath).use { local ->
+                    local.children(family).any { child -> child.name == "Profile child" }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun childEditShowsAgeAndSavesNameAndSex() {
+        wakeEmulatorScreen()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val database = context.filesDir.resolve("families.db")
+        val birthDay = LocalDate.now().minusDays(10).toEpochDay()
+        val (family, childId) = NativeLocalStore.open(database.absolutePath).use { local ->
+            val family = local.createFamily(System.currentTimeMillis())
+            family to local.addChildWithMetadata(family, "Before edit", birthDay, 2u.toUByte(),
+                System.currentTimeMillis())
+        }
+        context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
+            .edit().putString("family", family.familyId.hex()).putString("child", childId.hex()).commit()
+        ActivityScenario.launch(MainActivity::class.java).use {
+            openTab(R.string.nav_family)
+            composeRule.onNodeWithText(context.getString(R.string.child_options))
+                .performScrollTo().performClick()
+            composeRule.onNodeWithText(context.getString(R.string.edit_child_profile))
+                .performScrollTo().performClick()
+            composeRule.onAllNodesWithText(
+                context.resources.getQuantityString(R.plurals.child_age_days, 10, 10),
+            ).onLast().assertIsDisplayed()
+            composeRule.onNodeWithText(context.getString(R.string.child_name))
+                .performTextReplacement("After edit")
+            composeRule.onNodeWithText(context.getString(R.string.sex_female))
+                .performScrollTo().performClick()
+            composeRule.onNodeWithText(context.getString(R.string.save_changes)).performClick()
+            composeRule.waitUntil(25_000) {
+                NativeLocalStore.open(database.absolutePath).use { local ->
+                    local.children(family).any { child -> child.id.contentEquals(childId) &&
+                        child.name == "After edit" && child.birthDay == birthDay &&
+                        child.sex == 1u.toUByte() }
+                }
+            }
+        }
     }
 
     @Test
@@ -175,11 +242,11 @@ class SharingRelayTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val db = context.filesDir.resolve("families.db")
         val now = System.currentTimeMillis()
-        val (family, first) = NativeLocalStore.open(db.absolutePath).use { local ->
+        val (family, first, second) = NativeLocalStore.open(db.absolutePath).use { local ->
             val family = local.createFamily(now)
             val first = local.addChild(family, "Draft first", now)
-            local.addChild(family, "Draft second", now)
-            family to first
+            val second = local.addChild(family, "Draft second", now)
+            Triple(family, first, second)
         }
         context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
             .edit().putString("family", family.familyId.hex())
@@ -198,6 +265,10 @@ class SharingRelayTest {
             composeRule.onNodeWithContentDescription(context.getString(R.string.switch_target))
                 .performClick()
             composeRule.onNodeWithText("Draft second").performClick()
+            composeRule.waitUntil(25_000) {
+                context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
+                    .getString("child", null) == second.hex()
+            }
             composeRule.waitForIdle()
             composeRule.onNodeWithText(context.getString(R.string.add_activity))
                 .performScrollTo().performClick()

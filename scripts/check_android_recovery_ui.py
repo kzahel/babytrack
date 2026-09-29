@@ -43,6 +43,7 @@ def main() -> None:
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
 
     tap(target, "New Family")
+    tap(target, "Add child", scroll=True)
     tap(target, "Child’s name", scroll=True)
     adb(target, "shell", "input", "text", "RecoveryChild")
     dismiss_keyboard(target)

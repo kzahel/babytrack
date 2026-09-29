@@ -316,20 +316,9 @@ private fun growthInput(
 private fun localizedEntered(context: Context, value: String): String =
     localizedDecimal(value, DecimalFormatSymbols.getInstance(context.resources.configuration.locales[0]).decimalSeparator)
 
-private fun birthDateLabel(context: Context, isoDate: String): String =
-    runCatching {
-        val instant = LocalDate.parse(isoDate).atStartOfDay(ZoneId.systemDefault()).toInstant()
-        DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date.from(instant))
-    }.getOrElse { context.getString(R.string.birth_date_not_set) }
-
-private fun chooseBirthDate(context: Context, isoDate: String, onSelected: (String) -> Unit) {
-    val day = runCatching { LocalDate.parse(isoDate) }.getOrElse { LocalDate.now() }
-    DatePickerDialog(context, { _, year, month, date ->
-        onSelected(LocalDate.of(year, month + 1, date).toString())
-    }, day.year, day.monthValue - 1, day.dayOfMonth).apply {
-        datePicker.maxDate = System.currentTimeMillis()
-    }.show()
-}
+private fun ChildRow.birthDateString(): String = birthDay?.let { day ->
+    runCatching { LocalDate.ofEpochDay(day).toString() }.getOrNull()
+}.orEmpty()
 
 private fun growthUnitLabel(context: Context, unit: UByte): String = context.getString(when (unit) {
     10u.toUByte() -> R.string.unit_g
@@ -438,12 +427,16 @@ private data class PendingMedicationEdit(
     val doseAmount: String,
     val doseUnit: String,
 )
-private data class PendingChildMetadataEdit(
+private data class PendingChildProfileEdit(
     val family: FamilyRef,
     val childId: ByteArray,
     val shared: Boolean,
+    val name: String,
+    val originalName: String,
     val birthDate: String,
+    val originalBirthDate: String,
     val sex: UByte,
+    val originalSex: UByte,
 )
 private data class PendingSleepEdit(
     val family: FamilyRef,
@@ -692,10 +685,10 @@ private fun TrackerScreen(
     var childName by remember { mutableStateOf("") }
     var showAddChildForm by remember { mutableStateOf(false) }
     var showChildDetails by remember { mutableStateOf(false) }
-    var childRename by remember { mutableStateOf<String?>(null) }
-    var pendingChildMetadataEdit by remember { mutableStateOf<PendingChildMetadataEdit?>(null) }
+    var pendingChildProfileEdit by remember { mutableStateOf<PendingChildProfileEdit?>(null) }
     var childBirthDate by remember { mutableStateOf("") }
     var childSex by remember { mutableStateOf(3u.toUByte()) }
+    var childProfileSaving by remember { mutableStateOf(false) }
     var amount by remember { mutableStateOf("") }
     var bottleUnit by remember { mutableStateOf(1u.toUByte()) }
     var bottleContent by remember { mutableStateOf(2u.toUByte()) }
@@ -863,8 +856,8 @@ private fun TrackerScreen(
         medicationName = ""
         doseAmount = ""
         doseUnit = ""
-        childRename = null
-        pendingChildMetadataEdit = null
+        pendingChildProfileEdit = null
+        childProfileSaving = false
         pendingDelete = null
         pendingNoteEdit = null
         pendingTimeEdit = null
@@ -1440,7 +1433,6 @@ private fun TrackerScreen(
                             selectedChild = null
                             showChildDetails = false
                             showAddChildForm = false
-                            childRename = null
                             childName = ""
                             childBirthDate = ""
                             childSex = 3u.toUByte()
@@ -1488,7 +1480,6 @@ private fun TrackerScreen(
                             showFamilySetup = false
                             showChildDetails = false
                             showAddChildForm = false
-                            childRename = null
                             childName = ""
                             childBirthDate = ""
                             childSex = 3u.toUByte()
@@ -1626,7 +1617,6 @@ private fun TrackerScreen(
                                 selectedChild = item.id.key()
                                 showChildDetails = false
                                 showAddChildForm = false
-                                childRename = null
                                 childName = ""
                                 childBirthDate = ""
                                 childSex = 3u.toUByte()
@@ -1639,6 +1629,8 @@ private fun TrackerScreen(
                 if (child != null && route == TrackerDestination.TODAY) {
                     Text(stringResource(if (activeShared) R.string.shared_family_short else R.string.local_only),
                         style = MaterialTheme.typography.labelMedium)
+                    Text(childAgeLabel(context, child.birthDateString()),
+                        style = MaterialTheme.typography.bodyMedium)
                     if (automaticSyncDelayed && !automaticSyncBlocked) Text(
                         stringResource(R.string.automatic_sync_delayed), color = MaterialTheme.colorScheme.error)
                     if (automaticSyncBlocked) Text(stringResource(R.string.shared_upload_blocked),
@@ -1738,107 +1730,30 @@ private fun TrackerScreen(
                     }
                 }
                 if (child != null && route == TrackerDestination.FAMILY) {
+                    Text(childAgeLabel(context, child.birthDateString()),
+                        style = MaterialTheme.typography.bodyMedium)
                     OutlinedButton(onClick = { showChildDetails = !showChildDetails }) {
                         Text(stringResource(if (showChildDetails) R.string.hide_child_options
                             else R.string.child_options))
                     }
-                    if (showChildDetails && childRename == null) {
-                        OutlinedButton(onClick = { childRename = child.name }) {
-                            Text(stringResource(R.string.rename_child))
-                        }
-                    } else if (showChildDetails) {
-                        OutlinedTextField(
-                            value = childRename.orEmpty(),
-                            onValueChange = { childRename = it.take(16 * 1024) },
-                            label = { Text(stringResource(R.string.new_child_name)) },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(enabled = !childRename.isNullOrBlank(), onClick = {
-                                val name = childRename?.trim() ?: return@Button
-                                change(onSaved = { childRename = null }) {
-                                    if (activeShared) sharing.renameChild(family, child.id, name, System.currentTimeMillis())
-                                    else store.renameChild(family, child.id, name, System.currentTimeMillis())
-                                }
-                            }) { Text(stringResource(R.string.save_changes)) }
-                            OutlinedButton(onClick = { childRename = null }) {
-                                Text(stringResource(R.string.cancel))
-                            }
-                        }
-                    }
                     if (showChildDetails) OutlinedButton(onClick = {
-                        pendingChildMetadataEdit = PendingChildMetadataEdit(
-                            family, child.id.copyOf(), activeShared,
-                            child.birthDay?.let { day ->
-                                runCatching { LocalDate.ofEpochDay(day).toString() }.getOrDefault("")
-                            }.orEmpty(),
-                            child.sex ?: 3u.toUByte(),
+                        val birthDate = child.birthDateString()
+                        val sex = child.sex ?: 3u.toUByte()
+                        pendingChildProfileEdit = PendingChildProfileEdit(
+                            family, child.id.copyOf(), activeShared, child.name, child.name,
+                            birthDate, birthDate, sex, sex,
                         )
-                    }) { Text(stringResource(R.string.edit_child_growth_details)) }
+                    }) { Text(stringResource(R.string.edit_child_profile)) }
                 }
-                if (route == TrackerDestination.FAMILY && children.isNotEmpty() && showChildDetails && !showAddChildForm) OutlinedButton(onClick = {
+                if (route == TrackerDestination.FAMILY && children.isNotEmpty() && showChildDetails) OutlinedButton(onClick = {
                     showAddChildForm = true
+                    childName = ""
+                    childBirthDate = ""
+                    childSex = 3u.toUByte()
                 }) { Text(stringResource(R.string.add_another_child)) }
-                if (route == TrackerDestination.FAMILY && (children.isEmpty() || (showChildDetails && showAddChildForm))) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = childName,
-                            onValueChange = { childName = it },
-                            label = { Text(stringResource(R.string.child_name)) },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                        )
-                        Button(enabled = childName.isNotBlank(), onClick = {
-                            val name = childName.trim()
-                            val birthDay = runCatching { childBirthDate.takeIf { it.isNotBlank() }?.let { LocalDate.parse(it).toEpochDay() } }
-                                .getOrElse { message = context.getString(R.string.birth_date_invalid); return@Button }
-                            scope.launch {
-                                runCatching { withContext(Dispatchers.IO) {
-                                    if (activeShared) sharing.addChildWithMetadata(family, name, birthDay, childSex, System.currentTimeMillis())
-                                    else store.addChildWithMetadata(family, name, birthDay, childSex, System.currentTimeMillis())
-                                } }
-                                    .onSuccess { created ->
-                                        selectedChild = created.key()
-                                        showAddChildForm = false
-                                        showChildDetails = false
-                                        childName = ""
-                                        childBirthDate = ""
-                                        childSex = 3u.toUByte()
-                                        version++
-                                        message = null
-                                    }.onFailure { message = errorText }
-                            }
-                        }) { Text(stringResource(R.string.add_child)) }
-                    }
-                    Text(stringResource(R.string.birth_date))
-                    OutlinedButton(onClick = {
-                        chooseBirthDate(context, childBirthDate) { childBirthDate = it }
-                    }) { Text(birthDateLabel(context, childBirthDate)) }
-                    if (childBirthDate.isNotBlank()) TextButton(onClick = { childBirthDate = "" }) {
-                        Text(stringResource(R.string.clear_birth_date))
-                    }
-                    Text(stringResource(R.string.growth_chart_sex))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(
-                            1u.toUByte() to R.string.sex_female,
-                            2u.toUByte() to R.string.sex_male,
-                            3u.toUByte() to R.string.sex_unspecified,
-                        ).forEach { (code, label) ->
-                            FilterChip(
-                                selected = childSex == code,
-                                onClick = { childSex = code },
-                                label = { Text(stringResource(label)) },
-                            )
-                        }
-                    }
-                    if (children.isNotEmpty()) OutlinedButton(onClick = {
-                        showAddChildForm = false
-                        childName = ""
-                        childBirthDate = ""
-                        childSex = 3u.toUByte()
-                    }) { Text(stringResource(R.string.cancel)) }
-                }
+                if (route == TrackerDestination.FAMILY && children.isEmpty()) Button(
+                    onClick = { showAddChildForm = true },
+                ) { Text(stringResource(R.string.add_child)) }
 
                 if (child != null && route == TrackerDestination.CAPTURE) {
                     if (captureKind == null) {
@@ -2816,6 +2731,42 @@ private fun TrackerScreen(
             message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }
+    if (showAddChildForm && family != null) ChildProfileScreen(
+        editing = false,
+        name = childName,
+        birthDate = childBirthDate,
+        sex = childSex,
+        saving = childProfileSaving,
+        canClearBirthDate = true,
+        onNameChange = { childName = it },
+        onBirthDateChange = { childBirthDate = it },
+        onSexChange = { childSex = it },
+        onDismiss = { if (!childProfileSaving) showAddChildForm = false },
+        onSave = save@{
+            val name = childName.trim()
+            if (name.isEmpty()) return@save
+            val birthDay = runCatching {
+                childBirthDate.takeIf { it.isNotBlank() }?.let { LocalDate.parse(it).toEpochDay() }
+            }.getOrElse { message = context.getString(R.string.birth_date_invalid); return@save }
+            childProfileSaving = true
+            scope.launch {
+                runCatching { withContext(Dispatchers.IO) {
+                    if (activeShared) sharing.addChildWithMetadata(family, name, birthDay, childSex, System.currentTimeMillis())
+                    else store.addChildWithMetadata(family, name, birthDay, childSex, System.currentTimeMillis())
+                } }.onSuccess { created ->
+                    selectedChild = created.key()
+                    showAddChildForm = false
+                    showChildDetails = false
+                    childName = ""
+                    childBirthDate = ""
+                    childSex = 3u.toUByte()
+                    version++
+                    message = null
+                }.onFailure { message = errorText }
+                childProfileSaving = false
+            }
+        },
+    )
     if (showTargetPicker) {
         AlertDialog(
             onDismissRequest = { showTargetPicker = false },
@@ -3397,54 +3348,53 @@ private fun TrackerScreen(
             },
         )
     }
-    pendingChildMetadataEdit?.let { target ->
-        AlertDialog(
-            onDismissRequest = { pendingChildMetadataEdit = null },
-            title = { Text(stringResource(R.string.edit_child_growth_details)) },
-            text = {
-                Column {
-                    Text(stringResource(R.string.birth_date))
-                    OutlinedButton(onClick = {
-                        chooseBirthDate(context, target.birthDate) {
-                            pendingChildMetadataEdit = target.copy(birthDate = it)
+    pendingChildProfileEdit?.let { target ->
+        ChildProfileScreen(
+            editing = true,
+            name = target.name,
+            birthDate = target.birthDate,
+            sex = target.sex,
+            saving = childProfileSaving,
+            canClearBirthDate = target.originalBirthDate.isBlank(),
+            onNameChange = { pendingChildProfileEdit = target.copy(name = it) },
+            onBirthDateChange = { pendingChildProfileEdit = target.copy(birthDate = it) },
+            onSexChange = { pendingChildProfileEdit = target.copy(sex = it) },
+            onDismiss = { if (!childProfileSaving) pendingChildProfileEdit = null },
+            onSave = save@{
+                val name = target.name.trim()
+                if (name.isEmpty()) return@save
+                val birthDay = runCatching {
+                    target.birthDate.takeIf { it.isNotBlank() }?.let { LocalDate.parse(it).toEpochDay() }
+                }.getOrElse { message = context.getString(R.string.birth_date_invalid); return@save }
+                if (name == target.originalName && target.birthDate == target.originalBirthDate &&
+                    target.sex == target.originalSex) {
+                    pendingChildProfileEdit = null
+                    return@save
+                }
+                childProfileSaving = true
+                scope.launch {
+                    runCatching { withContext(Dispatchers.IO) {
+                        if (name != target.originalName) {
+                            if (target.shared) sharing.renameChild(target.family, target.childId, name, System.currentTimeMillis())
+                            else store.renameChild(target.family, target.childId, name, System.currentTimeMillis())
                         }
-                    }) { Text(birthDateLabel(context, target.birthDate)) }
-                    if (target.birthDate.isNotBlank()) TextButton(onClick = {
-                        pendingChildMetadataEdit = target.copy(birthDate = "")
-                    }) { Text(stringResource(R.string.clear_birth_date)) }
-                    Text(stringResource(R.string.birth_date_edit_hint))
-                    Text(stringResource(R.string.growth_chart_sex))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(
-                            1u.toUByte() to R.string.sex_female,
-                            2u.toUByte() to R.string.sex_male,
-                            3u.toUByte() to R.string.sex_unspecified,
-                        ).forEach { (code, label) ->
-                            FilterChip(
-                                selected = target.sex == code,
-                                onClick = { pendingChildMetadataEdit = target.copy(sex = code) },
-                                label = { Text(stringResource(label)) },
+                        if (target.birthDate != target.originalBirthDate || target.sex != target.originalSex) {
+                            if (target.shared) sharing.editChildMetadata(
+                                target.family, target.childId, birthDay, target.sex, System.currentTimeMillis(),
+                            ) else store.editChildMetadata(
+                                target.family, target.childId, birthDay, target.sex, System.currentTimeMillis(),
                             )
                         }
+                    } }.onSuccess {
+                        pendingChildProfileEdit = null
+                        version++
+                        message = null
+                    }.onFailure {
+                        version++
+                        message = errorText
                     }
+                    childProfileSaving = false
                 }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    val birthDay = runCatching {
-                        target.birthDate.takeIf { it.isNotBlank() }?.let { LocalDate.parse(it).toEpochDay() }
-                    }.getOrElse { message = context.getString(R.string.birth_date_invalid); return@Button }
-                    change(onSaved = { pendingChildMetadataEdit = null }) {
-                        if (target.shared) sharing.editChildMetadata(
-                            target.family, target.childId, birthDay, target.sex, System.currentTimeMillis(),
-                        ) else store.editChildMetadata(
-                            target.family, target.childId, birthDay, target.sex, System.currentTimeMillis(),
-                        )
-                    }
-                }) { Text(stringResource(R.string.save_changes)) }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { pendingChildMetadataEdit = null }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }

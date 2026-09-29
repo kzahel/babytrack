@@ -70,6 +70,11 @@ that obscures whether a write or sync is complete.
 - **Family:** quieter utility layout with clearly separated children,
   access, pending enrollment, data files, and settings. Pending and removed
   states use specific words and actions rather than a generic badge.
+- **Child profile:** use a full-height form for create and edit, a simple
+  initial avatar, and one reachable Save action. Show name, a locale-formatted
+  birth date picker, growth-chart sex, and age derived from the local birth
+  day. Use day, week, month, then year units as the child grows. Keep those
+  units in plural resources and never store age as separate data.
 
 ## Localization contract
 

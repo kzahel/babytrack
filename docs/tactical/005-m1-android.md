@@ -341,9 +341,16 @@ This is still a development flow, not a released product flow.
   Once a Family exists, Family setup actions sit under Family options; a
   saved pending join remains visible. A single Family or child no longer
   repeats the target already named in the top bar, while multiple targets
-  retain their switcher chips. Rename, growth details, and add-another-child
-  actions sit under Child options. The command-driven quick UI path opens
-  and closes both panels and passes at 1.5× emulator text scale.
+  retain their switcher chips. Child options now opens one profile editor for
+  name, birth date, and growth-chart sex, and an add-another-child action.
+  Create and edit share the same full-height form with a pinned Save action;
+  Today, Family, and the form show age derived from birth date in local
+  calendar units. A missing date is shown as unknown. The command-driven
+  quick UI path opens and closes both panels at 1.5× emulator text scale.
+  The real-relay instrumentation suite now checks profile creation and an
+  edit that changes name and sex while retaining the saved birthday; a
+  320×640, 1.5× text capture checks the pinned Save action above the
+  gesture area.
   Preserve unknown fields and exact Family/child targets. Keep clinical
   recommendations out of the UI.
   WHO publishes the growth reference tables, but the terms for bundling those

@@ -20,6 +20,9 @@ advice, and shows promotional blocks beside daily actions. Those patterns
 do not fit this MVP's accountless tracking and Family access model. The
 screenshots include private details and remain only in `local-references/`;
 this document deliberately records no names or values from them.
+An additional child-profile reference supplied on 2026-09-29 is held there
+too. Its useful pattern is one focused create/edit form with a reachable
+Save action.
 
 The former Android screen put Today, activity forms, History, Family access,
 join, and backup in one scroll. The current debug app has Today, History, and
@@ -67,6 +70,7 @@ flowchart TD
   Detail --> History
   Family --> Access[Sharing and devices]
   Family --> Data[Backup, restore, export]
+  Family --> ChildProfile[Create or edit child profile]
 ```
 
 ## Screen behavior
@@ -96,6 +100,12 @@ flowchart TD
    analysis export, and child management. Show current local/shared status
    in plain language. Keep any developer relay configuration visibly
    separate from caregiver actions until the sharing UI is ready.
+6. **Child profile.** Create and edit use the same focused screen with name,
+   birth date, growth-chart sex, derived age, and one Save action. The age
+   appears with the selected child on Today and Family. A missing birth date
+   is labeled unknown. Editing keeps the same child ID and activities; it
+   updates only changed fields through the Rust core. An existing birth date
+   can be corrected but not cleared by the current protocol.
 
 ## States that must remain visible
 

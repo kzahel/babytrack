@@ -46,6 +46,7 @@ pub mod portable_file;
 pub mod projection;
 pub mod proof;
 pub mod ready_replay;
+pub mod removal_probe;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod role_change;
 pub mod rotation;

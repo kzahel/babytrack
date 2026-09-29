@@ -369,8 +369,9 @@ touches an app store until M5.
 3. **M2, web.** Mostly UI over the wasm core, including multiple Families and
    the Family switcher. The responsive local preview and native-managed
    browser join/sync flow, including later key epochs, are in
-   [006](tactical/006-m2-web.md); web-origin sharing, removal/recovery, and
-   the web trust-boundary gate remain open. A
+   [006](tactical/006-m2-web.md); verified removal and private-copy recovery
+   also pass a real-relay flow. Web-origin sharing, file recovery, and the web
+   trust-boundary gate remain open. A
    disposable-data, opt-in preview may be deployed early for flow checks
    while public hosting remains M5.
 4. **M3, iOS on our own devices.** Parity with Android, including Live

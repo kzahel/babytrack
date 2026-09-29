@@ -27,6 +27,23 @@ async function ready(origin) {
   throw new Error(`Server did not start: ${origin}`);
 }
 
+async function deviceId(page) {
+  return page.evaluate(async () => {
+    const database = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('babytrack-preview-public-v1');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const credential = await new Promise((resolve, reject) => {
+      const request = database.transaction('credentials').objectStore('credentials').getAll();
+      request.onsuccess = () => resolve(request.result[0]);
+      request.onerror = () => reject(request.error);
+    });
+    database.close();
+    return Array.from(credential.deviceId, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  });
+}
+
 async function run() {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'babytrack-web-sharing-'));
   const manager = path.join(temporary, 'manager.db');
@@ -114,24 +131,26 @@ async function run() {
     await secondPage.locator('.child-row strong').getByText('DynamicHolderChild').waitFor();
     await secondPage.locator('.side-nav').getByRole('button', { name: 'Today' }).click();
     await secondPage.getByText('WebOnlyPrivateMarker').waitFor();
-    await second.close();
-    const firstDevice = await page.evaluate(async () => {
-      const database = await new Promise((resolve, reject) => {
-        const request = indexedDB.open('babytrack-preview-public-v1');
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
-      const credential = await new Promise((resolve, reject) => {
-        const request = database.transaction('credentials').objectStore('credentials').getAll();
-        request.onsuccess = () => resolve(request.result[0]);
-        request.onerror = () => reject(request.error);
-      });
-      database.close();
-      return Array.from(credential.deviceId, (byte) => byte.toString(16).padStart(2, '0')).join('');
-    });
+    const secondDevice = await deviceId(secondPage);
+    await page.route('**/v1/**', (route) => route.abort());
+    await page.locator('.bottom-nav').getByRole('button', { name: 'Today' }).click();
+    await page.locator('.quick-grid button').filter({ hasText: 'Note' }).click();
+    await page.getByLabel('Note').fill('RemovedPendingMarker');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByText('RemovedPendingMarker').waitFor();
+    const firstDevice = await deviceId(page);
     const removal = spawnSync(holderBin, ['remove', manager, relayOrigin, firstDevice],
       { encoding: 'utf8' });
     assert.equal(removal.status, 0, `Native removal: ${removal.stderr}`);
+    await page.unroute('**/v1/**');
+    await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();
+    await page.getByRole('button', { name: 'Sync now' }).click();
+    await page.getByText('Access ended · private copy saved on this browser').waitFor();
+    await page.locator('.bottom-nav').getByRole('button', { name: 'Today' }).click();
+    await page.getByRole('button', { name: 'Open private copy' }).click();
+    await page.getByText('RemovedPendingMarker').waitFor();
+    await page.reload();
+    await page.getByText('RemovedPendingMarker').waitFor();
     const rotatedIssue = spawnSync(holderBin, ['later_issue', manager, relayOrigin, origin],
       { encoding: 'utf8' });
     assert.equal(rotatedIssue.status, 0, `Native rotated issue: ${rotatedIssue.stderr}`);
@@ -147,9 +166,22 @@ async function run() {
     await thirdPage.getByRole('button', { name: 'Resume joining' }).click();
     await thirdPage.getByText('WebOnlyPrivateMarker').waitFor();
     await third.close();
+    const secondRemoval = spawnSync(holderBin, ['remove', manager, relayOrigin, secondDevice],
+      { encoding: 'utf8' });
+    assert.equal(secondRemoval.status, 0, `Native second removal: ${secondRemoval.stderr}`);
+    await secondPage.locator('.side-nav').getByRole('button', { name: 'Family' }).click();
+    await secondPage.getByRole('button', { name: 'Sync now' }).click();
+    await secondPage.getByText('Access ended · local archive available').waitFor();
+    await secondPage.locator('.side-nav').getByRole('button', { name: 'Today' }).click();
+    await secondPage.getByRole('button', { name: 'Make an independent copy' }).click();
+    await secondPage.getByRole('button', { name: 'Open private copy' }).waitFor({ timeout: 5000 })
+      .catch(async () => { throw new Error(`Manual copy screen: ${await secondPage.locator('main').innerText()}`); });
+    await secondPage.getByRole('button', { name: 'Open private copy' }).click();
+    await secondPage.getByText('WebOnlyPrivateMarker').waitFor();
+    await second.close();
     assert.deepEqual(failures, []);
     passed = true;
-    console.log('Web first, later, and rotated joins, encrypted history, offline edit, and reload passed');
+    console.log('Web joins, rotated keys, automatic and explicit removal copies, offline edit, and reload passed');
   } finally {
     if (!passed) {
       console.error('Relay log:', fs.readFileSync(relayLog, 'utf8'));

@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { copy as c, ageLabel } from './strings.js';
   import { families, createFamily, snapshot, addChild, logActivity, logBreastFeed, editBreastFeed,
-    rememberInvitation, pendingInvitations, continueInvitation, syncFamily } from './core.js';
+    rememberInvitation, pendingInvitations, continueInvitation, syncFamily,
+    familySyncStatus, copyRemovedFamily } from './core.js';
   import { readDraft, persistDraft, tapSide, completedSegments, sideTotals,
     durationLabel, editableSegments, rebuiltSegments } from './breast-timer.js';
 
@@ -30,6 +31,8 @@
   let pendingFragment = '';
   let joinStage = '';
   let syncStage = '';
+  let removedInfo = null;
+  let privateCopy = '';
   let polling = false;
 
   $: sharedSelected = familyRows.find((row) => row.family === family)?.source === 'shared';
@@ -66,6 +69,11 @@
   }
   async function refresh() {
     data = await snapshot(family);
+    if (sharedSelected) {
+      const status = await familySyncStatus(family);
+      removedInfo = status.removal;
+      privateCopy = status.privateCopy || '';
+    } else { removedInfo = null; privateCopy = ''; }
     child = data.children.find((row) => row.id === child)?.id || data.children[0]?.id || '';
     breastDraft = readDraft(family, child);
   }
@@ -89,8 +97,12 @@
       }
       if (family && familyRows.find((row) => row.family === family)?.source === 'shared') {
         const progress = await syncFamily(family);
+        if (progress.removed && progress.privateCopy) familyRows = await families();
         await refresh();
-        syncStage = progress.noMoreVisible ? c.syncReady : c.syncMore;
+        if (progress.removed) {
+          screen = '';
+          syncStage = progress.privateCopy ? c.removedCopied : c.removedArchive;
+        } else syncStage = progress.noMoreVisible ? c.syncReady : c.syncMore;
       }
     } catch (cause) {
       if (pendingFragment) joinStage = `${c.joinPending} · ${message(cause)}`;
@@ -121,6 +133,17 @@
       await refresh();
       tab = 'today';
     });
+  }
+  async function makeRemovedCopy() {
+    await run(async () => {
+      const copy = await copyRemovedFamily(family);
+      familyRows = await families();
+      privateCopy = copy;
+      syncStage = c.removedCopied;
+    });
+  }
+  async function openPrivateCopy() {
+    if (privateCopy) await selectFamily(privateCopy);
   }
   function selectChild(value) {
     child = value;
@@ -363,45 +386,49 @@
         </section>
       {:else if tab === 'today'}
         <section>
+          {#if removedInfo}<div class="panel" role="status"><strong>{c.removedTitle}</strong><p>{c.removedDetail}</p>
+            {#if privateCopy}<button class="primary" onclick={openPrivateCopy}>{c.openPrivateCopy}</button>
+            {:else}<button class="secondary" onclick={makeRemovedCopy}>{c.makePrivateCopy}</button>{/if}
+          </div>{/if}
           <div class="eyebrow">{formatDay(Date.now())}</div>
           <h1>{selectedChild ? selectedChild.name : c.today}</h1>
           <p class="muted">{selectedChild ? ageLabel(selectedChild.birthDay) : c.chooseChild}</p>
           {#if selectedChild}
             <div class="summary panel"><span>{c.todaySummary}</span><strong>{todayEntries.filter((row) => row.kind.startsWith('feed.')).length} {c.feeds} · {todayEntries.filter((row) => row.kind === 'diaper').length} {c.diapers}</strong></div>
-            {#if breastDraft}
+            {#if breastDraft && !removedInfo}
               <button class="timer-resume panel" onclick={openBreast}><span>{c.breastFeed} · {breastDraft.active ? c.feedingNow : c.feedingPaused}</span><strong>{durationLabel(sideTotals(breastDraft, nowMs)[1] + sideTotals(breastDraft, nowMs)[2])} →</strong></button>
             {/if}
-            <h2>{c.addActivity}</h2>
+            {#if !removedInfo}<h2>{c.addActivity}</h2>
             <div class="quick-grid">
               <button onclick={openBreast}><span class="icon feed">◓</span><strong>{c.breastFeed}</strong><small>{c.feeds}</small></button>
               <button onclick={() => begin('bottle')}><span class="icon feed">◔</span><strong>{c.bottle}</strong><small>{c.feeds}</small></button>
               <button onclick={() => begin('diaper')}><span class="icon care">◇</span><strong>{c.diaper}</strong><small>{c.diapers}</small></button>
               <button onclick={() => begin('note')}><span class="icon note">✎</span><strong>{c.note}</strong><small>{c.addActivity}</small></button>
-            </div>
+            </div>{/if}
             <div class="section-heading"><h2>{c.recent}</h2><button class="text-action" onclick={() => tab = 'history'}>{c.allEntries} →</button></div>
             {#if entries.length === 0}<p class="muted">{c.emptyHistory}</p>{/if}
             {#each entries.slice(0, 4) as row}
-              <div class="entry"><span class="entry-dot"></span><div><strong>{entryLabel(row)}</strong><small>{formatDay(row.startMs)}</small></div><time>{formatTime(row.startMs)}</time>{#if row.kind === 'feed.breast' && row.breastSegments?.length}<button class="entry-edit" onclick={() => beginBreastEdit(row)}>{c.edit}</button>{/if}</div>
+              <div class="entry"><span class="entry-dot"></span><div><strong>{entryLabel(row)}</strong><small>{formatDay(row.startMs)}</small></div><time>{formatTime(row.startMs)}</time>{#if !removedInfo && row.kind === 'feed.breast' && row.breastSegments?.length}<button class="entry-edit" onclick={() => beginBreastEdit(row)}>{c.edit}</button>{/if}</div>
             {/each}
           {:else}
-            <div class="panel empty"><p>{c.addChildPrompt}</p><button class="primary" onclick={() => screen = 'child'}>{c.addChild}</button></div>
+            <div class="panel empty"><p>{c.addChildPrompt}</p>{#if !removedInfo}<button class="primary" onclick={() => screen = 'child'}>{c.addChild}</button>{/if}</div>
           {/if}
         </section>
       {:else if tab === 'history'}
         <section><div class="eyebrow">{selectedChild?.name || c.family}</div><h1>{c.history}</h1>
           {#if entries.length === 0}<div class="panel empty">{c.emptyHistory}</div>{/if}
           {#each entries as row}
-            <div class="entry"><span class="entry-dot"></span><div><strong>{entryLabel(row)}</strong><small>{formatDay(row.startMs)}</small></div><time>{formatTime(row.startMs)}</time>{#if row.kind === 'feed.breast' && row.breastSegments?.length}<button class="entry-edit" onclick={() => beginBreastEdit(row)}>{c.edit}</button>{/if}</div>
+            <div class="entry"><span class="entry-dot"></span><div><strong>{entryLabel(row)}</strong><small>{formatDay(row.startMs)}</small></div><time>{formatTime(row.startMs)}</time>{#if !removedInfo && row.kind === 'feed.breast' && row.breastSegments?.length}<button class="entry-edit" onclick={() => beginBreastEdit(row)}>{c.edit}</button>{/if}</div>
           {/each}
         </section>
       {:else}
         <section><div class="eyebrow">{sharedSelected ? c.shared : c.localOnly}</div><h1>{c.family}</h1>
           <div class="panel"><h2>{c.children}</h2>
             {#each data.children as row}<div class="child-row"><span class="avatar">{row.name.slice(0, 1).toUpperCase()}</span><div><strong>{row.name}</strong><small>{ageLabel(row.birthDay)}</small></div></div>{/each}
-            <button class="secondary" onclick={() => screen = 'child'}>＋ {c.addChild}</button>
+            {#if !removedInfo}<button class="secondary" onclick={() => screen = 'child'}>＋ {c.addChild}</button>{/if}
           </div>
           <div class="panel"><h2>{sharedSelected ? c.shared : c.localOnly}</h2><p class="muted">{sharedSelected ? c.sharedDescription : c.localDescription}</p>
-            {#if sharedSelected}<p role="status">{syncStage || c.syncReady}</p><button class="secondary" onclick={poll}>{c.syncNow}</button>{/if}
+            {#if sharedSelected}<p role="status">{syncStage || (removedInfo ? c.removedArchive : c.syncReady)}</p>{#if !removedInfo}<button class="secondary" onclick={poll}>{c.syncNow}</button>{/if}{/if}
             <label class="family-switch">{c.switchFamily}<select value={family} onchange={(event) => selectFamily(event.currentTarget.value)}>
               {#each familyRows as row, index}<option value={row.family}>{c.familyNumber(index + 1)}</option>{/each}
             </select></label>

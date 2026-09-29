@@ -5,9 +5,11 @@
 use crate::{
     batch,
     cbor::{self, Value},
-    control::{self, exact_map, fixed, number},
+    control,
     control_chain::{self, ControlChain},
-    crypto, session,
+    crypto,
+    removal_probe::{self, RemovalControlProbe},
+    session,
     sqlite_store::{self, FamilyHandle, SavedRemoval, SqliteStore, VerifiedSharedEntry},
     sync_wire,
 };
@@ -22,6 +24,7 @@ pub enum Error {
     Session(session::Error),
     Store(sqlite_store::Error),
     Wire(sync_wire::Error),
+    RemovalProbe(removal_probe::Error),
     Invalid(&'static str),
 }
 impl From<batch::Error> for Error {
@@ -64,6 +67,11 @@ impl From<sync_wire::Error> for Error {
         Self::Wire(value)
     }
 }
+impl From<removal_probe::Error> for Error {
+    fn from(value: removal_probe::Error) -> Self {
+        Self::RemovalProbe(value)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PendingBatchResult {
@@ -74,14 +82,7 @@ pub enum PendingBatchResult {
     Blocked,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VerifiedRemovalProof {
-    pub transition_id: [u8; 16],
-    pub cursor: u64,
-    pub source_cursor: u64,
-    pub known_gap: bool,
-    pub committed_bytes: Vec<u8>,
-}
+pub use removal_probe::VerifiedRemovalProof;
 
 impl From<VerifiedRemovalProof> for SavedRemoval {
     fn from(value: VerifiedRemovalProof) -> Self {
@@ -201,48 +202,7 @@ impl PublicHistorySession {
         &self,
         page_bytes: &[u8],
     ) -> Result<Option<VerifiedRemovalProof>, Error> {
-        self.chain.active_signing_public(self.family.device_id)?;
-        let page =
-            sync_wire::ControlPage::decode(page_bytes, self.family.family_id, self.cursor())?;
-        let mut chain = self.chain.clone();
-        for entry in page.entries {
-            chain.apply_sparse_control(&entry.committed_bytes)?;
-            if chain.last_global_cursor() != entry.cursor {
-                return Err(Error::Invalid("removal proof cursor differs from receipt"));
-            }
-            let control = cbor::decode_with_limits(
-                &entry.committed_bytes,
-                cbor::Limits {
-                    max_bytes: 1024 * 1024,
-                    max_depth: 16,
-                },
-            )?;
-            let root = exact_map(&control, 4)?;
-            let unsigned = exact_map(&root[0].1, 11)?;
-            if number(&unsigned[5].1)? != 8 {
-                continue;
-            }
-            let delta = exact_map(&unsigned[6].1, 3)?;
-            if fixed::<16>(&delta[0].1)? != self.family.device_id {
-                continue;
-            }
-            if chain
-                .active_devices()?
-                .iter()
-                .any(|row| row.device_id == self.family.device_id)
-            {
-                return Err(Error::Invalid("removal proof did not revoke this device"));
-            }
-            let transition_id = fixed::<16>(&unsigned[4].1)?;
-            return Ok(Some(VerifiedRemovalProof {
-                transition_id,
-                cursor: entry.cursor,
-                source_cursor: self.cursor(),
-                known_gap: entry.cursor > self.cursor().saturating_add(1),
-                committed_bytes: entry.committed_bytes,
-            }));
-        }
-        Ok(None)
+        verify_removed_control_page_for(&self.chain, self.family, self.cursor(), page_bytes)
     }
     pub fn pending_batch_id(&self, store: &SqliteStore) -> Result<Option<[u8; 16]>, Error> {
         Ok(store
@@ -669,6 +629,28 @@ impl PublicHistorySession {
         )?;
         Ok(())
     }
+}
+
+/// Verify a removed device's sparse control page against its last contiguous
+/// data pin. Shared by native storage and browser adapters; skipped batches
+/// are never treated as locally downloaded.
+pub fn verify_removed_control_page_for(
+    source: &ControlChain,
+    family: FamilyHandle,
+    source_cursor: u64,
+    page_bytes: &[u8],
+) -> Result<Option<VerifiedRemovalProof>, Error> {
+    if source.last_global_cursor() != source_cursor || source.family_id() != family.family_id {
+        return Err(Error::Invalid(
+            "removal source differs from saved public pin",
+        ));
+    }
+    let mut probe =
+        RemovalControlProbe::new(source.clone(), family.device_id).map_err(Error::RemovalProbe)?;
+    Ok(probe
+        .accept(page_bytes, source_cursor)
+        .map_err(Error::RemovalProbe)?
+        .0)
 }
 
 /// Replay the complete local prefix, including data entries between join

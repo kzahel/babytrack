@@ -1,10 +1,12 @@
 import { InvitationStore } from '../../../core-wasm/web/invitation-store.js';
+import { LocalStore } from '../../../core-wasm/web/local-store.js';
 import { PublicStore } from '../../../core-wasm/web/public-store.js';
 import { relayGet } from '../../../core-wasm/web/relay-get.js';
 import { relayPost, relayPostControl } from '../../../core-wasm/web/relay-post.js';
 
 const invitationDatabase = 'babytrack-preview-invitations-v1';
 const publicDatabase = 'babytrack-preview-public-v1';
+const localDatabase = 'babytrack-preview-local-v1';
 const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
 const bytes = (value) => Uint8Array.from(value.match(/../g) || [], (pair) => parseInt(pair, 16));
 
@@ -36,6 +38,8 @@ export async function sharedSnapshot(wasm, family) {
 export async function syncShared(wasm, family) {
   const store = await PublicStore.open(wasm, publicDatabase);
   try {
+    const removal = await store.probeRemoval(family, relayGet);
+    if (removal) return { removed: true, privateCopy: await ensureRemovalCopy(wasm, store, family, removal) };
     let progress = await store.pullSaved(family, relayGet, 16);
     await store.hydrateControlObjectsSaved(family, relayGet);
     if (await store.pendingInitial(family) || (await store.queuedInitial(family)).length) {
@@ -50,6 +54,9 @@ export async function syncShared(wasm, family) {
 export async function writeShared(wasm, family, action, values) {
   const store = await PublicStore.open(wasm, publicDatabase);
   try {
+    if (await store.removedStatus(family)) {
+      throw new Error('This device was removed from the shared Family');
+    }
     const credential = await store.initialCredential(family);
     const ready = await store.loadInitialReadySaved(family);
     let operation;
@@ -80,6 +87,40 @@ export async function writeShared(wasm, family, action, values) {
       await store.queueInitial(family, operation, clock);
     } finally { ready.free(); }
     return { pending: true };
+  } finally { store.close(); }
+}
+
+async function ensureRemovalCopy(wasm, store, family, removal, force = false) {
+  const local = await LocalStore.open(wasm, localDatabase);
+  try {
+    const existing = await local.removalCopy(family, removal.transitionId);
+    if (existing) return existing.family;
+    if (!force && !await store.pendingInitial(family) && !(await store.queuedInitial(family)).length) {
+      return null;
+    }
+    const ready = await store.loadInitialReadySaved(family);
+    let readable;
+    try { readable = ready.readable_file(BigInt(Date.now()), removal.knownGap); }
+    finally { ready.free(); }
+    const ids = wasm.new_local_ids();
+    const newFamily = hex(ids.slice(0, 16));
+    const newDevice = hex(ids.slice(16));
+    const restore = new wasm.WasmReadableRestore(
+      readable, ids.slice(0, 16), ids.slice(16), BigInt(Date.now()));
+    try {
+      const operations = Array.from({ length: restore.count() }, (_, index) => restore.operation(index));
+      return local.createRemovalCopy(family, removal.transitionId,
+        newFamily, newDevice, operations);
+    } finally { restore.free(); }
+  } finally { local.close(); }
+}
+
+export async function copyRemoved(wasm, family) {
+  const store = await PublicStore.open(wasm, publicDatabase);
+  try {
+    const removal = await store.removedStatus(family);
+    if (!removal) throw new Error('Verified removal is required before copying');
+    return await ensureRemovalCopy(wasm, store, family, removal, true);
   } finally { store.close(); }
 }
 
@@ -151,11 +192,18 @@ export async function advanceJoin(wasm, fragment) {
 export async function sharedStatus(wasm, family) {
   const store = await PublicStore.open(wasm, publicDatabase);
   try {
+    const removal = await store.removedStatus(family);
+    let privateCopy = null;
+    if (removal) {
+      const local = await LocalStore.open(wasm, localDatabase);
+      try { privateCopy = (await local.removalCopy(family, removal.transitionId))?.family || null; }
+      finally { local.close(); }
+    }
     const pending = await store.pendingInitial(family);
     const queued = await store.queuedInitial(family);
     const verifier = await store.load(family);
     try { return { cursor: Number(verifier.last_cursor()), pending: !!pending, queued: queued.length,
-      familyId: hex(verifier.family_id()) }; }
+      familyId: hex(verifier.family_id()), removal, privateCopy }; }
     finally { verifier.free(); }
   } finally { store.close(); }
 }

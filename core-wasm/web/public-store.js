@@ -46,7 +46,7 @@ export class PublicStore {
   }
 
   static async open(wasm, name = 'babytrack-public') {
-    const request = indexedDB.open(name, 5);
+    const request = indexedDB.open(name, 6);
     request.onupgradeneeded = () => {
       const database = request.result;
       if (!database.objectStoreNames.contains('families')) {
@@ -67,6 +67,9 @@ export class PublicStore {
       if (!database.objectStoreNames.contains('queued')) {
         database.createObjectStore('queued', { keyPath: 'family' });
       }
+      if (!database.objectStoreNames.contains('removed')) {
+        database.createObjectStore('removed', { keyPath: 'family' });
+      }
     };
     return new PublicStore(await requestResult(request), wasm);
   }
@@ -76,6 +79,72 @@ export class PublicStore {
   async families() {
     const transaction = this.database.transaction('families', 'readonly');
     return requestResult(transaction.objectStore('families').getAll());
+  }
+
+  async removedStatus(family) {
+    const read = this.database.transaction('removed', 'readonly');
+    const saved = await requestResult(read.objectStore('removed').get(family));
+    if (!saved) return null;
+    const verifier = await this.load(family);
+    let probe;
+    try {
+      if (Number(verifier.last_cursor()) !== saved.sourceCursor ||
+          hex(verifier.head_hash()) !== saved.sourceHead) {
+        throw new Error('Saved removal differs from verified Family prefix');
+      }
+      const credential = await this.initialCredential(family);
+      probe = verifier.removal_probe(credential.deviceId);
+      let result;
+      for (const page of saved.pages) {
+        result = JSON.parse(probe.accept_page(page.bytes, BigInt(page.after)));
+        if (result.removal) break;
+      }
+      if (!result?.removal || result.removal.transitionId !== saved.transitionId ||
+          result.removal.cursor !== saved.cursor) {
+        throw new Error('Saved removal proof failed replay');
+      }
+      return result.removal;
+    } finally { probe?.free(); verifier.free(); }
+  }
+
+  async probeRemoval(family, get, maxPages = 16) {
+    const saved = await this.removedStatus(family);
+    if (saved) return saved;
+    const credential = await this.initialCredential(family);
+    const verifier = await this.load(family);
+    let probe;
+    try {
+      probe = verifier.removal_probe(credential.deviceId);
+      const pages = [];
+      for (let index = 0; index < maxPages; index++) {
+        const after = Number(probe.cursor());
+        const path = `/v1/families/${family}/control?after=${after}`;
+        const auth = verifier.sign_get(credential.deviceId, credential.signingSeed,
+          path, crypto.getRandomValues(new Uint8Array(16)));
+        const response = await get(path, auth);
+        const result = JSON.parse(probe.accept_page(response, BigInt(after)));
+        pages.push({ after, bytes: Uint8Array.from(response) });
+        if (result.removal) {
+          const removal = result.removal;
+          const write = this.database.transaction(['families', 'removed'], 'readwrite');
+          const done = transactionDone(write);
+          const metadata = await requestResult(write.objectStore('families').get(family));
+          if (!metadata || metadata.cursor !== Number(verifier.last_cursor()) ||
+              metadata.head !== hex(verifier.head_hash())) {
+            write.abort();
+            await done.catch(() => {});
+            throw new Error('Family prefix advanced during removal check');
+          }
+          write.objectStore('removed').put({ family, sourceCursor: metadata.cursor,
+            sourceHead: metadata.head, transitionId: removal.transitionId,
+            cursor: removal.cursor, pages });
+          await done;
+          return removal;
+        }
+        if (!result.hasMore || result.cursor === after) return null;
+      }
+      throw new Error('Removal control page budget exhausted');
+    } finally { probe?.free(); verifier.free(); }
   }
 
   async begin(genesis, relayPublicKey) {

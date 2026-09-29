@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use babytrack_core::projection::{Outcome, Projection, VerifiedEpochKey};
 use babytrack_core::{
@@ -11,9 +11,9 @@ use babytrack_core::{
     cbor::{self, Value},
     claim,
     control_chain::ControlChain,
-    crypto,
+    crypto, portable_file,
     projection::LocalProjection,
-    proof, ready_replay, session,
+    proof, ready_replay, removal_probe, session,
     sync_wire::{self, LogPage},
     web_actions,
 };
@@ -45,6 +45,88 @@ pub struct WasmPublicFamily {
     chain: ControlChain,
     relay_public_key: [u8; 32],
     prefix: BTreeMap<u64, ControlChain>,
+}
+
+#[wasm_bindgen]
+pub struct WasmRemovalProbe {
+    inner: removal_probe::RemovalControlProbe,
+}
+
+#[wasm_bindgen]
+pub struct WasmReadableRestore {
+    operations: Vec<Vec<u8>>,
+}
+
+#[wasm_bindgen]
+impl WasmReadableRestore {
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        readable: &[u8],
+        family_id: &[u8],
+        device_id: &[u8],
+        now_ms: i64,
+    ) -> Result<Self, JsError> {
+        let parsed = portable_file::parse_readable(readable).map_err(debug_error)?;
+        let family_id = fixed(family_id, "new Family ID")?;
+        let device_id = fixed(device_id, "new device ID")?;
+        let mut seen = BTreeSet::new();
+        let count = portable_file::restore_operation_count(&parsed);
+        let mut ids = Vec::with_capacity(count);
+        for _ in 0..count {
+            let mut id = random_v7(now_ms)?;
+            while !seen.insert(id) {
+                id = random_v7(now_ms)?;
+            }
+            ids.push(id);
+        }
+        let operations =
+            portable_file::restore_operations(&parsed, family_id, device_id, now_ms, &ids)
+                .map_err(debug_error)?
+                .iter()
+                .map(Operation::encode_new)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(debug_error)?;
+        Ok(Self { operations })
+    }
+
+    pub fn count(&self) -> usize {
+        self.operations.len()
+    }
+
+    pub fn operation(&self, index: usize) -> Result<Vec<u8>, JsError> {
+        self.operations
+            .get(index)
+            .cloned()
+            .ok_or_else(|| JsError::new("restore operation index outside range"))
+    }
+}
+
+#[wasm_bindgen]
+impl WasmRemovalProbe {
+    pub fn cursor(&self) -> u64 {
+        self.inner.cursor()
+    }
+
+    pub fn accept_page(&mut self, page_bytes: &[u8], after: u64) -> Result<String, JsError> {
+        let (proof, has_more) = self.inner.accept(page_bytes, after).map_err(debug_error)?;
+        let removal = if let Some(proof) = proof {
+            let transition: String = proof
+                .transition_id
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            format!(
+                "{{\"transitionId\":\"{transition}\",\"cursor\":{},\"sourceCursor\":{},\"knownGap\":{}}}",
+                proof.cursor, proof.source_cursor, proof.known_gap,
+            )
+        } else {
+            "null".to_owned()
+        };
+        Ok(format!(
+            "{{\"cursor\":{},\"hasMore\":{has_more},\"removal\":{removal}}}",
+            self.inner.cursor(),
+        ))
+    }
 }
 
 /// Keyless browser invitation control replay. Each page is checked by the
@@ -862,6 +944,24 @@ impl WasmInitialFamily {
         ))
     }
 
+    /// Export the locally held current state, including pending browser
+    /// edits already previewed in the ready overlay.
+    pub fn readable_file(&self, snapshot_utc_ms: i64, known_gap: bool) -> Result<Vec<u8>, JsError> {
+        let ready = self
+            .ready
+            .as_ref()
+            .ok_or_else(|| JsError::new("manifest objects not yet verified"))?;
+        let projection = ready.overlay.as_ref().unwrap_or(&ready.projection);
+        portable_file::encode_readable(
+            ready.chain.family_id(),
+            snapshot_utc_ms,
+            Some(ready.chain.last_global_cursor()),
+            known_gap || !projection.inert_batches().is_empty(),
+            projection.records(),
+        )
+        .map_err(debug_error)
+    }
+
     fn shared_identity(
         &self,
         device_id: &[u8],
@@ -1223,6 +1323,18 @@ impl WasmPublicFamily {
             .ok_or_else(|| JsError::new("recipient has no committed admission grant"))?
             .grant_id()
             .to_vec())
+    }
+
+    /// Keep the contiguous data pin intact while checking signed sparse
+    /// controls for a later removal.
+    pub fn removal_probe(&self, device_id: &[u8]) -> Result<WasmRemovalProbe, JsError> {
+        Ok(WasmRemovalProbe {
+            inner: removal_probe::RemovalControlProbe::new(
+                self.chain.clone(),
+                fixed(device_id, "device ID")?,
+            )
+            .map_err(debug_error)?,
+        })
     }
 
     /// IDs of the signed admission grant and, for a rotated epoch, its

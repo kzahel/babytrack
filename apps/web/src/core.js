@@ -2,7 +2,7 @@ import init, * as wasm from './generated/babytrack_core_wasm.js';
 import wasmUrl from './generated/babytrack_core_wasm_bg.wasm?url';
 import { LocalStore } from '../../../core-wasm/web/local-store.js';
 import { sharedFamilies, sharedSnapshot, syncShared, pendingJoins, rememberJoin,
-  advanceJoin, sharedStatus, writeShared } from './shared-client.js';
+  advanceJoin, sharedStatus, writeShared, copyRemoved } from './shared-client.js';
 
 const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
 const bytes = (value) => Uint8Array.from(value.match(/../g) || [], (pair) => parseInt(pair, 16));
@@ -72,6 +72,11 @@ export async function syncFamily(family) {
 export async function familySyncStatus(family) {
   await open();
   return sharedStatus(wasm, family);
+}
+
+export async function copyRemovedFamily(family) {
+  await open();
+  return copyRemoved(wasm, family);
 }
 
 async function append(family, prepare) {

@@ -31,8 +31,9 @@ feeding with pause and same-entry correction. A browser profile can now join
 an Android-managed Family through an invitation, receive encrypted history,
 and log or edit while offline for later relay upload. First, later, and
 rotated-epoch joins pass a real-relay UI smoke. Creating shared
-Families and invitations in web, removal/private-copy
-recovery, file recovery, and the web trust-boundary review remain M2 work.
+Families and invitations in web, file recovery, and the web trust-boundary
+review remain M2 work. Verified removal with a pending browser edit creates
+one independent local copy and leaves the old Family as an archive.
 See [006](docs/tactical/006-m2-web.md).
 
 ## Product and architecture

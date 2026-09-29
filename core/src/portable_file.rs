@@ -18,14 +18,13 @@ use zeroize::Zeroizing;
 
 use crate::{
     cbor,
-    operation::{Kind, Scope},
+    operation::{Hlc, Kind, NewOperation, Scope},
     projection::Record,
     record_validity,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::{
-    operation::{Hlc, NewOperation},
     shared_ready::{self, ReadyFamilySession},
     sqlite_store::{self, FamilyHandle, RestoredOrigin, SqliteStore},
 };
@@ -192,7 +191,7 @@ pub fn export_readable_shared(
     )
 }
 
-pub(crate) fn encode_readable<'a>(
+pub fn encode_readable<'a>(
     source_family_id: [u8; 16],
     snapshot_utc_ms: i64,
     source_cursor: Option<u64>,
@@ -499,7 +498,62 @@ fn restore_readable_inner(
     }
     let device_id = new_v4()?;
     let mut seen_ops = BTreeSet::new();
+    let ids = (0..restore_operation_count(&parsed))
+        .map(|_| fresh_v7(now_ms, &mut seen_ops))
+        .collect::<Result<Vec<_>, _>>()?;
+    let operations = restore_operations(&parsed, family_id, device_id, now_ms, &ids)?;
+    let origin = RestoredOrigin {
+        source_family_id: parsed.source_family_id,
+        snapshot_utc_ms: parsed.snapshot_utc_ms,
+        source_cursor: parsed.source_cursor,
+        known_gap: parsed.known_gap,
+    };
+    Ok(if let Some(source) = copy_source {
+        store.restore_family_with_copy_source(
+            family_id,
+            device_id,
+            operations,
+            now_ms,
+            origin,
+            Some(source),
+        )?
+    } else {
+        store.restore_family(family_id, device_id, operations, now_ms, origin)?
+    })
+}
+
+pub fn restore_operation_count(parsed: &ParsedBackup) -> usize {
+    parsed
+        .rows
+        .iter()
+        .map(|row| if row.deleted { 2 } else { 1 })
+        .sum()
+}
+
+/// Build current-state restore operations from a parsed portable file.
+/// Platform adapters supply unique UUIDv7 IDs; the core owns field and
+/// record semantics on every platform.
+pub fn restore_operations(
+    parsed: &ParsedBackup,
+    family_id: [u8; 16],
+    device_id: [u8; 16],
+    now_ms: i64,
+    ids: &[[u8; 16]],
+) -> Result<Vec<NewOperation>, Error> {
+    if family_id == parsed.source_family_id || ids.len() != restore_operation_count(parsed) {
+        return Err(Error::Invalid(
+            "restore identity or operation ID count invalid",
+        ));
+    }
+    let mut unique = BTreeSet::new();
+    if ids
+        .iter()
+        .any(|id| !unique.insert(*id) || id[6] & 0xf0 != 0x70 || id[8] & 0xc0 != 0x80)
+    {
+        return Err(Error::Invalid("restore operation ID invalid or repeated"));
+    }
     let mut operations = Vec::new();
+    let mut next_id = ids.iter().copied();
     let ordered = parsed
         .rows
         .iter()
@@ -545,7 +599,7 @@ fn restore_readable_inner(
             .collect::<Result<Vec<_>, Error>>()?;
         operations.push(NewOperation {
             family_id,
-            operation_id: fresh_v7(now_ms, &mut seen_ops)?,
+            operation_id: next_id.next().ok_or(Error::Invalid("restore ID absent"))?,
             record_id,
             scope,
             kind: Kind::Create,
@@ -562,7 +616,7 @@ fn restore_readable_inner(
         if row.deleted {
             operations.push(NewOperation {
                 family_id,
-                operation_id: fresh_v7(now_ms, &mut seen_ops)?,
+                operation_id: next_id.next().ok_or(Error::Invalid("restore ID absent"))?,
                 record_id,
                 scope,
                 kind: Kind::Delete,
@@ -578,24 +632,7 @@ fn restore_readable_inner(
             });
         }
     }
-    let origin = RestoredOrigin {
-        source_family_id: parsed.source_family_id,
-        snapshot_utc_ms: parsed.snapshot_utc_ms,
-        source_cursor: parsed.source_cursor,
-        known_gap: parsed.known_gap,
-    };
-    Ok(if let Some(source) = copy_source {
-        store.restore_family_with_copy_source(
-            family_id,
-            device_id,
-            operations,
-            now_ms,
-            origin,
-            Some(source),
-        )?
-    } else {
-        store.restore_family(family_id, device_id, operations, now_ms, origin)?
-    })
+    Ok(operations)
 }
 
 /// Create or return this installation's single private copy of the verified

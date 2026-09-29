@@ -20,12 +20,19 @@ export class LocalStore {
   }
 
   static async open(wasm, name = 'babytrack-local') {
-    const request = indexedDB.open(name, 1);
+    const request = indexedDB.open(name, 2);
     request.onupgradeneeded = () => {
       const database = request.result;
-      database.createObjectStore('families', { keyPath: 'family' });
-      const operations = database.createObjectStore('operations', { keyPath: ['family', 'index'] });
-      operations.createIndex('operation-id', ['family', 'operationId'], { unique: true });
+      if (!database.objectStoreNames.contains('families')) {
+        database.createObjectStore('families', { keyPath: 'family' });
+      }
+      if (!database.objectStoreNames.contains('operations')) {
+        const operations = database.createObjectStore('operations', { keyPath: ['family', 'index'] });
+        operations.createIndex('operation-id', ['family', 'operationId'], { unique: true });
+      }
+      if (!database.objectStoreNames.contains('copies')) {
+        database.createObjectStore('copies', { keyPath: ['sourceFamily', 'transitionId'] });
+      }
     };
     return new LocalStore(await requestResult(request), wasm);
   }
@@ -44,6 +51,37 @@ export class LocalStore {
       family, index: 1, operationId, operation: initialOperation,
     });
     await done;
+  }
+
+  async removalCopy(sourceFamily, transitionId) {
+    const read = this.database.transaction('copies', 'readonly');
+    return requestResult(read.objectStore('copies').get([sourceFamily, transitionId]));
+  }
+
+  async createRemovalCopy(sourceFamily, transitionId, family, device, sourceOperations) {
+    if (family === sourceFamily) throw new Error('Independent copy needs a new Family ID');
+    const operations = sourceOperations.map((operation) => Uint8Array.from(operation));
+    const projection = new this.wasm.WasmLocalFamily(bytes(family), bytes(device));
+    const rows = [];
+    try {
+      for (const operation of operations) {
+        const index = rows.length + 1;
+        const operationId = hex(projection.append_operation(operation, BigInt(index)));
+        rows.push({ family, index, operationId, operation });
+      }
+    } finally { projection.free(); }
+    const write = this.database.transaction(['families', 'operations', 'copies'], 'readwrite');
+    const done = transactionDone(write);
+    const existing = await requestResult(write.objectStore('copies').get([sourceFamily, transitionId]));
+    if (existing) {
+      await done;
+      return existing.family;
+    }
+    write.objectStore('families').add({ family, device, lastIndex: rows.length });
+    for (const row of rows) write.objectStore('operations').add(row);
+    write.objectStore('copies').add({ sourceFamily, transitionId, family });
+    await done;
+    return family;
   }
 
   async families() {

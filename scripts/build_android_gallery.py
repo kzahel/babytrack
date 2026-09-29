@@ -44,7 +44,9 @@ def build_gallery(output: Path) -> None:
                 "cases": [record for variants in cases.values() for record in variants.values()]}
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     sections = []
-    for case_id, variants in cases.items():
+    order = {"today": 0, "history": 1, "family": 2, "capture": 3, "child": 4}
+    for case_id in sorted(cases, key=lambda key: (order.get(key.split("-")[0], 9), key)):
+        variants = cases[case_id]
         label = html.escape(variants["dark"]["label"])
         cards = []
         for variant in VARIANTS:

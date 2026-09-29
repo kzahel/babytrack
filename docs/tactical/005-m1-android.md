@@ -543,6 +543,17 @@ delivered, and removed access cannot obtain new Family data.
 Gate: caregivers can move a saved point to another phone and understand
 what it contains; daily logging and recovery require no relay account.
 
+## Screen extraction and visual review
+
+[007](007-android-screen-gallery.md) owns the behavior-preserving Android
+screen extraction and fast fixture gallery. It separates production screen
+rendering from capture/correction actions and provides synthetic dark/light
+and large-text renders without an emulator. Its CI artifact is an offline
+scrolling HTML gallery; visual regression baselines remain a later step.
+This infrastructure does not close the physical-phone, TalkBack, or keyboard
+validation gates above. Its evidence also records the existing five API-level
+lint errors for a separate compatibility follow-up.
+
 ## CI and review handoff
 
 The Android CI job builds APKs. Its emulator job runs the full real-relay

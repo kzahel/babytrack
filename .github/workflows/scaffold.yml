@@ -107,6 +107,26 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
       - name: Build source-linked debug APK
         run: apps/android/gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
+      - name: Render Android fixture gallery without an emulator
+        run: bash scripts/render_android_gallery.sh
+      - name: Keep Android screen gallery
+        id: screen-gallery
+        uses: actions/upload-artifact@v4
+        with:
+          name: babytrack-android-screen-gallery
+          path: apps/android/app/build/outputs/screen-gallery/
+          if-no-files-found: error
+      - name: Link the screen gallery
+        env:
+          GALLERY_URL: ${{ steps.screen-gallery.outputs.artifact-url }}
+        run: |
+          python3 - <<'PY'
+          import os
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('### Android screen gallery\n\n')
+              summary.write(f"[Download the scrolling gallery]({os.environ['GALLERY_URL']})\n\n")
+              summary.write('Unzip and open `index.html`: synthetic fixtures rendered with the production Compose screens, in dark/light and normal/1.5× text. Long screens include additional scroll positions.\n')
+          PY
       - name: Keep dogfood artifact
         uses: actions/upload-artifact@v4
         with:

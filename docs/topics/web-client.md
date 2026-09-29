@@ -75,9 +75,12 @@ reload, and relay calls have bounded timeouts. Verified removal and shared
 outbox transactions overlap on the `removed` object store, serializing the
 freeze before an independent copy's snapshot. Public append and outbox rebase
 transactions use the same guard, so an in-flight sync tab cannot mutate the
-source after that freeze. A second tab with an unsaved
-stale form receives an error and retains its input if it tries to save after
-that freeze.
+source after that freeze. A second tab with a stale form can still target the
+old shared Family; a save after the freeze creates or reuses the independent
+copy, appends the action through the Rust local model, selects that copy, and
+states where the action went. Child and activity record IDs survive the
+current-state copy, so existing child targets and breast-feed edits remain
+valid in the destination.
 
 The browser enrollment adapter currently requires invitation relay origin to
 equal `location.origin`. Product web and relay routes therefore share one

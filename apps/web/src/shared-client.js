@@ -66,9 +66,8 @@ export async function syncShared(wasm, family) {
 export async function writeShared(wasm, family, action, values) {
   const store = await PublicStore.open(wasm, publicDatabase);
   try {
-    if (await store.removedStatus(family)) {
-      throw new Error('This device was removed from the shared Family');
-    }
+    const removed = await store.removedStatus(family);
+    if (removed) return { redirectFamily: await ensureRemovalCopy(wasm, store, family, removed, true) };
     const credential = await store.initialCredential(family);
     const ready = await store.loadInitialReadySaved(family);
     let operation;
@@ -96,7 +95,12 @@ export async function writeShared(wasm, family, action, values) {
         operation = ready.edit_breast_operation(...prefix, bytes(values.child),
           bytes(values.activity), JSON.stringify(values.segments), now);
       } else throw new Error('Unknown shared action');
-      await store.queueInitial(family, operation, clock);
+      try { await store.queueInitial(family, operation, clock); }
+      catch (error) {
+        const removal = await store.removedStatus(family);
+        if (removal) return { redirectFamily: await ensureRemovalCopy(wasm, store, family, removal, true) };
+        throw error;
+      }
     } finally { ready.free(); }
     return { pending: true };
   } finally { store.close(); }

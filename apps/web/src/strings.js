@@ -56,6 +56,7 @@ export const copy = {
   removedDetail: 'Locally held history stays here. Pending saved work is copied into an independent Family. The old Family is an archive on this browser.',
   removedArchive: 'Access ended · local archive available',
   removedCopied: 'Access ended · private copy saved on this browser',
+  redirectedCopy: 'This action was saved in your independent local Family because shared access ended.',
   makePrivateCopy: 'Make an independent copy', openPrivateCopy: 'Open private copy',
   backup: 'Backup and restore',
   backupDescription: 'Export the locally held current state as a readable file. Restoring creates a new local Family with a fresh identity.',

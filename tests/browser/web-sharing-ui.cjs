@@ -211,12 +211,15 @@ async function run() {
     await page.getByRole('button', { name: 'Sync now' }).click();
     await page.getByText('Access ended · private copy saved on this browser').waitFor();
     await staleTab.getByRole('button', { name: 'Save' }).click();
-    await staleTab.getByRole('alert').getByText('This device was removed from the shared Family').waitFor();
-    assert.equal(await staleTab.getByLabel('Note').inputValue(), 'StaleTabUnsentMarker');
+    await staleTab.getByText('This action was saved in your independent local Family').waitFor();
+    await staleTab.getByText('StaleTabUnsentMarker').waitFor();
+    const redirectedFamily = await staleTab.evaluate(() => localStorage.getItem('babytrack-family'));
     await staleTab.close();
     await page.locator('.bottom-nav').getByRole('button', { name: 'Today' }).click();
     await page.getByRole('button', { name: 'Open private copy' }).click();
     await page.getByText('RemovedPendingMarker').waitFor();
+    await page.getByText('StaleTabUnsentMarker').waitFor();
+    assert.equal(await page.evaluate(() => localStorage.getItem('babytrack-family')), redirectedFamily);
     await page.reload();
     await page.getByText('RemovedPendingMarker').waitFor();
     await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();

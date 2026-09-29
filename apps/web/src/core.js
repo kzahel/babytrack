@@ -123,48 +123,60 @@ async function append(family, prepare) {
 
 export async function addChild(family, name, birthDay, sex) {
   const day = birthDay ? BigInt(Math.floor(new Date(`${birthDay}T12:00:00Z`).getTime() / 86400000)) : undefined;
+  let target = family;
   if (await isShared(family)) {
-    await writeShared(wasm, family, 'child', { name, birthDay: day,
+    const result = await writeShared(wasm, family, 'child', { name, birthDay: day,
       sex: sex ? Number(sex) : undefined });
-    return;
+    if (!result.redirectFamily) return result;
+    target = result.redirectFamily;
   }
-  await append(family, (projection) => projection.create_child_operation(
+  await append(target, (projection) => projection.create_child_operation(
     name, day, sex ? Number(sex) : undefined, BigInt(Date.now()),
   ));
+  return target === family ? null : { redirectFamily: target };
 }
 
 export async function logActivity(family, child, type, values) {
+  let target = family;
   if (await isShared(family)) {
-    await writeShared(wasm, family, type, { child, ...values });
-    return;
+    const result = await writeShared(wasm, family, type, { child, ...values });
+    if (!result.redirectFamily) return result;
+    target = result.redirectFamily;
   }
   const id = bytes(child);
   const now = BigInt(Date.now());
   const offset = -new Date().getTimezoneOffset();
-  await append(family, (projection) => {
+  await append(target, (projection) => {
     if (type === 'diaper') return projection.log_diaper_operation(id, Number(values.kind), now, offset);
     if (type === 'bottle') return projection.log_bottle_operation(id, Number(values.ml), Number(values.content), now, offset);
     if (type === 'note') return projection.log_note_operation(id, values.note, now, offset);
     throw new Error('Unknown activity');
   });
+  return target === family ? null : { redirectFamily: target };
 }
 
 export async function logBreastFeed(family, child, segments) {
+  let target = family;
   if (await isShared(family)) {
-    await writeShared(wasm, family, 'breast', { child, segments });
-    return;
+    const result = await writeShared(wasm, family, 'breast', { child, segments });
+    if (!result.redirectFamily) return result;
+    target = result.redirectFamily;
   }
-  await append(family, (projection) => projection.log_breast_operation(
+  await append(target, (projection) => projection.log_breast_operation(
     bytes(child), JSON.stringify(segments), BigInt(Date.now()),
   ));
+  return target === family ? null : { redirectFamily: target };
 }
 
 export async function editBreastFeed(family, child, activity, segments) {
+  let target = family;
   if (await isShared(family)) {
-    await writeShared(wasm, family, 'breast-edit', { child, activity, segments });
-    return;
+    const result = await writeShared(wasm, family, 'breast-edit', { child, activity, segments });
+    if (!result.redirectFamily) return result;
+    target = result.redirectFamily;
   }
-  await append(family, (projection) => projection.edit_breast_operation(
+  await append(target, (projection) => projection.edit_breast_operation(
     bytes(child), bytes(activity), JSON.stringify(segments), BigInt(Date.now()),
   ));
+  return target === family ? null : { redirectFamily: target };
 }

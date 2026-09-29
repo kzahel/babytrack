@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { copy as c, ageLabel } from './strings.js';
   import { families, createFamily, snapshot, addChild, logActivity, logBreastFeed, editBreastFeed,
     rememberInvitation, pendingInvitations, continueInvitation, approveInvitation,
@@ -10,6 +10,7 @@
 
   let loading = true;
   let error = '';
+  let notice = '';
   let familyRows = [];
   let family = '';
   let child = '';
@@ -68,8 +69,22 @@
   function message(cause) { return cause?.message || String(cause); }
   async function run(action) {
     error = '';
+    notice = '';
     try { await action(); }
     catch (cause) { error = message(cause); }
+  }
+  async function afterSave(outcome) {
+    if (outcome?.redirectFamily) {
+      familyRows = await families();
+      family = outcome.redirectFamily;
+      localStorage.setItem('babytrack-family', family);
+      await tick();
+      await refresh();
+      notice = c.redirectedCopy;
+    } else {
+      await refresh();
+      if (sharedSelected) { syncStage = c.savedPending; void poll(); }
+    }
   }
   async function refresh() {
     data = await snapshot(family);
@@ -206,9 +221,8 @@
   }
   async function saveChild() {
     await run(async () => {
-      await addChild(family, childName, birthDate, sex);
-      await refresh();
-      if (sharedSelected) { syncStage = c.savedPending; void poll(); }
+      const outcome = await addChild(family, childName, birthDate, sex);
+      await afterSave(outcome);
       child = data.children.at(-1)?.id || child;
       childName = ''; birthDate = ''; sex = '';
       screen = '';
@@ -216,11 +230,10 @@
   }
   async function saveActivity() {
     await run(async () => {
-      await logActivity(family, child, activityType, {
+      const outcome = await logActivity(family, child, activityType, {
         kind: diaperKind, ml: bottleMl, content: bottleContent, note: noteText,
       });
-      await refresh();
-      if (sharedSelected) { syncStage = c.savedPending; void poll(); }
+      await afterSave(outcome);
       bottleMl = ''; noteText = '';
       screen = '';
       tab = 'today';
@@ -246,14 +259,14 @@
   }
   async function saveBreast() {
     error = '';
+    notice = '';
     const targetFamily = family;
     const targetChild = child;
     try {
       const segments = completedSegments(breastDraft);
-      await logBreastFeed(targetFamily, targetChild, segments);
+      const outcome = await logBreastFeed(targetFamily, targetChild, segments);
       persistDraft(targetFamily, targetChild, null);
-      await refresh();
-      if (sharedSelected) { syncStage = c.savedPending; void poll(); }
+      await afterSave(outcome);
       screen = '';
       tab = 'today';
     } catch (cause) { error = timerError(cause); }
@@ -275,11 +288,11 @@
   }
   async function saveBreastEdit() {
     error = '';
+    notice = '';
     try {
       const segments = rebuiltSegments(editTarget.segments, editRows);
-      await editBreastFeed(editTarget.family, editTarget.child, editTarget.id, segments);
-      await refresh();
-      if (sharedSelected) { syncStage = c.savedPending; void poll(); }
+      const outcome = await editBreastFeed(editTarget.family, editTarget.child, editTarget.id, segments);
+      await afterSave(outcome);
       editTarget = null;
       screen = '';
       tab = 'history';
@@ -329,6 +342,7 @@
 
     <main>
       {#if error}<div class="error" role="alert">{error}</div>{/if}
+      {#if notice}<div class="notice" role="status">{notice}</div>{/if}
       {#if loading}
         <p class="muted">{c.loading}</p>
       {:else if !family}

@@ -410,6 +410,9 @@ export class PublicStore {
         await this.hydrateControlObjectsSaved(family, get);
       }
     }
+    if (await this.pendingInitial(family) || (await this.queuedInitial(family)).length) {
+      throw new Error('Browser batch budget exhausted with local edits still pending');
+    }
     return progress;
   }
 

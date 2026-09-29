@@ -1483,6 +1483,11 @@ async function run() {
       result.tamperKept = !(await store.rebaseRejectedStaleInitial(family,
         async () => tampered)) && !!(await store.pendingInitial(family));
       verifier.free();
+      let exhausted = false;
+      try { await store.uploadInitial(family, relayPost, relayGet, 1); }
+      catch (error) { exhausted = error.message.includes('batch budget exhausted'); }
+      result.budgetKept = exhausted && !(await store.pendingInitial(family)) &&
+        (await store.queuedInitial(family)).length === 1;
       const upload = await store.uploadInitial(family, relayPost, relayGet);
       const after = await store.loadInitialReadySaved(family);
       result.uploadCursor = upload.cursor;
@@ -1504,7 +1509,7 @@ async function run() {
     assert.deepEqual(liveRotation, { cursor: 9, noMoreVisible: true,
       genesisObjects: 1, controlObjects: 10, readyCursor: 9, child: 'child',
       uploadCursor: 10, afterCursor: 10, managerRecord: 'family', resealed: true,
-      tamperKept: true });
+      tamperKept: true, budgetKept: true });
     await page.reload();
     const liveRotationReload = await page.evaluate(async () => {
       const wasm = await import('/babytrack_core_wasm.js');

@@ -496,6 +496,59 @@ async function run() {
       primaryIndex: '1', otherIndex: '0', name: [0x64, 0x42, 0x61, 0x62, 0x79], otherName: [],
     });
 
+    const atomicCopy = await page.evaluate(async () => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { LocalStore } = await import('/local-store.js');
+      const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      const source = wasm.new_local_ids();
+      const destination = wasm.new_local_ids();
+      const sourceFamily = hex(source.slice(0, 16));
+      const family = hex(destination.slice(0, 16));
+      const device = hex(destination.slice(16));
+      const initial = new wasm.WasmLocalFamily(destination.slice(0, 16), destination.slice(16));
+      const sourceOperations = [initial.create_family_operation(1n)];
+      initial.free();
+      const store = await LocalStore.open(wasm, 'babytrack-atomic-removal-smoke');
+      const action = (projection) => projection.create_child_operation(
+        'AtomicChild', undefined, undefined, 2n);
+      let interrupted = false;
+      try {
+        await store.createRemovalCopyWithAction(sourceFamily, 'transition-one', family, device,
+          sourceOperations, 'delivery-one', () => { throw new Error('crash window'); });
+      } catch (error) { interrupted = error.message === 'crash window'; }
+      const absentAfterAbort = !(await store.removalCopy(sourceFamily, 'transition-one')) &&
+        !(await store.families()).some((row) => row.family === family);
+      const first = await store.createRemovalCopyWithAction(sourceFamily, 'transition-one',
+        family, device, sourceOperations, 'delivery-one', action);
+      const duplicate = await store.createRemovalCopyWithAction(sourceFamily, 'transition-one',
+        family, device, [], 'delivery-one', () => { throw new Error('duplicate prepared'); });
+      const projection = await store.load(family);
+      const index = projection.last_append_index().toString();
+      const hasChild = projection.snapshot_json().includes('AtomicChild');
+      projection.free();
+      store.close();
+      return { interrupted, absentAfterAbort, first, duplicate, family, index, hasChild };
+    });
+    assert.deepEqual(atomicCopy, {
+      interrupted: true, absentAfterAbort: true, first: atomicCopy.family,
+      duplicate: atomicCopy.family, family: atomicCopy.family, index: '2', hasChild: true,
+    });
+    await page.reload();
+    const atomicReload = await page.evaluate(async (family) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { LocalStore } = await import('/local-store.js');
+      const store = await LocalStore.open(wasm, 'babytrack-atomic-removal-smoke');
+      const projection = await store.load(family);
+      const result = { index: projection.last_append_index().toString(),
+        hasChild: projection.snapshot_json().includes('AtomicChild') };
+      projection.free();
+      store.close();
+      return result;
+    }, atomicCopy.family);
+    assert.deepEqual(atomicReload, { index: '2', hasChild: true });
+
     const publicFirst = await page.evaluate(async (data) => {
       const wasm = await import('/babytrack_core_wasm.js');
       await wasm.default('/babytrack_core_wasm_bg.wasm');

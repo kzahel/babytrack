@@ -81,9 +81,11 @@ transactions use the same guard, so an in-flight sync tab cannot mutate the
 source after that freeze. A second tab with a stale form can still target the
 old shared Family; a save after the freeze creates or reuses the independent
 copy, appends the action through the Rust local model, selects that copy, and
-states where the action went. Child and activity record IDs survive the
-current-state copy, so existing child targets and breast-feed edits remain
-valid in the destination.
+states where the action went. Copy creation, the triggering action, its
+operation ID, and a delivery ID commit in one IndexedDB transaction; retrying
+the same delivery ID cannot append twice. Child and activity record IDs
+survive the current-state copy, so existing child targets and breast-feed edits
+remain valid in the destination.
 
 The browser enrollment adapter currently requires invitation relay origin to
 equal `location.origin`. Product web and relay routes therefore share one

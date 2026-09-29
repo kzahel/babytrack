@@ -34,7 +34,7 @@ export class LocalStore {
   }
 
   static async open(wasm, name = 'babytrack-local') {
-    const request = indexedDB.open(name, 2);
+    const request = indexedDB.open(name, 3);
     request.onupgradeneeded = () => {
       const database = request.result;
       if (!database.objectStoreNames.contains('families')) {
@@ -46,6 +46,10 @@ export class LocalStore {
       }
       if (!database.objectStoreNames.contains('copies')) {
         database.createObjectStore('copies', { keyPath: ['sourceFamily', 'transitionId'] });
+      }
+      if (!database.objectStoreNames.contains('copy-deliveries')) {
+        database.createObjectStore('copy-deliveries',
+          { keyPath: ['sourceFamily', 'transitionId', 'deliveryId'] });
       }
     };
     return new LocalStore(await requestResult(request), wasm);
@@ -87,6 +91,91 @@ export class LocalStore {
     write.objectStore('copies').add({ sourceFamily, transitionId, family });
     await done;
     return family;
+  }
+
+  // The first action from a stale tab and the private copy commit together.
+  // A repeated delivery ID returns the already saved action without appending.
+  createRemovalCopyWithAction(sourceFamily, transitionId, family, device,
+    sourceOperations, deliveryId, prepareAction) {
+    if (family === sourceFamily || !deliveryId || typeof prepareAction !== 'function') {
+      throw new Error('Invalid private-copy action');
+    }
+    return new Promise((resolve, reject) => {
+      const transaction = this.database.transaction(
+        ['families', 'operations', 'copies', 'copy-deliveries'], 'readwrite');
+      const families = transaction.objectStore('families');
+      const operations = transaction.objectStore('operations');
+      const copies = transaction.objectStore('copies');
+      const deliveries = transaction.objectStore('copy-deliveries');
+      let failure;
+      let destination;
+      transaction.oncomplete = () => resolve(destination);
+      transaction.onerror = () => reject(failure || transaction.error);
+      transaction.onabort = () => reject(failure || transaction.error || new Error('transaction aborted'));
+      const abort = (error) => { failure = error; transaction.abort(); };
+
+      copies.get([sourceFamily, transitionId]).onsuccess = (event) => {
+        const existing = event.target.result;
+        destination = existing?.family || family;
+        deliveries.get([sourceFamily, transitionId, deliveryId]).onsuccess = (deliveryEvent) => {
+          const delivered = deliveryEvent.target.result;
+          if (delivered) {
+            if (!existing || delivered.family !== existing.family) {
+              abort(new Error('Private-copy delivery differs from copy mapping'));
+            }
+            return;
+          }
+          if (!existing) {
+            const projection = new this.wasm.WasmLocalFamily(bytes(family), bytes(device));
+            try {
+              const rows = [];
+              for (const source of sourceOperations) {
+                const operation = Uint8Array.from(source);
+                const index = rows.length + 1;
+                const operationId = hex(projection.append_operation(operation, BigInt(index)));
+                rows.push({ family, index, operationId, operation });
+              }
+              families.add({ family, device, lastIndex: rows.length });
+              for (const row of rows) operations.add(row);
+              copies.add({ sourceFamily, transitionId, family });
+              const operation = prepareAction(projection);
+              const index = rows.length + 1;
+              const operationId = hex(projection.append_operation(operation, BigInt(index)));
+              operations.add({ family, index, operationId, operation });
+              families.put({ family, device, lastIndex: index });
+              deliveries.add({ sourceFamily, transitionId, deliveryId, family, index });
+            } catch (error) { abort(error); }
+            finally { projection.free(); }
+            return;
+          }
+          families.get(destination).onsuccess = (metadataEvent) => {
+            const metadata = metadataEvent.target.result;
+            if (!metadata) { abort(new Error('Private copy is absent')); return; }
+            operations.getAll(IDBKeyRange.bound([destination, 1],
+              [destination, Number.MAX_SAFE_INTEGER])).onsuccess = (rowsEvent) => {
+              const projection = new this.wasm.WasmLocalFamily(bytes(destination), bytes(metadata.device));
+              try {
+                for (const row of rowsEvent.target.result) {
+                  projection.append_operation(row.operation, BigInt(row.index));
+                }
+                if (projection.last_append_index() !== BigInt(metadata.lastIndex)) {
+                  throw new Error('Private copy append index differs from operation log');
+                }
+                const operation = prepareAction(projection);
+                const index = metadata.lastIndex + 1;
+                if (!Number.isSafeInteger(index)) throw new Error('append index exhausted');
+                const operationId = hex(projection.append_operation(operation, BigInt(index)));
+                operations.add({ family: destination, index, operationId, operation });
+                families.put({ ...metadata, lastIndex: index });
+                deliveries.add({ sourceFamily, transitionId, deliveryId,
+                  family: destination, index });
+              } catch (error) { abort(error); }
+              finally { projection.free(); }
+            };
+          };
+        };
+      };
+    });
   }
 
   async createRestoredFamily(family, device, sourceOperations) {

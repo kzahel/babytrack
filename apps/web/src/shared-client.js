@@ -63,11 +63,12 @@ export async function syncShared(wasm, family) {
   } finally { store.close(); }
 }
 
-export async function writeShared(wasm, family, action, values) {
+export async function writeShared(wasm, family, action, values, localAction) {
   const store = await PublicStore.open(wasm, publicDatabase);
   try {
     const removed = await store.removedStatus(family);
-    if (removed) return { redirectFamily: await ensureRemovalCopy(wasm, store, family, removed, true) };
+    if (removed) return { redirectFamily: await ensureRemovalCopy(wasm, store, family, removed,
+      true, localAction) };
     const credential = await store.initialCredential(family);
     const ready = await store.loadInitialReadySaved(family);
     let operation;
@@ -98,7 +99,8 @@ export async function writeShared(wasm, family, action, values) {
       try { await store.queueInitial(family, operation, clock); }
       catch (error) {
         const removal = await store.removedStatus(family);
-        if (removal) return { redirectFamily: await ensureRemovalCopy(wasm, store, family, removal, true) };
+        if (removal) return { redirectFamily: await ensureRemovalCopy(wasm, store, family, removal,
+          true, localAction) };
         throw error;
       }
     } finally { ready.free(); }
@@ -106,11 +108,15 @@ export async function writeShared(wasm, family, action, values) {
   } finally { store.close(); }
 }
 
-async function ensureRemovalCopy(wasm, store, family, removal, force = false) {
+async function ensureRemovalCopy(wasm, store, family, removal, force = false, localAction = null) {
   const local = await LocalStore.open(wasm, localDatabase);
   try {
     const existing = await local.removalCopy(family, removal.transitionId);
-    if (existing) return existing.family;
+    if (existing && !localAction) return existing.family;
+    if (existing) {
+      return local.createRemovalCopyWithAction(family, removal.transitionId,
+        existing.family, '', [], localAction.deliveryId, localAction.prepare);
+    }
     if (!force && !await store.pendingInitial(family) && !(await store.queuedInitial(family)).length) {
       return null;
     }
@@ -127,6 +133,10 @@ async function ensureRemovalCopy(wasm, store, family, removal, force = false) {
       readable, ids.slice(0, 16), ids.slice(16), BigInt(Date.now()));
     try {
       const operations = Array.from({ length: restore.count() }, (_, index) => restore.operation(index));
+      if (localAction) {
+        return local.createRemovalCopyWithAction(family, removal.transitionId,
+          newFamily, newDevice, operations, localAction.deliveryId, localAction.prepare);
+      }
       return local.createRemovalCopy(family, removal.transitionId,
         newFamily, newDevice, operations);
     } finally { restore.free(); }

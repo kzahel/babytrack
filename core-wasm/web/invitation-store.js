@@ -54,7 +54,7 @@ export class InvitationStore {
     const store = new InvitationStore(await result(request), wasm, fragment);
     const write = store.database.transaction('drafts', 'readwrite');
     const done = completed(write);
-    write.objectStore('drafts').put({ fragment });
+    write.objectStore('drafts').put({ fragment, lastTouched: Date.now() });
     await done;
     return store;
   }
@@ -67,7 +67,9 @@ export class InvitationStore {
     try {
       if (!database.objectStoreNames.contains('drafts')) return [];
       const read = database.transaction('drafts', 'readonly');
-      return (await result(read.objectStore('drafts').getAll())).map((row) => row.fragment);
+      return (await result(read.objectStore('drafts').getAll()))
+        .sort((left, right) => (right.lastTouched || 0) - (left.lastTouched || 0))
+        .map((row) => row.fragment);
     } finally { database.close(); }
   }
 

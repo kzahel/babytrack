@@ -50,6 +50,8 @@ export const copy = {
   backup: 'Backup and restore',
   backupDescription: 'Export the locally held current state as a readable file. Restoring creates a new local Family with a fresh identity.',
   exportBackup: 'Export readable backup', restoreBackup: 'Restore file into a new Family',
+  restoreDescription: 'Lost this browser’s saved data? A readable backup restores its saved records into a new local Family.',
+  restoreFile: 'Choose a backup file',
   pendingJoinResume: 'Resume joining',
   sideNumber: (number) => `Side ${new Intl.NumberFormat().format(number)}`,
   breastEntry: (left, right) => `Breastfeed · left ${left} · right ${right}`,

@@ -81,6 +81,16 @@ if (!origin) throw new Error('pass the preview origin');
     }
     const backup = fs.readFileSync(await download.path());
     assert.match(backup.toString('utf8'), /"kind":"babytrack-backup"/);
+    const freshContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const freshPage = await freshContext.newPage();
+    await freshPage.goto(origin);
+    await freshPage.getByLabel('Choose a backup file').setInputFiles({
+      name: 'family.jsonl', mimeType: 'application/x-ndjson', buffer: backup,
+    });
+    await freshPage.getByText('Bottle · 90 mL').waitFor();
+    await freshPage.reload();
+    await freshPage.getByText('Breastfeed · left 1:05 · right 0:15').waitFor();
+    await freshContext.close();
     await page.getByLabel('Restore file into a new Family').setInputFiles({
       name: 'family.jsonl', mimeType: 'application/x-ndjson', buffer: backup,
     });

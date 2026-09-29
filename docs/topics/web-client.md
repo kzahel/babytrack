@@ -71,11 +71,13 @@ and reload, resumed upload, native readback, and relay plaintext scan. A
 second browser joins after the first and reads older history. After a
 verified device removal rotates the key epoch, a third browser joins with a
 later-epoch grant and recovers its earlier keys from the committed keyring.
-The same test verifies signed removal, an offline pending edit, automatic
+The welcome screen accepts a readable backup when this browser profile has
+no Families. A fresh-profile Playwright flow restores and reloads a saved
+Family. The same test verifies signed removal, an offline pending edit, automatic
 private copy, explicit copy with no pending edits, shared readable export,
 restore into a new Family, and reload. The local UI smoke covers local file
 restore and a corrupt file that leaves the active Family intact. M2 still
-needs web-origin invitations and browser-profile loss flows in the product UI.
+needs web-origin invitations.
 
 Reconsider route density after tablet/desktop spot checks, and revisit an
 optional local app lock if shared-computer use makes profile access confusing.

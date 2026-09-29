@@ -314,6 +314,13 @@
           </form>
           {#if pendingFragment}<p role="status">{joinStage || c.joining}</p><button class="text-action" onclick={poll}>{c.pendingJoinResume}</button>{/if}
         </section>
+        <section class="panel"><h2>{c.restoreBackup}</h2><p class="muted">{c.restoreDescription}</p>
+          <label>{c.restoreFile}<input type="file" accept=".jsonl,.json" onchange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = '';
+            restoreBackup(file);
+          }} /></label>
+        </section>
       {:else if screen === 'child'}
         <section class="form-view">
           <button class="back" onclick={() => screen = ''}>← {c.cancel}</button>

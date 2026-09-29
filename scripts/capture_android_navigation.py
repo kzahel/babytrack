@@ -55,7 +55,7 @@ def main() -> None:
             find(target, "Family options")
             capture(target, f"{theme}-{scale}-family")
             tap_tab(target, "Today")
-            tap(target, "Add activity", actionable=True)
+            tap(target, "Add activity", scroll=True, actionable=True)
             find(target, "Log completed sleep", scroll=True)
             capture(target, f"{theme}-{scale}-capture")
     finally:

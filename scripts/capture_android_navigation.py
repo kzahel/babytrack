@@ -7,7 +7,9 @@ import subprocess
 import time
 from pathlib import Path
 
-from check_android_ui_smoke import PACKAGE, ROOT, adb, find, serial, tap, tap_tab
+from check_android_ui_smoke import (
+    APK, PACKAGE, ROOT, adb, dismiss_keyboard, find, serial, tap, tap_tab,
+)
 
 
 OUTPUT = ROOT / "local-references" / "android-redesign-qa"
@@ -26,6 +28,15 @@ def main() -> None:
     if adb(target, "shell", "getprop", "ro.kernel.qemu").strip() != "1":
         raise RuntimeError("Visual QA capture runs only on an emulator")
     OUTPUT.mkdir(parents=True, exist_ok=True)
+    adb(target, "install", "-r", str(APK))
+    adb(target, "shell", "pm", "clear", PACKAGE)
+    adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    tap(target, "New Family")
+    tap(target, "Child’s name", scroll=True)
+    adb(target, "shell", "input", "text", "CaptureChild")
+    dismiss_keyboard(target)
+    tap(target, "Add child", scroll=True)
+    find(target, "Family 1 · CaptureChild")
     original_scale = adb(target, "shell", "settings", "get", "system", "font_scale").strip()
     original_night = adb(target, "shell", "cmd", "uimode", "night").lower()
     try:

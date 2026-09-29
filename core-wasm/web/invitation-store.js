@@ -243,7 +243,7 @@ export class InvitationStore {
     } finally { verifier.free(); }
   }
 
-  async refreshCandidate(kind) {
+  async refreshCandidate(kind, beforeWrite = null) {
     const saved = kind === 'claim' ? await this.savedClaim() : await this.savedProof();
     if (!saved || saved.committedResponse) return saved;
     const verifier = await this.load();
@@ -255,14 +255,33 @@ export class InvitationStore {
         verifier.prepare_proof((await this.savedClaim()).deviceId,
           (await this.savedClaim()).signingSeed, (await this.savedClaim()).agreementPrivate,
           saved.objectResponse, transitionId);
-      const next = { ...saved, transitionId, candidate: Uint8Array.from(candidate),
-        priorCursor: Number(verifier.control_cursor()),
-        archived: [...(saved.archived || []), { candidate: saved.candidate,
-          transitionId: saved.transitionId }] };
+      if (beforeWrite) await beforeWrite();
       const name = kind === 'claim' ? 'claims' : 'proofs';
       const write = this.database.transaction(name, 'readwrite');
       const done = completed(write);
-      write.objectStore(name).put(next);
+      const rows = write.objectStore(name);
+      const current = await result(rows.get(this.fragment));
+      if (!current) {
+        write.abort();
+        await done.catch(() => {});
+        throw new Error('Saved enrollment candidate disappeared during refresh');
+      }
+      if (current.committedResponse || !sameBytes(current.candidate, saved.candidate)) {
+        await done;
+        return current;
+      }
+      const archived = [...(current.archived || []),
+        { candidate: current.candidate, transitionId: current.transitionId }];
+      const seen = new Set();
+      const next = { ...current, transitionId, candidate: Uint8Array.from(candidate),
+        priorCursor: Number(verifier.control_cursor()),
+        archived: archived.filter((row) => {
+          const key = hex(row.candidate);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        }) };
+      rows.put(next);
       await done;
       return next;
     } finally { verifier.free(); }

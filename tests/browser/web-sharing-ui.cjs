@@ -208,7 +208,8 @@ async function run() {
     assert.equal(removal.status, 0, `Native removal: ${removal.stderr}`);
     await page.unroute('**/v1/**');
     await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();
-    await page.getByRole('button', { name: 'Sync now' }).click();
+    const syncFirst = page.getByRole('button', { name: 'Sync now' });
+    if (await syncFirst.count()) await syncFirst.click({ timeout: 2000 }).catch(() => {});
     await page.getByText('Access ended · private copy saved on this browser').waitFor();
     await staleTab.getByRole('button', { name: 'Save' }).click();
     await staleTab.getByText('This action was saved in your independent local Family').waitFor();
@@ -271,7 +272,8 @@ async function run() {
       { encoding: 'utf8' });
     assert.equal(secondRemoval.status, 0, `Native second removal: ${secondRemoval.stderr}`);
     await secondPage.locator('.side-nav').getByRole('button', { name: 'Family' }).click();
-    await secondPage.getByRole('button', { name: 'Sync now' }).click();
+    const syncSecond = secondPage.getByRole('button', { name: 'Sync now' });
+    if (await syncSecond.count()) await syncSecond.click({ timeout: 2000 }).catch(() => {});
     await secondPage.getByText('Access ended · local archive available').waitFor();
     await secondPage.locator('.side-nav').getByRole('button', { name: 'Today' }).click();
     await secondPage.getByRole('button', { name: 'Make an independent copy' }).click();

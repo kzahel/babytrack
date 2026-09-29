@@ -43,10 +43,13 @@ polls while open.
 An uncertain claim replays authenticated sparse controls before retrying. If
 an exact saved or archived candidate appears there, the browser recovers that
 commit; otherwise a newer verified head can produce a fresh candidate using
-the same device keys and enrollment nonce. Proof candidates use the same
-reconciliation rule. A relay-signed link status distinguishes cancellation,
-expiry, and issuer invalidation from unsigned denial or timeout. A signed
-claimed status with an uncertain saved claim remains explicitly uncertain
+the same device keys and enrollment nonce. Claim and proof refreshes
+compare-and-swap the saved row inside one IndexedDB transaction so concurrent
+tabs cannot discard a candidate that may have committed. Proof candidates use
+the same reconciliation rule. A relay-signed link status distinguishes
+cancellation, expiry, and issuer invalidation from unsigned denial or
+timeout. A signed claimed status with an uncertain saved claim remains
+explicitly uncertain
 because that status does not identify the claimant. Terminal status bytes are
 retained and reverified after reload until the person dismisses the attempt.
 Only a verified admission grant and ready replay make the Family selectable.

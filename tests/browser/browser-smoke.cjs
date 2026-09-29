@@ -243,6 +243,38 @@ function holderStep(instance, mode) {
   return step.stdout.trim();
 }
 
+async function raceCandidate(firstPage, secondPage, fragment, kind) {
+  const prefix = `babytrack-${kind}-race-${Date.now()}`;
+  const refresh = (page, own, other) => page.evaluate(async (data) => {
+    const wasm = await import('/babytrack_core_wasm.js');
+    await wasm.default('/babytrack_core_wasm_bg.wasm');
+    const { InvitationStore } = await import('/invitation-store.js');
+    const store = await InvitationStore.open(wasm, data.fragment, 'babytrack-cas-smoke');
+    try {
+      const candidate = await store.refreshCandidate(data.kind, async () => {
+        localStorage.setItem(data.own, 'ready');
+        for (let index = 0; index < 500 && !localStorage.getItem(data.other); index++) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        if (!localStorage.getItem(data.other)) throw new Error('Other tab did not reach CAS barrier');
+      });
+      return Array.from(candidate.candidate);
+    } finally { store.close(); }
+  }, { fragment, kind, own, other });
+  try {
+    const [left, right] = await Promise.all([
+      refresh(firstPage, `${prefix}-a`, `${prefix}-b`),
+      refresh(secondPage, `${prefix}-b`, `${prefix}-a`),
+    ]);
+    return { left, right };
+  } finally {
+    await firstPage.evaluate((name) => {
+      localStorage.removeItem(`${name}-a`);
+      localStorage.removeItem(`${name}-b`);
+    }, prefix);
+  }
+}
+
 async function restartRelay(instance) {
   const stopped = new Promise((resolve) => instance.child.once('exit', resolve));
   instance.child.kill();
@@ -267,6 +299,7 @@ async function run() {
   let recipientRelay;
   let invitationRelay;
   let challengeRelay;
+  let casRelay;
   let holderRelay;
   let rotationRelay;
   let crashRelay;
@@ -804,6 +837,147 @@ async function run() {
     assert.deepEqual(confirmedProof,
       { cursor: 5, polled: { cursor: 5, hasMore: false }, replayed: 5,
         earlyActivationRejected: true });
+    casRelay = await startRelay(false, 6, true);
+    relayPort = casRelay.port;
+    const casFragment = casRelay.fragment;
+    const casBefore = await page.evaluate(async (fragment) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const store = await InvitationStore.open(wasm, fragment, 'babytrack-cas-smoke');
+      await store.pull(relayGet);
+      const claim = await store.prepareClaim();
+      store.close();
+      return { device: Array.from(claim.deviceId), nonce: Array.from(claim.enrollmentNonce),
+        candidate: Array.from(claim.candidate) };
+    }, casFragment);
+    const unrelated = spawnSync(path.resolve(holderBin), ['later_issue',
+      path.join(casRelay.temporary, 'manager.db'), `http://127.0.0.1:${casRelay.port}`,
+      url.slice(0, -1)],
+    { encoding: 'utf8' });
+    assert.equal(unrelated.status, 0, `Could not advance claim head: ${unrelated.stderr}`);
+    const casRacePage = await context.newPage();
+    await casRacePage.goto(url);
+    const casClaim = await page.evaluate(async (fragment) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const store = await InvitationStore.open(wasm, fragment, 'babytrack-cas-smoke');
+      await store.pull(relayGet);
+      store.close();
+      return true;
+    }, casFragment);
+    assert.equal(casClaim, true);
+    const claimRace = await raceCandidate(page, casRacePage, casFragment, 'claim');
+    const claimOutcome = await page.evaluate(async (fragment) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { relayPostControl } = await import('/relay-post.js');
+      const store = await InvitationStore.open(wasm, fragment, 'babytrack-cas-smoke');
+      const saved = await store.savedClaim();
+      let lost = false;
+      try {
+        await store.submitClaim(async (path, candidate) => {
+          await relayPostControl(path, candidate);
+          throw new Error('simulated lost refreshed claim response');
+        });
+      } catch { lost = true; }
+      store.close();
+      return { candidate: Array.from(saved.candidate),
+        archived: (saved.archived || []).map((row) => Array.from(row.candidate)),
+        lost, device: Array.from(saved.deviceId), nonce: Array.from(saved.enrollmentNonce) };
+    }, casFragment);
+    assert.deepEqual(claimRace.left, claimRace.right);
+    assert.deepEqual(claimOutcome.candidate, claimRace.left);
+    assert.notDeepEqual(claimOutcome.candidate, casBefore.candidate);
+    assert.equal(claimOutcome.archived.some((row) =>
+      row.toString() === casBefore.candidate.toString()), true);
+    assert.deepEqual({ lost: claimOutcome.lost, device: claimOutcome.device,
+      nonce: claimOutcome.nonce }, { lost: true, device: casBefore.device, nonce: casBefore.nonce });
+    await page.reload();
+    const recoveredCasClaim = await page.evaluate(async (fragment) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const store = await InvitationStore.open(wasm, fragment, 'babytrack-cas-smoke');
+      await store.pull(relayGet);
+      const recovered = await store.reconcileCandidate('claim');
+      store.close();
+      return { committed: !!recovered.committedResponse, fromPage: !!recovered.fromPage };
+    }, casFragment);
+    assert.deepEqual(recoveredCasClaim, { committed: true, fromPage: true });
+    holderStep(casRelay, 'later_challenge');
+    const casProofBefore = await page.evaluate(async (fragment) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const store = await InvitationStore.open(wasm, fragment, 'babytrack-cas-smoke');
+      await store.pullPending(relayGet);
+      const proof = await store.prepareProof(relayGet);
+      store.close();
+      return Array.from(proof.candidate);
+    }, casFragment);
+    assert.ok(casProofBefore.length > 0);
+    const unrelatedProof = spawnSync(path.resolve(holderBin), ['later_issue',
+      path.join(casRelay.temporary, 'manager.db'), `http://127.0.0.1:${casRelay.port}`,
+      url.slice(0, -1)],
+    { encoding: 'utf8' });
+    assert.equal(unrelatedProof.status, 0, `Could not advance proof head: ${unrelatedProof.stderr}`);
+    const casProof = await page.evaluate(async (fragment) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const store = await InvitationStore.open(wasm, fragment, 'babytrack-cas-smoke');
+      await store.pullPending(relayGet);
+      store.close();
+      return true;
+    }, casFragment);
+    assert.equal(casProof, true);
+    const proofRace = await raceCandidate(page, casRacePage, casFragment, 'proof');
+    const proofOutcome = await page.evaluate(async (fragment) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { relayPostControl } = await import('/relay-post.js');
+      const store = await InvitationStore.open(wasm, fragment, 'babytrack-cas-smoke');
+      const saved = await store.savedProof();
+      let lost = false;
+      try {
+        await store.submitProof(async (path, candidate) => {
+          await relayPostControl(path, candidate);
+          throw new Error('simulated lost refreshed proof response');
+        });
+      } catch { lost = true; }
+      store.close();
+      return { candidate: Array.from(saved.candidate),
+        archived: (saved.archived || []).map((row) => Array.from(row.candidate)), lost };
+    }, casFragment);
+    assert.deepEqual(proofRace.left, proofRace.right);
+    assert.deepEqual(proofOutcome.candidate, proofRace.left);
+    assert.notDeepEqual(proofOutcome.candidate, casProofBefore);
+    assert.equal(proofOutcome.archived.some((row) =>
+      row.toString() === casProofBefore.toString()), true);
+    assert.equal(proofOutcome.lost, true);
+    await page.reload();
+    const recoveredCasProof = await page.evaluate(async (fragment) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { InvitationStore } = await import('/invitation-store.js');
+      const { relayGet } = await import('/relay-get.js');
+      const store = await InvitationStore.open(wasm, fragment, 'babytrack-cas-smoke');
+      await store.pullPending(relayGet);
+      const recovered = await store.reconcileCandidate('proof');
+      store.close();
+      return { committed: !!recovered.committedResponse, fromPage: !!recovered.fromPage };
+    }, casFragment);
+    assert.deepEqual(recoveredCasProof, { committed: true, fromPage: true });
+    await casRacePage.close();
     holderRelay = await startRelay(false, 6, true);
     relayPort = holderRelay.port;
     const dynamicClaim = await page.evaluate(async (fragment) => {
@@ -1707,7 +1881,7 @@ async function run() {
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));
-    for (const instance of [crashRelay, rotationRelay, recipientRelay, holderRelay, challengeRelay, invitationRelay, relay]) {
+    for (const instance of [crashRelay, rotationRelay, recipientRelay, holderRelay, casRelay, challengeRelay, invitationRelay, relay]) {
       if (!instance) continue;
       if (instance.child.exitCode == null) {
         const stopped = new Promise((resolve) => instance.child.once('exit', resolve));

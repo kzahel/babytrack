@@ -810,6 +810,227 @@ impl WasmInitialFamily {
             .record(&record_id)
             .map(|record| record.record_type.clone()))
     }
+
+    pub fn snapshot_json(&self) -> Result<String, JsError> {
+        let ready = self
+            .ready
+            .as_ref()
+            .ok_or_else(|| JsError::new("manifest objects not yet verified"))?;
+        Ok(web_actions::shared_snapshot(
+            ready.overlay.as_ref().unwrap_or(&ready.projection),
+        ))
+    }
+
+    fn shared_identity(
+        &self,
+        device_id: &[u8],
+        record: [u8; 16],
+        last_wall_ms: i64,
+        last_counter: u32,
+        now_ms: i64,
+    ) -> Result<web_actions::Identity, JsError> {
+        let ready = self
+            .ready
+            .as_ref()
+            .ok_or_else(|| JsError::new("Family not ready"))?;
+        let family = ready.chain.family_id();
+        let device = fixed(device_id, "device ID")?;
+        ready
+            .chain
+            .active_signing_public(device)
+            .map_err(debug_error)?;
+        let last = (last_wall_ms >= 0).then_some(Hlc {
+            wall_ms: last_wall_ms,
+            counter: last_counter,
+            device_id: device,
+        });
+        let mut clock = Clock::restore(family, device, last, None).map_err(debug_error)?;
+        Ok(web_actions::Identity {
+            family,
+            device,
+            operation: random_v7(now_ms)?,
+            record,
+            stamp: clock.next(now_ms).stamp,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)] // Flat wasm boundary for browser form values.
+    pub fn create_child_operation(
+        &self,
+        device_id: &[u8],
+        last_wall_ms: i64,
+        last_counter: u32,
+        name: &str,
+        birth_day: Option<i64>,
+        sex: Option<u8>,
+        now_ms: i64,
+    ) -> Result<Vec<u8>, JsError> {
+        web_actions::child(
+            self.shared_identity(
+                device_id,
+                random_v7(now_ms)?,
+                last_wall_ms,
+                last_counter,
+                now_ms,
+            )?,
+            name,
+            birth_day,
+            sex,
+        )
+        .map_err(debug_error)
+    }
+
+    #[allow(clippy::too_many_arguments)] // Flat wasm boundary for browser form values.
+    pub fn log_diaper_operation(
+        &self,
+        device_id: &[u8],
+        last_wall_ms: i64,
+        last_counter: u32,
+        child_id: &[u8],
+        kind: u8,
+        now_ms: i64,
+        offset_minutes: i16,
+    ) -> Result<Vec<u8>, JsError> {
+        web_actions::diaper(
+            self.shared_identity(
+                device_id,
+                random_v7(now_ms)?,
+                last_wall_ms,
+                last_counter,
+                now_ms,
+            )?,
+            fixed(child_id, "child ID")?,
+            kind,
+            now_ms,
+            offset_minutes,
+        )
+        .map_err(debug_error)
+    }
+
+    #[allow(clippy::too_many_arguments)] // Flat wasm boundary for browser form values.
+    pub fn log_bottle_operation(
+        &self,
+        device_id: &[u8],
+        last_wall_ms: i64,
+        last_counter: u32,
+        child_id: &[u8],
+        ml: u32,
+        content: u8,
+        now_ms: i64,
+        offset_minutes: i16,
+    ) -> Result<Vec<u8>, JsError> {
+        web_actions::bottle(
+            self.shared_identity(
+                device_id,
+                random_v7(now_ms)?,
+                last_wall_ms,
+                last_counter,
+                now_ms,
+            )?,
+            fixed(child_id, "child ID")?,
+            ml,
+            content,
+            now_ms,
+            offset_minutes,
+        )
+        .map_err(debug_error)
+    }
+
+    #[allow(clippy::too_many_arguments)] // Flat wasm boundary for browser form values.
+    pub fn log_note_operation(
+        &self,
+        device_id: &[u8],
+        last_wall_ms: i64,
+        last_counter: u32,
+        child_id: &[u8],
+        note: &str,
+        now_ms: i64,
+        offset_minutes: i16,
+    ) -> Result<Vec<u8>, JsError> {
+        web_actions::note(
+            self.shared_identity(
+                device_id,
+                random_v7(now_ms)?,
+                last_wall_ms,
+                last_counter,
+                now_ms,
+            )?,
+            fixed(child_id, "child ID")?,
+            note,
+            now_ms,
+            offset_minutes,
+        )
+        .map_err(debug_error)
+    }
+
+    pub fn log_breast_operation(
+        &self,
+        device_id: &[u8],
+        last_wall_ms: i64,
+        last_counter: u32,
+        child_id: &[u8],
+        segments_json: &str,
+        now_ms: i64,
+    ) -> Result<Vec<u8>, JsError> {
+        web_actions::breast(
+            self.shared_identity(
+                device_id,
+                random_v7(now_ms)?,
+                last_wall_ms,
+                last_counter,
+                now_ms,
+            )?,
+            fixed(child_id, "child ID")?,
+            segments_json,
+        )
+        .map_err(debug_error)
+    }
+
+    #[allow(clippy::too_many_arguments)] // Flat wasm boundary for browser form values.
+    pub fn edit_breast_operation(
+        &self,
+        device_id: &[u8],
+        last_wall_ms: i64,
+        last_counter: u32,
+        child_id: &[u8],
+        activity_id: &[u8],
+        segments_json: &str,
+        now_ms: i64,
+    ) -> Result<Vec<u8>, JsError> {
+        let record_id = fixed(activity_id, "activity ID")?;
+        let ready = self
+            .ready
+            .as_ref()
+            .ok_or_else(|| JsError::new("Family not ready"))?;
+        let target = ready
+            .overlay
+            .as_ref()
+            .unwrap_or(&ready.projection)
+            .record(&record_id)
+            .ok_or_else(|| JsError::new("breast feed target unavailable"))?;
+        web_actions::edit_breast(
+            self.shared_identity(device_id, record_id, last_wall_ms, last_counter, now_ms)?,
+            fixed(child_id, "child ID")?,
+            target,
+            segments_json,
+        )
+        .map_err(debug_error)
+    }
+}
+
+#[wasm_bindgen]
+pub fn operation_clock(
+    operation: &[u8],
+    family_id: &[u8],
+    device_id: &[u8],
+) -> Result<Vec<i64>, JsError> {
+    let decoded = Operation::decode_bound(
+        operation,
+        &fixed(family_id, "Family ID")?,
+        &fixed(device_id, "device ID")?,
+    )
+    .map_err(debug_error)?;
+    Ok(vec![decoded.hlc.wall_ms, i64::from(decoded.hlc.counter)])
 }
 
 /// Bounded core-decoded relay log page. JavaScript handles transport and

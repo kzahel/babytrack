@@ -331,7 +331,7 @@ fn main() {
                 .unwrap();
             println!("{}", hex(&child));
         }
-        "read" => {
+        "read" | "read_note" => {
             let origin = &args[2];
             let manager = ManagerCreation::resume(&local, family, &WRAPPING_KEY).unwrap();
             let after = PublicHistorySession::resume(&local, family)
@@ -372,16 +372,31 @@ fn main() {
                 )
                 .unwrap();
             let ready = manager.ready_session(&local).unwrap();
-            let child = ready
-                .projection()
-                .record(&v7(0xb1))
-                .expect("browser child absent");
-            assert_eq!(child.record_type, "child");
-            assert_eq!(
-                child.field(1).map(|field| &field.value),
-                Some(&Value::Text("BrowserRecipientChild".to_owned()))
-            );
-            println!("browser child read");
+            if mode == "read_note" {
+                let note = ready
+                    .projection()
+                    .records()
+                    .find(|record| {
+                        record.record_type == "note" && record.child_id == Some(v7(0xa1))
+                    })
+                    .expect("browser note absent");
+                assert_eq!(
+                    note.field(4).map(|field| &field.value),
+                    Some(&Value::Text("WebOnlyPrivateMarker".to_owned()))
+                );
+                println!("browser note read");
+            } else {
+                let child = ready
+                    .projection()
+                    .record(&v7(0xb1))
+                    .expect("browser child absent");
+                assert_eq!(child.record_type, "child");
+                assert_eq!(
+                    child.field(1).map(|field| &field.value),
+                    Some(&Value::Text("BrowserRecipientChild".to_owned()))
+                );
+                println!("browser child read");
+            }
         }
         _ => panic!("unknown holder mode"),
     }

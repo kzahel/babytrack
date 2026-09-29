@@ -1,6 +1,7 @@
 # Web client
 
-Status: M2 local tracking preview implemented; shared enrollment UI is next.
+Status: M2 local tracking and first-cohort shared joining are implemented;
+later-cohort enrollment and removal recovery remain open.
 The [MVP plan](../mvp-plan.md#milestones) owns milestone scope and the
 [Family sharing contract](family-sharing-and-trust.md) owns access promises.
 [006](../tactical/006-m2-web.md) owns delivery evidence.
@@ -30,9 +31,19 @@ side, excludes paused time, and keeps its unsaved, target-scoped draft across
 reloads in localStorage. Saving writes one atomic segment list through the
 Rust core and clears the draft only after a durable append. History can edit
 sides, active durations, and pauses on that same event ID. IndexedDB replays
-saved operations through the Rust wasm projection after reload. The web app
-does not yet expose sharing, backup, or the full Android capture set. It
-labels local-only state and does not claim a relay upload occurred.
+saved operations through the Rust wasm projection after reload.
+
+The web app accepts a same-origin invitation in the URL fragment or a pasted
+link. It saves the fragment and exact claim/proof bytes in IndexedDB before
+clearing the URL, resumes pending stages after reload, and polls while open.
+Only a verified admission grant and ready replay make the Family selectable.
+The joined browser can read history, add children and the current capture
+types, and edit breast feeds. Writes enter the durable encrypted outbox before
+upload, remain visible offline, and retry through the relay. The Family screen
+distinguishes local and shared storage and gives a manual sync action.
+Creating a shared Family or issuing invitations from web, later-cohort
+enrollment, removal/private-copy recovery, backup, and the full Android
+capture set are still open.
 
 The browser enrollment adapter currently requires invitation relay origin to
 equal `location.origin`. Product web and relay routes therefore share one
@@ -46,11 +57,12 @@ security gate before relying on web sharing with real data.
 
 The local flow gate creates two Families, logs entries to the first, reloads,
 switches Family, and confirms target isolation at phone and desktop widths.
-The existing browser harness already covers production wasm authority replay,
-durable outbox, and native/browser encrypted exchange through a disposable
-relay. M2 connects that adapter to caregiver routes and tests a complete
-browser join, delayed key handoff, reciprocal edits, removal/private copy,
-and browser-profile loss.
+The product UI now passes a real-relay native manager/browser test of claim,
+delayed challenge and grant, native child write, browser offline note write
+and reload, resumed upload, native readback, and relay plaintext scan. The
+browser harness separately covers authority replay, durable outbox, and
+rotation. M2 still needs later-cohort join, removal/private copy, and
+browser-profile loss flows in the product UI.
 
 Reconsider route density after tablet/desktop spot checks, and revisit an
 optional local app lock if shared-computer use makes profile access confusing.

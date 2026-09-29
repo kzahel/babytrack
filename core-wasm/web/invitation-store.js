@@ -32,7 +32,7 @@ export class InvitationStore {
         throw new Error('Invitation relay origin differs from this app');
       }
     } finally { probe.free(); }
-    const request = indexedDB.open(name, 3);
+    const request = indexedDB.open(name, 4);
     request.onupgradeneeded = () => {
       const database = request.result;
       if (!database.objectStoreNames.contains('invitations')) {
@@ -47,11 +47,36 @@ export class InvitationStore {
       if (!database.objectStoreNames.contains('proofs')) {
         database.createObjectStore('proofs', { keyPath: 'fragment' });
       }
+      if (!database.objectStoreNames.contains('drafts')) {
+        database.createObjectStore('drafts', { keyPath: 'fragment' });
+      }
     };
-    return new InvitationStore(await result(request), wasm, fragment);
+    const store = new InvitationStore(await result(request), wasm, fragment);
+    const write = store.database.transaction('drafts', 'readwrite');
+    const done = completed(write);
+    write.objectStore('drafts').put({ fragment });
+    await done;
+    return store;
   }
 
   close() { this.database.close(); }
+
+  static async pendingFragments(name = 'babytrack-invitations') {
+    const request = indexedDB.open(name);
+    const database = await result(request);
+    try {
+      if (!database.objectStoreNames.contains('drafts')) return [];
+      const read = database.transaction('drafts', 'readonly');
+      return (await result(read.objectStore('drafts').getAll())).map((row) => row.fragment);
+    } finally { database.close(); }
+  }
+
+  async forget() {
+    const write = this.database.transaction('drafts', 'readwrite');
+    const done = completed(write);
+    write.objectStore('drafts').delete(this.fragment);
+    await done;
+  }
 
   async load() {
     const read = this.database.transaction(['invitations', 'pages', 'claims', 'proofs'], 'readonly');

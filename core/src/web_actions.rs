@@ -5,7 +5,7 @@ use crate::{
     breast::{self, Segment},
     cbor::Value,
     operation::{Hlc, Kind, NewOperation, Operation, Scope},
-    projection::{LocalProjection, Record},
+    projection::{LocalProjection, Projection, Record},
 };
 use serde_json::{Value as Json, json};
 
@@ -258,9 +258,17 @@ fn hex(id: &[u8; 16]) -> String {
 }
 
 pub fn local_snapshot(projection: &LocalProjection) -> String {
+    snapshot_records(projection.records())
+}
+
+pub fn shared_snapshot(projection: &Projection) -> String {
+    snapshot_records(projection.records())
+}
+
+fn snapshot_records<'a>(records: impl Iterator<Item = &'a Record>) -> String {
     let mut children = Vec::new();
     let mut activities = Vec::new();
-    for record in projection.records().filter(|row| !row.deleted) {
+    for record in records.filter(|row| !row.deleted) {
         match record.scope {
             Scope::Child => children.push(json!({
                 "id": hex(&record.id),

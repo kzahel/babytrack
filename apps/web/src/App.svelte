@@ -1,7 +1,8 @@
 <script>
   import { onMount } from 'svelte';
   import { copy as c, ageLabel } from './strings.js';
-  import { families, createFamily, snapshot, addChild, logActivity, logBreastFeed, editBreastFeed } from './core.js';
+  import { families, createFamily, snapshot, addChild, logActivity, logBreastFeed, editBreastFeed,
+    rememberInvitation, pendingInvitations, continueInvitation, syncFamily } from './core.js';
   import { readDraft, persistDraft, tapSide, completedSegments, sideTotals,
     durationLabel, editableSegments, rebuiltSegments } from './breast-timer.js';
 
@@ -25,7 +26,13 @@
   let nowMs = Date.now();
   let editTarget = null;
   let editRows = [];
+  let invitationInput = '';
+  let pendingFragment = '';
+  let joinStage = '';
+  let syncStage = '';
+  let polling = false;
 
+  $: sharedSelected = familyRows.find((row) => row.family === family)?.source === 'shared';
   $: selectedChild = data.children.find((row) => row.id === child);
   $: familyLabel = c.familyNumber(familyRows.findIndex((row) => row.family === family) + 1);
   $: entries = data.activities.filter((row) => row.childId === child);
@@ -33,15 +40,22 @@
 
   onMount(() => {
     const clock = setInterval(() => nowMs = Date.now(), 1000);
+    const poller = setInterval(() => { if (document.visibilityState === 'visible') poll(); }, 15000);
     (async () => {
       try {
+        if (location.hash.startsWith('#bt-invite=')) {
+          pendingFragment = await rememberInvitation(location.hash);
+          history.replaceState(null, '', location.pathname + location.search);
+        }
+        pendingFragment ||= (await pendingInvitations())[0] || '';
         familyRows = await families();
         family = familyRows.find((row) => row.family === localStorage.getItem('babytrack-family'))?.family || familyRows[0]?.family || '';
         if (family) await refresh();
       } catch (cause) { error = message(cause); }
       loading = false;
+      await poll();
     })();
-    return () => clearInterval(clock);
+    return () => { clearInterval(clock); clearInterval(poller); };
   });
 
   function message(cause) { return cause?.message || String(cause); }
@@ -54,6 +68,42 @@
     data = await snapshot(family);
     child = data.children.find((row) => row.id === child)?.id || data.children[0]?.id || '';
     breastDraft = readDraft(family, child);
+  }
+  async function poll() {
+    if (polling) return;
+    polling = true;
+    try {
+      if (pendingFragment) {
+        joinStage = c.joining;
+        const progress = await continueInvitation(pendingFragment);
+        joinStage = c[progress.stage] || c.joining;
+        if (progress.stage === 'ready') {
+          pendingFragment = '';
+          familyRows = await families();
+          family = progress.family;
+          localStorage.setItem('babytrack-family', family);
+          await refresh();
+          tab = 'today';
+          joinStage = '';
+        }
+      }
+      if (family && familyRows.find((row) => row.family === family)?.source === 'shared') {
+        const progress = await syncFamily(family);
+        await refresh();
+        syncStage = progress.noMoreVisible ? c.syncReady : c.syncMore;
+      }
+    } catch (cause) {
+      if (pendingFragment) joinStage = `${c.joinPending} · ${message(cause)}`;
+      else syncStage = c.syncFailed;
+    } finally { polling = false; }
+  }
+  async function startJoin() {
+    await run(async () => {
+      pendingFragment = await rememberInvitation(invitationInput);
+      invitationInput = '';
+      joinStage = c.joining;
+      await poll();
+    });
   }
   async function makeFamily() {
     await run(async () => {
@@ -81,6 +131,7 @@
     await run(async () => {
       await addChild(family, childName, birthDate, sex);
       await refresh();
+      if (sharedSelected) { syncStage = c.savedPending; void poll(); }
       child = data.children.at(-1)?.id || child;
       childName = ''; birthDate = ''; sex = '';
       screen = '';
@@ -92,6 +143,7 @@
         kind: diaperKind, ml: bottleMl, content: bottleContent, note: noteText,
       });
       await refresh();
+      if (sharedSelected) { syncStage = c.savedPending; void poll(); }
       bottleMl = ''; noteText = '';
       screen = '';
       tab = 'today';
@@ -124,6 +176,7 @@
       await logBreastFeed(targetFamily, targetChild, segments);
       persistDraft(targetFamily, targetChild, null);
       await refresh();
+      if (sharedSelected) { syncStage = c.savedPending; void poll(); }
       screen = '';
       tab = 'today';
     } catch (cause) { error = timerError(cause); }
@@ -149,6 +202,7 @@
       const segments = rebuiltSegments(editTarget.segments, editRows);
       await editBreastFeed(editTarget.family, editTarget.child, editTarget.id, segments);
       await refresh();
+      if (sharedSelected) { syncStage = c.savedPending; void poll(); }
       editTarget = null;
       screen = '';
       tab = 'history';
@@ -180,7 +234,7 @@
       <button class:active={tab === 'history' && !screen} onclick={() => { screen = ''; tab = 'history'; }}>{c.history}</button>
       <button class:active={tab === 'family' && !screen} onclick={() => { screen = ''; tab = 'family'; }}>{c.family}</button>
     {/if}
-    <small>{c.localNotice}</small>
+    <small>{sharedSelected ? c.sharedNotice : c.localNotice}</small>
   </aside>
 
   <div class="main-column">
@@ -206,6 +260,13 @@
           <h1>{c.welcomeTitle}</h1>
           <p>{c.noAccount} {c.welcomeDetail}</p>
           <button class="primary" onclick={makeFamily}>{c.createFamily}</button>
+        </section>
+        <section class="panel join-panel"><h2>{c.joinFamily}</h2><p class="muted">{c.invitationHint}</p>
+          <form onsubmit={(event) => { event.preventDefault(); startJoin(); }}>
+            <label>{c.invitationLink}<input type="text" inputmode="url" required bind:value={invitationInput} /></label>
+            <button class="secondary" type="submit">{c.join}</button>
+          </form>
+          {#if pendingFragment}<p role="status">{joinStage || c.joining}</p><button class="text-action" onclick={poll}>{c.pendingJoinResume}</button>{/if}
         </section>
       {:else if screen === 'child'}
         <section class="form-view">
@@ -334,16 +395,24 @@
           {/each}
         </section>
       {:else}
-        <section><div class="eyebrow">{c.localOnly}</div><h1>{c.family}</h1>
+        <section><div class="eyebrow">{sharedSelected ? c.shared : c.localOnly}</div><h1>{c.family}</h1>
           <div class="panel"><h2>{c.children}</h2>
             {#each data.children as row}<div class="child-row"><span class="avatar">{row.name.slice(0, 1).toUpperCase()}</span><div><strong>{row.name}</strong><small>{ageLabel(row.birthDay)}</small></div></div>{/each}
             <button class="secondary" onclick={() => screen = 'child'}>＋ {c.addChild}</button>
           </div>
-          <div class="panel"><h2>{c.localOnly}</h2><p class="muted">{c.localDescription}</p>
+          <div class="panel"><h2>{sharedSelected ? c.shared : c.localOnly}</h2><p class="muted">{sharedSelected ? c.sharedDescription : c.localDescription}</p>
+            {#if sharedSelected}<p role="status">{syncStage || c.syncReady}</p><button class="secondary" onclick={poll}>{c.syncNow}</button>{/if}
             <label class="family-switch">{c.switchFamily}<select value={family} onchange={(event) => selectFamily(event.currentTarget.value)}>
               {#each familyRows as row, index}<option value={row.family}>{c.familyNumber(index + 1)}</option>{/each}
             </select></label>
             <button class="secondary" onclick={makeFamily}>＋ {c.createFamily}</button>
+          </div>
+          <div class="panel join-panel"><h2>{c.joinFamily}</h2><p class="muted">{c.invitationHint}</p>
+            <form onsubmit={(event) => { event.preventDefault(); startJoin(); }}>
+              <label>{c.invitationLink}<input type="text" inputmode="url" required bind:value={invitationInput} /></label>
+              <button class="secondary" type="submit">{c.join}</button>
+            </form>
+            {#if pendingFragment}<p role="status">{joinStage || c.joining}</p><button class="text-action" onclick={poll}>{c.pendingJoinResume}</button>{/if}
           </div>
         </section>
       {/if}

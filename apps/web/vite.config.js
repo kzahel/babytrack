@@ -5,6 +5,6 @@ export default defineConfig({
   plugins: [svelte()],
   server: {
     fs: { allow: ['../..'] },
-    proxy: { '/v1': 'http://127.0.0.1:4877' },
+    proxy: { '/v1': process.env.BABYTRACK_RELAY_URL || 'http://127.0.0.1:4877' },
   },
 });

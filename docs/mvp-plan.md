@@ -367,10 +367,11 @@ touches an app store until M5.
    Keep Family/child context clear throughout. Google services stay behind
    swappable interfaces; install developer builds directly.
 3. **M2, web.** Mostly UI over the wasm core, including multiple Families and
-   the Family switcher. The first responsive local preview is in
-   [006](tactical/006-m2-web.md); sharing and the web trust-boundary gate
-   remain open. A disposable-data, opt-in preview may be deployed early for
-   flow checks while public hosting remains M5.
+   the Family switcher. The responsive local preview and first-cohort browser
+   join/sync flow are in [006](tactical/006-m2-web.md); later enrollment,
+   removal/recovery, and the web trust-boundary gate remain open. A
+   disposable-data, opt-in preview may be deployed early for flow checks
+   while public hosting remains M5.
 4. **M3, iOS on our own devices.** Parity with Android, including Live
    Activities, run from Xcode. Free provisioning profiles expire after 7 days
    and do not include push notifications, so this milestone likely needs the

@@ -85,6 +85,8 @@ jobs:
         run: bash scripts/check_browser_smoke.sh
       - name: Exercise responsive web tracking
         run: bash scripts/check_web_ui.sh
+      - name: Exercise web joining and shared tracking
+        run: bash scripts/check_web_shared_ui.sh
 
   android:
     name: Android debug APK

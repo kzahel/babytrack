@@ -7,6 +7,7 @@ const bytes = (value) => Uint8Array.from(value.match(/../g) || [], (pair) => par
 const sameBytes = (a, b) => a.length === b.length && a.every((byte, index) => byte === b[index]);
 const sameOperations = (a, b) => a.length === b.length &&
   a.every((operation, index) => sameBytes(operation, b[index]));
+const sameClock = (left, right) => left.wallMs === right.wallMs && left.counter === right.counter;
 const requestResult = (request) => new Promise((resolve, reject) => {
   request.onsuccess = () => resolve(request.result);
   request.onerror = () => reject(request.error);
@@ -71,6 +72,11 @@ export class PublicStore {
   }
 
   close() { this.database.close(); }
+
+  async families() {
+    const transaction = this.database.transaction('families', 'readonly');
+    return requestResult(transaction.objectStore('families').getAll());
+  }
 
   async begin(genesis, relayPublicKey) {
     const verifier = new this.wasm.WasmPublicFamily(genesis, relayPublicKey);
@@ -231,7 +237,7 @@ export class PublicStore {
 
   // Stage exact signed bytes before any network request. One pending batch per
   // Family is retried byte-for-byte after a lost response or browser reload.
-  async stageInitial(family, operation) {
+  async stageInitial(family, operation, expectedClock = null) {
     const operationBytes = Uint8Array.from(operation);
     const pending = await this.pendingInitial(family);
     if (pending) {
@@ -252,11 +258,14 @@ export class PublicStore {
       cursor = Number(ready.last_cursor());
       head = hex(ready.head_hash());
     } finally { ready.free(); }
+    const newClock = expectedClock && this.operationClock(family, credential.deviceId, operationBytes);
     return new Promise((resolve, reject) => {
-      const transaction = this.database.transaction(['families', 'outbox', 'queued'], 'readwrite');
+      const transaction = this.database.transaction(['families', 'outbox', 'queued', 'credentials'], 'readwrite');
       const families = transaction.objectStore('families');
       const outbox = transaction.objectStore('outbox');
       const queued = transaction.objectStore('queued');
+      const credentials = transaction.objectStore('credentials');
+      const credentialRequest = credentials.get(family);
       let failure, result;
       transaction.oncomplete = () => resolve(result);
       transaction.onerror = () => reject(failure || transaction.error);
@@ -284,6 +293,15 @@ export class PublicStore {
                 transaction.abort();
               } else result = pendingRequest.result;
             } else {
+              if (expectedClock) {
+                const current = credentialRequest.result;
+                if (!current || !sameClock(current.clock || { wallMs: -1, counter: 0 }, expectedClock)) {
+                  failure = new Error('Browser clock changed before staging');
+                  transaction.abort();
+                  return;
+                }
+                credentials.put({ ...current, clock: newClock });
+              }
               result = { family, operation: operationBytes, envelope: Uint8Array.from(envelope) };
               outbox.add(result);
             }
@@ -295,12 +313,17 @@ export class PublicStore {
 
   // Save another validated edit behind the exact in-flight batch or earlier
   // drafts. Draft bytes stay local until every earlier batch is accepted.
-  async queueInitial(family, operation) {
+  operationClock(family, deviceId, operation) {
+    const [wallMs, counter] = this.wasm.operation_clock(operation, bytes(family), deviceId);
+    return { wallMs: Number(wallMs), counter: Number(counter) };
+  }
+
+  async queueInitial(family, operation, expectedClock = null) {
     const operationBytes = Uint8Array.from(operation);
     const pending = await this.pendingInitial(family);
     const operations = await this.queuedInitial(family);
     if (!pending && !operations.length) {
-      await this.stageInitial(family, operationBytes);
+      await this.stageInitial(family, operationBytes, expectedClock);
       return { pending: true, queued: 0 };
     }
     if ((pending && sameBytes(pending.operation, operationBytes)) ||
@@ -308,6 +331,7 @@ export class PublicStore {
       throw new Error('Browser edit is already pending');
     }
     const credential = await this.initialCredential(family);
+    const newClock = expectedClock && this.operationClock(family, credential.deviceId, operationBytes);
     const ready = await this.loadInitialReady(family, credential.epochKey,
       credential.deviceId, credential.agreementPrivate);
     let cursor, head;
@@ -319,10 +343,12 @@ export class PublicStore {
       ready.preview_one(operationBytes, credential.deviceId);
     } finally { ready.free(); }
     return new Promise((resolve, reject) => {
-      const transaction = this.database.transaction(['families', 'outbox', 'queued'], 'readwrite');
+      const transaction = this.database.transaction(['families', 'outbox', 'queued', 'credentials'], 'readwrite');
       const families = transaction.objectStore('families');
       const outbox = transaction.objectStore('outbox');
       const queued = transaction.objectStore('queued');
+      const credentials = transaction.objectStore('credentials');
+      const credentialRequest = credentials.get(family);
       let failure;
       transaction.oncomplete = () => resolve({ pending: !!pending, queued: operations.length + 1 });
       transaction.onerror = () => reject(failure || transaction.error);
@@ -340,6 +366,15 @@ export class PublicStore {
           failure = new Error('Browser authority or outbox changed before queuing');
           transaction.abort();
           return;
+        }
+        if (expectedClock) {
+          const current = credentialRequest.result;
+          if (!current || !sameClock(current.clock || { wallMs: -1, counter: 0 }, expectedClock)) {
+            failure = new Error('Browser clock changed before queuing');
+            transaction.abort();
+            return;
+          }
+          credentials.put({ ...current, clock: newClock });
         }
         queued.put({ family, operations: [...operations, operationBytes] });
       };

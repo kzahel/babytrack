@@ -305,9 +305,10 @@ export class InvitationStore {
       } else {
         await publicStore.begin(genesis, relayPublicKey);
       }
-      await publicStore.pull(family, claim.deviceId, claim.signingSeed, get, 64,
+      const progress = await publicStore.pull(family, claim.deviceId, claim.signingSeed, get, 64,
         (path) => verifier.sign_family_read(path, claim.deviceId, claim.signingSeed,
           crypto.getRandomValues(new Uint8Array(16))));
+      if (!progress.noMoreVisible) return { family, loadingHistory: true, cursor: progress.cursor };
     } finally { verifier.free(); }
     await publicStore.hydrateGenesis(family, claim.deviceId, claim.signingSeed, get);
     await publicStore.hydrateControlObjects(family, claim.deviceId, claim.signingSeed, get);

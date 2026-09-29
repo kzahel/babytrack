@@ -34,6 +34,8 @@
   let syncStage = '';
   let removedInfo = null;
   let privateCopy = '';
+  let backupGap = false;
+  let backupCursor = 0;
   let polling = false;
 
   $: sharedSelected = familyRows.find((row) => row.family === family)?.source === 'shared';
@@ -74,7 +76,12 @@
       const status = await familySyncStatus(family);
       removedInfo = status.removal;
       privateCopy = status.privateCopy || '';
-    } else { removedInfo = null; privateCopy = ''; }
+      backupGap = status.knownIncomplete || !!status.removal?.knownGap;
+      backupCursor = status.cursor;
+      syncStage = removedInfo ? (privateCopy ? c.removedCopied : c.removedArchive) :
+        status.pending || status.queued ? c.savedPending :
+        status.knownIncomplete ? c.syncMore : c.syncReady;
+    } else { removedInfo = null; privateCopy = ''; backupGap = false; backupCursor = 0; }
     child = data.children.find((row) => row.id === child)?.id || data.children[0]?.id || '';
     breastDraft = readDraft(family, child);
   }
@@ -103,11 +110,18 @@
         if (progress.removed) {
           screen = '';
           syncStage = progress.privateCopy ? c.removedCopied : c.removedArchive;
-        } else syncStage = progress.noMoreVisible ? c.syncReady : c.syncMore;
+        } else {
+          const status = await familySyncStatus(family);
+          syncStage = status.pending || status.queued ? c.savedPending :
+            status.knownIncomplete ? c.syncMore : c.syncReady;
+        }
       }
     } catch (cause) {
       if (pendingFragment) joinStage = `${c.joinPending} · ${message(cause)}`;
-      else syncStage = c.syncFailed;
+      else {
+        const status = family && sharedSelected ? await familySyncStatus(family).catch(() => null) : null;
+        syncStage = status?.pending || status?.queued ? c.savedPending : c.syncFailed;
+      }
     } finally { polling = false; }
   }
   async function startJoin() {
@@ -483,6 +497,7 @@
             <button class="secondary" onclick={makeFamily}>＋ {c.createFamily}</button>
           </div>
           <div class="panel"><h2>{c.backup}</h2><p class="muted">{c.backupDescription}</p>
+            {#if sharedSelected}<p class="muted">{c.backupPoint(backupCursor)} {backupGap ? c.backupIncomplete : c.backupComplete}</p>{/if}
             <button class="secondary" onclick={downloadBackup}>{c.exportBackup}</button>
             <label>{c.restoreBackup}<input type="file" accept=".jsonl,.json" onchange={(event) => {
               const file = event.currentTarget.files?.[0];

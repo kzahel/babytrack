@@ -14,6 +14,7 @@ export async function relayPost(path, envelope) {
     body: envelope,
     redirect: 'error',
     cache: 'no-store',
+    signal: AbortSignal.timeout(15000),
   });
   if (!response.ok) throw new Error(`Relay batch upload failed: ${response.status}`);
 }
@@ -31,6 +32,7 @@ export async function relayPostControl(path, candidate) {
     body: candidate,
     redirect: 'error',
     cache: 'no-store',
+    signal: AbortSignal.timeout(15000),
   });
   if (!response.ok) throw new Error(`Relay control commit failed: ${response.status}`);
   const body = new Uint8Array(await response.arrayBuffer());

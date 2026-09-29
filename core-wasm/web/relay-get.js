@@ -14,6 +14,7 @@ export async function relayGet(path, signedRead) {
     headers: { Authorization: `Babytrack-Read ${hex(signedRead)}` },
     redirect: 'error',
     cache: 'no-store',
+    signal: AbortSignal.timeout(15000),
   });
   if (!response.ok || !response.body) throw new Error(`Relay read failed: ${response.status}`);
   const reader = response.body.getReader();

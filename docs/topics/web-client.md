@@ -35,8 +35,11 @@ sides, active durations, and pauses on that same event ID. IndexedDB replays
 saved operations through the Rust wasm projection after reload.
 
 The web app accepts a same-origin invitation in the URL fragment or a pasted
-link. It saves the fragment and exact claim/proof bytes in IndexedDB before
-clearing the URL, resumes pending stages after reload, and polls while open.
+link. Opening a URL only saves the fragment and shows the history-access
+warning; an explicit Join action is required before the one-use claim is
+posted. It saves exact claim/proof bytes in IndexedDB before network writes,
+clears the fragment from the URL, resumes pending stages after reload, and
+polls while open.
 Only a verified admission grant and ready replay make the Family selectable.
 The joined browser can read history, add children and the current capture
 types, and edit breast feeds. Writes enter the durable encrypted outbox before
@@ -52,6 +55,18 @@ mapping so a retry does not create another Family. Network failure alone
 does not imply removal. Creating a shared Family or issuing invitations from
 web and the full Android
 capture set are still open.
+
+The public IndexedDB Family row records whether the last verified pull reached
+the end of the visible log. A newly admitted browser stays in a loading stage
+until that happens, even if it takes several bounded pulls. A readable shared
+export marks a known gap when the saved prefix is incomplete or a removal
+probe identifies skipped history, and the Family screen shows the saved
+cursor and gap status. A durable outbox is shown as pending immediately after
+reload, and relay calls have bounded timeouts. Verified removal and shared
+outbox transactions overlap on the `removed` object store, serializing the
+freeze before an independent copy's snapshot. A second tab with an unsaved
+stale form receives an error and retains its input if it tries to save after
+that freeze.
 
 The browser enrollment adapter currently requires invitation relay origin to
 equal `location.origin`. Product web and relay routes therefore share one

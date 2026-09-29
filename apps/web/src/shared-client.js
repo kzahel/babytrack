@@ -40,7 +40,9 @@ export async function exportSharedReadable(wasm, family) {
   try {
     const removal = await store.removedStatus(family);
     const ready = await store.loadInitialReadySaved(family);
-    try { return ready.readable_file(BigInt(Date.now()), !!removal?.knownGap); }
+    const history = await store.historyStatus(family);
+    try { return ready.readable_file(BigInt(Date.now()),
+      !!removal?.knownGap || history.knownIncomplete); }
     finally { ready.free(); }
   } finally { store.close(); }
 }
@@ -110,7 +112,9 @@ async function ensureRemovalCopy(wasm, store, family, removal, force = false) {
     }
     const ready = await store.loadInitialReadySaved(family);
     let readable;
-    try { readable = ready.readable_file(BigInt(Date.now()), removal.knownGap); }
+    const history = await store.historyStatus(family);
+    try { readable = ready.readable_file(BigInt(Date.now()),
+      removal.knownGap || history.knownIncomplete); }
     finally { ready.free(); }
     const ids = wasm.new_local_ids();
     const newFamily = hex(ids.slice(0, 16));
@@ -205,6 +209,7 @@ export async function advanceJoin(wasm, fragment) {
     } finally { verifier.free(); }
     if (!admitted) return { stage: 'waitingGrant' };
     const ready = await invitation.activateAdmitted(publicStore, relayGet);
+    if (ready.loadingHistory) return { stage: 'loadingHistory' };
     await invitation.forget();
     return { stage: 'ready', family: ready.family, cursor: ready.cursor };
   } finally {
@@ -225,9 +230,11 @@ export async function sharedStatus(wasm, family) {
     }
     const pending = await store.pendingInitial(family);
     const queued = await store.queuedInitial(family);
+    const history = await store.historyStatus(family);
     const verifier = await store.load(family);
     try { return { cursor: Number(verifier.last_cursor()), pending: !!pending, queued: queued.length,
-      familyId: hex(verifier.family_id()), removal, privateCopy }; }
+      familyId: hex(verifier.family_id()), removal, privateCopy,
+      knownIncomplete: history.knownIncomplete }; }
     finally { verifier.free(); }
   } finally { store.close(); }
 }

@@ -497,12 +497,16 @@ async function run() {
       const bytes = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
       const store = await PublicStore.open(wasm, 'babytrack-public-pull-smoke');
       const family = await store.begin(bytes(data.controlGenesisHex), bytes(data.relayPublicHex));
+      const before = await store.historyStatus(family);
+      if (!before.knownIncomplete) throw new Error('New public history was marked complete');
       const expected = `/v1/families/${family}/log?after=1`;
       const progress = await store.pull(family, bytes(data.managerDeviceHex),
         bytes(data.managerSeedHex), async (path, auth) => {
           if (path !== expected || auth.length < 64) throw new Error('Unexpected signed read');
           return bytes(data.controlPageHex);
         });
+      const after = await store.historyStatus(family);
+      if (after.knownIncomplete) throw new Error('Verified end of public history remained incomplete');
       store.close();
       return { ...progress, family };
     }, input);
@@ -514,6 +518,8 @@ async function run() {
       const { PublicStore } = await import('/public-store.js');
       const store = await PublicStore.open(wasm, 'babytrack-public-pull-smoke');
       const verifier = await store.load(data.familyHex);
+      const history = await store.historyStatus(data.familyHex);
+      if (history.knownIncomplete) throw new Error('History completion did not survive reload');
       const result = { cursor: verifier.last_cursor().toString(),
         head: Array.from(verifier.head_hash(), (byte) => byte.toString(16).padStart(2, '0')).join('') };
       verifier.free();

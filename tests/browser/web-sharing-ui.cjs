@@ -82,7 +82,8 @@ async function run() {
     };
     await startRelay();
     browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    const first = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const page = await first.newPage();
     const failures = [];
     const controlPosts = [];
     page.on('pageerror', (error) => failures.push(error.message));
@@ -115,8 +116,9 @@ async function run() {
     await page.getByText('WebOnlyPrivateMarker').waitFor();
     await page.reload();
     await page.getByText('WebOnlyPrivateMarker').waitFor();
-    await startRelay();
     await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();
+    await page.getByText('Saved here · waiting to sync').waitFor();
+    await startRelay();
     await page.getByRole('button', { name: 'Sync now' }).click();
     await page.getByText('Up to date').waitFor();
     assert.equal(holder('read_note'), 'browser note read');
@@ -149,6 +151,12 @@ async function run() {
     await page.getByLabel('Note').fill('RemovedPendingMarker');
     await page.getByRole('button', { name: 'Save' }).click();
     await page.getByText('RemovedPendingMarker').waitFor();
+    const staleTab = await first.newPage();
+    await staleTab.route('**/v1/**', (route) => route.abort());
+    await staleTab.goto(origin);
+    await staleTab.getByText('RemovedPendingMarker').waitFor();
+    await staleTab.locator('.quick-grid button').filter({ hasText: 'Note' }).click();
+    await staleTab.getByLabel('Note').fill('StaleTabUnsentMarker');
     const firstDevice = await deviceId(page);
     const removal = spawnSync(holderBin, ['remove', manager, relayOrigin, firstDevice],
       { encoding: 'utf8' });
@@ -157,6 +165,10 @@ async function run() {
     await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();
     await page.getByRole('button', { name: 'Sync now' }).click();
     await page.getByText('Access ended · private copy saved on this browser').waitFor();
+    await staleTab.getByRole('button', { name: 'Save' }).click();
+    await staleTab.getByRole('alert').getByText('This device was removed from the shared Family').waitFor();
+    assert.equal(await staleTab.getByLabel('Note').inputValue(), 'StaleTabUnsentMarker');
+    await staleTab.close();
     await page.locator('.bottom-nav').getByRole('button', { name: 'Today' }).click();
     await page.getByRole('button', { name: 'Open private copy' }).click();
     await page.getByText('RemovedPendingMarker').waitFor();
@@ -164,8 +176,12 @@ async function run() {
     await page.getByText('RemovedPendingMarker').waitFor();
     await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();
     await page.getByLabel('Switch Family').selectOption(sharedFamily);
+    await page.waitForFunction((id) => localStorage.getItem('babytrack-family') === id &&
+      document.querySelector('.bottom-nav button.active')?.textContent.trim() === 'Today', sharedFamily);
     await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();
-    const backupReady = page.waitForEvent('download');
+    const backupReady = page.waitForEvent('download', { timeout: 10000 }).catch(async (error) => {
+      throw new Error(`${error.message}\nBackup screen: ${await page.locator('main').innerText()}`);
+    });
     await page.getByRole('button', { name: 'Export readable backup' }).click();
     const backup = fs.readFileSync(await (await backupReady).path());
     await page.getByLabel('Restore file into a new Family').setInputFiles({

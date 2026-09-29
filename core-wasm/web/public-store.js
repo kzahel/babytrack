@@ -81,6 +81,13 @@ export class PublicStore {
     return requestResult(transaction.objectStore('families').getAll());
   }
 
+  async historyStatus(family) {
+    const read = this.database.transaction('families', 'readonly');
+    const metadata = await requestResult(read.objectStore('families').get(family));
+    if (!metadata) throw new Error('Family is absent');
+    return { cursor: metadata.cursor, knownIncomplete: metadata.knownIncomplete !== false };
+  }
+
   async removedStatus(family) {
     const read = this.database.transaction('removed', 'readonly');
     const saved = await requestResult(read.objectStore('removed').get(family));
@@ -155,6 +162,7 @@ export class PublicStore {
       relayPublicKey: Uint8Array.from(relayPublicKey),
       cursor: Number(verifier.last_cursor()),
       head: hex(verifier.head_hash()),
+      knownIncomplete: true,
     };
     verifier.free();
     const transaction = this.database.transaction('families', 'readwrite');
@@ -334,11 +342,12 @@ export class PublicStore {
     } finally { ready.free(); }
     const newClock = expectedClock && this.operationClock(family, credential.deviceId, operationBytes);
     return new Promise((resolve, reject) => {
-      const transaction = this.database.transaction(['families', 'outbox', 'queued', 'credentials'], 'readwrite');
+      const transaction = this.database.transaction(['families', 'outbox', 'queued', 'credentials', 'removed'], 'readwrite');
       const families = transaction.objectStore('families');
       const outbox = transaction.objectStore('outbox');
       const queued = transaction.objectStore('queued');
       const credentials = transaction.objectStore('credentials');
+      const removalRequest = transaction.objectStore('removed').get(family);
       const credentialRequest = credentials.get(family);
       let failure, result;
       transaction.oncomplete = () => resolve(result);
@@ -347,8 +356,9 @@ export class PublicStore {
       const metadataRequest = families.get(family);
       metadataRequest.onsuccess = () => {
         const metadata = metadataRequest.result;
-        if (!metadata || metadata.cursor !== cursor || metadata.head !== head) {
-          failure = new Error('Family authority changed before staging');
+        if (removalRequest.result || !metadata || metadata.cursor !== cursor || metadata.head !== head) {
+          failure = removalRequest.result ? new Error('This device was removed from the shared Family') :
+            new Error('Family authority changed before staging');
           transaction.abort();
           return;
         }
@@ -417,11 +427,12 @@ export class PublicStore {
       ready.preview_one(operationBytes, credential.deviceId);
     } finally { ready.free(); }
     return new Promise((resolve, reject) => {
-      const transaction = this.database.transaction(['families', 'outbox', 'queued', 'credentials'], 'readwrite');
+      const transaction = this.database.transaction(['families', 'outbox', 'queued', 'credentials', 'removed'], 'readwrite');
       const families = transaction.objectStore('families');
       const outbox = transaction.objectStore('outbox');
       const queued = transaction.objectStore('queued');
       const credentials = transaction.objectStore('credentials');
+      const removalRequest = transaction.objectStore('removed').get(family);
       const credentialRequest = credentials.get(family);
       let failure;
       transaction.oncomplete = () => resolve({ pending: !!pending, queued: operations.length + 1 });
@@ -433,11 +444,12 @@ export class PublicStore {
       queuedRequest.onsuccess = () => {
         const metadata = metadataRequest.result;
         const actualPending = pendingRequest.result;
-        if (!metadata || metadata.cursor !== cursor || metadata.head !== head ||
+        if (removalRequest.result || !metadata || metadata.cursor !== cursor || metadata.head !== head ||
             (!!actualPending !== !!pending) ||
             (pending && !sameBytes(actualPending.envelope, pending.envelope)) ||
             !sameOperations(queuedRequest.result?.operations || [], operations)) {
-          failure = new Error('Browser authority or outbox changed before queuing');
+          failure = new Error(removalRequest.result ? 'This device was removed from the shared Family' :
+            'Browser authority or outbox changed before queuing');
           transaction.abort();
           return;
         }
@@ -470,10 +482,11 @@ export class PublicStore {
       head = hex(ready.head_hash());
     } finally { ready.free(); }
     return new Promise((resolve, reject) => {
-      const transaction = this.database.transaction(['families', 'outbox', 'queued'], 'readwrite');
+      const transaction = this.database.transaction(['families', 'outbox', 'queued', 'removed'], 'readwrite');
       const families = transaction.objectStore('families');
       const outbox = transaction.objectStore('outbox');
       const queued = transaction.objectStore('queued');
+      const removalRequest = transaction.objectStore('removed').get(family);
       let failure, result;
       transaction.oncomplete = () => resolve(result);
       transaction.onerror = () => reject(failure || transaction.error);
@@ -483,10 +496,11 @@ export class PublicStore {
       const queuedRequest = queued.get(family);
       queuedRequest.onsuccess = () => {
         const metadata = metadataRequest.result;
-        if (!metadata || metadata.cursor !== cursor || metadata.head !== head ||
+        if (removalRequest.result || !metadata || metadata.cursor !== cursor || metadata.head !== head ||
             pendingRequest.result ||
             !sameOperations(queuedRequest.result?.operations || [], operations)) {
-          failure = new Error('Browser authority or outbox changed before staging');
+          failure = new Error(removalRequest.result ? 'This device was removed from the shared Family' :
+            'Browser authority or outbox changed before staging');
           transaction.abort();
           return;
         }
@@ -793,7 +807,16 @@ export class PublicStore {
           page.free();
         }
       }
-      return { cursor: Number(verifier.last_cursor()), noMoreVisible };
+      const cursor = Number(verifier.last_cursor());
+      const write = this.database.transaction('families', 'readwrite');
+      const done = transactionDone(write);
+      const rows = write.objectStore('families');
+      const metadata = await requestResult(rows.get(family));
+      if (metadata?.cursor === cursor && metadata.head === hex(verifier.head_hash())) {
+        rows.put({ ...metadata, knownIncomplete: !noMoreVisible });
+      }
+      await done;
+      return { cursor, noMoreVisible };
     } finally {
       verifier.free();
     }

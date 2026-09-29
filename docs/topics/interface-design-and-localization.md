@@ -127,7 +127,11 @@ Keep generated PNGs, rendering metadata, and a scrolling HTML index as local
 build outputs and CI artifacts. Android Studio previews are an additional
 entry point into the same fixtures. Start with visual review; introduce a
 pixel-comparison gate only after renderer versions and approved baselines
-are stable. CI artifacts do not require a public gallery deployment.
+are stable. Use baselines from the same runner platform, SDK, renderer and
+JDK; the manifest records these inputs. Small native text anti-aliasing
+variations can occur across hosts even with the same screen code; [007](../tactical/007-android-screen-gallery.md)
+records the initial comparison. CI artifacts do not require a public gallery
+deployment.
 
 ## Validation and reconsideration
 

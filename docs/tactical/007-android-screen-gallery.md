@@ -1,6 +1,6 @@
 # 007: Android screen extraction and fixture gallery
 
-Status: in progress, 2026-09-29. This is preparation for a later redesign, not a
+Status: implementation and local validation complete, 2026-09-29. This is preparation for a later redesign, not a
 visual redesign or an M1 physical-phone gate. [005](005-m1-android.md) owns
 the caregiver-app delivery gates. [Android navigation](../topics/android-navigation.md)
 owns route behavior; [interface design](../topics/interface-design-and-localization.md)
@@ -38,7 +38,7 @@ port, new activity types, or pixel-diff approval gate in this workstream.
 6. [x] Generate and retain the gallery in read-only CI, with a job-summary
    artifact link. Keep stable case names and rendering metadata so baseline
    comparison can be added later without committing images today.
-7. [ ] Run relevant Android unit/build and existing behavior checks; inspect
+7. [x] Run relevant Android unit/build and existing behavior checks; inspect
    actual rendered images, record evidence, commit each reasonable slice,
    push, and report the gallery and observed CI result.
 
@@ -102,3 +102,36 @@ Implementation and validation results will be recorded with each slice.
   scrolls to that control and back to Family options, using its existing
   scroll-aware lookup. This repairs a viewport assumption without changing
   the product UI or increasing timeouts.
+
+## Delivery verification
+
+The implementation at `bdb9499` is pushed to `main`.
+[CI run 36625490783](https://github.com/kzahel/babytrack/actions/runs/36625490783)
+passed Rust, both native jobs, browser checks, and the Android APK/unit/gallery
+job. The [gallery artifact](https://github.com/kzahel/babytrack/actions/runs/36625490783/artifacts/11060901799)
+contains all 31 cases, 124 variants, and 214 images from Linux. Its downloaded
+manifest and representative renders were inspected locally. The hosted
+real-relay/recovery job is still running; its final result is not claimed here.
+
+Local verification also passed:
+
+- Android unit tests, debug APK, and instrumentation APK builds.
+- Complete caregiver UI walkthrough: Family/child selection, all covered
+  logging/correction paths, and restart.
+- Quick Family/diaper/edit/delete/restart flow in dark mode at 1.5× text.
+  The bottle-form presence assertion now scrolls, like the Family controls,
+  so it does not assume that fields fit above the fold.
+- All 28 real-relay Android instrumentation cases on a disposable emulator.
+- Readable/protected backups, corrupt-file rejection, wrong-password denial,
+  restore after a fresh installation, and restart through the document UI.
+- Gallery HTML search/expansion and every image link in test Chromium;
+  workspace boundaries, script syntax, and workflow YAML.
+
+Every locally started test browser, relay, and read-only emulator was reaped.
+No physical-phone, TalkBack, keyboard/inset, or RTL gate is closed by this
+workstream. The existing lint compatibility errors remain as recorded above.
+
+Local macOS and CI Linux renders have identical pixels in 194 of 214 images;
+the remaining disabled-label anti-aliasing differs by at most one color-channel
+level. Follow the owning interface topic's same-platform baseline direction
+when enabling visual regression tests; no cross-platform pixel gate is added.

@@ -216,7 +216,7 @@ def main(quick: bool = False) -> None:
     find(target, "No entries yet.")
     tap(target, "Today", actionable=True)
     tap(target, "Bottle", scroll=True)
-    find(target, "Bottle amount")
+    find(target, "Bottle amount", scroll=True)
     adb(target, "shell", "input", "keyevent", "4")
     open_capture(target, "Log completed sleep")
     find(target, "Minutes slept", scroll=True)

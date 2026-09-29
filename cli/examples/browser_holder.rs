@@ -11,12 +11,14 @@ use std::{
 
 use babytrack_core::{
     batch::Header,
+    bootstrap::InvitationBootstrap,
     cbor::{self, Value},
     creation::ManagerCreation,
     crypto,
     first_admission::FirstAdmission,
     first_challenge::FirstChallenge,
     first_removal::FirstRemoval,
+    invite_cancel::InviteCancellation,
     issue::{FirstInviteIssue, LaterInviteIssue},
     operation::{Hlc, Kind, NewOperation, Operation, Scope},
     shared_history::PublicHistorySession,
@@ -316,6 +318,26 @@ fn main() {
                 .confirm(&mut local, &committed_issue, browser_origin)
                 .unwrap();
             println!("{}", link.to_fragment().unwrap());
+        }
+        "cancel" => {
+            let origin = &args[2];
+            let fragment = args.get(3).expect("invitation fragment required");
+            let bootstrap = InvitationBootstrap::from_fragment(fragment).unwrap();
+            let manager = ManagerCreation::resume(&local, family, &WRAPPING_KEY).unwrap();
+            pull_new_controls(&mut local, origin, &manager);
+            let cancel = InviteCancellation::prepare_for_initial_manager(
+                &mut local,
+                &manager,
+                bootstrap.invitation_id(),
+            )
+            .unwrap();
+            let committed_cancel = committed(&relay_post(
+                origin,
+                &format!("/v1/families/{}/control", hex(&family.family_id)),
+                cancel.candidate_bytes(),
+            ));
+            cancel.confirm(&mut local, &committed_cancel).unwrap();
+            println!("invitation canceled");
         }
         "later_challenge" => {
             let origin = &args[2];

@@ -18,6 +18,7 @@ const fixtures = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/neg
 const full = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/full-wire-v1.json')));
 const chain = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/contiguous-chain-v1.json')));
 const apiGenesis = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/api-genesis-v1.json')));
+const invitationStatus = JSON.parse(fs.readFileSync(path.join(__dirname, '../vectors/invitation-status-v1.json')));
 const minor = fixtures.cases.find((entry) => entry.id === 'CROSSMINORBYTE01').input;
 const genesis = full.cases.find((entry) => entry.id === 'GENESIS01');
 const acceptedBatch = full.cases.find((entry) => entry.id === 'BATCHBYTE01');
@@ -34,6 +35,10 @@ const oneEntryPage = (familyHex, kind, committed) => Buffer.concat([
   Buffer.from([0xa6, 1, 1, 2, 0x50]), Buffer.from(familyHex, 'hex'),
   Buffer.from([3, 1, 4, 0x81, 0x83, 2, kind]), cborBytes(committed),
   Buffer.from([5, 2, 6, 0xf4]),
+]);
+const emptyPage = (familyHex, after) => Buffer.concat([
+  Buffer.from([0xa6, 1, 1, 2, 0x50]), Buffer.from(familyHex, 'hex'),
+  Buffer.from([3, after, 4, 0x80, 5, after, 6, 0xf4]),
 ]);
 const controlPrefixPage = (familyHex, controls) => Buffer.concat([
   Buffer.from([0xa6, 1, 1, 2, 0x50]), Buffer.from(familyHex, 'hex'),
@@ -274,6 +279,23 @@ async function run() {
     page.on('pageerror', (error) => { throw error; });
     const url = `http://localhost:${server.address().port}/`;
     await page.goto(url);
+
+    const statusVector = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const bytes = (hex) => Uint8Array.from(hex.match(/../g), (pair) => parseInt(pair, 16));
+      const invite = new wasm.WasmInvitation(data.invitation_fragment);
+      try {
+        const response = bytes(data.response_hex);
+        const reason = invite.verify_status_reason(response);
+        response[response.length - 1] ^= 1;
+        let forgedRejected = false;
+        try { invite.verify_status_reason(response); } catch { forgedRejected = true; }
+        return { reason, forgedRejected,
+          exactPath: invite.status_read_path().includes('/invitation-status/') };
+      } finally { invite.free(); }
+    }, invitationStatus.expected);
+    assert.deepEqual(statusVector, { reason: 2, forgedRejected: true, exactPath: true });
 
     const saved = await page.evaluate(async (data) => {
       const wasm = await import('/babytrack_core_wasm.js');
@@ -527,6 +549,32 @@ async function run() {
       return result;
     }, input);
     assert.deepEqual(pulledReload, { cursor: '2', head: input.controlHeadHex });
+
+    const partialHistory = await page.evaluate(async (data) => {
+      const wasm = await import('/babytrack_core_wasm.js');
+      await wasm.default('/babytrack_core_wasm_bg.wasm');
+      const { PublicStore } = await import('/public-store.js');
+      const bytes = (hex) => Uint8Array.from(hex.match(/../g), (pair) => parseInt(pair, 16));
+      const store = await PublicStore.open(wasm, 'babytrack-public-partial-smoke');
+      const family = await store.begin(bytes(data.genesis), bytes(data.relay));
+      const partial = bytes(data.page);
+      partial[partial.length - 1] = 0xf5;
+      const first = await store.pull(family, bytes(data.device), bytes(data.seed),
+        async () => partial, 1);
+      const gap = await store.historyStatus(family);
+      const second = await store.pull(family, bytes(data.device), bytes(data.seed),
+        async () => bytes(data.empty), 1);
+      const complete = await store.historyStatus(family);
+      store.close();
+      return { first, gap: gap.knownIncomplete, second, complete: complete.knownIncomplete };
+    }, { genesis: input.controlGenesisHex, relay: input.relayPublicHex,
+      page: input.controlPageHex, device: input.managerDeviceHex,
+      seed: input.managerSeedHex,
+      empty: emptyPage(input.familyHex, 2).toString('hex') });
+    assert.deepEqual(partialHistory, {
+      first: { cursor: 2, noMoreVisible: false }, gap: true,
+      second: { cursor: 2, noMoreVisible: true }, complete: false,
+    });
 
     // A signed invitation does not stop the original manager's browser
     // tracker from replaying or preparing another epoch-one edit.

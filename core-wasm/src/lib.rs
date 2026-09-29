@@ -199,6 +199,80 @@ impl WasmInvitation {
         self.linked_issue
     }
 
+    pub fn status_read_path(&self) -> String {
+        let family: String = self
+            .bootstrap
+            .family_id()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        let invitation: String = self
+            .bootstrap
+            .invitation_id()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        format!("/v1/families/{family}/invitation-status/{invitation}")
+    }
+
+    pub fn sign_status_read(&self, request_id: &[u8]) -> Result<Vec<u8>, JsError> {
+        self.bootstrap
+            .sign_get_with_id(&self.status_read_path(), fixed(request_id, "request ID")?)
+            .map_err(debug_error)
+    }
+
+    pub fn verify_status_reason(&self, response: &[u8]) -> Result<u8, JsError> {
+        Ok(self
+            .bootstrap
+            .verify_status(response)
+            .map_err(debug_error)?
+            .reason)
+    }
+
+    pub fn candidate_uses_current_head(&self, candidate: &[u8]) -> Result<bool, JsError> {
+        let Value::Map(root) = cbor::decode(candidate).map_err(debug_error)? else {
+            return Err(JsError::new("candidate not map"));
+        };
+        let Value::Map(unsigned) = &root[0].1 else {
+            return Err(JsError::new("candidate unsigned not map"));
+        };
+        let Value::Bytes(prior) = &unsigned[3].1 else {
+            return Err(JsError::new("candidate prior head not bytes"));
+        };
+        Ok(fixed::<32>(prior, "candidate prior head")?
+            == self
+                .chain
+                .as_ref()
+                .ok_or_else(|| JsError::new("genesis absent"))?
+                .head_hash())
+    }
+
+    /// Return an exact committed response only when verified sparse history
+    /// contains this candidate. Empty means the candidate was not observed.
+    pub fn candidate_result_in_history(&self, candidate: &[u8]) -> Result<Vec<u8>, JsError> {
+        for committed in &self.controls {
+            let Value::Map(root) = cbor::decode(committed).map_err(debug_error)? else {
+                return Err(JsError::new("saved control not map"));
+            };
+            if root.len() != 4 {
+                return Err(JsError::new("saved control width invalid"));
+            }
+            let prefix = cbor::encode(&Value::Map(vec![
+                (1, root[0].1.clone()),
+                (2, root[1].1.clone()),
+            ]))
+            .map_err(debug_error)?;
+            if prefix == candidate {
+                return cbor::encode(&Value::Map(vec![
+                    (1, Value::Integer(1)),
+                    (2, Value::Bytes(committed.clone())),
+                ]))
+                .map_err(debug_error);
+            }
+        }
+        Ok(Vec::new())
+    }
+
     pub fn head_hash(&self) -> Result<Vec<u8>, JsError> {
         Ok(self
             .chain

@@ -69,6 +69,15 @@ export class InvitationStore {
     return !!draft?.approved;
   }
 
+  async hasSavedTerminal() {
+    const read = this.database.transaction('drafts', 'readonly');
+    const draft = await result(read.objectStore('drafts').get(this.fragment));
+    if (!draft?.terminalResponse) return false;
+    const verifier = await this.load();
+    try { return verifier.verify_status_reason(draft.terminalResponse) >= 2; }
+    finally { verifier.free(); }
+  }
+
   async approve() {
     const write = this.database.transaction('drafts', 'readwrite');
     const done = completed(write);
@@ -91,9 +100,17 @@ export class InvitationStore {
   }
 
   async forget() {
-    const write = this.database.transaction('drafts', 'readwrite');
+    const write = this.database.transaction(['drafts', 'invitations', 'pages', 'claims', 'proofs'], 'readwrite');
     const done = completed(write);
     write.objectStore('drafts').delete(this.fragment);
+    write.objectStore('invitations').delete(this.fragment);
+    write.objectStore('claims').delete(this.fragment);
+    write.objectStore('proofs').delete(this.fragment);
+    const pages = write.objectStore('pages');
+    const keys = await result(pages.getAllKeys(IDBKeyRange.bound(
+      [this.fragment, 0], [this.fragment, Number.MAX_SAFE_INTEGER],
+    )));
+    for (const key of keys) pages.delete(key);
     await done;
   }
 
@@ -113,11 +130,11 @@ export class InvitationStore {
       let claimApplied = false;
       let proofApplied = false;
       for (const page of pages) {
-        if (claim?.committedResponse && !claimApplied && page.after > claim.priorCursor) {
+        if (claim?.committedResponse && !claim.fromPage && !claimApplied && page.after > claim.priorCursor) {
           verifier.accept_control_response(claim.committedResponse, claim.candidate);
           claimApplied = true;
         }
-        if (proof?.committedResponse && !proofApplied && page.after > proof.priorCursor) {
+        if (proof?.committedResponse && !proof.fromPage && !proofApplied && page.after > proof.priorCursor) {
           verifier.accept_control_response(proof.committedResponse, proof.candidate);
           proofApplied = true;
         }
@@ -126,10 +143,10 @@ export class InvitationStore {
         }
         verifier.accept_control_page(page.bytes, BigInt(page.after));
       }
-      if (claim?.committedResponse && !claimApplied) {
+      if (claim?.committedResponse && !claim.fromPage && !claimApplied) {
         verifier.accept_control_response(claim.committedResponse, claim.candidate);
       }
-      if (proof?.committedResponse && !proofApplied) {
+      if (proof?.committedResponse && !proof.fromPage && !proofApplied) {
         verifier.accept_control_response(proof.committedResponse, proof.candidate);
       }
       if (metadata && (Number(verifier.control_cursor()) !== metadata.cursor ||
@@ -150,7 +167,7 @@ export class InvitationStore {
       throw new Error('Invalid invitation pull limit');
     }
     const claim = await this.savedClaim();
-    if (claim) throw new Error('Invitation read is closed after claim preparation');
+    if (claim?.committedResponse) throw new Error('Invitation read is closed after claim commit');
     const verifier = await this.load();
     try {
       let hasMore = true;
@@ -159,7 +176,10 @@ export class InvitationStore {
         const path = verifier.control_read_path(BigInt(after));
         const auth = verifier.sign_control_read(BigInt(after),
           crypto.getRandomValues(new Uint8Array(16)));
-        const bytes = await get(path, auth);
+        const response = get(path, auth);
+        const bytes = claim ? await response.catch(async () => get(path,
+          verifier.sign_pending_control_read(BigInt(after), claim.deviceId,
+            claim.signingSeed, crypto.getRandomValues(new Uint8Array(16))))) : await response;
         hasMore = verifier.accept_control_page(bytes, BigInt(after));
         const cursor = Number(verifier.control_cursor());
         if (cursor === after) break;
@@ -179,6 +199,73 @@ export class InvitationStore {
   async savedClaim() {
     const read = this.database.transaction('claims', 'readonly');
     return result(read.objectStore('claims').get(this.fragment));
+  }
+
+  async status(get) {
+    const verifier = await this.load();
+    try {
+      const read = this.database.transaction('drafts', 'readonly');
+      const saved = await result(read.objectStore('drafts').get(this.fragment));
+      if (saved?.terminalResponse) return verifier.verify_status_reason(saved.terminalResponse);
+      const bytes = await get(verifier.status_read_path(),
+        verifier.sign_status_read(crypto.getRandomValues(new Uint8Array(16))));
+      const reason = verifier.verify_status_reason(bytes);
+      if (reason >= 3 || (reason === 2 && !await this.savedClaim())) {
+        const write = this.database.transaction('drafts', 'readwrite');
+        const done = completed(write);
+        const drafts = write.objectStore('drafts');
+        const current = await result(drafts.get(this.fragment));
+        drafts.put({ ...current, fragment: this.fragment,
+          terminalResponse: Uint8Array.from(bytes) });
+        await done;
+      }
+      return reason;
+    } finally { verifier.free(); }
+  }
+
+  async reconcileCandidate(kind) {
+    const saved = kind === 'claim' ? await this.savedClaim() : await this.savedProof();
+    if (!saved || saved.committedResponse) return saved;
+    const verifier = await this.load();
+    try {
+      for (const row of [saved, ...(saved.archived || [])]) {
+        const result = verifier.candidate_result_in_history(row.candidate);
+        if (!result.length) continue;
+        const next = { ...saved, candidate: row.candidate,
+          transitionId: row.transitionId, committedResponse: result, fromPage: true };
+        const write = this.database.transaction(kind === 'claim' ? 'claims' : 'proofs', 'readwrite');
+        const done = completed(write);
+        write.objectStore(kind === 'claim' ? 'claims' : 'proofs').put(next);
+        await done;
+        return next;
+      }
+      return saved;
+    } finally { verifier.free(); }
+  }
+
+  async refreshCandidate(kind) {
+    const saved = kind === 'claim' ? await this.savedClaim() : await this.savedProof();
+    if (!saved || saved.committedResponse) return saved;
+    const verifier = await this.load();
+    try {
+      if (verifier.candidate_uses_current_head(saved.candidate)) return saved;
+      const transitionId = randomV4();
+      const candidate = kind === 'claim' ? verifier.prepare_claim(saved.deviceId,
+        saved.signingSeed, saved.agreementPrivate, saved.enrollmentNonce, transitionId) :
+        verifier.prepare_proof((await this.savedClaim()).deviceId,
+          (await this.savedClaim()).signingSeed, (await this.savedClaim()).agreementPrivate,
+          saved.objectResponse, transitionId);
+      const next = { ...saved, transitionId, candidate: Uint8Array.from(candidate),
+        priorCursor: Number(verifier.control_cursor()),
+        archived: [...(saved.archived || []), { candidate: saved.candidate,
+          transitionId: saved.transitionId }] };
+      const name = kind === 'claim' ? 'claims' : 'proofs';
+      const write = this.database.transaction(name, 'readwrite');
+      const done = completed(write);
+      write.objectStore(name).put(next);
+      await done;
+      return next;
+    } finally { verifier.free(); }
   }
 
   // Persist the exact candidate and private keys before any network write.

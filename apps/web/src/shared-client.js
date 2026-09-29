@@ -166,7 +166,9 @@ export async function approveJoin(wasm, fragment) {
 export async function dismissJoin(wasm, fragment) {
   const store = await InvitationStore.open(wasm, fragment, invitationDatabase);
   try {
-    if (await store.isApproved()) throw new Error('Joining already started');
+    if (await store.isApproved() && !await store.hasSavedTerminal()) {
+      throw new Error('Joining already started');
+    }
     await store.forget();
   } finally { store.close(); }
 }
@@ -180,14 +182,25 @@ export async function advanceJoin(wasm, fragment) {
   try {
     if (!await invitation.isApproved()) return { stage: 'confirmJoin' };
     let claim = await invitation.savedClaim();
-    if (!claim) {
+    if (!claim || !claim.committedResponse) {
       const progress = await invitation.pull(relayGet, 16);
+      if (progress.hasMore) return { stage: 'loadingControls' };
       if (!progress.linkedIssue) return { stage: 'waitingInvite' };
-      claim = await invitation.prepareClaim();
+      claim = claim ? await invitation.reconcileCandidate('claim') :
+        await invitation.prepareClaim();
     }
-    if (!claim.committedResponse) await invitation.submitClaim(relayPostControl);
-    await invitation.pullPending(relayGet, 16);
+    if (!claim.committedResponse) {
+      const status = await invitation.status(relayGet).catch(() => null);
+      if (status >= 3) return { stage: terminalStage(status) };
+      if (status === 2) return { stage: 'waitingClaimResult' };
+      if (status === 1) claim = await invitation.refreshCandidate('claim');
+      await invitation.submitClaim(relayPostControl);
+    }
+    if ((await invitation.pullPending(relayGet, 16)).hasMore) {
+      return { stage: 'loadingControls' };
+    }
     let proof = await invitation.savedProof();
+    if (proof && !proof.committedResponse) proof = await invitation.reconcileCandidate('proof');
     if (!proof) {
       const verifier = await invitation.load();
       let challenged = false;
@@ -199,8 +212,13 @@ export async function advanceJoin(wasm, fragment) {
       if (!challenged) return { stage: 'waitingChallenge' };
       proof = await invitation.prepareProof(relayGet);
     }
-    if (!proof.committedResponse) await invitation.submitProof(relayPostControl);
-    await invitation.pullPending(relayGet, 16);
+    if (!proof.committedResponse) {
+      await invitation.refreshCandidate('proof');
+      await invitation.submitProof(relayPostControl);
+    }
+    if ((await invitation.pullPending(relayGet, 16)).hasMore) {
+      return { stage: 'loadingControls' };
+    }
     const verifier = await invitation.load();
     let admitted;
     try {
@@ -212,10 +230,22 @@ export async function advanceJoin(wasm, fragment) {
     if (ready.loadingHistory) return { stage: 'loadingHistory' };
     await invitation.forget();
     return { stage: 'ready', family: ready.family, cursor: ready.cursor };
+  } catch (error) {
+    const status = await invitation.status(relayGet).catch(() => null);
+    if (status >= 3) return { stage: terminalStage(status) };
+    if (status === 2 && !await invitation.savedClaim()) return { stage: 'inviteClaimed' };
+    if (status === 2 && !(await invitation.savedClaim())?.committedResponse) {
+      return { stage: 'waitingClaimResult' };
+    }
+    throw error;
   } finally {
     invitation.close();
     publicStore.close();
   }
+}
+
+function terminalStage(reason) {
+  return ({ 3: 'inviteCanceled', 4: 'inviteExpired', 5: 'inviteInvalidated' })[reason];
 }
 
 export async function sharedStatus(wasm, family) {

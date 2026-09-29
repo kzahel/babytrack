@@ -125,6 +125,25 @@ async function run() {
     const marker = Buffer.from('WebOnlyPrivateMarker');
     assert.equal(fs.readFileSync(relayDb).includes(marker), false, 'plaintext reached relay DB');
     assert.equal(fs.readFileSync(relayLog).includes(marker), false, 'plaintext reached relay log');
+    const canceled = spawnSync(holderBin, ['later_issue', manager, relayOrigin, origin],
+      { encoding: 'utf8' });
+    assert.equal(canceled.status, 0, `Native canceled issue: ${canceled.stderr}`);
+    const cancel = spawnSync(holderBin, ['cancel', manager, relayOrigin, canceled.stdout.trim()],
+      { encoding: 'utf8' });
+    assert.equal(cancel.status, 0, `Native cancellation: ${cancel.stderr}`);
+    const canceledContext = await browser.newContext();
+    const canceledPage = await canceledContext.newPage();
+    await canceledPage.goto(origin + '/' + canceled.stdout.trim());
+    await canceledPage.getByText('Invitation ready to join').waitFor();
+    await canceledPage.getByRole('button', { name: 'Join this Family' }).click();
+    await canceledPage.getByText('This invitation was canceled. Ask a manager for a new link.').waitFor();
+    await canceledPage.route('**/v1/**', (route) => route.abort());
+    await canceledPage.reload();
+    await canceledPage.getByText('This invitation was canceled. Ask a manager for a new link.').waitFor();
+    await canceledPage.getByRole('button', { name: 'Dismiss invitation' }).click();
+    await canceledPage.reload();
+    assert.equal(await canceledPage.getByText('This invitation was canceled.', { exact: false }).count(), 0);
+    await canceledContext.close();
     const later = spawnSync(holderBin, ['later_issue', manager, relayOrigin, origin],
       { encoding: 'utf8' });
     assert.equal(later.status, 0, `Native later issue: ${later.stderr}`);
@@ -133,11 +152,37 @@ async function run() {
     secondPage.on('pageerror', (error) => failures.push(error.message));
     await secondPage.goto(origin + '/' + later.stdout.trim());
     await secondPage.getByText('Invitation ready to join').waitFor();
+    let racedClaim = false;
+    await secondPage.route('**/v1/families/*/control', (route) => {
+      if (route.request().method() !== 'POST' || racedClaim) return route.continue();
+      racedClaim = true;
+      const advanced = spawnSync(holderBin, ['later_issue', manager, relayOrigin, origin],
+        { encoding: 'utf8' });
+      assert.equal(advanced.status, 0, `Native unrelated control: ${advanced.stderr}`);
+      return route.continue();
+    });
     await secondPage.getByRole('button', { name: 'Join this Family' }).click();
+    await secondPage.getByText('Relay control commit failed: 409', { exact: false }).waitFor();
+    assert.equal(racedClaim, true, 'claim did not race an unrelated control');
+    await secondPage.getByRole('button', { name: 'Resume joining' }).click();
     await secondPage.getByText('Claim sent · waiting for the manager device').waitFor();
+    await secondPage.unroute('**/v1/families/*/control');
     holder('later_challenge');
+    let racedProof = false;
+    await secondPage.route('**/v1/families/*/control', (route) => {
+      if (route.request().method() !== 'POST' || racedProof) return route.continue();
+      racedProof = true;
+      const advanced = spawnSync(holderBin, ['later_issue', manager, relayOrigin, origin],
+        { encoding: 'utf8' });
+      assert.equal(advanced.status, 0, `Native control before proof: ${advanced.stderr}`);
+      return route.continue();
+    });
+    await secondPage.getByRole('button', { name: 'Resume joining' }).click();
+    await secondPage.getByText('Relay control commit failed: 409', { exact: false }).waitFor();
+    assert.equal(racedProof, true, 'proof did not race an unrelated control');
     await secondPage.getByRole('button', { name: 'Resume joining' }).click();
     await secondPage.getByText('Proof sent · waiting for the Family key grant').waitFor();
+    await secondPage.unroute('**/v1/families/*/control');
     holder('later_grant');
     await secondPage.getByRole('button', { name: 'Resume joining' }).click();
     await secondPage.locator('.side-nav').getByRole('button', { name: 'Family' }).click();
@@ -198,8 +243,20 @@ async function run() {
     thirdPage.on('pageerror', (error) => failures.push(error.message));
     await thirdPage.goto(origin + '/' + rotatedIssue.stdout.trim());
     await thirdPage.getByText('Invitation ready to join').waitFor();
+    let lostClaimResponse = false;
+    await thirdPage.route('**/v1/families/*/control', async (route) => {
+      if (route.request().method() !== 'POST' || lostClaimResponse) return route.continue();
+      lostClaimResponse = true;
+      const accepted = await route.fetch();
+      assert.equal(accepted.status(), 200, 'claim was not committed before response loss');
+      return route.abort();
+    });
     await thirdPage.getByRole('button', { name: 'Join this Family' }).click();
+    await thirdPage.getByText('Claim result is uncertain · retrying signed checks').waitFor();
+    assert.equal(lostClaimResponse, true);
+    await thirdPage.getByRole('button', { name: 'Resume joining' }).click();
     await thirdPage.getByText('Claim sent · waiting for the manager device').waitFor();
+    await thirdPage.unroute('**/v1/families/*/control');
     holder('later_challenge');
     await thirdPage.getByRole('button', { name: 'Resume joining' }).click();
     await thirdPage.getByText('Proof sent · waiting for the Family key grant').waitFor();

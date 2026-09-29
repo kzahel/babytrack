@@ -37,6 +37,7 @@
   let backupGap = false;
   let backupCursor = 0;
   let polling = false;
+  const terminalJoinStages = [c.inviteClaimed, c.inviteCanceled, c.inviteExpired, c.inviteInvalidated];
 
   $: sharedSelected = familyRows.find((row) => row.family === family)?.source === 'shared';
   $: selectedChild = data.children.find((row) => row.id === child);
@@ -344,6 +345,7 @@
           </form>
           {#if pendingFragment}<p role="status">{joinStage || c.joining}</p>
             {#if joinStage === c.confirmJoin}<p class="muted">{c.joinHistoryWarning}</p><button class="primary" onclick={confirmJoin}>{c.joinThisFamily}</button><button class="text-action" onclick={dismissJoin}>{c.dismissInvitation}</button>
+            {:else if terminalJoinStages.includes(joinStage)}<button class="text-action" onclick={dismissJoin}>{c.dismissInvitation}</button>
             {:else}<button class="text-action" onclick={poll}>{c.pendingJoinResume}</button>{/if}{/if}
         </section>
         <section class="panel"><h2>{c.restoreBackup}</h2><p class="muted">{c.restoreDescription}</p>
@@ -512,6 +514,7 @@
             </form>
             {#if pendingFragment}<p role="status">{joinStage || c.joining}</p>
               {#if joinStage === c.confirmJoin}<p class="muted">{c.joinHistoryWarning}</p><button class="primary" onclick={confirmJoin}>{c.joinThisFamily}</button><button class="text-action" onclick={dismissJoin}>{c.dismissInvitation}</button>
+              {:else if terminalJoinStages.includes(joinStage)}<button class="text-action" onclick={dismissJoin}>{c.dismissInvitation}</button>
               {:else}<button class="text-action" onclick={poll}>{c.pendingJoinResume}</button>{/if}{/if}
           </div>
         </section>

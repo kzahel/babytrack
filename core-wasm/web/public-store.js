@@ -562,21 +562,23 @@ export class PublicStore {
     } finally { verifier.free(); }
     if (!rebased) return false;
     return new Promise((resolve, reject) => {
-      const transaction = this.database.transaction(['families', 'outbox', 'queued'], 'readwrite');
+      const transaction = this.database.transaction(['families', 'outbox', 'queued', 'removed'], 'readwrite');
       let failure;
       transaction.oncomplete = () => resolve(true);
       transaction.onerror = () => reject(failure || transaction.error);
       transaction.onabort = () => reject(failure || transaction.error || new Error('transaction aborted'));
       const metadataRequest = transaction.objectStore('families').get(family);
       const pendingRequest = transaction.objectStore('outbox').get(family);
+      const removalRequest = transaction.objectStore('removed').get(family);
       const queuedRequest = transaction.objectStore('queued').get(family);
       queuedRequest.onsuccess = () => {
         const metadata = metadataRequest.result;
         const current = pendingRequest.result;
-        if (!metadata || metadata.cursor !== cursor || metadata.head !== head ||
+        if (removalRequest.result || !metadata || metadata.cursor !== cursor || metadata.head !== head ||
             !current || !sameBytes(current.envelope, pending.envelope) ||
             !sameBytes(current.operation, pending.operation)) {
-          failure = new Error('Browser authority or outbox changed before stale rebase');
+          failure = new Error(removalRequest.result ? 'This device was removed from the shared Family' :
+            'Browser authority or outbox changed before stale rebase');
           transaction.abort();
           return;
         }
@@ -716,10 +718,11 @@ export class PublicStore {
     if (kind !== 'control' && kind !== 'batch') throw new Error('Unknown public entry kind');
     if (kind === 'batch' && receipt == null) throw new Error('Batch acceptance receipt is absent');
     return new Promise((resolve, reject) => {
-      const transaction = this.database.transaction(['families', 'entries', 'outbox'], 'readwrite');
+      const transaction = this.database.transaction(['families', 'entries', 'outbox', 'removed'], 'readwrite');
       const families = transaction.objectStore('families');
       const entries = transaction.objectStore('entries');
       const outbox = transaction.objectStore('outbox');
+      const removalRequest = transaction.objectStore('removed').get(family);
       let failure;
       let nextCursor;
       transaction.oncomplete = () => resolve(nextCursor);
@@ -728,8 +731,9 @@ export class PublicStore {
       const metadataRequest = families.get(family);
       metadataRequest.onsuccess = () => {
         const metadata = metadataRequest.result;
-        if (!metadata) {
-          failure = new Error('Family is absent');
+        if (removalRequest.result || !metadata) {
+          failure = new Error(removalRequest.result ? 'This device was removed from the shared Family' :
+            'Family is absent');
           transaction.abort();
           return;
         }
@@ -808,11 +812,12 @@ export class PublicStore {
         }
       }
       const cursor = Number(verifier.last_cursor());
-      const write = this.database.transaction('families', 'readwrite');
+      const write = this.database.transaction(['families', 'removed'], 'readwrite');
       const done = transactionDone(write);
       const rows = write.objectStore('families');
       const metadata = await requestResult(rows.get(family));
-      if (metadata?.cursor === cursor && metadata.head === hex(verifier.head_hash())) {
+      const removed = await requestResult(write.objectStore('removed').get(family));
+      if (!removed && metadata?.cursor === cursor && metadata.head === hex(verifier.head_hash())) {
         rows.put({ ...metadata, knownIncomplete: !noMoreVisible });
       }
       await done;

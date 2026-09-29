@@ -83,6 +83,8 @@ jobs:
         run: cargo install --locked wasm-bindgen-cli --version 0.2.127
       - name: Exercise wasm and IndexedDB
         run: bash scripts/check_browser_smoke.sh
+      - name: Exercise responsive web tracking
+        run: bash scripts/check_web_ui.sh
 
   android:
     name: Android debug APK

@@ -25,6 +25,13 @@ post-M0 coverage queue. The [M1 Android tactical](docs/tactical/005-m1-android.m
 owns the remaining caregiver UX and physical-phone validation. No physical
 phone result or public release is claimed.
 
+The first responsive web preview uses the Rust wasm core and IndexedDB for
+local Family/child creation, diaper, bottle, and note logging, and History
+after reload. Its narrow and wide layouts follow the same Today, History,
+and Family destinations as Android. Web sharing and file recovery remain M2
+work; the current UI labels its Families local-only. See
+[006](docs/tactical/006-m2-web.md).
+
 ## Product and architecture
 
 The planned logging features cover feeding, sleep, diapers, pumping, growth,
@@ -102,6 +109,7 @@ bash scripts/check_browser_smoke.sh
 python3 scripts/check_workspace.py
 cargo deny check advisories bans licenses sources
 apps/android/gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon
+bash scripts/check_web_ui.sh
 ```
 
 Install `wasm-bindgen-cli` 0.2.127 and Node.js for the wasm smoke,

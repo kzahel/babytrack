@@ -4,6 +4,8 @@ Status: agreed direction, September 2026; the bounded M0 exit passed at
 `4f5ef18`. [003](tactical/003-m0-foundation.md#bounded-m0-exit-at-4f5ef18)
 owns the gate evidence and post-M0 coverage queue. M1 physical-phone
 validation is next.
+An opt-in M2 early preview may be hosted with disposable data before M5;
+this is a development testbed, not the public hosted service or release gate.
 Owns scope, stack, milestone sequencing, and review gates. Read the
 [topic index](topics/README.md) for detailed decisions and the
 [tactical index](tactical/README.md) for current work. The
@@ -365,7 +367,10 @@ touches an app store until M5.
    Keep Family/child context clear throughout. Google services stay behind
    swappable interfaces; install developer builds directly.
 3. **M2, web.** Mostly UI over the wasm core, including multiple Families and
-   the Family switcher.
+   the Family switcher. The first responsive local preview is in
+   [006](tactical/006-m2-web.md); sharing and the web trust-boundary gate
+   remain open. A disposable-data, opt-in preview may be deployed early for
+   flow checks while public hosting remains M5.
 4. **M3, iOS on our own devices.** Parity with Android, including Live
    Activities, run from Xcode. Free provisioning profiles expire after 7 days
    and do not include push notifications, so this milestone likely needs the

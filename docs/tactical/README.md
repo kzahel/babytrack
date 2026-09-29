@@ -23,3 +23,5 @@ tactical with its current status.
 - [005: M1 Android caregiver app](005-m1-android.md) — emulator flows pass;
   owns the two-physical-phone gate and remaining daily-use UI, import,
   accessibility, and recovery work.
+- [006: M2 responsive web client](006-m2-web.md) — first local preview slice
+  implemented; encrypted sharing and web trust-boundary gate remain open.

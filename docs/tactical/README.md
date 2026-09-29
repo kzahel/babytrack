@@ -20,9 +20,10 @@ tactical with its current status.
   coordination; tracks the next M0 proof, security-review handoffs, CI
   growth, and progress toward a usable M1 Android UI. Detailed completion
   status stays with each implementation tactical.
-- [005: M1 Android caregiver app](005-m1-android.md) — emulator flows pass;
-  owns the two-physical-phone gate and remaining daily-use UI, import,
-  accessibility, and recovery work.
+- [005: M1 Android caregiver app](005-m1-android.md) — emulator flows and
+  pinned developer-preview invitation handoff implemented; owns the
+  two-physical-phone gate and remaining daily-use UI, import, accessibility,
+  and recovery work.
 - [006: M2 responsive web client](006-m2-web.md) — local preview and
   native-managed first, later, and rotated-epoch joins implemented; their
   bounded web trust review passed. Web-origin sharing remains open; verified

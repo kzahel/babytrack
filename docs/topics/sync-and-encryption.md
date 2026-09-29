@@ -381,8 +381,13 @@ their complete manifest and, where present, an encrypted membership object
 that repeats the signed public transition before the browser ready cursor
 advances, matching native ready replay.
 The first Android sharing flow uses foreground polling and scheduled
-background work. FCM and APNs may later provide empty background wakes through
-app-owned interfaces to reduce latency when an app is suspended. A missed
+background work. Android maps failed HTTP/DNS reads to the declared UniFFI
+binding error before returning across the Rust callback boundary. Unexpected
+foreign exceptions can poison the shared store mutex; ordinary network
+failure must instead leave local reads and writes usable, with the original
+Family and pending work retained. A transport error is never signed evidence
+of removal or invitation rejection. FCM and APNs may later provide empty
+background wakes through app-owned interfaces to reduce latency when an app is suspended. A missed
 push leaves the durable attempt pending for the next available run. A wake
 never proves a batch, admission, or removal
 committed. The client obtains signed acceptance evidence or a verified log

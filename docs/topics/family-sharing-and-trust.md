@@ -102,7 +102,15 @@ The Android developer build shares one-use invitations as
 screen but leaves the recipient keyless until they explicitly claim it and
 the manager completes the grant. The link carries the invitation bootstrap
 secret and should be sent privately; it does not grant Family data access
-by itself. The join screen also accepts the raw fragment for testing.
+by itself. The join screen also accepts the raw fragment for testing and is
+available outside the debug-only controls. The debug build's direct Share this Family
+path pins the disposable preview relay's origin and public signing key;
+manual development relay setup remains under Family options. Managers can
+send or copy an Android link, or send a browser link for the hosted preview.
+Both link forms carry the same one-device invitation; sharing both does not
+authorize two enrollments. The UI asks for test data and private handoff.
+Sharing and invitation results remain tied to their original Family even if
+the caregiver changes the selected Family while a request is running.
 
 ## Family and child targeting
 

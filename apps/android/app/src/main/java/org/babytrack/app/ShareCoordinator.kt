@@ -10,7 +10,6 @@ import uniffi.babytrack_core_ffi.NativeSharedStore
 import uniffi.babytrack_core_ffi.PreparedJoinRow
 import uniffi.babytrack_core_ffi.RecipientSyncRow
 import uniffi.babytrack_core_ffi.RemovedDeviceRow
-import uniffi.babytrack_core_ffi.RelayReadTransport
 import uniffi.babytrack_core_ffi.SharedSnapshotRow
 import uniffi.babytrack_core_ffi.SharedSyncRow
 import uniffi.babytrack_core_ffi.previewInvitation
@@ -305,9 +304,7 @@ internal class ShareCoordinator(
         validateRelayOrigin(origin)
         val relay = RelayTransport(origin)
         return withWrapping { wrapping ->
-            core.checkInitialManagerRemoval(family, wrapping, System.currentTimeMillis(), object : RelayReadTransport {
-                override fun get(path: String, auth: ByteArray): ByteArray = relay.get(path, auth)
-            })
+            core.checkInitialManagerRemoval(family, wrapping, System.currentTimeMillis(), relayReads(relay::get))
         }
     }
 
@@ -322,13 +319,9 @@ internal class ShareCoordinator(
         val relay = RelayTransport(recipientOrigin(family))
         val wrapping = keys.loadOrCreate()
         try {
-            val removed = core.checkRecipientRemoval(family, wrapping, System.currentTimeMillis(), object : RelayReadTransport {
-                override fun get(path: String, auth: ByteArray): ByteArray = relay.get(path, auth)
-            })
+            val removed = core.checkRecipientRemoval(family, wrapping, System.currentTimeMillis(), relayReads(relay::get))
             if (removed != null) return removedProgress(removed)
-            return core.syncRecipient(family, wrapping, object : RelayReadTransport {
-                override fun get(path: String, auth: ByteArray): ByteArray = relay.get(path, auth)
-            })
+            return core.syncRecipient(family, wrapping, relayReads(relay::get))
         } finally {
             wrapping.fill(0)
         }
@@ -553,9 +546,7 @@ internal class ShareCoordinator(
             checkInitialManagerRemoval(family, origin)?.let { throw VerifiedManagerRemoval(it) }
         }
         return withWrapping { wrapping ->
-            val reads = object : RelayReadTransport {
-                override fun get(path: String, auth: ByteArray): ByteArray = relay.get(path, auth)
-            }
+            val reads = relayReads(relay::get)
             var progress = core.syncShared(family, wrapping, reads)
             // Each upload stages one local operation. A routine offline
             // correction session can exceed sixteen operations before the

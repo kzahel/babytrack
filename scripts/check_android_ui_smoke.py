@@ -47,8 +47,17 @@ def adb(target: str, *args: str) -> str:
 
 
 def nodes(target: str) -> ET.Element:
-    adb(target, "shell", "uiautomator", "dump", "/sdcard/babytrack-ui.xml")
-    return ET.fromstring(adb(target, "exec-out", "cat", "/sdcard/babytrack-ui.xml"))
+    # uiautomator can return exit zero before the first frame is idle, without
+    # creating a dump. Never parse a stale file or cat's error as screen XML.
+    last_dump = ""
+    for attempt in range(3):
+        adb(target, "shell", "rm", "-f", "/sdcard/babytrack-ui.xml")
+        last_dump = adb(target, "shell", "uiautomator", "dump", "/sdcard/babytrack-ui.xml")
+        if "dumped to:" in last_dump:
+            return ET.fromstring(adb(target, "exec-out", "cat", "/sdcard/babytrack-ui.xml"))
+        if attempt < 2:
+            time.sleep(0.3)
+    raise RuntimeError(f"Android UI dump was not created: {last_dump.strip()}")
 
 
 def find(target: str, label: str, *, scroll: bool = False, occurrence: int = 0,

@@ -192,8 +192,9 @@ work advance proof and history loading without separate buttons. A ready
 joined Family enters the normal tracker. The duplicate debug child logging,
 history, and backup panel is gone; a joined manager can invite from the
 selected Family's access section, and a joined device can retry sync there.
-The join card remains a developer link-entry and pending-stage surface until
-the ordinary sharing UI gate. A focused real-relay emulator UI check opens a
+The join card keeps an explicit link-entry and pending-stage surface; it is
+now available outside the debug-only gate after the bounded M0 review.
+A focused real-relay emulator UI check opens a
 fresh invitation link, taps that one action, and verifies the recipient claim
 is committed and saved; the coordinator suites cover the later handshake.
 Deep links place this join card first until history is ready, so the one
@@ -250,12 +251,85 @@ restart. Its emulator UI smoke creates a second Family with two children,
 records on the second child, restarts, and checks that child's timeline.
 The early independent authority recheck passed for that implemented cohort
 at `82c0f4c`; [003](003-m0-foundation.md#early-m0-authority-recheck-at-82c0f4c)
-records its limits. No physical two-phone or full M0 exit gate has passed.
-Sharing setup and join controls are still debug UI with manual relay origin
-and public key. Android's share sheet sends a one-use `babytrack://join` link;
-opening it or receiving a raw text fragment prefills the join form without
-claiming it. A focused emulator instrumentation test covers both paths.
-This is still a development flow, not a released product flow.
+records its limits. The subsequent bounded M0 exit passed at `4f5ef18`;
+physical two-phone validation remains open.
+The Android debug build now offers Share this Family directly in Family,
+with the disposable preview relay origin and public signing key pinned in
+`PreviewRelay.kt`. No manual URL or key entry is needed for this path.
+Managers issue a one-device member or manager invitation from Family access,
+then send an Android link, copy it, or send a browser link for the hosted
+preview. These are alternative links for the same invitation, not separate
+enrollments. Browser handoff is offered only for the known hosted preview;
+an arbitrary HTTPS relay is not assumed to serve a browser app.
+Opening an Android link or receiving its raw fragment prefills the join form
+without claiming it. The join form is no longer debug-only. Manual relay
+setup stays under Family options for development. All hosted checks use
+synthetic disposable records; this is a developer preview, not a release.
+Invitation creation captures its Family, role, and saved relay origin before
+network work. A completed share or invitation updates visible controls only
+if that Family is still selected, so an in-flight result cannot display a
+link under another Family.
+
+### Hosted two-caregiver preview check, September 29, 2026
+
+The follow-up to `87eb6bd` passed the 22 staged checks in
+[`check_android_preview_two_emulators.sh`](../../scripts/check_android_preview_two_emulators.sh)
+against the deployed HTTPS preview relay. The runner requires
+`BABYTRACK_DISPOSABLE_PREVIEW=1` and accepts only the dedicated
+`babytrack-sharing-a` and `babytrack-sharing-b` AVDs; it clears those
+installations, never a physical device. Run it after building the debug and
+instrumentation APKs. `PreviewTwoPhoneTest` is opt-in and skipped without
+its disposable-preview argument; its name does not imply physical-phone
+proof.
+
+The manager shared a synthetic local Family through the Compose UI and
+created/copied its Android invitation. The recipient opened that link and
+started joining through the UI. Separate coordinator passes completed
+challenge, proof, grant, and history hydration; this check does not claim
+that the entire initial handshake ran without instrumented wake steps.
+Synthetic notes synced in both directions through the coordinator. Both
+emulators then used Today's quick wet-diaper action. Foreground activity
+passes uploaded those saved entries, and both stores read the same two
+diapers. The recipient readback waits for confirmed upload; closing an
+activity immediately after its local Save does not establish remote delivery.
+
+With Wi-Fi and mobile data disabled and no active Android network, both
+emulators logged another diaper through the UI. Each held three diapers and
+pending work. Force-stop followed by a new instrumentation process reopened
+the same Family credentials and retained those records and pending work.
+After networking returned, both activities converged automatically to four
+diapers and empty outboxes, without a test-side sync call or a manual Sync
+tap in that phase. Both apps could run in the foreground during convergence;
+this does not prove suspended-app progress. Foreground observation reads only
+saved snapshots and retries only SQLite `DatabaseBusy` from its separate test
+connection. The Family access invitation controls also fit at 1.5× emulator text size.
+
+The first offline pass reproducibly prevented the tracker from loading:
+a Kotlin network exception escaped the UniFFI read callback and poisoned the
+shared store lock. `RelayReadAdapter.kt` now converts transport exceptions
+to the declared binding error for manager/recipient removal probes and
+shared-history reads. A focused offline UI retry on the same saved synthetic
+Family passed without clearing it; unit cases cover DNS/HTTP failures and
+preserving already-declared errors. The full hosted run above then passed.
+This fixes the ordinary network-failure path; it does not establish recovery
+for the older synthetic database retained in local QA or for arbitrary store
+corruption.
+
+Focused local validation also passed five Android unit cases, the debug and
+instrumentation APK builds with offline Gradle, all 17 staged checks in
+`check_android_two_emulators.sh`, the 28-case `SharingRelayTest` suite via
+`check_android_relay_emulator.sh`, the quick local UI logging/edit/delete/
+restart smoke, and `check_workspace.py`. The UI runner now retries when
+Android reports success without producing its initial hierarchy dump and
+refuses stale dump files. The existing local two-emulator runner used a fresh relay and checked encrypted reciprocal
+changes, removal/private copy, relay restart, and later-device joining at
+epoch two, including its plaintext-marker checks.
+
+This is emulator evidence using disposable data. No Pixel was cleared or
+altered. Physical-phone delayed wake, simultaneous offline edits, removal
+with pending work, private-copy presentation, file recovery, accessibility,
+and one-handed daily use remain required by the two-caregiver gate. No new
+physical-phone or remote CI result is claimed by this slice.
 
 ## Ordered slices and gates
 
@@ -405,12 +479,13 @@ intended Family and child, and remains usable after process death.
   acknowledging the notice. A real-relay instrumentation case runs the job,
   reopens the app with another Family present, opens the saved copy, and checks
   the notice stays acknowledged after activity recreation (FS54).
-- [ ] Make invitation handoff usable through a share/link flow with trusted
-  relay pinning and clear pending, accepted, blocked, and removed states.
-  The share-sheet receive and custom-link paths now prefill without
-  auto-claiming. Remove debug-only gating after the M0 exit security review
-  passes. The join card now distinguishes saved recipient Families that are
-  still joining from those with verified usable history, including after
+- [x] Make invitation handoff usable in the developer preview through a
+  share/link flow with trusted relay pinning and existing pending, ready,
+  blocked, and removed states. The share-sheet receive and custom-link paths
+  prefill without auto-claiming. The bounded M0 exit security review passed;
+  the join form is outside the debug gate, while direct pinned preview
+  sharing remains restricted to debug builds and asks for test data. The join
+  card now distinguishes saved recipient Families that are still joining from those with verified usable history, including after
   activity recreation. A confirmed claim consumes the incoming link so it
   does not prefill again on recreation. A real-relay UI test commits a claim,
   recreates the activity, and checks the pending label and cleared fragment.

@@ -4,6 +4,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.net.ConnectivityManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -20,20 +21,28 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import uniffi.babytrack_core_ffi.BindingException
+import uniffi.babytrack_core_ffi.SharedSnapshotRow
 import uniffi.babytrack_core_ffi.ActivityWhen
 import uniffi.babytrack_core_ffi.FamilyRef
 import uniffi.babytrack_core_ffi.NativeLocalStore
 
-/** Opt-in disposable preview check, invoked one step at a time on two emulators. */
+/** Opt-in hosted preview check; only the emulator runner supplies disposable data. */
 @RunWith(AndroidJUnit4::class)
 class PreviewTwoPhoneTest {
     @get:Rule val composeRule = createEmptyComposeRule()
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val db get() = context.filesDir.resolve("families.db")
     private val familyFile get() = context.filesDir.resolve("preview-test-family.txt")
+
+    @Before fun requireDisposablePreviewOptIn() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("disposablePreview") == "true")
+    }
 
     private fun managerFamily(): FamilyRef {
         val parts = familyFile.readText().split(':')
@@ -163,20 +172,33 @@ class PreviewTwoPhoneTest {
         }
     }
 
+    private fun observeSnapshot(family: FamilyRef): SharedSnapshotRow? = try {
+        ShareCoordinator(context, db.absolutePath).use { it.snapshot(family) }
+    } catch (failure: BindingException.Rejected) {
+        // This observer uses a separate connection from the activity. Retry only
+        // its transient SQLite contention; all other core failures fail the test.
+        if (failure.v1.contains("code: DatabaseBusy")) null else throw failure
+    }
+
     private fun logWetDiaperFromUi(family: FamilyRef) {
         val before = ShareCoordinator(context, db.absolutePath).use { sharing ->
             sharing.snapshot(family).activities.count { it.kind == "diaper" }
         }
         ActivityScenario.launch(MainActivity::class.java).use {
+            val today = hasText(context.getString(R.string.nav_today)) and
+                SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
+            composeRule.waitUntil(30_000) {
+                composeRule.onAllNodesWithText(context.getString(R.string.nav_today))
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNode(today).performSemanticsAction(SemanticsActions.OnClick)
             val quick = context.getString(R.string.quick_wet_diaper)
             composeRule.waitUntil(30_000) {
                 composeRule.onAllNodesWithText(quick).fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onNodeWithText(quick).performScrollTo().performClick()
             composeRule.waitUntil(30_000) {
-                ShareCoordinator(context, db.absolutePath).use { sharing ->
-                    sharing.snapshot(family).activities.count { it.kind == "diaper" } == before + 1
-                }
+                observeSnapshot(family)?.activities?.count { it.kind == "diaper" } == before + 1
             }
         }
     }
@@ -200,6 +222,45 @@ class PreviewTwoPhoneTest {
             assertEquals(1, sharing.snapshot(family).activities.count { it.kind == "diaper" })
         }
     }
+    private fun expectedDiapers() = InstrumentationRegistry.getArguments()
+        .getString("expectedDiapers")?.toInt() ?: error("expectedDiapers required")
+
+    private fun checkSavedDiapers(family: FamilyRef) {
+        ShareCoordinator(context, db.absolutePath).use { sharing ->
+            val snapshot = sharing.snapshot(family)
+            assertEquals(expectedDiapers(), snapshot.activities.count { it.kind == "diaper" })
+            assertTrue(snapshot.unsentCount > 0uL)
+        }
+    }
+
+    @Test fun managerChecksOfflineDiapersAfterRestart() = checkSavedDiapers(managerFamily())
+    @Test fun recipientChecksOfflineDiapersAfterRestart() = checkSavedDiapers(recipientFamily())
+
+    private fun logOfflineDiaper(family: FamilyRef) {
+        val network = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        assertEquals("Offline logging must have no active network", null, network.activeNetwork)
+        logWetDiaperFromUi(family)
+        checkSavedDiapers(family)
+    }
+
+    @Test fun managerLogsOfflineDiaperFromUi() = logOfflineDiaper(managerFamily())
+    @Test fun recipientLogsOfflineDiaperFromUi() = logOfflineDiaper(recipientFamily())
+
+    private fun awaitForegroundConvergence(family: FamilyRef) {
+        ActivityScenario.launch(MainActivity::class.java).use {
+            // Read saved projection only: the activity must perform all relay work.
+            composeRule.waitUntil(120_000) {
+                val snapshot = observeSnapshot(family)
+                snapshot != null &&
+                    snapshot.activities.count { it.kind == "diaper" } == expectedDiapers() &&
+                    snapshot.unsentCount == 0uL
+            }
+        }
+    }
+
+    @Test fun managerConvergesInForeground() = awaitForegroundConvergence(managerFamily())
+    @Test fun recipientConvergesInForeground() = awaitForegroundConvergence(recipientFamily())
+
 }
 
 private fun ByteArray.hex(): String = joinToString("") { "%02x".format(it.toInt() and 255) }

@@ -272,6 +272,16 @@
     <string name="error">Could not complete the action. Try again.</string>
     <string name="dev_share_title">Sharing setup preview</string>
     <string name="dev_share_description">Connect to a development relay. This screen prepares sharing, invitation, and key handoff. The app polls while open and schedules background sync; use Sync shared Family to retry now. Use a local relay only for test data.</string>
+    <string name="share_family">Share this Family</string>
+    <string name="preview_share_description">Connect this Family to the early preview relay. Use test data for now. Anyone you invite can receive its existing history and future entries.</string>
+    <string name="share_family_action">Start sharing</string>
+    <string name="share_origin_not_saved">Sharing reached the relay, but this phone could not save its connection. Keep this phone and retry setup.</string>
+    <string name="invite_caregiver">Invite another caregiver</string>
+    <string name="invite_description">One link admits one device. Send it privately; the person who joins can read this Family’s shared history.</string>
+    <string name="share_android_invitation">Send Android invite</string>
+    <string name="copy_android_invitation">Copy Android invite</string>
+    <string name="invitation_copied">Android invitation copied. Send it privately to one device.</string>
+    <string name="share_browser_invitation">Send browser invite</string>
     <string name="relay_origin">Relay origin (HTTPS or localhost)</string>
     <string name="relay_public_key">Relay public key (64 hex digits)</string>
     <string name="share_preparing">Preparing encrypted history and contacting the relay…</string>
@@ -281,7 +291,7 @@
     <string name="invite_member">Member</string>
     <string name="invite_manager">Manager</string>
     <string name="invite_preparing">Preparing one-device invitation…</string>
-    <string name="invite_confirmed">Invitation committed. Keep this fragment private.</string>
+    <string name="invite_confirmed">Invitation ready. Send one of the links privately.</string>
     <string name="create_invite">Create or retry invitation</string>
     <string name="invite_fragment_label">Invitation fragment for development testing</string>
     <string name="share_invitation">Share one-use invitation</string>
@@ -291,6 +301,7 @@
     <string name="entry_deleted">Entry deleted</string>
     <string name="undo">Undo</string>
     <string name="dev_join_title">Join preview</string>
+    <string name="join_description">Open a one-device invitation link, then start joining. This phone will finish the key handoff and load Family history whenever it can connect.</string>
     <string name="ready_family_number">Ready Family %1$d</string>
     <string name="joining_family_number">Joining Family %1$d</string>
     <string name="saved_join_pending">Family data is not ready on this device yet.</string>

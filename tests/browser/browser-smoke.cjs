@@ -167,6 +167,7 @@ const server = http.createServer((request, response) => {
 
 async function startRelay(recipient = false, transitions = 6, holder = false) {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'babytrack-browser-relay-'));
+  const logPath = path.join(temporary, 'relay.log');
   const seedPath = path.join(temporary, 'seed');
   fs.writeFileSync(seedPath, holder ? Buffer.alloc(32, 0x6e) :
     Buffer.from(genesis.inputs.relay_sign_seed_hex, 'hex'));
@@ -190,8 +191,9 @@ async function startRelay(recipient = false, transitions = 6, holder = false) {
     assert.equal(seeded.status, 0, `Could not seed recipient relay: ${seeded.stderr}`);
     fragment = seeded.stdout.trim();
   }
+  const logFd = fs.openSync(logPath, 'a');
   const child = spawn(path.resolve(relayBin), [path.join(temporary, 'relay.db'), seedPath,
-    `127.0.0.1:${port}`], { stdio: 'ignore' });
+    `127.0.0.1:${port}`], { stdio: ['ignore', logFd, logFd] });
   const base = `http://127.0.0.1:${port}`;
   try {
     let ready = false;
@@ -201,7 +203,7 @@ async function startRelay(recipient = false, transitions = 6, holder = false) {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     if (!ready) throw new Error('Disposable relay did not start');
-    if (recipient || holder) return { child, temporary, port, fragment,
+    if (recipient || holder) return { child, temporary, logFd, port, fragment,
       genesisHex: chain.transitions[0].committed_cbor_hex };
     const post = async (url, hexBody) => {
       const response = await fetch(base + url, {
@@ -218,9 +220,11 @@ async function startRelay(recipient = false, transitions = 6, holder = false) {
       apiGenesis.inputs.commit_candidate_cbor_hex);
     assert.equal(committed.subarray(0, 5).toString('hex'), 'a201010259');
     assert.equal(committed.readUInt16BE(5), committed.length - 7);
-    return { child, temporary, port, genesisHex: committed.subarray(7).toString('hex') };
+    return { child, temporary, logFd, port,
+      genesisHex: committed.subarray(7).toString('hex') };
   } catch (error) {
     child.kill();
+    fs.closeSync(logFd);
     fs.rmSync(temporary, { recursive: true, force: true });
     throw error;
   }
@@ -241,7 +245,7 @@ async function restartRelay(instance) {
   instance.child = spawn(path.resolve(relayBin), [
     path.join(instance.temporary, 'relay.db'), path.join(instance.temporary, 'seed'),
     `127.0.0.1:${instance.port}`,
-  ], { stdio: 'ignore' });
+  ], { stdio: ['ignore', instance.logFd, instance.logFd] });
   const base = `http://127.0.0.1:${instance.port}`;
   for (let attempt = 0; attempt < 100; attempt++) {
     if (instance.child.exitCode != null) throw new Error('Relay exited after restart');
@@ -863,6 +867,13 @@ async function run() {
     assert.equal(browserUpload.cursor, 8);
     assert.equal(browserUpload.name, 'BrowserRecipientChild');
     assert.equal(holderStep(holderRelay, 'read'), 'browser child read');
+    // The required CI browser job now checks an actual relay database and
+    // captured relay logs, including the server restart before this upload.
+    const marker = Buffer.from('BrowserRecipientChild');
+    assert.equal(fs.readFileSync(path.join(holderRelay.temporary, 'relay.db')).includes(marker),
+      false, 'plaintext child name reached relay storage');
+    assert.equal(fs.readFileSync(path.join(holderRelay.temporary, 'relay.log')).includes(marker),
+      false, 'plaintext child name reached relay logs');
     recipientRelay = await startRelay(true);
     relayPort = recipientRelay.port;
     const browserProof = await page.evaluate(async (data) => {
@@ -1649,6 +1660,7 @@ async function run() {
         instance.child.kill();
         await stopped;
       }
+      fs.closeSync(instance.logFd);
       fs.rmSync(instance.temporary, { recursive: true, force: true });
     }
   }

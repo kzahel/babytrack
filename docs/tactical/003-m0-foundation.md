@@ -1899,6 +1899,43 @@ data. This focused recheck is the disposition for the high finding at
 `66c7e5f`; the same-epoch manifest/membership finding is repaired by the
 same code slice.
 
+## Full M0 exit review at 8713457
+
+Daybreak Blue, high thinking, read the clean detached checkout of
+`87134570faa6fcd9c8f7c806f4395cb35db86655` through Yep Anywhere session
+`01a0ea93-53d5-7230-914f-0eb9a4baa346`, process
+`53a79bda-6d33-46e6-93ce-99cc9ad2cc85`, project
+`L3ByaXZhdGUvdG1wL2JhYnl0cmFjay1tMC1leGl0LVNtSE1IUy9jaGVja291dA`.
+It reviewed U1-U8 under the agreed honest, hostile-device, compromised
+storage, and forking/withholding relay assumptions. Result: **FAIL for M0
+readiness evidence**, with no reproducible code-level U1-U8 access or
+data-retention blocker. No protocol change was recommended. It passed the
+workspace Rust tests, format, Clippy, browser, Kotlin/Swift native, fixture
+API boundary, workspace boundary, dependency audit, and Android debug/APK
+assembly in its checkout. It did not run emulator or physical-phone tests.
+
+Two evidence gaps held the gate open. First, no required GitHub CI result
+existed at the reviewed final SHA. Second, the required CI jobs lacked an
+assertion that a distinctive decrypted event marker is absent from both the
+relay database and logs; only the local two-emulator script had those scans.
+The required Chromium real-relay job now captures relay logs, writes a child
+named `BrowserRecipientChild` through the native/browser exchange after a
+relay restart, and asserts that exact name is absent from the relay database
+and logs. Its local smoke passed. Run required CI on the next final SHA and
+record the run and job results before marking M0 complete.
+
+The reviewer found the revised shared-core binding byte gate meaningful,
+while noting that the fixed Swift/Kotlin event uses fixture-only methods.
+Android exercises production shared sync; a production Swift shared-sync
+callback/cursor/record smoke remains a follow-up before iOS work. A valid
+Family can eventually exceed Android's 64-page/16-MiB join-history ceiling;
+incremental durable history hydration is assigned to long-lived Family
+hardening before that scale, with an explicit product limit required if it
+cannot be removed. The review did not classify either as a bounded M0
+real-data blocker. Dynamic later-epoch browser/native join, very long
+histories, power kill, nightly fuzz/fault campaigns, and the broader
+pairwise authority matrix were not credited.
+
 ## Completion condition
 
 All slice gates pass in CI and on the designated local testbeds, the

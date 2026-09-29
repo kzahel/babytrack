@@ -136,7 +136,7 @@ def tap_tab(target: str, label: str) -> None:
 
 def open_capture(target: str, activity: str) -> None:
     tap_tab(target, "Today")
-    tap(target, "Add activity", actionable=True)
+    tap(target, "Add activity", scroll=True, actionable=True)
     tap(target, activity, scroll=True, actionable=True)
 
 

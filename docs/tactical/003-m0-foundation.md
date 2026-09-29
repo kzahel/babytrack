@@ -1873,6 +1873,32 @@ and later-device flow locally after the review. Those runs do not substitute
 for the independent crash-window recheck, a physical phone, or CI at the
 eventual exit SHA. No full M0 PASS is claimed.
 
+## Focused browser blocker recheck at cdac075
+
+Daybreak Blue, high thinking, reviewed the clean detached checkout of
+`cdac075281288555a5262a5fda74bc16aad216fc` through Yep Anywhere session
+`01a0ea8c-9e5b-74e2-8044-5f4c897fb7dc`, process
+`a9dc51ff-4129-4d5c-a86f-c7b292dcf441`, project
+`L3ByaXZhdGUvdG1wL2JhYnl0cmFjay1tMC1yZWNoZWNrLTl1ckhOMS9jaGVja291dA`.
+Result: **PASS for the focused U1/U4 crash-window repair only**. It found no
+remaining access, silent-loss, or same-epoch membership divergence blocker
+in this scope. The reviewer traced exact signed stale-result binding, the
+atomic outbox-to-queue transition, hydration before staging after restart,
+partial object-hydration retry, fresh epoch-two sealing, and acceptance-only
+outbox clearing. It ran the wasm smoke and real-relay Chromium regression:
+the queue survived two injected interruptions, then drained at cursor ten
+with a fresh batch ID. Its checkout remained clean.
+
+The reviewer did not claim a full M0 PASS. Dynamic accepted-before-cutover
+then lost-response then rotation, histories beyond four 256-entry pages,
+physical browser/process power kill, and the broader mixed-client fault
+matrix remain unproven. The revised binding-boundary byte criterion was
+committed later than the reviewed SHA. A full end-of-M0 exit review and CI
+evidence at its final code revision are still required before real Family
+data. This focused recheck is the disposition for the high finding at
+`66c7e5f`; the same-epoch manifest/membership finding is repaired by the
+same code slice.
+
 ## Completion condition
 
 All slice gates pass in CI and on the designated local testbeds, the

@@ -16,7 +16,8 @@ use babytrack_core::{
     crypto,
     first_admission::FirstAdmission,
     first_challenge::FirstChallenge,
-    issue::FirstInviteIssue,
+    first_removal::FirstRemoval,
+    issue::{FirstInviteIssue, LaterInviteIssue},
     operation::{Hlc, Kind, NewOperation, Operation, Scope},
     shared_history::PublicHistorySession,
     shared_ready::NextUpload,
@@ -160,6 +161,30 @@ fn pull_new_controls(local: &mut SqliteStore, origin: &str, manager: &ManagerCre
     panic!("holder control pull exceeded page budget");
 }
 
+fn only_pending(local: &SqliteStore, manager: &ManagerCreation) -> ([u8; 16], [u8; 16]) {
+    let chain = PublicHistorySession::resume(local, manager.family()).unwrap();
+    let Value::Map(state) = cbor::decode(&chain.chain().state_bytes().unwrap()).unwrap() else {
+        panic!("authority state not map")
+    };
+    let Value::Array(pending) = &state[5].1 else {
+        panic!("pending state not array")
+    };
+    assert_eq!(pending.len(), 1, "expected one pending browser");
+    let Value::Array(row) = &pending[0] else {
+        panic!("pending row not array")
+    };
+    let Value::Bytes(invitation) = &row[0] else {
+        panic!("pending invitation absent")
+    };
+    let Value::Bytes(device) = &row[1] else {
+        panic!("pending device absent")
+    };
+    (
+        invitation.as_slice().try_into().unwrap(),
+        device.as_slice().try_into().unwrap(),
+    )
+}
+
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     assert!(
@@ -260,6 +285,126 @@ fn main() {
             ));
             challenge.confirm(&mut local, &committed_challenge).unwrap();
             println!("challenge committed");
+        }
+        "later_issue" => {
+            let origin = &args[2];
+            let browser_origin = args.get(3).expect("browser origin required");
+            let manager = ManagerCreation::resume(&local, family, &WRAPPING_KEY).unwrap();
+            pull_new_controls(&mut local, origin, &manager);
+            let issue = LaterInviteIssue::prepare_for_initial_manager(
+                &mut local,
+                &manager,
+                &WRAPPING_KEY,
+                1,
+            )
+            .unwrap();
+            relay_post(
+                origin,
+                &format!(
+                    "/v1/families/{}/objects/{}",
+                    hex(&family.family_id),
+                    hex(&issue.object_id())
+                ),
+                &issue.stage_body().unwrap(),
+            );
+            let committed_issue = committed(&relay_post(
+                origin,
+                &format!("/v1/families/{}/control", hex(&family.family_id)),
+                issue.candidate_bytes(),
+            ));
+            let link = issue
+                .confirm(&mut local, &committed_issue, browser_origin)
+                .unwrap();
+            println!("{}", link.to_fragment().unwrap());
+        }
+        "later_challenge" => {
+            let origin = &args[2];
+            let manager = ManagerCreation::resume(&local, family, &WRAPPING_KEY).unwrap();
+            pull_new_controls(&mut local, origin, &manager);
+            let (invitation, device) = only_pending(&local, &manager);
+            let challenge = FirstChallenge::prepare_later_for_initial_manager(
+                &mut local,
+                &manager,
+                invitation,
+                device,
+                &WRAPPING_KEY,
+            )
+            .unwrap();
+            for (id, body) in challenge.stage_bodies().unwrap() {
+                relay_post(
+                    origin,
+                    &format!(
+                        "/v1/families/{}/objects/{}",
+                        hex(&family.family_id),
+                        hex(&id)
+                    ),
+                    &body,
+                );
+            }
+            let committed_challenge = committed(&relay_post(
+                origin,
+                &format!("/v1/families/{}/control", hex(&family.family_id)),
+                challenge.candidate_bytes(),
+            ));
+            challenge.confirm(&mut local, &committed_challenge).unwrap();
+            println!("later challenge committed");
+        }
+        "later_grant" => {
+            let origin = &args[2];
+            let manager = ManagerCreation::resume(&local, family, &WRAPPING_KEY).unwrap();
+            pull_new_controls(&mut local, origin, &manager);
+            let (invitation, device) = only_pending(&local, &manager);
+            let admission =
+                FirstAdmission::prepare(&mut local, &manager, invitation, device, &WRAPPING_KEY)
+                    .unwrap();
+            for (id, body) in admission.stage_bodies().unwrap() {
+                relay_post(
+                    origin,
+                    &format!(
+                        "/v1/families/{}/objects/{}",
+                        hex(&family.family_id),
+                        hex(&id)
+                    ),
+                    &body,
+                );
+            }
+            let committed_admission = committed(&relay_post(
+                origin,
+                &format!("/v1/families/{}/control", hex(&family.family_id)),
+                admission.candidate_bytes(),
+            ));
+            admission
+                .confirm(&mut local, &manager, &committed_admission)
+                .unwrap();
+            println!("later grant committed");
+        }
+        "remove" => {
+            let origin = &args[2];
+            let target = parse_id(args.get(3).expect("target device ID required"));
+            let manager = ManagerCreation::resume(&local, family, &WRAPPING_KEY).unwrap();
+            pull_new_controls(&mut local, origin, &manager);
+            let removal =
+                FirstRemoval::prepare(&mut local, &manager, &WRAPPING_KEY, target).unwrap();
+            for (id, body) in removal.stage_bodies().unwrap() {
+                relay_post(
+                    origin,
+                    &format!(
+                        "/v1/families/{}/objects/{}",
+                        hex(&family.family_id),
+                        hex(&id)
+                    ),
+                    &body,
+                );
+            }
+            let committed_removal = committed(&relay_post(
+                origin,
+                &format!("/v1/families/{}/control", hex(&family.family_id)),
+                removal.candidate_bytes(),
+            ));
+            removal
+                .confirm(&mut local, &manager, &committed_removal)
+                .unwrap();
+            println!("removal committed");
         }
         "grant" => {
             let origin = &args[2];

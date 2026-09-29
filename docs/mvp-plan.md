@@ -367,9 +367,10 @@ touches an app store until M5.
    Keep Family/child context clear throughout. Google services stay behind
    swappable interfaces; install developer builds directly.
 3. **M2, web.** Mostly UI over the wasm core, including multiple Families and
-   the Family switcher. The responsive local preview and first-cohort browser
-   join/sync flow are in [006](tactical/006-m2-web.md); later enrollment,
-   removal/recovery, and the web trust-boundary gate remain open. A
+   the Family switcher. The responsive local preview and native-managed
+   browser join/sync flow, including later key epochs, are in
+   [006](tactical/006-m2-web.md); web-origin sharing, removal/recovery, and
+   the web trust-boundary gate remain open. A
    disposable-data, opt-in preview may be deployed early for flow checks
    while public hosting remains M5.
 4. **M3, iOS on our own devices.** Parity with Android, including Live

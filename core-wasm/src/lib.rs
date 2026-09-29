@@ -91,14 +91,11 @@ impl WasmInvitation {
         self.bootstrap.relay_public_key().to_vec()
     }
 
-    pub fn has_initial_admission(&self, device_id: &[u8]) -> Result<bool, JsError> {
+    pub fn has_admission(&self, device_id: &[u8]) -> Result<bool, JsError> {
         let chain = self
             .chain
             .as_ref()
             .ok_or_else(|| JsError::new("genesis absent"))?;
-        if chain.epoch().map_err(debug_error)? != 1 {
-            return Ok(false);
-        }
         Ok(chain
             .initial_admission_grant(&fixed(device_id, "device ID")?)
             .is_some())
@@ -463,6 +460,7 @@ pub struct WasmInitialFamily {
     genesis: Vec<u8>,
     relay_public_key: [u8; 32],
     epoch_key: [u8; 32],
+    admitted_keys: Vec<[u8; 32]>,
     agreement_private: Option<[u8; 32]>,
     holder_device_id: Option<[u8; 16]>,
     objects: BTreeMap<[u8; 16], Vec<u8>>,
@@ -481,8 +479,23 @@ struct InitialReady {
 impl WasmInitialFamily {
     #[wasm_bindgen(constructor)]
     pub fn new(genesis: &[u8], relay_public_key: &[u8], epoch_key: &[u8]) -> Result<Self, JsError> {
+        Self::with_admission_keys(genesis, relay_public_key, epoch_key)
+    }
+
+    pub fn with_admission_keys(
+        genesis: &[u8],
+        relay_public_key: &[u8],
+        keys: &[u8],
+    ) -> Result<Self, JsError> {
         let relay_public_key = fixed(relay_public_key, "relay public key")?;
-        let epoch_key = fixed(epoch_key, "epoch key")?;
+        if keys.is_empty() || !keys.len().is_multiple_of(32) || keys.len() > 32 * 1024 {
+            return Err(JsError::new("admission key history has invalid length"));
+        }
+        let admitted_keys = keys
+            .chunks_exact(32)
+            .map(|key| fixed(key, "epoch key"))
+            .collect::<Result<Vec<[u8; 32]>, _>>()?;
+        let epoch_key = admitted_keys[0];
         ControlChain::from_genesis(genesis, relay_public_key)
             .map_err(debug_error)?
             .verify_initial_epoch_key(&epoch_key)
@@ -491,6 +504,7 @@ impl WasmInitialFamily {
             genesis: genesis.to_vec(),
             relay_public_key,
             epoch_key,
+            admitted_keys,
             agreement_private: None,
             holder_device_id: None,
             objects: BTreeMap::new(),
@@ -536,12 +550,20 @@ impl WasmInitialFamily {
             &self.objects,
         )
         .map_err(debug_error)?;
+        let mut keys = BTreeMap::from([(1, key)]);
+        for (index, bytes) in self.admitted_keys.iter().enumerate().skip(1) {
+            let epoch = u32::try_from(index + 1).map_err(debug_error)?;
+            keys.insert(
+                epoch,
+                ready_replay::saved_history_key(chain.family_id(), epoch, *bytes),
+            );
+        }
         self.ready = Some(InitialReady {
             chain,
             projection,
             overlay: None,
             overlay_operations: Vec::new(),
-            keys: BTreeMap::from([(1, key)]),
+            keys,
         });
         Ok(())
     }
@@ -624,8 +646,15 @@ impl WasmInitialFamily {
                         .ok_or_else(|| JsError::new("rotation grant object is missing"))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            let rotated = chain
-                .open_rotation_for(
+            let rotated = if let Some(known) = keys.get(&next_epoch) {
+                chain.open_rotation_from_known_epoch_key(
+                    &transition_id,
+                    known,
+                    keyring,
+                    membership_object,
+                )
+            } else {
+                chain.open_rotation_for(
                     &transition_id,
                     self.holder_device_id
                         .ok_or_else(|| JsError::new("rotation holder device ID is missing"))?,
@@ -634,8 +663,9 @@ impl WasmInitialFamily {
                     keyring,
                     membership_object,
                 )
-                .map_err(debug_error)?;
-            for (epoch, prior) in &keys {
+            }
+            .map_err(debug_error)?;
+            for (epoch, prior) in keys.iter().filter(|(epoch, _)| **epoch < next_epoch) {
                 if rotated.earlier(*epoch) != Some(prior) {
                     return Err(JsError::new("rotation keyring differs from saved history"));
                 }
@@ -662,6 +692,17 @@ impl WasmInitialFamily {
         ready.projection = projection;
         ready.overlay = None;
         ready.overlay_operations.clear();
+        Ok(())
+    }
+
+    pub fn verify_admission_history(&self) -> Result<(), JsError> {
+        let ready = self
+            .ready
+            .as_ref()
+            .ok_or_else(|| JsError::new("manifest objects not yet verified"))?;
+        if self.admitted_keys.len() > ready.chain.epoch().map_err(debug_error)? as usize {
+            return Err(JsError::new("saved admission key exceeds verified history"));
+        }
         Ok(())
     }
 
@@ -1144,9 +1185,7 @@ impl WasmPublicFamily {
         self.chain.head_hash().to_vec()
     }
 
-    /// Open a recipient's committed epoch-one grant. The object and private
-    /// key are checked against the signed control chain before a data key is
-    /// released to the browser's local credential store.
+    /// Open a recipient's committed epoch-one grant. Kept for older callers.
     pub fn open_initial_grant(
         &self,
         device_id: &[u8],
@@ -1184,6 +1223,85 @@ impl WasmPublicFamily {
             .ok_or_else(|| JsError::new("recipient has no committed admission grant"))?
             .grant_id()
             .to_vec())
+    }
+
+    /// IDs of the signed admission grant and, for a rotated epoch, its
+    /// keyring and membership objects. The adapter fetches manifest-bound
+    /// bytes before asking the core to open any key.
+    pub fn admission_object_ids(&self, device_id: &[u8]) -> Result<Vec<u8>, JsError> {
+        let device_id = fixed(device_id, "device ID")?;
+        let grant = self
+            .chain
+            .initial_admission_grant(&device_id)
+            .ok_or_else(|| JsError::new("recipient has no committed admission grant"))?;
+        let mut ids = grant.grant_id().to_vec();
+        if grant.epoch() > 1 {
+            let (transition_id, rotation) = self
+                .chain
+                .rotation_for_epoch(grant.epoch())
+                .ok_or_else(|| JsError::new("admission epoch rotation is missing"))?;
+            let membership = self
+                .chain
+                .membership_check(&transition_id)
+                .ok_or_else(|| JsError::new("admission epoch membership is missing"))?;
+            ids.extend_from_slice(&rotation.keyring_id());
+            ids.extend_from_slice(&membership.object_id());
+        }
+        Ok(ids)
+    }
+
+    /// Return epoch keys in order only after the recipient grant and, when
+    /// needed, the committed rotation keyring and membership are verified.
+    pub fn open_admission_keys(
+        &self,
+        device_id: &[u8],
+        agreement_private: &[u8],
+        grant_object: &[u8],
+        keyring_object: &[u8],
+        membership_object: &[u8],
+    ) -> Result<Vec<u8>, JsError> {
+        let device_id = fixed(device_id, "device ID")?;
+        self.chain
+            .active_signing_public(device_id)
+            .map_err(debug_error)?;
+        let grant = self
+            .chain
+            .initial_admission_grant(&device_id)
+            .ok_or_else(|| JsError::new("recipient has no committed admission grant"))?;
+        let key = grant
+            .open(
+                grant_object,
+                &fixed(agreement_private, "agreement private key")?,
+            )
+            .map_err(debug_error)?;
+        if grant.epoch() == 1 {
+            // The grant itself binds the key to the signed epoch commitment.
+            return Ok(key.bytes_for_storage().to_vec());
+        }
+        let (transition_id, _) = self
+            .chain
+            .rotation_for_epoch(grant.epoch())
+            .ok_or_else(|| JsError::new("admission epoch rotation is missing"))?;
+        let recovered = self
+            .chain
+            .open_rotation_from_known_epoch_key(
+                &transition_id,
+                &key,
+                keyring_object,
+                membership_object,
+            )
+            .map_err(debug_error)?;
+        let mut result = Vec::with_capacity(32 * grant.epoch() as usize);
+        for epoch in 1..grant.epoch() {
+            result.extend_from_slice(
+                &recovered
+                    .earlier(epoch)
+                    .ok_or_else(|| JsError::new("admission history epoch is missing"))?
+                    .bytes_for_storage(),
+            );
+        }
+        result.extend_from_slice(&key.bytes_for_storage());
+        Ok(result)
     }
 
     pub fn sign_get(

@@ -29,9 +29,9 @@ The responsive web preview uses the Rust wasm core and IndexedDB for local
 Family/child creation, diaper, bottle, note, and timed left/right breast
 feeding with pause and same-entry correction. A browser profile can now join
 an Android-managed Family through an invitation, receive encrypted history,
-and log or edit while offline for later relay upload. The first-cohort join
-and native/browser exchange pass a real-relay UI smoke. Creating shared
-Families and invitations in web, later-cohort joining, removal/private-copy
+and log or edit while offline for later relay upload. First, later, and
+rotated-epoch joins pass a real-relay UI smoke. Creating shared
+Families and invitations in web, removal/private-copy
 recovery, file recovery, and the web trust-boundary review remain M2 work.
 See [006](docs/tactical/006-m2-web.md).
 

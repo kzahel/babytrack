@@ -97,9 +97,59 @@ async function run() {
     const marker = Buffer.from('WebOnlyPrivateMarker');
     assert.equal(fs.readFileSync(relayDb).includes(marker), false, 'plaintext reached relay DB');
     assert.equal(fs.readFileSync(relayLog).includes(marker), false, 'plaintext reached relay log');
+    const later = spawnSync(holderBin, ['later_issue', manager, relayOrigin, origin],
+      { encoding: 'utf8' });
+    assert.equal(later.status, 0, `Native later issue: ${later.stderr}`);
+    const second = await browser.newContext({ viewport: { width: 1024, height: 800 } });
+    const secondPage = await second.newPage();
+    secondPage.on('pageerror', (error) => failures.push(error.message));
+    await secondPage.goto(origin + '/' + later.stdout.trim());
+    await secondPage.getByText('Claim sent · waiting for the manager device').waitFor();
+    holder('later_challenge');
+    await secondPage.getByRole('button', { name: 'Resume joining' }).click();
+    await secondPage.getByText('Proof sent · waiting for the Family key grant').waitFor();
+    holder('later_grant');
+    await secondPage.getByRole('button', { name: 'Resume joining' }).click();
+    await secondPage.locator('.side-nav').getByRole('button', { name: 'Family' }).click();
+    await secondPage.locator('.child-row strong').getByText('DynamicHolderChild').waitFor();
+    await secondPage.locator('.side-nav').getByRole('button', { name: 'Today' }).click();
+    await secondPage.getByText('WebOnlyPrivateMarker').waitFor();
+    await second.close();
+    const firstDevice = await page.evaluate(async () => {
+      const database = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('babytrack-preview-public-v1');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const credential = await new Promise((resolve, reject) => {
+        const request = database.transaction('credentials').objectStore('credentials').getAll();
+        request.onsuccess = () => resolve(request.result[0]);
+        request.onerror = () => reject(request.error);
+      });
+      database.close();
+      return Array.from(credential.deviceId, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    });
+    const removal = spawnSync(holderBin, ['remove', manager, relayOrigin, firstDevice],
+      { encoding: 'utf8' });
+    assert.equal(removal.status, 0, `Native removal: ${removal.stderr}`);
+    const rotatedIssue = spawnSync(holderBin, ['later_issue', manager, relayOrigin, origin],
+      { encoding: 'utf8' });
+    assert.equal(rotatedIssue.status, 0, `Native rotated issue: ${rotatedIssue.stderr}`);
+    const third = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const thirdPage = await third.newPage();
+    thirdPage.on('pageerror', (error) => failures.push(error.message));
+    await thirdPage.goto(origin + '/' + rotatedIssue.stdout.trim());
+    await thirdPage.getByText('Claim sent · waiting for the manager device').waitFor();
+    holder('later_challenge');
+    await thirdPage.getByRole('button', { name: 'Resume joining' }).click();
+    await thirdPage.getByText('Proof sent · waiting for the Family key grant').waitFor();
+    holder('later_grant');
+    await thirdPage.getByRole('button', { name: 'Resume joining' }).click();
+    await thirdPage.getByText('WebOnlyPrivateMarker').waitFor();
+    await third.close();
     assert.deepEqual(failures, []);
     passed = true;
-    console.log('Web join, delayed handoff, encrypted sync, offline edit, and reload passed');
+    console.log('Web first, later, and rotated joins, encrypted history, offline edit, and reload passed');
   } finally {
     if (!passed) {
       console.error('Relay log:', fs.readFileSync(relayLog, 'utf8'));

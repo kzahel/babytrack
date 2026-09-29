@@ -139,18 +139,22 @@ export class PublicStore {
     await done;
   }
 
-  // An admitted browser device receives its epoch-one key only from a
-  // committed, recipient-addressed HPKE grant. Keep its agreement key for
-  // later verified rotations, in the same transaction as the credential.
+  // Open the committed recipient grant and, for a later epoch, the verified
+  // rotation keyring. Keep the agreement key for subsequent rotations.
   async saveAdmittedCredential(family, deviceId, signingSeed, agreementPrivate) {
     const verifier = await this.load(family);
-    let epochKey;
+    let epochKeys;
     try {
-      const grantId = hex(verifier.initial_grant_id(deviceId));
+      const ids = verifier.admission_object_ids(deviceId);
       const read = this.database.transaction('objects', 'readonly');
-      const grant = await requestResult(read.objectStore('objects').get([family, grantId]));
-      if (!grant) throw new Error('Committed admission grant object is not saved');
-      epochKey = verifier.open_initial_grant(deviceId, agreementPrivate, grant.bytes);
+      const objects = await Promise.all(Array.from({ length: ids.length / 16 }, (_, index) =>
+        requestResult(read.objectStore('objects').get([family, hex(ids.slice(index * 16, index * 16 + 16))]))));
+      if (objects.some((object) => !object)) {
+        throw new Error('Committed admission or recovery object is not saved');
+      }
+      epochKeys = verifier.open_admission_keys(deviceId, agreementPrivate,
+        objects[0].bytes, objects[1]?.bytes || new Uint8Array(),
+        objects[2]?.bytes || new Uint8Array());
       const path = `/v1/families/${family}/log?after=${verifier.last_cursor()}`;
       verifier.sign_get(deviceId, signingSeed, path,
         crypto.getRandomValues(new Uint8Array(16)));
@@ -159,7 +163,8 @@ export class PublicStore {
     const done = transactionDone(transaction);
     transaction.objectStore('credentials').put({
       family, deviceId: Uint8Array.from(deviceId), signingSeed: Uint8Array.from(signingSeed),
-      agreementPrivate: Uint8Array.from(agreementPrivate), epochKey: Uint8Array.from(epochKey),
+      agreementPrivate: Uint8Array.from(agreementPrivate),
+      epochKey: Uint8Array.from(epochKeys.slice(0, 32)), epochKeys: Uint8Array.from(epochKeys),
     });
     await done;
   }
@@ -209,7 +214,7 @@ export class PublicStore {
 
   async loadInitialReadySaved(family) {
     const row = await this.initialCredential(family);
-    const ready = await this.loadInitialReady(family, row.epochKey,
+    const ready = await this.loadInitialReady(family, row.epochKeys || row.epochKey,
       row.deviceId, row.agreementPrivate);
     try {
       const pending = await this.pendingInitial(family);
@@ -250,7 +255,7 @@ export class PublicStore {
       throw new Error('Earlier browser edits are waiting for upload');
     }
     const credential = await this.initialCredential(family);
-    const ready = await this.loadInitialReady(family, credential.epochKey,
+    const ready = await this.loadInitialReady(family, credential.epochKeys || credential.epochKey,
       credential.deviceId, credential.agreementPrivate);
     let envelope, cursor, head;
     try {
@@ -332,7 +337,7 @@ export class PublicStore {
     }
     const credential = await this.initialCredential(family);
     const newClock = expectedClock && this.operationClock(family, credential.deviceId, operationBytes);
-    const ready = await this.loadInitialReady(family, credential.epochKey,
+    const ready = await this.loadInitialReady(family, credential.epochKeys || credential.epochKey,
       credential.deviceId, credential.agreementPrivate);
     let cursor, head;
     try {
@@ -387,7 +392,7 @@ export class PublicStore {
     const operations = await this.queuedInitial(family);
     if (!operations.length) return null;
     const credential = await this.initialCredential(family);
-    const ready = await this.loadInitialReady(family, credential.epochKey,
+    const ready = await this.loadInitialReady(family, credential.epochKeys || credential.epochKey,
       credential.deviceId, credential.agreementPrivate);
     let envelope, cursor, head;
     try {
@@ -542,6 +547,10 @@ export class PublicStore {
   // checks each response against its committed control before persistence.
   async hydrateControlObjectsSaved(family, get) {
     const credential = await this.initialCredential(family);
+    return this.hydrateControlObjects(family, credential.deviceId, credential.signingSeed, get);
+  }
+
+  async hydrateControlObjects(family, deviceId, signingSeed, get) {
     const read = this.database.transaction(['entries', 'objects'], 'readonly');
     const rowsRequest = read.objectStore('entries').getAll(
       IDBKeyRange.bound([family, 1], [family, Number.MAX_SAFE_INTEGER]),
@@ -562,7 +571,7 @@ export class PublicStore {
           const objectId = hex(id);
           if (present.has(objectId)) continue;
           const path = `/v1/families/${family}/objects/${objectId}`;
-          const auth = verifier.sign_get(credential.deviceId, credential.signingSeed, path,
+          const auth = verifier.sign_get(deviceId, signingSeed, path,
             crypto.getRandomValues(new Uint8Array(16)));
           const response = await get(path, auth);
           const object = this.wasm.verified_manifest_object(row.bytes, id, response);
@@ -578,7 +587,7 @@ export class PublicStore {
     } finally { verifier.free(); }
   }
 
-  async loadInitialReady(family, epochKey, deviceId = null, agreementPrivate = null) {
+  async loadInitialReady(family, epochKeys, deviceId = null, agreementPrivate = null) {
     const transaction = this.database.transaction(['families', 'entries', 'objects'], 'readonly');
     const metadataRequest = transaction.objectStore('families').get(family);
     const entriesRequest = transaction.objectStore('entries').getAll(
@@ -594,7 +603,8 @@ export class PublicStore {
     const publicVerifier = replay(this.wasm, metadata, rows);
     let ready;
     try {
-      ready = new this.wasm.WasmInitialFamily(metadata.genesis, metadata.relayPublicKey, epochKey);
+      ready = this.wasm.WasmInitialFamily.with_admission_keys(
+        metadata.genesis, metadata.relayPublicKey, epochKeys);
       if (agreementPrivate != null) {
         if (deviceId == null) throw new Error('Rotation holder device ID is absent');
         ready.set_agreement_private(deviceId, agreementPrivate);
@@ -606,6 +616,7 @@ export class PublicStore {
         else if (row.kind === 'batch') ready.apply_batch(row.bytes, row.receipt);
         else throw new Error('Unknown public entry kind');
       }
+      ready.verify_admission_history();
       if (ready.last_cursor() !== publicVerifier.last_cursor()) {
         throw new Error('Ready projection differs from verified public cursor');
       }

@@ -158,6 +158,16 @@ pub fn initial_epoch_projection(
     Ok((chain, projection, key))
 }
 
+/// Rehydrate a saved historical key for replay. The caller must verify it
+/// against each signed rotation keyring before using its projected records.
+pub fn saved_history_key(family_id: [u8; 16], epoch: u32, bytes: [u8; 32]) -> VerifiedEpochKey {
+    VerifiedEpochKey {
+        family_id,
+        epoch,
+        bytes,
+    }
+}
+
 pub fn verify_manifest(
     committed_bytes: &[u8],
     objects: &BTreeMap<[u8; 16], Vec<u8>>,

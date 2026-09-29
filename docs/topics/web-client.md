@@ -1,7 +1,7 @@
 # Web client
 
-Status: M2 local tracking and first-cohort shared joining are implemented;
-later-cohort enrollment and removal recovery remain open.
+Status: M2 local tracking and native-managed shared joining are implemented;
+web-origin sharing and removal recovery remain open.
 The [MVP plan](../mvp-plan.md#milestones) owns milestone scope and the
 [Family sharing contract](family-sharing-and-trust.md) owns access promises.
 [006](../tactical/006-m2-web.md) owns delivery evidence.
@@ -41,8 +41,8 @@ The joined browser can read history, add children and the current capture
 types, and edit breast feeds. Writes enter the durable encrypted outbox before
 upload, remain visible offline, and retry through the relay. The Family screen
 distinguishes local and shared storage and gives a manual sync action.
-Creating a shared Family or issuing invitations from web, later-cohort
-enrollment, removal/private-copy recovery, backup, and the full Android
+Creating a shared Family or issuing invitations from web,
+removal/private-copy recovery, backup, and the full Android
 capture set are still open.
 
 The browser enrollment adapter currently requires invitation relay origin to
@@ -59,9 +59,11 @@ The local flow gate creates two Families, logs entries to the first, reloads,
 switches Family, and confirms target isolation at phone and desktop widths.
 The product UI now passes a real-relay native manager/browser test of claim,
 delayed challenge and grant, native child write, browser offline note write
-and reload, resumed upload, native readback, and relay plaintext scan. The
-browser harness separately covers authority replay, durable outbox, and
-rotation. M2 still needs later-cohort join, removal/private copy, and
+and reload, resumed upload, native readback, and relay plaintext scan. A
+second browser joins after the first and reads older history. After a
+verified device removal rotates the key epoch, a third browser joins with a
+later-epoch grant and recovers its earlier keys from the committed keyring.
+M2 still needs web-origin invitations, removal/private copy, and
 browser-profile loss flows in the product UI.
 
 Reconsider route density after tablet/desktop spot checks, and revisit an

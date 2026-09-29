@@ -45,6 +45,10 @@ pub struct VerifiedAdmissionGrant {
 }
 
 impl VerifiedAdmissionGrant {
+    pub fn epoch(&self) -> u32 {
+        self.epoch
+    }
+
     pub fn grant_id(&self) -> [u8; 16] {
         self.grant_id
     }

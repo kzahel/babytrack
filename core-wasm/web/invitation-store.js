@@ -266,13 +266,13 @@ export class InvitationStore {
   // Once the sparse chain proves this device's grant, rebuild the full
   // public log before opening any data key. The existing PublicStore owns
   // contiguous log, object, credential, and encrypted record readiness.
-  async activateFirstEpoch(publicStore, get) {
+  async activateAdmitted(publicStore, get) {
     const claim = await this.savedClaim();
     if (!claim?.committedResponse) throw new Error('Committed claim required for admission');
     const verifier = await this.load();
     let family;
     try {
-      if (!verifier.has_initial_admission(claim.deviceId)) {
+      if (!verifier.has_admission(claim.deviceId)) {
         throw new Error('No verified admission grant for this device');
       }
       family = hex(verifier.family_id());
@@ -293,14 +293,17 @@ export class InvitationStore {
           crypto.getRandomValues(new Uint8Array(16))));
     } finally { verifier.free(); }
     await publicStore.hydrateGenesis(family, claim.deviceId, claim.signingSeed, get);
-    await publicStore.hydrateInitialGrant(family, claim.deviceId, claim.signingSeed, get);
+    await publicStore.hydrateControlObjects(family, claim.deviceId, claim.signingSeed, get);
     await publicStore.saveAdmittedCredential(family, claim.deviceId,
       claim.signingSeed, claim.agreementPrivate);
-    await publicStore.hydrateControlObjectsSaved(family, get);
     const ready = await publicStore.loadInitialReadySaved(family);
     try {
       return { family, cursor: Number(ready.last_cursor()) };
     } finally { ready.free(); }
+  }
+
+  async activateFirstEpoch(publicStore, get) {
+    return this.activateAdmitted(publicStore, get);
   }
 
   async pullPending(get, maxPages = 4) {

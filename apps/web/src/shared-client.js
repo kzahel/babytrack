@@ -136,10 +136,10 @@ export async function advanceJoin(wasm, fragment) {
     let admitted;
     try {
       const saved = await invitation.savedClaim();
-      admitted = verifier.has_initial_admission(saved.deviceId);
+      admitted = verifier.has_admission(saved.deviceId);
     } finally { verifier.free(); }
     if (!admitted) return { stage: 'waitingGrant' };
-    const ready = await invitation.activateFirstEpoch(publicStore, relayGet);
+    const ready = await invitation.activateAdmitted(publicStore, relayGet);
     await invitation.forget();
     return { stage: 'ready', family: ready.family, cursor: ready.cursor };
   } finally {

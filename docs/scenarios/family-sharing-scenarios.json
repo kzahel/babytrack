@@ -1132,7 +1132,9 @@
       "variants": [
         "old batch accepted before cutover",
         "old batch rejected after cutover",
-        "Charlie is a browser client and reopens verified history after rotation",
+    "Charlie is a browser client and reopens verified history after rotation",
+    "browser crashes after verified stale rejection moves the operation to its queue but before rotation objects download",
+    "browser crashes after only part of the committed rotation objects download",
         "signed stale-epoch result names rotation cursor R, but another accepted entry reaches R+1 before result query",
         "restart before the client persists the queried result"
       ]

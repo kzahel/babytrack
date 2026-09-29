@@ -1826,6 +1826,42 @@ tested surviving initial manager. Dynamic mixed-client rotation, broader
 rejection/restart cases, and the byte applicability matrix remain M0 work;
 the failed review has not been superseded by an independent gate recheck.
 
+## End-of-M0 recheck at 66c7e5f
+
+Daybreak Blue, high thinking, read the clean detached checkout of
+`66c7e5f8d871be87066112eb388f0c5aa35bb1aa` through Yep Anywhere session
+`01a0ea79-b79b-7ca3-a9cd-798cb4a5eb2f`, process
+`ce0a927e-e935-4f8d-8c89-1fe105bb6fe2`, project
+`L3ByaXZhdGUvdG1wL2JhYnl0cmFjay1tMC1yZXZpZXctSkd4U3lFL2NoZWNrb3V0`.
+The review modeled honest ordered relay, hostile authorized device,
+compromised relay storage, and forking/withholding or clock-lying relay under
+the agreed trust limits. Result: **FAIL** for one U1/U4 browser crash window;
+the M0 exit gate stays open.
+
+After a signed stale rejection moves an epoch-one browser operation from
+outbox to queue, a crash before rotation-object hydration left retry staging
+the queue before fetching the objects. The ready view then failed to open and
+the saved edit could not progress. FS48 now injects a close/reopen directly
+after that transaction and another during partial object hydration against a
+real relay. Retry hydrates before staging the queue and checks a fresh batch
+ID with the saved operation. This is the focused blocker repair, pending
+independent recheck. The review also found that browser ready replay skipped
+manifest and encrypted membership checks for same-epoch manager controls;
+it now verifies both before advancing, with wasm missing/tampered-object
+regressions. The reviewer classified this as protocol divergence under an
+authorized hostile manager rather than a new unauthorized-access blocker.
+The vector applicability matrix remains incomplete against the literal M0
+exit criterion; it is a separate unimplemented gate, not a demonstrated
+access flaw.
+
+The reviewer credited local Rust, wasm, browser, native smoke, and Android
+APK assembly on the reviewed SHA; no attached emulator was available in its
+checkout. The implementation agent separately ran the Android real-relay
+instrumentation (26 tests) and the two-emulator join, removal/private-copy,
+and later-device flow locally after the review. Those runs do not substitute
+for the independent crash-window recheck, a physical phone, or CI at the
+eventual exit SHA. No full M0 PASS is claimed.
+
 ## Completion condition
 
 All slice gates pass in CI and on the designated local testbeds, the

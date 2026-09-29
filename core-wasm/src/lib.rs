@@ -579,10 +579,14 @@ impl WasmInitialFamily {
         let mut chain = ready.chain.clone();
         let previous_epoch = chain.epoch().map_err(debug_error)?;
         chain.apply_control(committed_bytes).map_err(debug_error)?;
+        ready_replay::verify_manifest(committed_bytes, &self.objects).map_err(debug_error)?;
+        let transition_id = ready_replay::manifest_objects(committed_bytes)
+            .map_err(debug_error)?
+            .first()
+            .map(|object| object.transition_id);
         let mut keys = ready.keys.clone();
         let next_epoch = chain.epoch().map_err(debug_error)?;
         if next_epoch > previous_epoch {
-            ready_replay::verify_manifest(committed_bytes, &self.objects).map_err(debug_error)?;
             if next_epoch != previous_epoch + 1 {
                 return Err(JsError::new("rotation skipped an epoch"));
             }
@@ -632,6 +636,17 @@ impl WasmInitialFamily {
                 }
             }
             keys.insert(next_epoch, rotated.current().clone());
+        } else if let Some(transition_id) = transition_id
+            && let Some(membership) = chain.membership_check(&transition_id)
+        {
+            let object = self
+                .objects
+                .get(&membership.object_id())
+                .ok_or_else(|| JsError::new("membership object is missing"))?;
+            let key = keys
+                .get(&next_epoch)
+                .ok_or_else(|| JsError::new("membership epoch key is missing"))?;
+            membership.verify(object, key).map_err(debug_error)?;
         }
         let mut projection = ready.projection.clone();
         projection

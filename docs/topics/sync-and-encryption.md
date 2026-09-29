@@ -372,7 +372,14 @@ against the exact pending envelope and saved authority prefix, then atomically
 returns its operation to the queue and reseals it under epoch two. A tampered
 result leaves the exact pending bytes untouched. Dynamic browser/native
 rotation, browser admission after rotation, other rejection kinds, and broader
-independent CLI/browser fault coverage remain open.
+independent CLI/browser fault coverage remain open. A restart can occur after
+the verified rejection transaction and before its rotation objects finish
+downloading. Browser retry hydrates the saved control prefix before staging
+queued work; the real-relay test closes and reopens IndexedDB both immediately
+after rebasing and during partial hydration. Same-epoch controls also require
+their complete manifest and, where present, an encrypted membership object
+that repeats the signed public transition before the browser ready cursor
+advances, matching native ready replay.
 The first Android sharing flow uses foreground polling and scheduled
 background work. FCM and APNs may later provide empty background wakes through
 app-owned interfaces to reduce latency when an app is suspended. A missed

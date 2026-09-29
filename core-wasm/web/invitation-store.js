@@ -269,6 +269,7 @@ export class InvitationStore {
     await publicStore.hydrateInitialGrant(family, claim.deviceId, claim.signingSeed, get);
     await publicStore.saveAdmittedCredential(family, claim.deviceId,
       claim.signingSeed, claim.agreementPrivate);
+    await publicStore.hydrateControlObjectsSaved(family, get);
     const ready = await publicStore.loadInitialReadySaved(family);
     try {
       return { family, cursor: Number(ready.last_cursor()) };

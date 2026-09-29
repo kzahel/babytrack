@@ -396,6 +396,12 @@ export class PublicStore {
     }
     let progress;
     for (let index = 0; index < maxBatches; index++) {
+      // A crash may leave a verified stale rejection already moved to the
+      // queue while rotation objects are only partly downloaded. Rehydrate
+      // before staging needs the new epoch's ready view.
+      if ((await this.queuedInitial(family)).length) {
+        await this.hydrateControlObjectsSaved(family, get);
+      }
       const pending = await this.stageQueuedInitial(family);
       if (!pending) {
         if (!progress) throw new Error('No pending initial batch');

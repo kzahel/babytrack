@@ -169,6 +169,34 @@ const rotatedFixture = () => {
   view.apply_batch(hex(chain.batch.envelope_cbor_hex), hex(chain.batch.receipt_cbor_hex));
   return view;
 };
+const issueMembershipId = chain.transitions[1].manifest[0][1];
+const missingMembership = new WasmInitialFamily(
+  hex(chain.transitions[0].committed_cbor_hex),
+  hex(genesis.expect.relay_public_key_hex),
+  hex(chain.test_only_inputs.epoch_1_key_hex),
+);
+missingMembership.add_object(hex(chain.transitions[0].manifest[0][1]),
+  hex(chain.objects_by_id_hex[chain.transitions[0].manifest[0][1]]));
+missingMembership.finish();
+assert.throws(() => missingMembership.apply_control(
+  hex(chain.transitions[1].committed_cbor_hex)), /committed object not downloaded/);
+assert.equal(missingMembership.last_cursor(), 1n);
+missingMembership.free();
+const corruptMembership = new WasmInitialFamily(
+  hex(chain.transitions[0].committed_cbor_hex),
+  hex(genesis.expect.relay_public_key_hex),
+  hex(chain.test_only_inputs.epoch_1_key_hex),
+);
+corruptMembership.add_object(hex(chain.transitions[0].manifest[0][1]),
+  hex(chain.objects_by_id_hex[chain.transitions[0].manifest[0][1]]));
+const damagedMembership = hex(chain.objects_by_id_hex[issueMembershipId]);
+damagedMembership[damagedMembership.length - 1] ^= 1;
+corruptMembership.add_object(hex(issueMembershipId), damagedMembership);
+corruptMembership.finish();
+assert.throws(() => corruptMembership.apply_control(
+  hex(chain.transitions[1].committed_cbor_hex)));
+assert.equal(corruptMembership.last_cursor(), 1n);
+corruptMembership.free();
 const missingAgreement = rotatedFixture();
 assert.equal(missingAgreement.last_cursor(), 8n);
 assert.throws(() => missingAgreement.apply_control(

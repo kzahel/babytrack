@@ -28,6 +28,7 @@ import androidx.compose.ui.test.performTextInput
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,6 +44,25 @@ class SharingRelayTest {
     @get:Rule val composeRule = createEmptyComposeRule()
 
     private fun ByteArray.hex(): String = joinToString("") { "%02x".format(it.toInt() and 255) }
+
+    @Before
+    fun acknowledgeEarlierRemovalCopies() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val database = context.filesDir.resolve("families.db")
+        val acknowledgments = context.getSharedPreferences(
+            "acknowledged_removal_copies", android.content.Context.MODE_PRIVATE,
+        )
+        ShareCoordinator(context, database.absolutePath).use { sharing ->
+            NativeLocalStore.open(database.absolutePath).use { local ->
+                val editor = acknowledgments.edit()
+                for (source in local.families() + sharing.recipientFamilies()) {
+                    val copy = sharing.savedRemovalCopy(source) ?: continue
+                    editor.putString(source.familyId.hex(), copy.familyId.hex())
+                }
+                assertTrue(editor.commit())
+            }
+        }
+    }
 
     private fun openTab(label: Int) {
         val text = InstrumentationRegistry.getInstrumentation().targetContext.getString(label)
@@ -1175,14 +1195,6 @@ class SharingRelayTest {
         val acknowledgments = context.getSharedPreferences(
             "acknowledged_removal_copies", android.content.Context.MODE_PRIVATE,
         )
-        ShareCoordinator(context, database.absolutePath).use { sharing ->
-            NativeLocalStore.open(database.absolutePath).use { local ->
-                for (source in local.families() + sharing.recipientFamilies()) {
-                    val copy = sharing.savedRemovalCopy(source) ?: continue
-                    acknowledgments.edit().putString(source.familyId.hex(), copy.familyId.hex()).commit()
-                }
-            }
-        }
         val original = NativeLocalStore.open(database.absolutePath).use { local ->
             val created = local.createFamily(System.currentTimeMillis())
             local.createFamily(System.currentTimeMillis() + 1) // another selectable Family

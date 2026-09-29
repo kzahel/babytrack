@@ -43,6 +43,17 @@
         "a wrong Family or child cannot restore the activity",
         "restoring an activity that is already visible is rejected"
       ]
+    },
+    {
+      "id": "breast-pause-and-edit",
+      "given": "a breast feed started on the left, paused, and resumed on the right",
+      "when": "the caregiver saves it and later corrects a side duration",
+      "expect": [
+        "the pause remains a gap between ordered nonoverlapping segments",
+        "left and right totals exclude the pause",
+        "the correction keeps the activity ID, child, Family, and original start",
+        "restart and replay preserve the corrected segment list"
+      ]
     }
   ]
 }

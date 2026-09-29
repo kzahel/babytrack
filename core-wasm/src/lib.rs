@@ -1244,6 +1244,41 @@ impl WasmLocalFamily {
         .map_err(debug_error)
     }
 
+    pub fn log_breast_operation(
+        &self,
+        child_id: &[u8],
+        segments_json: &str,
+        now_ms: i64,
+    ) -> Result<Vec<u8>, JsError> {
+        web_actions::breast(
+            self.identity(random_v7(now_ms)?, now_ms)?,
+            fixed(child_id, "child ID")?,
+            segments_json,
+        )
+        .map_err(debug_error)
+    }
+
+    pub fn edit_breast_operation(
+        &self,
+        child_id: &[u8],
+        activity_id: &[u8],
+        segments_json: &str,
+        now_ms: i64,
+    ) -> Result<Vec<u8>, JsError> {
+        let activity_id = fixed(activity_id, "activity ID")?;
+        let target = self
+            .projection
+            .record(&activity_id)
+            .ok_or_else(|| JsError::new("breast feed target unavailable"))?;
+        web_actions::edit_breast(
+            self.identity(activity_id, now_ms)?,
+            fixed(child_id, "child ID")?,
+            target,
+            segments_json,
+        )
+        .map_err(debug_error)
+    }
+
     pub fn snapshot_json(&self) -> String {
         web_actions::local_snapshot(&self.projection)
     }

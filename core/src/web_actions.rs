@@ -2,6 +2,7 @@
 //! JavaScript supplies intent and storage; Rust owns record bytes and meaning.
 
 use crate::{
+    breast::{self, Segment},
     cbor::Value,
     operation::{Hlc, Kind, NewOperation, Operation, Scope},
     projection::{LocalProjection, Record},
@@ -168,6 +169,76 @@ pub fn note(
     )
 }
 
+fn segments_json(input: &str) -> Result<Vec<Segment>, Error> {
+    if input.len() > 4096 {
+        return Err(Error::Invalid("breast segments JSON too long"));
+    }
+    serde_json::from_str(input).map_err(|_| Error::Invalid("breast segments JSON invalid"))
+}
+
+pub fn breast(id: Identity, child_id: [u8; 16], input: &str) -> Result<Vec<u8>, Error> {
+    let segments = segments_json(input)?;
+    let first = segments
+        .first()
+        .ok_or(Error::Invalid("breast segment count or start invalid"))?;
+    let fields = breast::fields(
+        &segments,
+        first.start_utc_ms,
+        first.start_offset_minutes,
+        id.stamp.wall_ms,
+    )
+    .map_err(Error::Invalid)?;
+    activity(
+        id,
+        child_id,
+        "feed.breast",
+        first.start_utc_ms,
+        first.start_offset_minutes,
+        fields,
+    )
+}
+
+pub fn edit_breast(
+    id: Identity,
+    child_id: [u8; 16],
+    target: &Record,
+    input: &str,
+) -> Result<Vec<u8>, Error> {
+    if target.scope != Scope::Activity
+        || target.record_type != "feed.breast"
+        || target.child_id != Some(child_id)
+        || target.deleted
+        || id.record != target.id
+    {
+        return Err(Error::Invalid("breast feed target unavailable"));
+    }
+    let Some(Value::Array(start)) = target.field(1).map(|field| &field.value) else {
+        return Err(Error::Invalid("breast feed start unavailable"));
+    };
+    let [Value::Integer(start_ms), Value::Integer(offset)] = start.as_slice() else {
+        return Err(Error::Invalid("breast feed start unavailable"));
+    };
+    let start_ms =
+        i64::try_from(*start_ms).map_err(|_| Error::Invalid("breast feed start unavailable"))?;
+    let offset =
+        i16::try_from(*offset).map_err(|_| Error::Invalid("breast feed start unavailable"))?;
+    let segments = segments_json(input)?;
+    let fields =
+        breast::fields(&segments, start_ms, offset, id.stamp.wall_ms).map_err(Error::Invalid)?;
+    Ok(Operation::encode_new(&NewOperation {
+        family_id: id.family,
+        operation_id: id.operation,
+        record_id: id.record,
+        scope: Scope::Activity,
+        kind: Kind::Set,
+        author_device_id: id.device,
+        hlc: id.stamp,
+        record_type: None,
+        child_id: None,
+        fields: Some(fields),
+    })?)
+}
+
 fn text(record: &Record, key: u64) -> Option<&str> {
     match &record.field(key)?.value {
         Value::Text(value) => Some(value),
@@ -233,6 +304,52 @@ pub fn local_snapshot(projection: &LocalProjection) -> String {
                             });
                             fields.insert("bottleMl".to_owned(), json!(amount));
                             fields.insert("bottleContent".to_owned(), json!(integer(record, 101)));
+                        }
+                        "feed.breast" => {
+                            let segments = record.field(100).and_then(|field| match &field.value {
+                                Value::Array(parts) => Some(
+                                    parts
+                                        .iter()
+                                        .filter_map(|part| {
+                                            let Value::Array(values) = part else {
+                                                return None;
+                                            };
+                                            let [Value::Integer(side), start, end] =
+                                                values.as_slice()
+                                            else {
+                                                return None;
+                                            };
+                                            let instant = |value: &Value| match value {
+                                                Value::Array(parts) if parts.len() == 2 => {
+                                                    let [
+                                                        Value::Integer(ms),
+                                                        Value::Integer(offset),
+                                                    ] = parts.as_slice()
+                                                    else {
+                                                        return None;
+                                                    };
+                                                    Some((
+                                                        i64::try_from(*ms).ok()?,
+                                                        i16::try_from(*offset).ok()?,
+                                                    ))
+                                                }
+                                                _ => None,
+                                            };
+                                            let (start_ms, start_offset) = instant(start)?;
+                                            let (end_ms, end_offset) = instant(end)?;
+                                            Some(json!({
+                                                "side": u8::try_from(*side).ok()?,
+                                                "start_utc_ms": start_ms,
+                                                "end_utc_ms": end_ms,
+                                                "start_offset_minutes": start_offset,
+                                                "end_offset_minutes": end_offset,
+                                            }))
+                                        })
+                                        .collect::<Vec<_>>(),
+                                ),
+                                _ => None,
+                            });
+                            fields.insert("breastSegments".to_owned(), json!(segments));
                         }
                         _ => {}
                     }

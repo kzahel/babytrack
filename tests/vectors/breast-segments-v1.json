@@ -1,0 +1,30 @@
+{
+  "format": "babytrack-breast-segments-v1",
+  "cases": [
+    {
+      "id": "BREASTPAUSE01",
+      "start_utc_ms": 2000,
+      "start_offset_minutes": 0,
+      "saved_at_ms": 100000,
+      "segments": [
+        {
+          "side": 1,
+          "start_utc_ms": 2000,
+          "end_utc_ms": 32000,
+          "start_offset_minutes": 0,
+          "end_offset_minutes": 0
+        },
+        {
+          "side": 2,
+          "start_utc_ms": 52000,
+          "end_utc_ms": 97000,
+          "start_offset_minutes": 0,
+          "end_offset_minutes": 0
+        }
+      ],
+      "expect_active_ms": 75000,
+      "expect_pause_ms": 20000,
+      "field_100_cbor_hex": "828301821907d00082197d000083028219cb2000821a00017ae800"
+    }
+  ]
+}

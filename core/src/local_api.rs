@@ -191,14 +191,7 @@ pub struct PumpAmounts {
     pub total_ml: Option<i64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BreastSegment {
-    pub side: u8,
-    pub start_utc_ms: i64,
-    pub end_utc_ms: i64,
-    pub start_offset_minutes: i16,
-    pub end_offset_minutes: i16,
-}
+pub use crate::breast::Segment as BreastSegment;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackupInfo {
@@ -1528,51 +1521,13 @@ fn breast_segment_fields(
     segments: &[BreastSegment],
     time: ActivityTime,
 ) -> Result<Vec<(u64, Value)>, Error> {
-    if segments.is_empty()
-        || segments.len() > 8
-        || segments[0].start_utc_ms != time.start_utc_ms
-        || segments[0].start_offset_minutes != time.offset_minutes
-    {
-        return Err(Error::Invalid("breast segment count or start invalid"));
-    }
-    let mut previous_end = time.start_utc_ms;
-    let mut encoded = Vec::with_capacity(segments.len());
-    for segment in segments {
-        if !(1..=2).contains(&segment.side)
-            || !(-840..=840).contains(&segment.start_offset_minutes)
-            || !(-840..=840).contains(&segment.end_offset_minutes)
-            || segment.start_utc_ms != previous_end
-            || segment.end_utc_ms <= segment.start_utc_ms
-            || segment.end_utc_ms > time.saved_at_ms
-        {
-            return Err(Error::Invalid("breast segment side or interval invalid"));
-        }
-        let start = Value::Array(vec![
-            Value::Integer(segment.start_utc_ms.into()),
-            Value::Integer(segment.start_offset_minutes.into()),
-        ]);
-        let end = Value::Array(vec![
-            Value::Integer(segment.end_utc_ms.into()),
-            Value::Integer(segment.end_offset_minutes.into()),
-        ]);
-        encoded.push(Value::Array(vec![
-            Value::Integer(segment.side.into()),
-            start,
-            end,
-        ]));
-        previous_end = segment.end_utc_ms;
-    }
-    if previous_end
-        .checked_sub(time.start_utc_ms)
-        .is_none_or(|duration| duration > 240 * 60_000)
-    {
-        return Err(Error::Invalid("breast feed interval exceeds four hours"));
-    }
-    let end = Value::Array(vec![
-        Value::Integer(previous_end.into()),
-        Value::Integer(segments.last().unwrap().end_offset_minutes.into()),
-    ]);
-    Ok(vec![(2, end), (100, Value::Array(encoded))])
+    crate::breast::fields(
+        segments,
+        time.start_utc_ms,
+        time.offset_minutes,
+        time.saved_at_ms,
+    )
+    .map_err(Error::Invalid)
 }
 
 pub fn edit_breast_feed_segments_operation(

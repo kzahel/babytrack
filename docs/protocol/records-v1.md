@@ -81,6 +81,14 @@ Type-specific field IDs are scoped to the immutable `record_type` string:
 | `temperature` | 100 value, 101 method | Measure; text or null |
 | `note` | no additional keys | Shared note field 4 is required |
 
+For a completed `feed.breast`, field 100 holds one to eight ordered segments.
+The first segment starts at field 1; field 2 equals the last segment end.
+Each segment has side `1` or `2`, a nonempty interval, and valid offsets.
+The next start may equal or follow the previous end, but must not precede it.
+A positive gap is paused time and is excluded from the four-hour maximum,
+which sums the segment durations. Editing replaces the complete segment list
+and derived field 2 on the same activity, retaining field 1.
+
 An unknown `record_type` and its entire field map remain opaque and
 round-trip unchanged. A known type with an unknown field retains the field's
 canonical value bytes even when another known field is edited or the batch

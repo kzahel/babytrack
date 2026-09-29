@@ -381,6 +381,8 @@ private data class PendingBreastEdit(
     val startUtcMs: Long,
     val startOffsetMinutes: Short,
     val segments: List<Pair<UByte, String>>,
+    // Keep pauses from a feed recorded on another client when correcting durations.
+    val gapsMs: List<Long>,
 )
 private data class PendingDiaperEdit(
     val family: FamilyRef,
@@ -2530,11 +2532,15 @@ private fun TrackerScreen(
                                     (it.endUtcMs - it.startUtcMs) % 60_000L == 0L
                                 } == true) {
                                     OutlinedButton(onClick = {
+                                        val savedSegments = entry.breastSegments!!
                                         pendingBreastEdit = PendingBreastEdit(
                                             family, entry.childId.copyOf(), entry.id.copyOf(), activeShared,
                                             entry.startUtcMs, entry.offsetMinutes,
-                                            entry.breastSegments!!.map {
+                                            savedSegments.map {
                                                 it.side to ((it.endUtcMs - it.startUtcMs) / 60_000L).toString()
+                                            },
+                                            savedSegments.mapIndexed { index, segment ->
+                                                if (index == 0) 0L else segment.startUtcMs - savedSegments[index - 1].endUtcMs
                                             },
                                         )
                                     }) { Text(stringResource(R.string.edit_breast)) }
@@ -3068,14 +3074,18 @@ private fun TrackerScreen(
                         )
                     }
                     if (target.segments.size > 1) {
-                        OutlinedButton(onClick = { pendingBreastEdit = target.copy(segments = target.segments.dropLast(1)) }) {
+                        OutlinedButton(onClick = { pendingBreastEdit = target.copy(
+                            segments = target.segments.dropLast(1), gapsMs = target.gapsMs.dropLast(1),
+                        ) }) {
                             Text(stringResource(R.string.remove_last_segment))
                         }
                     }
                     if (target.segments.size < 8) {
                         OutlinedButton(onClick = {
                             val nextSide = if (target.segments.last().first == 1u.toUByte()) 2u.toUByte() else 1u.toUByte()
-                            pendingBreastEdit = target.copy(segments = target.segments + (nextSide to "5"))
+                            pendingBreastEdit = target.copy(
+                                segments = target.segments + (nextSide to "5"), gapsMs = target.gapsMs + 0L,
+                            )
                         }) { Text(stringResource(R.string.add_breast_segment)) }
                     }
                 }
@@ -3086,6 +3096,7 @@ private fun TrackerScreen(
                     var cursor = target.startUtcMs
                     val zone = TimeZone.getDefault()
                     val segments = target.segments.mapIndexed { index, (side, minutes) ->
+                        cursor += target.gapsMs[index]
                         val next = cursor + (durations[index] ?: error("Missing duration")) * 60_000L
                         BreastSegmentRow(side, cursor, next,
                             if (index == 0) target.startOffsetMinutes else (zone.getOffset(cursor) / 60_000).toShort(),

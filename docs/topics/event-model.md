@@ -83,11 +83,16 @@ M1 work. Solids entry stores one trimmed food per line
 as the published atomic list and preserves optional entered amount text;
 local file restore and encrypted cross-device sync preserve both.
 The breast-feed path records one to eight completed timed left/right
-segments as one atomic field. Android can add alternating side durations;
-the core checks contiguous intervals, side values, offsets, and a total
-duration of at most four hours. Each segment keeps its start and end UTC
-offsets, including across a daylight-saving transition. Local files and
-encrypted shared sync preserve the segment sequence.
+segments as one atomic field. A gap between segments is a pause and is
+excluded from active feeding totals; segments may touch for a direct side
+switch but must never overlap. The core checks ordered intervals, side
+values, offsets, and at most four hours of summed active feeding time.
+Each segment keeps its start and end UTC offsets, including across a
+daylight-saving transition. Local files and encrypted shared sync preserve
+the segment sequence. Android currently enters completed side durations;
+the web preview also times taps and keeps its unsaved draft in browser storage
+through reload. Neither client yet publishes an in-progress breast feed to
+other devices.
 Android can optionally mark a running or completed sleep as crib, pram,
 contact, car, or other. The shared core stores the published place code on
 the sleep event. A caregiver can correct or clear the place on that same
@@ -100,7 +105,9 @@ instant in one set operation while retaining its activity ID, original start,
 and unrelated or unknown fields. The core applies the same interval, side,
 offset, and four-hour checks as creation. Android offers whole-minute side
 and duration correction for entries whose existing segments are whole
-minutes; other clients' finer-grained entries remain readable and deletable.
+minutes and keeps any original pause gaps when doing so. Web edits timed
+segments to whole-second precision and can change pause lengths. Other
+clients' finer-grained entries remain readable and deletable.
 The Android timeline can delete one activity. The shared core checks its
 Family and child target and records a tombstone operation; the entry leaves
 the current timeline locally and on devices that later sync. Deletion does
@@ -169,6 +176,9 @@ feed started on one parent's phone shows as running on the other's watch.
 Breastfeeding side switches and pauses are segments inside the one event.
 Two devices both running a timer for the same activity produce two events;
 the UI offers to merge them rather than guessing.
+This is the intended shared-timer behavior. The current web breastfeeding
+timer keeps an unsaved local draft until Save; live cross-device breast-timer
+sync and timer merging remain unimplemented.
 
 ## Units
 

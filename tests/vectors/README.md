@@ -13,6 +13,7 @@ and each case starts from its stated state. Rejection means no state, cursor,
 sequence, or outbox mutation unless the expected result says otherwise.
 
 - [Canonical bytes and record projection](records-v1.json)
+- [Paused breast-feed segment bytes](breast-segments-v1.json)
 - [Deterministic cryptographic bytes](crypto-v1.json)
 - [Complete genesis and signed encrypted batch bytes](full-wire-v1.json)
 - [Challenge, admission, rotation, and keyring bytes](join-rotation-v1.json)
@@ -32,6 +33,7 @@ sequence, or outbox mutation unless the expected result says otherwise.
 | Vector | Owning executable consumer | Swift / Kotlin | wasm / browser | Remaining gap |
 | --- | --- | --- | --- | --- |
 | `records-v1` | `core/tests/cbor_vectors.rs` runs CB01–06; `crypto_vectors.rs` runs HASH01–02; `record_validity.rs` exercises published units | Shared core through local create, activity, backup/restore; no direct canonical-byte runner | Shared core through local journal and fixed child | MERGE, SCOPE, RECORD, TIME, and full UNIT case assertions need an explicit case inventory |
+| `breast-segments-v1` | `breast.rs` asserts BREASTPAUSE01 canonical segment bytes and active/pause totals; native local API checks restart and file restore | Android uses the shared Rust reducer but does not run this exact vector | Node wasm smoke asserts the same field bytes; browser UI checks pause, reload, save, and edit | Swift/Kotlin fixed-vector assertions remain |
 | `crypto-v1` | `core/tests/crypto_vectors.rs`, `hpke_vectors.rs`, `portable_file.rs`: SIG01, AEAD01, HPKE01 open and sender round trip; FILEBYTE01 protected bytes open and reject tampering | Fixed signed/encrypted batch crosses both bindings; wrong key and signer fail | Same fixed batch and rotation grant opening | HPKE01 fixed sender bytes and FILEBYTE01 derived-key/encode assertions remain |
 | `full-wire-v1` | `core/tests/control_genesis.rs`, `batch_vectors.rs`: GENESIS01 and all BATCHBYTE01 constructed bytes | BATCHBYTE01 seals, opens, and projects | BATCHBYTE01 seals, opens, projects, and verifies its accepted receipt | Native bindings use a fixture projection rather than the full public authority chain |
 | `negative-batch-v1` | `core/tests/batch_vectors.rs`, `projection_vectors.rs`, `operation_vectors.rs` cover selected cases | CROSSMINOR, INERT, PRECREATE, SETTHENCREATE, WRONGSCOPE, PREFS plus wrong key, Family, relay, signer, signature | Same selected cases; Chromium checks durable rollback | UNOPENABLE and exact per-case assertion inventory remain |

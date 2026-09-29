@@ -1539,15 +1539,15 @@ fn alternating_breast_segments_survive_restart_and_file_restore() {
         },
         BreastSegment {
             side: 2,
-            start_utc_ms: start + 5 * 60_000,
-            end_utc_ms: start + 13 * 60_000,
+            start_utc_ms: start + 6 * 60_000,
+            end_utc_ms: start + 14 * 60_000,
             start_offset_minutes: 120,
             end_offset_minutes: 120,
         },
         BreastSegment {
             side: 1,
-            start_utc_ms: start + 13 * 60_000,
-            end_utc_ms: start + 16 * 60_000,
+            start_utc_ms: start + 15 * 60_000,
+            end_utc_ms: start + 18 * 60_000,
             start_offset_minutes: 120,
             end_offset_minutes: 120,
         },
@@ -1560,10 +1560,10 @@ fn alternating_breast_segments_survive_restart_and_file_restore() {
     let time = ActivityTime {
         start_utc_ms: start,
         offset_minutes: 120,
-        saved_at_ms: start + 16 * 60_000,
+        saved_at_ms: start + 18 * 60_000,
     };
     let mut broken = segments.clone();
-    broken[1].start_utc_ms += 1;
+    broken[1].start_utc_ms = segments[0].end_utc_ms - 1;
     assert!(
         app.log_breast_feed_segments(family, child, broken, time)
             .is_err()
@@ -1634,7 +1634,7 @@ fn breast_segment_correction_preserves_start_and_restores() {
         },
     ];
     let mut broken = corrected.clone();
-    broken[1].start_utc_ms += 1;
+    broken[1].start_utc_ms -= 1;
     assert!(
         app.edit_breast_feed_segments(family, child, id, broken, start + 20 * 60_000)
             .is_err()

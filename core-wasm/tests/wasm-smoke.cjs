@@ -4,18 +4,40 @@ const path = require('node:path');
 
 const bindingPath = process.argv[2];
 if (!bindingPath) throw new Error('pass generated wasm-bindgen Node module path');
-const { WasmFamily, WasmPublicFamily, WasmInitialFamily, WasmLogPage,
+const { WasmFamily, WasmPublicFamily, WasmInitialFamily, WasmLogPage, WasmLocalFamily,
   ed25519_public_key, seal_one } = require(path.resolve(bindingPath));
 const vectors = JSON.parse(fs.readFileSync(path.join(__dirname, '../../tests/vectors/negative-batch-v1.json')));
 const full = JSON.parse(fs.readFileSync(path.join(__dirname, '../../tests/vectors/full-wire-v1.json')));
 const api = JSON.parse(fs.readFileSync(path.join(__dirname, '../../tests/vectors/api-v1.json')));
 const chain = JSON.parse(fs.readFileSync(path.join(__dirname, '../../tests/vectors/contiguous-chain-v1.json')));
+const breast = JSON.parse(fs.readFileSync(path.join(__dirname, '../../tests/vectors/breast-segments-v1.json'))).cases[0];
 const hex = (value) => Buffer.from(value, 'hex');
 const familyId = hex(vectors.base.family_id_hex);
 const relayId = hex('03396219237f75a64f12aeb7f39723abf400b160c364980a765dac24aeba2464');
 const epochKey = hex(vectors.base.epoch_key_hex);
 const signer = ed25519_public_key(hex(vectors.base.recipient_sign_seed_hex));
 const childId = hex('0183f9d0000070008000000000000011');
+const local = new WasmLocalFamily(hex('11111111111141118111111111111111'), hex('22222222222242228222222222222222'));
+local.append_operation(local.create_family_operation(1000n), 1n);
+local.append_operation(local.create_child_operation('Baby', undefined, undefined, 1001n), 2n);
+const localChild = JSON.parse(local.snapshot_json()).children[0].id;
+local.append_operation(local.log_breast_operation(hex(localChild), JSON.stringify(breast.segments), BigInt(breast.saved_at_ms)), 3n);
+const localFeed = JSON.parse(local.snapshot_json()).activities.find((row) => row.kind === 'feed.breast');
+assert.equal(Buffer.from(local.field_cbor(hex(localFeed.id), 100n)).toString('hex'), breast.field_100_cbor_hex);
+assert.deepEqual(localFeed.breastSegments, breast.segments);
+assert.throws(() => local.edit_breast_operation(
+  hex('0183f9d0000070008000000000000011'), hex(localFeed.id),
+  JSON.stringify(breast.segments), 100001n,
+));
+const correctedSegments = breast.segments.map((segment) => ({ ...segment }));
+correctedSegments[1].end_utc_ms = 98000;
+local.append_operation(local.edit_breast_operation(
+  hex(localChild), hex(localFeed.id), JSON.stringify(correctedSegments), 100001n,
+), 4n);
+const correctedFeed = JSON.parse(local.snapshot_json()).activities.find((row) => row.kind === 'feed.breast');
+assert.equal(correctedFeed.id, localFeed.id);
+assert.deepEqual(correctedFeed.breastSegments, correctedSegments);
+local.free();
 const envelope = (id) => hex(vectors.cases.find((entry) => entry.id === id).input.envelope_cbor_hex);
 const minorCase = vectors.cases.find((entry) => entry.id === 'CROSSMINORBYTE01');
 const sealedChild = seal_one(

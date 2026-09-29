@@ -196,8 +196,10 @@ def main(quick: bool = False) -> None:
     find(target, "Join a Family")
     tap(target, "New Family")
     tap(target, "Family options")
-    find(target, "Sharing controls")
-    tap(target, "Hide Family options")
+    # The preview sharing card can push developer controls below the fold on
+    # shorter viewports or larger text. Check the control through scrolling.
+    find(target, "Sharing controls", scroll=True)
+    tap(target, "Hide Family options", scroll=True)
     tap(target, "Add child", scroll=True)
     tap(target, "Child’s name", scroll=True)
     adb(target, "shell", "input", "text", "UITestChild")

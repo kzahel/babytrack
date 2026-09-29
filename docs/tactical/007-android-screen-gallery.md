@@ -93,3 +93,12 @@ Implementation and validation results will be recorded with each slice.
   (API 27), against minSdk 26. This work changes neither those resources nor
   the binding generator. These are separate compatibility follow-ups; lint
   is not currently part of the required CI job.
+
+- Existing UI harness issue: the latest pre-refactor CI run
+  [36619014402](https://github.com/kzahel/babytrack/actions/runs/36619014402)
+  passed the build/relay cases but failed the unscrolled `Sharing controls`
+  assertion after the preview sharing card put that row below the fold.
+  The first local walkthrough reached the same assertion. The smoke now
+  scrolls to that control and back to Family options, using its existing
+  scroll-aware lookup. This repairs a viewport assumption without changing
+  the product UI or increasing timeouts.

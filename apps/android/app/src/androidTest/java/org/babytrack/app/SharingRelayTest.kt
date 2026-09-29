@@ -21,10 +21,15 @@ import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import org.junit.Assert.assertArrayEquals
@@ -68,10 +73,15 @@ class SharingRelayTest {
 
     private fun openTab(label: Int) {
         val text = InstrumentationRegistry.getInstrumentation().targetContext.getString(label)
+        val tab = hasText(text) and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
         composeRule.waitUntil(25_000) {
-            composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodes(tab).fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onAllNodesWithText(text).onLast().performClick()
+        composeRule.onNode(tab).performSemanticsAction(SemanticsActions.OnClick)
+        composeRule.waitUntil(25_000) {
+            composeRule.onAllNodes(tab).fetchSemanticsNodes().singleOrNull()
+                ?.let { runCatching { it.config[SemanticsProperties.Selected] }.getOrDefault(false) } == true
+        }
     }
 
     private fun openFirstEntryActions() {
@@ -179,15 +189,20 @@ class SharingRelayTest {
                 composeRule.onAllNodesWithText("Draft first", substring = true)
                     .fetchSemanticsNodes().isNotEmpty()
             }
-            composeRule.onNodeWithText(context.getString(R.string.add_activity)).performClick()
-            composeRule.onNodeWithText(context.getString(R.string.log_bottle)).performClick()
+            composeRule.onNodeWithText(context.getString(R.string.add_activity))
+                .performScrollTo().performClick()
+            composeRule.onNodeWithText(context.getString(R.string.log_bottle))
+                .performScrollTo().performClick()
             composeRule.onNode(hasSetTextAction()).performTextInput("47")
             composeRule.onNodeWithContentDescription(context.getString(R.string.back)).performClick()
             composeRule.onNodeWithContentDescription(context.getString(R.string.switch_target))
                 .performClick()
             composeRule.onNodeWithText("Draft second").performClick()
-            composeRule.onNodeWithText(context.getString(R.string.add_activity)).performClick()
-            composeRule.onNodeWithText(context.getString(R.string.log_bottle)).performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithText(context.getString(R.string.add_activity))
+                .performScrollTo().performClick()
+            composeRule.onNodeWithText(context.getString(R.string.log_bottle))
+                .performScrollTo().performClick()
             val draft = composeRule.onNode(hasSetTextAction()).fetchSemanticsNode()
                 .config[SemanticsProperties.EditableText].text
             assertEquals("", draft)
@@ -955,7 +970,9 @@ class SharingRelayTest {
         ActivityScenario.launch<MainActivity>(link).use { scenario ->
             val label = context.getString(R.string.join_or_retry)
             composeRule.waitUntil(25_000) {
-                runCatching { composeRule.onNodeWithText(label).assertIsDisplayed() }.isSuccess
+                runCatching {
+                    composeRule.onNodeWithText(label).performScrollTo().assertIsDisplayed()
+                }.isSuccess
             }
             composeRule.onNodeWithText(label).assertIsDisplayed().performClick()
 

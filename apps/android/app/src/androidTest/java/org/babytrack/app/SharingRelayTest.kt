@@ -16,6 +16,8 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.hasSetTextAction
@@ -650,9 +652,16 @@ class SharingRelayTest {
             val shortId = pending.deviceId.joinToString("") { "%02x".format(it.toInt() and 255) }.take(8)
             val label = context.getString(R.string.device_short_id, shortId)
             val button = context.getString(R.string.remove_pending_device, label)
-            composeRule.waitUntil(25_000) {
-                composeRule.onAllNodesWithText(context.getString(R.string.show_family_access))
-                    .fetchSemanticsNodes().isNotEmpty()
+            val familyAccess = context.getString(R.string.show_family_access)
+            try {
+                composeRule.waitUntil(25_000) {
+                    composeRule.onAllNodesWithText(familyAccess).fetchSemanticsNodes().isNotEmpty()
+                }
+            } catch (failure: Throwable) {
+                throw AssertionError(
+                    "Family access missing for ${familyHex.take(8)}; " +
+                        composeRule.onRoot().printToString(), failure,
+                )
             }
             composeRule.onNodeWithText(context.resources.getQuantityString(
                 R.plurals.shared_pending_device_count, 1, 1)).performScrollTo().assertIsDisplayed()

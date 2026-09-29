@@ -14,7 +14,7 @@ export const copy = {
   feeds: 'Feeds', diapers: 'Diapers', children: 'Children',
   localNotice: 'Local preview · this browser only', sharedNotice: 'Encrypted Family · synced through relay', birthUnknown: 'Age unknown',
   loading: 'Loading…', welcomeTitle: 'A calmer place to keep the little details.',
-  welcomeDetail: 'This first web slice saves locally in this browser profile.',
+  welcomeDetail: 'A new Family stays in this browser profile. Use an invitation below to join an existing shared Family.',
   addChildPrompt: 'Add a child to start tracking.', type: 'Type',
   switchFamily: 'Switch Family',
   back: 'Back', breastFeed: 'Breastfeed', leftBreast: 'Left breast', rightBreast: 'Right breast',

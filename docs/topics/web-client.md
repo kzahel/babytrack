@@ -24,10 +24,15 @@ needs another invitation. A file backup will restore saved records into a
 new Family, not reinstate original shared access.
 
 The current preview creates local Families and children and logs diaper,
-whole-millilitre bottle, and note entries. It replays durable IndexedDB
-operations through the Rust wasm projection after reload. The web app does
-not yet expose sharing, backup, correction, or the full Android capture set.
-It labels local-only state and does not claim a relay upload occurred.
+whole-millilitre bottle, note, and timed left/right breast feeds. The breast
+timer starts or switches sides on tap, pauses on a second tap of the active
+side, excludes paused time, and keeps its unsaved, target-scoped draft across
+reloads in localStorage. Saving writes one atomic segment list through the
+Rust core and clears the draft only after a durable append. History can edit
+sides, active durations, and pauses on that same event ID. IndexedDB replays
+saved operations through the Rust wasm projection after reload. The web app
+does not yet expose sharing, backup, or the full Android capture set. It
+labels local-only state and does not claim a relay upload occurred.
 
 The browser enrollment adapter currently requires invitation relay origin to
 equal `location.origin`. Product web and relay routes therefore share one

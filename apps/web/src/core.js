@@ -61,3 +61,15 @@ export async function logActivity(family, child, type, values) {
     throw new Error('Unknown activity');
   });
 }
+
+export async function logBreastFeed(family, child, segments) {
+  await append(family, (projection) => projection.log_breast_operation(
+    bytes(child), JSON.stringify(segments), BigInt(Date.now()),
+  ));
+}
+
+export async function editBreastFeed(family, child, activity, segments) {
+  await append(family, (projection) => projection.edit_breast_operation(
+    bytes(child), bytes(activity), JSON.stringify(segments), BigInt(Date.now()),
+  ));
+}

@@ -26,8 +26,9 @@ owns the remaining caregiver UX and physical-phone validation. No physical
 phone result or public release is claimed.
 
 The first responsive web preview uses the Rust wasm core and IndexedDB for
-local Family/child creation, diaper, bottle, and note logging, and History
-after reload. Its narrow and wide layouts follow the same Today, History,
+local Family/child creation, diaper, bottle, note, and timed left/right breast
+feeding with pause and same-entry correction, and History after reload. Its
+narrow and wide layouts follow the same Today, History,
 and Family destinations as Android. Web sharing and file recovery remain M2
 work; the current UI labels its Families local-only. See
 [006](docs/tactical/006-m2-web.md).

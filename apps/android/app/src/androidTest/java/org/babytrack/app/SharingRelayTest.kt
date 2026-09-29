@@ -607,10 +607,9 @@ class SharingRelayTest {
         val origin = "http://localhost:8787"
         val managerDb = context.filesDir.resolve("families.db")
         val recipientDb = context.filesDir.resolve("pending-ui-recipient-${System.nanoTime()}.db")
-        val family = NativeLocalStore.open(managerDb.absolutePath).use { local ->
+        val (family, child) = NativeLocalStore.open(managerDb.absolutePath).use { local ->
             val created = local.createFamily(System.currentTimeMillis())
-            local.addChild(created, "Everyday child", System.currentTimeMillis())
-            created
+            created to local.addChild(created, "Everyday child", System.currentTimeMillis())
         }
         val fragment = ShareCoordinator(context, managerDb.absolutePath).use { sharing ->
             sharing.promote(family, origin, publicKey)
@@ -625,7 +624,7 @@ class SharingRelayTest {
         context.getSharedPreferences("shared_relay_origins", android.content.Context.MODE_PRIVATE)
             .edit().putString(familyHex, origin).commit()
         context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE)
-            .edit().putString("family", familyHex).commit()
+            .edit().putString("family", familyHex).putString("child", child.hex()).commit()
         ActivityScenario.launch(MainActivity::class.java).use {
             openTab(R.string.nav_family)
             val shortId = pending.deviceId.joinToString("") { "%02x".format(it.toInt() and 255) }.take(8)

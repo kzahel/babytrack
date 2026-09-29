@@ -89,6 +89,45 @@ fn published_readable_file_parses_and_rejects_corruption() {
 }
 
 #[test]
+fn published_protected_file_opens_and_rejects_tampering() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../tests/vectors/crypto-v1.json")).unwrap();
+    let item = fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == "FILEBYTE01")
+        .unwrap();
+    let protected = hex(item["protected_file_hex"].as_str().unwrap());
+    let readable = hex(item["readable_file_hex"].as_str().unwrap());
+    assert!(protected.starts_with(b"BTBK1"));
+    assert_eq!(
+        &protected[5..5 + item["protected_header_hex"].as_str().unwrap().len() / 2],
+        hex(item["protected_header_hex"].as_str().unwrap())
+    );
+    assert_eq!(
+        open_protected(
+            &protected,
+            item["password"].as_str().unwrap(),
+            512 * 1024 * 1024
+        )
+        .unwrap(),
+        readable
+    );
+    assert!(open_protected(&protected, "wrong", 512 * 1024 * 1024).is_err());
+    let mut tampered = protected;
+    *tampered.last_mut().unwrap() ^= 1;
+    assert!(
+        open_protected(
+            &tampered,
+            item["password"].as_str().unwrap(),
+            512 * 1024 * 1024
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn newline_dense_file_rejects_before_unbounded_line_index() {
     let mut bytes = Vec::with_capacity(2_000_010);
     bytes.extend_from_slice(b"{}\n");

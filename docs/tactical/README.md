@@ -31,4 +31,5 @@ tactical with its current status.
 - [007: Android screen extraction and fixture gallery](007-android-screen-gallery.md)
   — implementation and local validation complete; explicit Android screen
   boundaries, previews, and a scrolling fixture gallery are delivered, with
-  a verified CI artifact. Hosted relay/recovery result is recorded in 007.
+  a verified CI artifact. The hosted first-install join regression and its
+  correction are recorded in 007.

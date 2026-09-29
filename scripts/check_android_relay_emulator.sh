@@ -47,7 +47,18 @@ fi
 adb reverse tcp:8787 tcp:8787
 adb install -r apps/android/app/build/outputs/apk/debug/app-debug.apk
 adb install -r apps/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+# Exercise invitation joining with no existing Family independently of suite order.
+# The full suite below starts with another clean installation state.
+test_class="${BABYTRACK_ANDROID_TEST_CLASS:-org.babytrack.app.SharingRelayTest}"
+if [[ "$test_class" == org.babytrack.app.SharingRelayTest ]]; then
+  adb shell pm clear org.babytrack.app >/dev/null
+  adb shell am instrument -w -e class \
+    'org.babytrack.app.SharingRelayTest#invitationLinkStartsOneActionJoinThroughTheUi' \
+    -e relayPublicKey "$public_key" \
+    org.babytrack.app.test/androidx.test.runner.AndroidJUnitRunner | tee "$scratch/first-join.txt"
+  grep -Eq '^OK \(1 test\)$' "$scratch/first-join.txt"
+fi
 adb shell pm clear org.babytrack.app >/dev/null
-adb shell am instrument -w -e class "${BABYTRACK_ANDROID_TEST_CLASS:-org.babytrack.app.SharingRelayTest}" -e relayPublicKey "$public_key" \
+adb shell am instrument -w -e class "$test_class" -e relayPublicKey "$public_key" \
   org.babytrack.app.test/androidx.test.runner.AndroidJUnitRunner | tee "$scratch/instrument.txt"
 grep -Eq '^OK \([1-9][0-9]* tests?\)$' "$scratch/instrument.txt"

@@ -111,7 +111,17 @@ passed Rust, both native jobs, browser checks, and the Android APK/unit/gallery
 job. The [gallery artifact](https://github.com/kzahel/babytrack/actions/runs/36625490783/artifacts/11060901799)
 contains all 31 cases, 124 variants, and 214 images from Linux. Its downloaded
 manifest and representative renders were inspected locally. The hosted
-real-relay/recovery job is still running; its final result is not claimed here.
+real-relay job failed the invitation-link UI case: extraction had added a
+Family-null guard to the join callback even though joining must work before
+a Family exists. The local suite had an existing Family at that point and
+missed it. The guard is removed, along with three unused guards on callbacks
+that already receive a shared snapshot. The relay runner now exercises the
+invitation-link case on cleared app data before clearing again for the full
+28-case suite. This makes first-install joining independent of test order.
+The focused clean-install case and all 28 suite cases pass locally after
+the correction, as do Android unit tests and both APK builds. The final push starts a fresh required CI run with the correction and
+stronger relay check. The earlier run is recorded as failed, not treated
+as green.
 
 Local verification also passed:
 

@@ -837,7 +837,6 @@ internal fun TrackerRoute(
                                             receivedFragment = it
                                         },
                                     onJoinOrRetry = action@{
-                                            val family = family ?: return@action
                                             joinInProgress = true
                                             joinStage = context.getString(R.string.join_preparing)
                                             scope.launch {
@@ -940,14 +939,12 @@ internal fun TrackerRoute(
                                             showAccessControls = !showAccessControls
                                         },
                                     onNameDevice = action@{ target, snapshot ->
-                                            val family = family ?: return@action
                                             val key =
                                                 deviceLabelKey(snapshot.family.familyId, target)
                                             deviceLabelTarget = key
                                             deviceLabelDraft = deviceLabels[key].orEmpty()
                                         },
                                     onSyncShared = action@{ snapshot ->
-                                            val family = family ?: return@action
                                             scope.launch {
                                                 runCatching {
                                                         withContext(Dispatchers.IO) {
@@ -1006,7 +1003,6 @@ internal fun TrackerRoute(
                                     onInviteMember = action@{ inviteAsManager = false },
                                     onInviteManager = action@{ inviteAsManager = true },
                                     onCreateInvite = action@{ snapshot ->
-                                            val family = family ?: return@action
                                             val invitedFamily = snapshot.family
                                             val inviteRole =
                                                 if (inviteAsManager) 2u.toUByte() else 1u.toUByte()

@@ -3,7 +3,7 @@
   import { copy as c, ageLabel } from './strings.js';
   import { families, createFamily, snapshot, addChild, logActivity, logBreastFeed, editBreastFeed,
     rememberInvitation, pendingInvitations, continueInvitation, syncFamily,
-    familySyncStatus, copyRemovedFamily } from './core.js';
+    familySyncStatus, copyRemovedFamily, exportFamily, restoreFamily } from './core.js';
   import { readDraft, persistDraft, tapSide, completedSegments, sideTotals,
     durationLabel, editableSegments, rebuiltSegments } from './breast-timer.js';
 
@@ -144,6 +144,29 @@
   }
   async function openPrivateCopy() {
     if (privateCopy) await selectFamily(privateCopy);
+  }
+  async function downloadBackup() {
+    await run(async () => {
+      const readable = await exportFamily(family);
+      const url = URL.createObjectURL(new Blob([readable], { type: 'application/x-ndjson' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `babytrack-${family.slice(0, 8)}.jsonl`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    });
+  }
+  async function restoreBackup(file) {
+    if (!file) return;
+    await run(async () => {
+      family = await restoreFamily(file);
+      localStorage.setItem('babytrack-family', family);
+      familyRows = await families();
+      await refresh();
+      screen = ''; tab = 'today';
+    });
   }
   function selectChild(value) {
     child = value;
@@ -433,6 +456,14 @@
               {#each familyRows as row, index}<option value={row.family}>{c.familyNumber(index + 1)}</option>{/each}
             </select></label>
             <button class="secondary" onclick={makeFamily}>＋ {c.createFamily}</button>
+          </div>
+          <div class="panel"><h2>{c.backup}</h2><p class="muted">{c.backupDescription}</p>
+            <button class="secondary" onclick={downloadBackup}>{c.exportBackup}</button>
+            <label>{c.restoreBackup}<input type="file" accept=".jsonl,.json" onchange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = '';
+              restoreBackup(file);
+            }} /></label>
           </div>
           <div class="panel join-panel"><h2>{c.joinFamily}</h2><p class="muted">{c.invitationHint}</p>
             <form onsubmit={(event) => { event.preventDefault(); startJoin(); }}>

@@ -370,8 +370,9 @@ touches an app store until M5.
    the Family switcher. The responsive local preview and native-managed
    browser join/sync flow, including later key epochs, are in
    [006](tactical/006-m2-web.md); verified removal and private-copy recovery
-   also pass a real-relay flow. Web-origin sharing, file recovery, and the web
-   trust-boundary gate remain open. A
+   also pass a real-relay flow, as does readable file recovery into a new
+   local Family. Web-origin sharing and the web trust-boundary gate remain
+   open. A
    disposable-data, opt-in preview may be deployed early for flow checks
    while public hosting remains M5.
 4. **M3, iOS on our own devices.** Parity with Android, including Live

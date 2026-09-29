@@ -25,5 +25,5 @@ tactical with its current status.
   accessibility, and recovery work.
 - [006: M2 responsive web client](006-m2-web.md) — local preview and
   native-managed first, later, and rotated-epoch joins implemented; web-origin
-  sharing, file recovery, and web trust-boundary gate remain open; verified
-  removal and private copy pass the real-relay UI flow.
+  sharing and web trust-boundary gate remain open; verified removal, private
+  copy, and file recovery pass browser UI flows.

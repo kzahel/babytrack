@@ -13,6 +13,20 @@ const transactionDone = (transaction) => new Promise((resolve, reject) => {
   transaction.onabort = () => reject(transaction.error || new Error('transaction aborted'));
 });
 
+function validatedRows(wasm, family, device, sourceOperations) {
+  const projection = new wasm.WasmLocalFamily(bytes(family), bytes(device));
+  const rows = [];
+  try {
+    for (const source of sourceOperations) {
+      const operation = Uint8Array.from(source);
+      const index = rows.length + 1;
+      const operationId = hex(projection.append_operation(operation, BigInt(index)));
+      rows.push({ family, index, operationId, operation });
+    }
+    return rows;
+  } finally { projection.free(); }
+}
+
 export class LocalStore {
   constructor(database, wasm) {
     this.database = database;
@@ -60,16 +74,7 @@ export class LocalStore {
 
   async createRemovalCopy(sourceFamily, transitionId, family, device, sourceOperations) {
     if (family === sourceFamily) throw new Error('Independent copy needs a new Family ID');
-    const operations = sourceOperations.map((operation) => Uint8Array.from(operation));
-    const projection = new this.wasm.WasmLocalFamily(bytes(family), bytes(device));
-    const rows = [];
-    try {
-      for (const operation of operations) {
-        const index = rows.length + 1;
-        const operationId = hex(projection.append_operation(operation, BigInt(index)));
-        rows.push({ family, index, operationId, operation });
-      }
-    } finally { projection.free(); }
+    const rows = validatedRows(this.wasm, family, device, sourceOperations);
     const write = this.database.transaction(['families', 'operations', 'copies'], 'readwrite');
     const done = transactionDone(write);
     const existing = await requestResult(write.objectStore('copies').get([sourceFamily, transitionId]));
@@ -80,6 +85,16 @@ export class LocalStore {
     write.objectStore('families').add({ family, device, lastIndex: rows.length });
     for (const row of rows) write.objectStore('operations').add(row);
     write.objectStore('copies').add({ sourceFamily, transitionId, family });
+    await done;
+    return family;
+  }
+
+  async createRestoredFamily(family, device, sourceOperations) {
+    const rows = validatedRows(this.wasm, family, device, sourceOperations);
+    const write = this.database.transaction(['families', 'operations'], 'readwrite');
+    const done = transactionDone(write);
+    write.objectStore('families').add({ family, device, lastIndex: rows.length });
+    for (const row of rows) write.objectStore('operations').add(row);
     await done;
     return family;
   }

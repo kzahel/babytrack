@@ -1734,6 +1734,17 @@ impl WasmLocalFamily {
         web_actions::local_snapshot(&self.projection)
     }
 
+    pub fn readable_file(&self, snapshot_utc_ms: i64) -> Result<Vec<u8>, JsError> {
+        portable_file::encode_readable(
+            self.family_id,
+            snapshot_utc_ms,
+            None,
+            false,
+            self.projection.records(),
+        )
+        .map_err(debug_error)
+    }
+
     pub fn field_cbor(&self, record_id: &[u8], field_id: u64) -> Result<Vec<u8>, JsError> {
         let record_id = fixed(record_id, "record ID")?;
         Ok(self

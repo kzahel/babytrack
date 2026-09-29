@@ -2,7 +2,7 @@ import init, * as wasm from './generated/babytrack_core_wasm.js';
 import wasmUrl from './generated/babytrack_core_wasm_bg.wasm?url';
 import { LocalStore } from '../../../core-wasm/web/local-store.js';
 import { sharedFamilies, sharedSnapshot, syncShared, pendingJoins, rememberJoin,
-  advanceJoin, sharedStatus, writeShared, copyRemoved } from './shared-client.js';
+  advanceJoin, sharedStatus, writeShared, copyRemoved, exportSharedReadable } from './shared-client.js';
 
 const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
 const bytes = (value) => Uint8Array.from(value.match(/../g) || [], (pair) => parseInt(pair, 16));
@@ -77,6 +77,30 @@ export async function familySyncStatus(family) {
 export async function copyRemovedFamily(family) {
   await open();
   return copyRemoved(wasm, family);
+}
+
+export async function exportFamily(family) {
+  await open();
+  if (await isShared(family)) return exportSharedReadable(wasm, family);
+  const projection = await store.load(family);
+  try { return projection.readable_file(BigInt(Date.now())); }
+  finally { projection.free(); }
+}
+
+export async function restoreFamily(file) {
+  if (file.size > 64 * 1024 * 1024) throw new Error('Choose a backup under 64 MB');
+  const readable = new Uint8Array(await file.arrayBuffer());
+  await open();
+  const ids = wasm.new_local_ids();
+  const family = hex(ids.slice(0, 16));
+  const device = hex(ids.slice(16));
+  const restore = new wasm.WasmReadableRestore(
+    readable, ids.slice(0, 16), ids.slice(16), BigInt(Date.now()));
+  try {
+    const operations = Array.from({ length: restore.count() }, (_, index) => restore.operation(index));
+    await store.createRestoredFamily(family, device, operations);
+  } finally { restore.free(); }
+  return family;
 }
 
 async function append(family, prepare) {

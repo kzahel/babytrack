@@ -1,8 +1,8 @@
 # Web client
 
-Status: M2 local tracking, native-managed shared joining, and verified
-removal with a browser private copy are implemented; web-origin sharing,
-file recovery, and the security gate remain open.
+Status: M2 local tracking, native-managed shared joining, verified removal,
+and readable file recovery are implemented; web-origin sharing and the
+security gate remain open.
 The [MVP plan](../mvp-plan.md#milestones) owns milestone scope and the
 [Family sharing contract](family-sharing-and-trust.md) owns access promises.
 [006](../tactical/006-m2-web.md) owns delivery evidence.
@@ -22,8 +22,8 @@ Each browser profile is a separate device credential. IndexedDB stores local
 operations and, after enrollment, verified authority, keys, and exact pending
 wire bytes. UI Family selection in localStorage contains no secret. Clearing
 site data loses that installation's credentials; another browser profile
-needs another invitation. A file backup will restore saved records into a
-new Family, not reinstate original shared access.
+needs another invitation. A readable file backup restores saved current
+state into a new local Family; it never reinstates original shared access.
 
 The current preview creates local Families and children and logs diaper,
 whole-millilitre bottle, note, and timed left/right breast feeds. The breast
@@ -50,7 +50,7 @@ pending. A device with no pending edits may make that copy explicitly.
 The copy uses the Rust portable current-state model and an atomic IndexedDB
 mapping so a retry does not create another Family. Network failure alone
 does not imply removal. Creating a shared Family or issuing invitations from
-web, file export/recovery, and the full Android
+web and the full Android
 capture set are still open.
 
 The browser enrollment adapter currently requires invitation relay origin to
@@ -72,9 +72,10 @@ second browser joins after the first and reads older history. After a
 verified device removal rotates the key epoch, a third browser joins with a
 later-epoch grant and recovers its earlier keys from the committed keyring.
 The same test verifies signed removal, an offline pending edit, automatic
-private copy, explicit copy with no pending edits, and reload. M2 still needs
-web-origin invitations, file
-recovery, and browser-profile loss flows in the product UI.
+private copy, explicit copy with no pending edits, shared readable export,
+restore into a new Family, and reload. The local UI smoke covers local file
+restore and a corrupt file that leaves the active Family intact. M2 still
+needs web-origin invitations and browser-profile loss flows in the product UI.
 
 Reconsider route density after tablet/desktop spot checks, and revisit an
 optional local app lock if shared-computer use makes profile access confusing.

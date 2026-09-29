@@ -94,6 +94,7 @@ async function run() {
     holder('grant');
     await page.getByRole('button', { name: 'Resume joining' }).click();
     await page.getByText('Add a child to start tracking.').waitFor();
+    const sharedFamily = await page.evaluate(() => localStorage.getItem('babytrack-family'));
     holder('write');
     await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();
     await page.getByRole('button', { name: 'Sync now' }).click();
@@ -151,6 +152,18 @@ async function run() {
     await page.getByText('RemovedPendingMarker').waitFor();
     await page.reload();
     await page.getByText('RemovedPendingMarker').waitFor();
+    await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();
+    await page.getByLabel('Switch Family').selectOption(sharedFamily);
+    await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();
+    const backupReady = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export readable backup' }).click();
+    const backup = fs.readFileSync(await (await backupReady).path());
+    await page.getByLabel('Restore file into a new Family').setInputFiles({
+      name: 'shared.jsonl', mimeType: 'application/x-ndjson', buffer: backup,
+    });
+    await page.waitForFunction((oldFamily) =>
+      localStorage.getItem('babytrack-family') !== oldFamily, sharedFamily);
+    await page.getByText('RemovedPendingMarker').waitFor();
     const rotatedIssue = spawnSync(holderBin, ['later_issue', manager, relayOrigin, origin],
       { encoding: 'utf8' });
     assert.equal(rotatedIssue.status, 0, `Native rotated issue: ${rotatedIssue.stderr}`);
@@ -181,7 +194,7 @@ async function run() {
     await second.close();
     assert.deepEqual(failures, []);
     passed = true;
-    console.log('Web joins, rotated keys, automatic and explicit removal copies, offline edit, and reload passed');
+    console.log('Web joins, rotated keys, removal copies, shared backup restore, offline edit, and reload passed');
   } finally {
     if (!passed) {
       console.error('Relay log:', fs.readFileSync(relayLog, 'utf8'));

@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const { chromium } = require('playwright');
 
 const origin = process.argv[2];
@@ -68,8 +69,36 @@ if (!origin) throw new Error('pass the preview origin');
       .getByRole('button', { name: 'Family' }).click();
     await page.getByLabel('Switch Family').selectOption(firstFamily);
     await page.getByText('Bottle · 90 mL').waitFor();
+    await page.locator('.side-nav').getByRole('button', { name: 'Family' }).click();
+    let download;
+    try {
+      [download] = await Promise.all([
+        page.waitForEvent('download', { timeout: 8000 }),
+        page.getByRole('button', { name: 'Export readable backup' }).click({ timeout: 8000 }),
+      ]);
+    } catch (cause) {
+      throw new Error(`Backup export: ${cause.message}; screen: ${await page.locator('main').innerText()}`);
+    }
+    const backup = fs.readFileSync(await download.path());
+    assert.match(backup.toString('utf8'), /"kind":"babytrack-backup"/);
+    await page.getByLabel('Restore file into a new Family').setInputFiles({
+      name: 'family.jsonl', mimeType: 'application/x-ndjson', buffer: backup,
+    });
+    await page.waitForFunction((oldFamily) =>
+      localStorage.getItem('babytrack-family') !== oldFamily, firstFamily);
+    await page.reload();
+    await page.getByText('Bottle · 90 mL').waitFor();
+    await page.getByText('Breastfeed · left 1:05 · right 0:15').waitFor();
+    const restoredFamily = await page.evaluate(() => localStorage.getItem('babytrack-family'));
+    await page.locator('.side-nav').getByRole('button', { name: 'Family' }).click();
+    await page.getByLabel('Restore file into a new Family').setInputFiles({
+      name: 'broken.jsonl', mimeType: 'application/x-ndjson', buffer: backup.subarray(0, backup.length - 1),
+    });
+    await page.getByRole('alert').waitFor();
+    assert.equal(await page.evaluate(() => localStorage.getItem('babytrack-family')),
+      restoredFamily, 'corrupt file changed the active Family');
     assert.deepEqual(failures, []);
     await context.close();
-    console.log('Responsive web local tracking, reload, and Family isolation passed');
+    console.log('Responsive web local tracking, backup restore, reload, and Family isolation passed');
   } finally { await browser.close(); }
 })().catch((error) => { console.error(error); process.exitCode = 1; });

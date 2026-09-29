@@ -35,6 +35,16 @@ export async function sharedSnapshot(wasm, family) {
   } finally { store.close(); }
 }
 
+export async function exportSharedReadable(wasm, family) {
+  const store = await PublicStore.open(wasm, publicDatabase);
+  try {
+    const removal = await store.removedStatus(family);
+    const ready = await store.loadInitialReadySaved(family);
+    try { return ready.readable_file(BigInt(Date.now()), !!removal?.knownGap); }
+    finally { ready.free(); }
+  } finally { store.close(); }
+}
+
 export async function syncShared(wasm, family) {
   const store = await PublicStore.open(wasm, publicDatabase);
   try {

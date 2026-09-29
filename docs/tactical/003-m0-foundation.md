@@ -1816,6 +1816,16 @@ no counterexample for relay plaintext exposure, forged manager authority,
 cross-Family access, or unknown-upload false success under the stated trust
 limits. No physical-phone or power-loss behavior was credited.
 
+The browser now replays an honest rotation and saves its verified keyring
+across reload. A real-relay case stages an epoch-one edit before learning the
+rotation, receives a signed stale rejection, checks the exact envelope and
+rejection-time authority prefix in Rust, and atomically returns the operation
+to the browser queue for epoch-two sealing. Tampered rejection bytes keep the
+original pending batch. This repairs the named browser outbox blocker for the
+tested surviving initial manager. Dynamic mixed-client rotation, broader
+rejection/restart cases, and the byte applicability matrix remain M0 work;
+the failed review has not been superseded by an independent gate recheck.
+
 ## Completion condition
 
 All slice gates pass in CI and on the designated local testbeds, the

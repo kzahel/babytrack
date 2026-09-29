@@ -403,9 +403,57 @@ export class PublicStore {
       }
       await post(`/v1/families/${family}/batches`, pending.envelope);
       progress = await this.pullSaved(family, get);
-      if (await this.pendingInitial(family)) throw new Error('Accepted batch not yet verified');
+      if (await this.pendingInitial(family)) {
+        if (!await this.rebaseRejectedStaleInitial(family, get)) {
+          throw new Error('Pending batch has no verified acceptance or stale rejection');
+        }
+        await this.hydrateControlObjectsSaved(family, get);
+      }
     }
     return progress;
+  }
+
+  async rebaseRejectedStaleInitial(family, get) {
+    const pending = await this.pendingInitial(family);
+    if (!pending) return false;
+    const credential = await this.initialCredential(family);
+    const verifier = await this.load(family);
+    let cursor, head, rebased;
+    try {
+      const path = `/v1/families/${family}/batch-results/${hex(verifier.batch_id(pending.envelope))}`;
+      const auth = verifier.sign_get(credential.deviceId, credential.signingSeed,
+        path, crypto.getRandomValues(new Uint8Array(16)));
+      const result = await get(path, auth);
+      rebased = verifier.verified_stale_rejection(pending.envelope, result, credential.deviceId);
+      cursor = Number(verifier.last_cursor());
+      head = hex(verifier.head_hash());
+    } finally { verifier.free(); }
+    if (!rebased) return false;
+    return new Promise((resolve, reject) => {
+      const transaction = this.database.transaction(['families', 'outbox', 'queued'], 'readwrite');
+      let failure;
+      transaction.oncomplete = () => resolve(true);
+      transaction.onerror = () => reject(failure || transaction.error);
+      transaction.onabort = () => reject(failure || transaction.error || new Error('transaction aborted'));
+      const metadataRequest = transaction.objectStore('families').get(family);
+      const pendingRequest = transaction.objectStore('outbox').get(family);
+      const queuedRequest = transaction.objectStore('queued').get(family);
+      queuedRequest.onsuccess = () => {
+        const metadata = metadataRequest.result;
+        const current = pendingRequest.result;
+        if (!metadata || metadata.cursor !== cursor || metadata.head !== head ||
+            !current || !sameBytes(current.envelope, pending.envelope) ||
+            !sameBytes(current.operation, pending.operation)) {
+          failure = new Error('Browser authority or outbox changed before stale rebase');
+          transaction.abort();
+          return;
+        }
+        const operations = queuedRequest.result?.operations || [];
+        transaction.objectStore('queued').put({ family,
+          operations: [Uint8Array.from(pending.operation), ...operations] });
+        transaction.objectStore('outbox').delete(family);
+      };
+    });
   }
 
   async hydrateGenesis(family, deviceId, signingSeed, get) {

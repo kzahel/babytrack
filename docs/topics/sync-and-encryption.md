@@ -366,10 +366,13 @@ after rotation and reload; a tampered keyring leaves the ready cursor at the
 earlier epoch. A disposable real relay now serves the fixture chain to
 Chromium, including the signed batch and rotation objects. The browser
 verifies them, writes a new epoch-two batch, and reopens at its accepted
-cursor after reload. This does not yet prove a dynamic browser/native
-rotation or resolve an uncertain old-epoch outbox batch. Browser admission after
-rotation, queued-edit repair after rejection, and broader independent
-CLI/browser fault coverage remain open.
+cursor after reload. The live relay browser case also stages an epoch-one
+edit before observing rotation, verifies the relay's signed stale rejection
+against the exact pending envelope and saved authority prefix, then atomically
+returns its operation to the queue and reseals it under epoch two. A tampered
+result leaves the exact pending bytes untouched. Dynamic browser/native
+rotation, browser admission after rotation, other rejection kinds, and broader
+independent CLI/browser fault coverage remain open.
 The first Android sharing flow uses foreground polling and scheduled
 background work. FCM and APNs may later provide empty background wakes through
 app-owned interfaces to reduce latency when an app is suspended. A missed

@@ -1461,20 +1461,35 @@ async function run() {
       const family = await store.begin(bytes(data.genesis), bytes(data.relayPublic));
       await store.saveInitialCredential(family, bytes(data.device), bytes(data.seed),
         bytes(data.key), bytes(data.agreement));
-      const progress = await store.pullSaved(family, relayGet);
+      // Stage while the browser knows only epoch one. The relay has already
+      // rotated, so these exact bytes must receive a signed stale rejection.
       const genesisObjects = await store.hydrateGenesisSaved(family, relayGet);
+      const stale = await store.stageInitial(family, bytes(data.operation));
+      const progress = await store.pullSaved(family, relayGet);
       const controlObjects = await store.hydrateControlObjectsSaved(family, relayGet);
       const ready = await store.loadInitialReadySaved(family);
       const result = { ...progress, genesisObjects, controlObjects,
         readyCursor: Number(ready.last_cursor()),
         child: ready.record_type(bytes(data.child)) };
       ready.free();
-      await store.stageInitial(family, bytes(data.operation));
+      await relayPost(`/v1/families/${family}/batches`, stale.envelope);
+      const verifier = await store.load(family);
+      const resultPath = `/v1/families/${family}/batch-results/${Array.from(verifier.batch_id(stale.envelope),
+        (value) => value.toString(16).padStart(2, '0')).join('')}`;
+      const auth = verifier.sign_get(bytes(data.device), bytes(data.seed), resultPath,
+        crypto.getRandomValues(new Uint8Array(16)));
+      const tampered = Uint8Array.from(await relayGet(resultPath, auth));
+      tampered[tampered.length - 1] ^= 1;
+      result.tamperKept = !(await store.rebaseRejectedStaleInitial(family,
+        async () => tampered)) && !!(await store.pendingInitial(family));
+      verifier.free();
       const upload = await store.uploadInitial(family, relayPost, relayGet);
       const after = await store.loadInitialReadySaved(family);
       result.uploadCursor = upload.cursor;
       result.afterCursor = Number(after.last_cursor());
       result.managerRecord = after.record_type(bytes(family));
+      result.resealed = !(await store.pendingInitial(family)) &&
+        stale.envelope.length > 0 && (await store.queuedInitial(family)).length === 0;
       after.free();
       store.close();
       return result;
@@ -1488,7 +1503,8 @@ async function run() {
     });
     assert.deepEqual(liveRotation, { cursor: 9, noMoreVisible: true,
       genesisObjects: 1, controlObjects: 10, readyCursor: 9, child: 'child',
-      uploadCursor: 10, afterCursor: 10, managerRecord: 'family' });
+      uploadCursor: 10, afterCursor: 10, managerRecord: 'family', resealed: true,
+      tamperKept: true });
     await page.reload();
     const liveRotationReload = await page.evaluate(async () => {
       const wasm = await import('/babytrack_core_wasm.js');

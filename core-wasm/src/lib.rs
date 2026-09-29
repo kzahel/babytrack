@@ -14,7 +14,7 @@ use babytrack_core::{
     crypto,
     operation::Operation,
     projection::LocalProjection,
-    proof, ready_replay,
+    proof, ready_replay, session,
     sync_wire::{self, LogPage},
 };
 use wasm_bindgen::prelude::*;
@@ -38,6 +38,8 @@ pub struct WasmLocalFamily {
 #[wasm_bindgen]
 pub struct WasmPublicFamily {
     chain: ControlChain,
+    relay_public_key: [u8; 32],
+    prefix: BTreeMap<u64, ControlChain>,
 }
 
 /// Keyless browser invitation control replay. Each page is checked by the
@@ -847,16 +849,24 @@ impl WasmLogPage {
 impl WasmPublicFamily {
     #[wasm_bindgen(constructor)]
     pub fn new(genesis_bytes: &[u8], relay_public_key: &[u8]) -> Result<Self, JsError> {
+        let relay_public_key = fixed(relay_public_key, "relay public key")?;
         let chain =
-            ControlChain::from_genesis(genesis_bytes, fixed(relay_public_key, "relay public key")?)
-                .map_err(debug_error)?;
-        Ok(Self { chain })
+            ControlChain::from_genesis(genesis_bytes, relay_public_key).map_err(debug_error)?;
+        let prefix = BTreeMap::from([(chain.last_global_cursor(), chain.clone())]);
+        Ok(Self {
+            chain,
+            relay_public_key,
+            prefix,
+        })
     }
 
     pub fn apply_control(&mut self, committed_bytes: &[u8]) -> Result<(), JsError> {
         self.chain
             .apply_control(committed_bytes)
-            .map_err(debug_error)
+            .map_err(debug_error)?;
+        self.prefix
+            .insert(self.chain.last_global_cursor(), self.chain.clone());
+        Ok(())
     }
 
     pub fn apply_batch(
@@ -867,7 +877,10 @@ impl WasmPublicFamily {
         self.chain
             .apply_public_batch(envelope_bytes, receipt_bytes)
             .map(|_| ())
-            .map_err(debug_error)
+            .map_err(debug_error)?;
+        self.prefix
+            .insert(self.chain.last_global_cursor(), self.chain.clone());
+        Ok(())
     }
 
     pub fn family_id(&self) -> Vec<u8> {
@@ -990,6 +1003,72 @@ impl WasmPublicFamily {
                 .batch_id
                 .to_vec(),
         )
+    }
+
+    /// A stale batch can be resealed only after a relay-signed rejection is
+    /// bound to this exact envelope and its stated authority prefix is saved.
+    pub fn verified_stale_rejection(
+        &self,
+        envelope: &[u8],
+        result_bytes: &[u8],
+        device_id: &[u8],
+    ) -> Result<bool, JsError> {
+        let Some(receipt_bytes) = sync_wire::BatchResult::decode(result_bytes)
+            .map_err(debug_error)?
+            .receipt_bytes
+        else {
+            return Ok(false);
+        };
+        let receipt = match session::verify_rejected_receipt(&receipt_bytes, &self.relay_public_key)
+        {
+            Ok(receipt) => receipt,
+            // An accepted result leaves the exact outbox bytes uncertain until
+            // their accepted log entry is verified by ordinary replay.
+            Err(_) => return Ok(false),
+        };
+        if receipt.reason != 1 {
+            return Ok(false);
+        }
+        let device_id = fixed(device_id, "device ID")?;
+        let signer = self
+            .chain
+            .active_signing_public(device_id)
+            .map_err(debug_error)?;
+        let signed = batch::verify_signed_envelope(
+            envelope,
+            &self.chain.family_id(),
+            &self.chain.relay_id(),
+            &signer,
+        )
+        .map_err(debug_error)?;
+        let header = signed.header();
+        let at_rejection = self
+            .prefix
+            .get(&receipt.cursor)
+            .ok_or_else(|| JsError::new("rejection prefix is not saved"))?;
+        if receipt.family_id != self.chain.family_id()
+            || receipt.relay_id != self.chain.relay_id()
+            || receipt.batch_id != header.batch_id
+            || receipt.object_hash != signed.object_hash()
+            || receipt.device_sequence != header.device_sequence
+            || header.author_device_id != device_id
+            || header.epoch >= at_rejection.epoch().map_err(debug_error)?
+            || receipt.control_head != at_rejection.head_hash()
+            || receipt.next_expected_sequence
+                != at_rejection
+                    .next_sequence_for(device_id)
+                    .map_err(debug_error)?
+            || self
+                .chain
+                .next_sequence_for(device_id)
+                .map_err(debug_error)?
+                < receipt.next_expected_sequence
+        {
+            return Err(JsError::new(
+                "stale rejection differs from verified pending batch",
+            ));
+        }
+        Ok(true)
     }
 }
 

@@ -277,17 +277,16 @@ pub(crate) struct AcceptedReceipt {
     pub(crate) next_expected_sequence: u64,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) struct RejectedReceipt {
-    pub(crate) family_id: [u8; 16],
-    pub(crate) relay_id: [u8; 32],
-    pub(crate) batch_id: [u8; 16],
-    pub(crate) object_hash: [u8; 32],
-    pub(crate) cursor: u64,
-    pub(crate) control_head: [u8; 32],
-    pub(crate) device_sequence: u64,
-    pub(crate) reason: u16,
-    pub(crate) next_expected_sequence: u64,
+pub struct RejectedReceipt {
+    pub family_id: [u8; 16],
+    pub relay_id: [u8; 32],
+    pub batch_id: [u8; 16],
+    pub object_hash: [u8; 32],
+    pub cursor: u64,
+    pub control_head: [u8; 32],
+    pub device_sequence: u64,
+    pub reason: u16,
+    pub next_expected_sequence: u64,
 }
 
 struct DecodedBatchReceipt {
@@ -323,8 +322,7 @@ pub(crate) fn verify_accepted_receipt(
     })
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn verify_rejected_receipt(
+pub fn verify_rejected_receipt(
     bytes: &[u8],
     relay_public_key: &[u8; 32],
 ) -> Result<RejectedReceipt, Error> {

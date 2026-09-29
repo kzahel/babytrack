@@ -23,7 +23,8 @@ import uniffi.babytrack_core_ffi.GrowthInputRow
 class TwoDeviceRelayTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val db get() = context.filesDir.resolve("two-device.db")
-    private val origin = "http://localhost:8787"
+    private val origin get() = InstrumentationRegistry.getArguments().getString("relayOrigin")
+        ?: "http://localhost:8787"
 
     private fun family(): FamilyRef {
         val parts = context.filesDir.resolve("two-device-family.txt").readText().split(':')
@@ -119,6 +120,28 @@ class TwoDeviceRelayTest {
     @Test fun managerAdmit() {
         ShareCoordinator(context, db.absolutePath).use { sharing ->
             sharing.admitProvedDevice(family(), origin)
+        }
+    }
+
+    @Test fun managerWriteHostedNote() {
+        val marker = InstrumentationRegistry.getArguments().getString("noteMarker")
+            ?: error("noteMarker required")
+        ShareCoordinator(context, db.absolutePath).use { sharing ->
+            val family = family()
+            val child = sharing.snapshot(family).children.single().id
+            val now = System.currentTimeMillis()
+            sharing.logNote(family, child, marker, ActivityWhen(now, 0, now))
+            assertTrue(sharing.syncAndUpload(family, origin).ready)
+        }
+    }
+
+    @Test fun managerReadsHostedNote() {
+        val marker = InstrumentationRegistry.getArguments().getString("noteMarker")
+            ?: error("noteMarker required")
+        ShareCoordinator(context, db.absolutePath).use { sharing ->
+            val family = family()
+            assertTrue(sharing.syncAndUpload(family, origin).ready)
+            assertTrue(sharing.snapshot(family).activities.any { it.note == marker })
         }
     }
 

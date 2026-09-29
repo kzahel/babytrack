@@ -141,6 +141,21 @@ Defer paid content, AI logging, clinical sleep advice, promotional banners,
 and reference-only activity types outside the [MVP event model](event-model.md).
 Do not copy the reference app's layout, words, icons, or assets.
 
+## Presentation boundaries and fixture review
+
+The screen extraction in [007](../tactical/007-android-screen-gallery.md)
+preserves the current route map and behavior. The Activity owns platform entry
+points; the tracker controller owns loading, drafts, actions, and coordination.
+Screen composables receive immutable display state and callbacks. Rendering
+must not open stores, run sync, request permissions, or write records.
+Read-only binding rows may cross this boundary; event semantics remain in Rust.
+
+The fixture gallery renders the production composables with synthetic states.
+It includes primary destinations, the activity chooser, every capture type,
+and child-profile forms, plus pending and removed states. It supplements the
+existing real-relay and navigation checks; it does not establish protocol
+correctness or close physical-phone accessibility/ergonomics gates.
+
 ## Reconsider when
 
 Daily use on phones shows that the three destinations hide a frequent action,

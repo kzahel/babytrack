@@ -1,0 +1,59 @@
+# 007: Android screen extraction and fixture gallery
+
+Status: planned, 2026-09-29. This is preparation for a later redesign, not a
+visual redesign or an M1 physical-phone gate. [005](005-m1-android.md) owns
+the caregiver-app delivery gates. [Android navigation](../topics/android-navigation.md)
+owns route behavior; [interface design](../topics/interface-design-and-localization.md)
+owns presentation decisions.
+
+## Goal and exclusions
+
+Extract the existing Android presentation from MainActivity into screens
+with explicit immutable state and callbacks, then render the same screens
+against synthetic fixtures in an emulator-free screenshot loop. Produce a
+scrolling gallery showing all destinations and capture forms together,
+with dark, light, and 1.5× text variants, locally and as CI artifacts.
+
+Preserve current appearance, navigation, draft/save behavior, and verified
+sharing/removal/recovery wording. Rust continues to own event semantics,
+storage, projection, sync, and crypto. No reference screenshots or real
+Family data enter fixtures or CI. No public hosting, design overhaul, web
+port, new activity types, or pixel-diff approval gate in this workstream.
+
+## Ordered delivery slices
+
+1. [ ] Record the plan and owning-topic decisions; commit before extraction.
+2. [ ] Separate the Activity/platform entry point and state/action controller
+   from rendering; extract focused capture forms and shared presentation
+   helpers. Keep side effects in the controller.
+3. [ ] Extract Today, History, Family, and child-profile presentation with
+   explicit state/action boundaries. Preserve existing route and dialog
+   behavior; expose fixture-renderable screen content.
+4. [ ] Add deterministic synthetic fixtures for first run/empty, typical day,
+   running timer, pending sync/join, removed access, capture drafts, and child
+   profiles. Fix date, time zone, locale, viewport, and rendering scale.
+5. [ ] Add a pinned Roborazzi/Robolectric rendering harness and a single local
+   command that creates PNGs, a manifest, and a scrolling HTML gallery.
+   Add Android Studio previews as a convenience over those same fixtures.
+6. [ ] Generate and retain the gallery in read-only CI, with a job-summary
+   artifact link. Keep stable case names and rendering metadata so baseline
+   comparison can be added later without committing images today.
+7. [ ] Run relevant Android unit/build and existing behavior checks; inspect
+   actual rendered images, record evidence, commit each reasonable slice,
+   push, and report the gallery and observed CI result.
+
+## Gates and completion
+
+- Production rendering and fixtures use the same screen composables.
+- Rendering requires no NativeLocalStore, relay, credentials, or emulator;
+  fixtures never assert that synthetic state is protocol evidence.
+- Every capture type and primary destination has a gallery case. Long forms
+  can be inspected beyond the initial phone viewport.
+- Dark/light/large-text variants are discoverable on one scrolling page.
+- CI uploads synthetic images, HTML, and manifest, with no publishing job.
+- Existing action behavior remains covered by Android unit/build checks and
+  real-relay/UI checks; gallery generation is not evidence of phone ergonomics.
+
+## Evidence
+
+Implementation and validation results will be recorded with each slice.

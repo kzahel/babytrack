@@ -114,6 +114,21 @@ decimal separator. The core's canonical format remains unchanged. Today feed
 and diaper counts use Android plurals; remaining count and duration copy
 still needs a translation grammar review.
 
+## Fixture gallery workflow
+
+Before redesigning the screens, [007](../tactical/007-android-screen-gallery.md)
+establishes a gallery of actual Compose renders. Preserve the current visual
+system during extraction. Use fictional data, a fixed clock, locale and time
+zone, and stable case IDs. Review dark mode first, alongside light mode and
+1.5× text. Show complete scrollable form content as well as viewport context,
+so controls below the fold are reviewable.
+
+Keep generated PNGs, rendering metadata, and a scrolling HTML index as local
+build outputs and CI artifacts. Android Studio previews are an additional
+entry point into the same fixtures. Start with visual review; introduce a
+pixel-comparison gate only after renderer versions and approved baselines
+are stable. CI artifacts do not require a public gallery deployment.
+
 ## Validation and reconsideration
 
 For each migrated screen, capture light and dark modes at normal and 1.5×

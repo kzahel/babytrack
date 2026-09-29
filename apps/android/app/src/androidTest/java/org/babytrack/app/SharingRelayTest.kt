@@ -75,7 +75,13 @@ class SharingRelayTest {
             .edit().putString("family", family.familyId.hex())
             .putString("child", child.hex()).commit()
         ActivityScenario.launch(MainActivity::class.java).use {
-            composeRule.onNodeWithText(context.getString(R.string.add_activity)).performClick()
+            val addActivity = context.getString(R.string.add_activity)
+            composeRule.waitUntil(25_000) {
+                composeRule.onAllNodesWithText(addActivity)
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText(addActivity)
+                .performScrollTo().performClick()
             composeRule.onNodeWithText(context.getString(R.string.log_bottle)).performClick()
             composeRule.onNodeWithText(context.getString(R.string.unit_us_fl_oz))
                 .performScrollTo().performClick()

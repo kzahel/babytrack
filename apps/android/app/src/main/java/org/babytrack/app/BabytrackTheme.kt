@@ -76,9 +76,9 @@ private val BabytrackShapes = Shapes(
 )
 
 @Composable
-internal fun BabytrackTheme(content: @Composable () -> Unit) {
+internal fun BabytrackTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
+        colorScheme = if (darkTheme) DarkColors else LightColors,
         shapes = BabytrackShapes,
         content = content,
     )

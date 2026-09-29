@@ -48,8 +48,9 @@ The timeline can attach, edit, or clear a note on an existing activity.
    card that opens or creates a private copy of locally held history.
 
 The relay and public key are manual debug setup. Debug builds allow local
-cleartext HTTP; the release manifest does not. Physical two-phone use and
-the end-of-M0 security gate remain open, so this is a development flow.
+cleartext HTTP; the release manifest does not. The bounded M0 security gate passed; physical two-phone validation remains
+open. This is a development flow; see [005](../../docs/tactical/005-m1-android.md)
+for current evidence and remaining gates.
 
 ## Automated checks
 
@@ -82,3 +83,68 @@ suite and file recovery. The complete local UI walkthrough runs on the daily
 scheduled and manual workflow, and remains available with no flag. A physical
 phone is still needed for one-handed use, large text, night display,
 actual reboot/widget placement, and two-caregiver network behavior.
+
+## Screen development and fixture gallery
+
+Render all existing screens without an emulator:
+
+```sh
+bash scripts/render_android_gallery.sh
+```
+
+Open `apps/android/app/build/outputs/screen-gallery/index.html` to scroll
+through the screen gallery. Each case shows dark and light modes at normal
+and 1.5× text. Expand additional scroll positions to see the bottom of long
+forms and History; click any image for full size. The gallery also supports
+search. To iterate on one screen or family of states:
+
+```sh
+bash scripts/render_android_gallery.sh -PgalleryCase=capture-bottle
+```
+
+That command regenerates a filtered gallery (including empty and invalid
+bottle drafts). Run the unfiltered command before sharing a full gallery.
+The first run downloads renderer dependencies and builds generated bindings;
+subsequent runs reuse build outputs. No emulator, native store, relay,
+credentials, or real Family data is needed to render the fixtures. The
+normal Android SDK/Rust build prerequisites still apply to compilation.
+An incremental full render took approximately 15 seconds on the development
+machine; this is an observation, not a performance gate.
+
+The **Android debug APK** CI job creates the same gallery on pushes and
+PRs. Download `babytrack-android-screen-gallery` from the workflow's artifact
+list or job-summary link, unzip it, and open `index.html` locally. This is a
+build artifact, not a published website. Artifacts expire according to
+GitHub's repository retention setting; rerun CI or the local command to
+regenerate them.
+
+Presentation files:
+
+- `MainActivity.kt`: Android entry points, invitation intents, file adapters.
+- `TrackerRoute.kt`, `TrackerData.kt`: navigation, data loading, platform and
+  Family coordination.
+- `CaptureRoute.kt`, `EntryEditController.kt`, `TrackerDrafts.kt`: capture
+  and correction actions, with remembered UI drafts and the route's shared
+  coroutine scope.
+- `TrackerScaffold.kt`: shared target header, bottom navigation, scrolling.
+- `TodayScreen.kt`, `HistoryScreen.kt`, `FamilyScreen.kt`, `CaptureScreen.kt`:
+  rendering from explicit UI state and named action callbacks.
+- `ChildProfileScreen.kt`: fixture-renderable content plus the platform
+  dialog/date-picker adapter.
+- `EntryDialogs.kt`, `TrackerEditModels.kt`: correction dialog presentation
+  and immutable draft values; writes remain in the controller.
+- `src/debug/.../ScreenFixtures.kt`: stable fictional display states.
+- `src/debug/.../ScreenPreviews.kt`: Android Studio previews of those states.
+- `src/test/.../ScreenGalleryTest.kt`: pinned Roborazzi/Robolectric Native
+  Graphics renderer, with fixed viewport, locale, time zone, and fixture time.
+
+Add a state to `ScreenFixtures.cases` with a stable ID. The renderer and
+previews pick it up automatically. Keep fixtures in the debug source set;
+release builds do not include them. Normal unit-test runs skip screenshot
+recording; `recordScreenGallery` records the selected fixtures. The PNGs and
+`manifest.json` are generated outputs, not committed baselines. Stable IDs,
+renderer versions, scroll offsets, and dimensions prepare a later visual
+regression comparison; this work does not introduce a pixel-diff gate.
+Existing real-relay/UI checks still cover behavior, and phone ergonomics,
+TalkBack, keyboard/insets, pseudolocale/RTL, and actual device rendering need
+their existing validation paths. See [007](../../docs/tactical/007-android-screen-gallery.md).

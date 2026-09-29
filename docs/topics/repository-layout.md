@@ -85,6 +85,21 @@ crate named `core`, and pins Rust 1.92.0. Path names above remain short.
 - Keep component unit tests beside their component. Shared scenarios and
   vectors use stable IDs to connect decisions to executable tests.
 
+## Android presentation and render infrastructure
+
+Android keeps production presentation beside the app controller in
+`apps/android/app/src/main/java/org/babytrack/app/`. Screens take display
+state and callbacks; their fixtures live only in `src/debug/`, and the
+Roborazzi/Robolectric renderer lives in `src/test/`. The shared Rust bindings
+still supply the data model and actions. No fixture renderer initializes
+native stores or calls a relay.
+
+`scripts/render_android_gallery.sh` generates PNGs, metadata, and an offline
+HTML gallery under the gitignored Android build directory. The Android CI
+job retains that directory as a synthetic-data artifact. The local commands
+and file map are in the [Android README](../../apps/android/README.md), and
+work status is in [007](../tactical/007-android-screen-gallery.md).
+
 ## Validation and alternatives
 
 The scaffold proves a clean checkout can build the selected targets and run

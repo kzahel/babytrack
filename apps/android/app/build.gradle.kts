@@ -29,6 +29,8 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
 
+    testOptions { unitTests.isIncludeAndroidResources = true }
+
     sourceSets.getByName("main").apply {
         java.srcDir(layout.buildDirectory.dir("generated/rust/kotlin"))
         jniLibs.srcDir(layout.buildDirectory.dir("generated/rust/jniLibs"))
@@ -59,8 +61,33 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     implementation("net.java.dev.jna:jna:5.17.0@aar")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16.1")
+    testImplementation(composeBom)
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.39.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.39.0")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     androidTestImplementation(composeBom)
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
+}
+
+// Normal unit tests skip image generation; the gallery task records real Compose
+// screens in Robolectric Native Graphics, without launching the production Activity.
+val recordScreenGallery by tasks.registering {
+    group = "verification"
+    description = "Render synthetic Android screens for the scrolling gallery"
+    dependsOn("testDebugUnitTest")
+}
+tasks.withType<Test>().configureEach {
+    val recording = gradle.startParameter.taskNames.any { it.endsWith("recordScreenGallery") }
+    systemProperty("babytrack.gallery.case", providers.gradleProperty("galleryCase").orElse("").get())
+    systemProperty("babytrack.gallery.record", recording.toString())
+    systemProperty("roborazzi.test.record", recording.toString())
+    systemProperty("babytrack.gallery.output", layout.buildDirectory.dir("outputs/screen-gallery").get().asFile.absolutePath)
+    if (recording) {
+        filter { includeTestsMatching("org.babytrack.app.ScreenGalleryTest") }
+        outputs.upToDateWhen { false }
+    }
 }

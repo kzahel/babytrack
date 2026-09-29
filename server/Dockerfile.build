@@ -1,0 +1,9 @@
+# Build a Linux relay artifact on a workstation; the runtime host needs no
+# compiler or container engine. The target is selected by docker buildx.
+FROM rust:1.92.0-bookworm AS build
+WORKDIR /src
+COPY . .
+RUN cargo build --release --locked -p babytrack-server
+
+FROM scratch
+COPY --from=build /src/target/release/babytrack-server /babytrack-server

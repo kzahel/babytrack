@@ -1,0 +1,10 @@
+.git
+target
+references
+local-references
+apps/android/.gradle
+apps/android/app/build
+apps/web/node_modules
+apps/web/dist
+apps/web/src/generated
+tests/browser/node_modules

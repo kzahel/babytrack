@@ -27,7 +27,7 @@ Owning topics: [web](../topics/web-client.md),
    artifacts, and split browser smoke into individually runnable scenarios.
 4. [x] Separate wasm bindings by local/enrollment/authority/restore/fixture
    concern while preserving generated JavaScript exports and feature gates.
-5. [ ] Move remaining pure event construction and day summaries out of the
+5. [x] Move remaining pure event construction and day summaries out of the
    native-only API, retaining ID/clock adapters and compatibility reexports.
 6. [ ] Separate SQLite schema, journal, outbox/history, enrollment, and copy
    persistence into modules while preserving whole transaction ownership.
@@ -96,3 +96,14 @@ gates remain with their milestone owners. Local runs do not imply remote CI.
   production fixture-exclusion checks, all nine browser scenarios, and local
   and shared web UI flows pass. Workspace boundaries and diff checks pass.
   No protocol interpretation or generated export changed.
+
+- Slice 5: 34 remaining public event constructors/corrections and their pure
+  helpers move into portable child, interval, measurement, correction, and
+  tracking modules. Input types and day summaries are portable, with existing
+  native paths retained as reexports/error adapters. All 43 native builder
+  signatures compare equal. The full core suite, canonical native/portable
+  byte comparisons, and direct portable partial-edit/unknown-field/pump/day
+  regressions pass. Core wasm check, Clippy, Swift/Kotlin and wasm fixed-vector
+  smoke, production fixture-exclusion, boundaries, and diff checks pass.
+  Native adapters still allocate IDs; SQLite still assigns persisted clocks.
+  Android integration on the final storage build belongs to slice 7.

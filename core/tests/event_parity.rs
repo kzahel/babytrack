@@ -195,3 +195,109 @@ fn adapters_agree_on_trimmed_limits_and_invalid_fields() {
         );
     }
 }
+
+#[test]
+fn native_adapters_preserve_portable_measurement_and_interval_bytes() {
+    use babytrack_core::event_actions::{
+        self as actions, GrowthInput, MeasurementInput, PumpAmounts,
+    };
+    let family = family();
+    let (child, native) = local_api::child_operation(family, "Baby", NOW).unwrap();
+    let mut projection = LocalProjection::new(family.family_id);
+    let operation = assert_bytes(
+        native.clone(),
+        web_actions::child(identity(&native), "Baby", None, None).unwrap(),
+    );
+    projection.append(&operation, 1).unwrap();
+    let when = ActivityTime {
+        start_utc_ms: NOW - 60_000,
+        offset_minutes: 120,
+        saved_at_ms: NOW,
+    };
+    let growth = GrowthInput {
+        weight: Some(MeasurementInput {
+            entered: "9.25".into(),
+            unit: 12,
+        }),
+        length: Some(MeasurementInput {
+            entered: "21".into(),
+            unit: 22,
+        }),
+        head: None,
+    };
+    let amounts = PumpAmounts {
+        left_ml: Some(40),
+        right_ml: Some(30),
+        total_ml: None,
+    };
+    let foods = vec![" pear ".into(), " banana ".into()];
+    let mut index = 1;
+    macro_rules! create {
+        ($name:ident, $($argument:expr),+ $(,)?) => {{
+            let (_, native) = local_api::$name(family, child, $($argument),+).unwrap();
+            let (_, portable) = actions::$name(identity(&native), child, $($argument),+).unwrap();
+            let operation = assert_bytes(native, Operation::encode_new(&portable).unwrap());
+            index += 1;
+            projection.append(&operation, index).unwrap();
+            operation.record_id
+        }};
+    }
+    let pump = create!(pump_operation, amounts, when, NOW);
+    let sleep = create!(sleep_operation_with_place, when, NOW, 120, Some(1));
+    create!(running_sleep_operation_with_place, when, Some(2));
+    create!(solids_operation, &foods, " some ", when);
+    let growth_id = create!(growth_entered_operation, &growth, when);
+    let temperature = create!(temperature_entered_operation, "98.6", 31, when);
+    create!(medication_operation, " vitamin ", " 1 ", " drop ", when);
+    macro_rules! correct {
+        ($name:ident, $target:expr, $($argument:expr),+ $(,)?) => {{
+            let target = projection.record(&$target).unwrap().clone();
+            let native = local_api::$name(family, child, &target, $($argument),+).unwrap();
+            let portable = actions::$name(identity(&native), child, &target, $($argument),+).unwrap();
+            let operation = assert_bytes(native, Operation::encode_new(&portable).unwrap());
+            index += 1;
+            projection.append(&operation, index).unwrap();
+        }};
+    }
+    correct!(
+        edit_pump_amounts_operation,
+        pump,
+        PumpAmounts {
+            left_ml: None,
+            right_ml: None,
+            total_ml: Some(90)
+        },
+        NOW
+    );
+    correct!(
+        edit_growth_entered_operation,
+        growth_id,
+        &GrowthInput {
+            weight: None,
+            length: None,
+            head: Some(MeasurementInput {
+                entered: "38".into(),
+                unit: 21
+            })
+        },
+        NOW
+    );
+    correct!(
+        edit_temperature_entered_operation,
+        temperature,
+        "37.8",
+        30,
+        NOW
+    );
+    correct!(
+        move_completed_interval_operation,
+        sleep,
+        ActivityTime {
+            start_utc_ms: NOW - 120_000,
+            ..when
+        },
+        NOW - 60_000,
+        60
+    );
+    assert_eq!(index, 12);
+}

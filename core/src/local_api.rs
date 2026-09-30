@@ -4,9 +4,8 @@
 use std::path::Path;
 
 use crate::{
-    cbor::Value,
     ids,
-    operation::{Hlc, Kind, NewOperation, Scope},
+    operation::{Hlc, NewOperation, Scope},
     portable_file::{self},
     projection::Record,
     sqlite_store::{self, FamilyHandle, SqliteStore},
@@ -37,113 +36,16 @@ impl From<getrandom::Error> for Error {
 
 pub use crate::read_model::{Activity, Child, activities_from_records, children_from_records};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DayWindow {
-    pub start_utc_ms: i64,
-    pub end_utc_ms: i64,
-    pub through_utc_ms: i64,
-}
+pub use crate::day_summary::{DaySummary, DayWindow};
+pub use crate::event_actions::{ActivityTime, GrowthInput, MeasurementInput, PumpAmounts};
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct DaySummary {
-    pub sleep_ms: u64,
-    pub feed_count: u64,
-    pub bottle_ml: u64,
-    pub diaper_count: u64,
-    pub wet_diaper_count: u64,
-    pub dirty_diaper_count: u64,
-}
-
-/// Count current child records in the viewer's local-day UTC window. The
-/// caller supplies actual local midnight bounds, including DST-short/long
-/// days; a running sleep contributes only through the observed instant.
+/// Compatibility adapter for native callers; calculation is portable.
 pub fn summarize_day(
     activities: impl IntoIterator<Item = Activity>,
     child_id: [u8; 16],
     window: DayWindow,
 ) -> Result<DaySummary, Error> {
-    if window.start_utc_ms < 0
-        || window.end_utc_ms <= window.start_utc_ms
-        || window.through_utc_ms < 0
-    {
-        return Err(Error::Invalid("invalid local-day window"));
-    }
-    let mut summary = DaySummary::default();
-    for activity in activities {
-        if activity.child_id != child_id {
-            continue;
-        }
-        if activity.kind == "sleep" {
-            let from = activity.start_utc_ms.max(window.start_utc_ms);
-            let to = activity
-                .end_utc_ms
-                .unwrap_or(window.through_utc_ms)
-                .min(window.end_utc_ms)
-                .min(window.through_utc_ms);
-            if to > from {
-                let duration = u64::try_from(i128::from(to) - i128::from(from))
-                    .expect("positive i64 instant difference fits u64");
-                summary.sleep_ms = summary.sleep_ms.saturating_add(duration);
-            }
-        }
-        if activity.start_utc_ms < window.start_utc_ms
-            || activity.start_utc_ms >= window.end_utc_ms
-            || activity.start_utc_ms > window.through_utc_ms
-        {
-            continue;
-        }
-        if matches!(
-            activity.kind.as_str(),
-            "feed.breast" | "feed.bottle" | "feed.solids"
-        ) {
-            summary.feed_count = summary.feed_count.saturating_add(1);
-        }
-        if activity.kind == "feed.bottle" {
-            summary.bottle_ml = summary.bottle_ml.saturating_add(
-                activity
-                    .bottle_ml
-                    .and_then(|ml| u64::try_from(ml).ok())
-                    .unwrap_or(0),
-            );
-        }
-        if activity.kind == "diaper" {
-            summary.diaper_count = summary.diaper_count.saturating_add(1);
-            if matches!(activity.diaper_kind, Some(1 | 3)) {
-                summary.wet_diaper_count = summary.wet_diaper_count.saturating_add(1);
-            }
-            if matches!(activity.diaper_kind, Some(2 | 3)) {
-                summary.dirty_diaper_count = summary.dirty_diaper_count.saturating_add(1);
-            }
-        }
-    }
-    Ok(summary)
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MeasurementInput {
-    pub entered: String,
-    pub unit: u8,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GrowthInput {
-    pub weight: Option<MeasurementInput>,
-    pub length: Option<MeasurementInput>,
-    pub head: Option<MeasurementInput>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ActivityTime {
-    pub start_utc_ms: i64,
-    pub offset_minutes: i16,
-    pub saved_at_ms: i64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PumpAmounts {
-    pub left_ml: Option<i64>,
-    pub right_ml: Option<i64>,
-    pub total_ml: Option<i64>,
+    crate::day_summary::summarize_day(activities, child_id, window).map_err(Error::Invalid)
 }
 
 pub use crate::breast::Segment as BreastSegment;
@@ -1281,26 +1183,9 @@ pub fn rename_child_operation(
     name: &str,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if child.scope != Scope::Child || child.record_type != "child" || child.deleted {
-        return Err(Error::Invalid("target child unavailable"));
-    }
-    check_time(saved_at_ms)?;
-    let name = name.trim();
-    if name.is_empty() || name.len() > 16 * 1024 {
-        return Err(Error::Invalid("child name empty or too long"));
-    }
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: child.id,
-        scope: Scope::Child,
-        kind: Kind::Set,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: Some(vec![(1, Value::Text(name.to_owned()))]),
-    })
+    let identity = action_identity(family, Some(child.id), saved_at_ms)?;
+    crate::event_actions::rename_child_operation(identity, child, name, saved_at_ms)
+        .map_err(Error::Invalid)
 }
 
 pub fn edit_child_metadata_operation(
@@ -1310,35 +1195,15 @@ pub fn edit_child_metadata_operation(
     sex: Option<u8>,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if child.scope != Scope::Child || child.record_type != "child" || child.deleted {
-        return Err(Error::Invalid("target child unavailable"));
-    }
-    check_time(saved_at_ms)?;
-    if sex.is_some_and(|code| !(1..=3).contains(&code)) {
-        return Err(Error::Invalid("child sex code outside published range"));
-    }
-    let mut fields = Vec::new();
-    if let Some(day) = birth_day {
-        fields.push((2, Value::Integer(day.into())));
-    }
-    if let Some(code) = sex {
-        fields.push((3, Value::Integer(code.into())));
-    }
-    if fields.is_empty() {
-        return Err(Error::Invalid("child metadata correction is empty"));
-    }
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: child.id,
-        scope: Scope::Child,
-        kind: Kind::Set,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: Some(fields),
-    })
+    let identity = action_identity(family, Some(child.id), saved_at_ms)?;
+    crate::event_actions::edit_child_metadata_operation(
+        identity,
+        child,
+        birth_day,
+        sex,
+        saved_at_ms,
+    )
+    .map_err(Error::Invalid)
 }
 
 pub fn diaper_operation(
@@ -1368,10 +1233,6 @@ pub fn bottle_operation(
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
     bottle_entered_operation(family, child_id, &amount_ml.to_string(), 1, content, time)
-}
-
-fn bottle_measure(entered: &str, unit: u8) -> Result<Value, Error> {
-    crate::event_actions::bottle_measure(entered, unit).map_err(Error::Invalid)
 }
 
 pub fn bottle_entered_operation(
@@ -1457,47 +1318,9 @@ pub fn pump_operation(
     time: ActivityTime,
     end_utc_ms: i64,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    if end_utc_ms < time.start_utc_ms || end_utc_ms > time.saved_at_ms {
-        return Err(Error::Invalid("pump interval invalid"));
-    }
-    let mut fields = vec![(
-        2,
-        Value::Array(vec![
-            Value::Integer(end_utc_ms.into()),
-            Value::Integer(time.offset_minutes.into()),
-        ]),
-    )];
-    fields.extend(pump_amount_fields(amounts, false)?);
-    activity_operation(family, child_id, "pump", fields, time)
-}
-
-fn pump_amount_fields(
-    amounts: PumpAmounts,
-    clear_missing: bool,
-) -> Result<Vec<(u64, Value)>, Error> {
-    let PumpAmounts {
-        left_ml,
-        right_ml,
-        total_ml,
-    } = amounts;
-    if total_ml.is_some() && (left_ml.is_some() || right_ml.is_some())
-        || total_ml.is_none() && left_ml.unwrap_or(0) <= 0 && right_ml.unwrap_or(0) <= 0
-        || [left_ml, right_ml, total_ml]
-            .into_iter()
-            .flatten()
-            .any(|amount| !(0..=1_000_000).contains(&amount))
-        || total_ml == Some(0)
-    {
-        return Err(Error::Invalid("pump amounts invalid"));
-    }
-    Ok([(100, left_ml), (101, right_ml), (102, total_ml)]
-        .into_iter()
-        .filter_map(|(id, amount)| {
-            amount
-                .map(|value| (id, whole_measure(value, 1)))
-                .or_else(|| clear_missing.then_some((id, Value::Null)))
-        })
-        .collect())
+    let identity = action_identity(family, None, time.saved_at_ms)?;
+    crate::event_actions::pump_operation(identity, child_id, amounts, time, end_utc_ms)
+        .map_err(Error::Invalid)
 }
 
 pub fn edit_pump_amounts_operation(
@@ -1507,26 +1330,15 @@ pub fn edit_pump_amounts_operation(
     amounts: PumpAmounts,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if activity.scope != Scope::Activity
-        || activity.child_id != Some(child_id)
-        || activity.record_type != "pump"
-        || activity.deleted
-    {
-        return Err(Error::Invalid("pump target unavailable"));
-    }
-    check_time(saved_at_ms)?;
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: activity.id,
-        scope: Scope::Activity,
-        kind: Kind::Set,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: Some(pump_amount_fields(amounts, true)?),
-    })
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::edit_pump_amounts_operation(
+        identity,
+        child_id,
+        activity,
+        amounts,
+        saved_at_ms,
+    )
+    .map_err(Error::Invalid)
 }
 
 pub fn solids_operation(
@@ -1536,39 +1348,9 @@ pub fn solids_operation(
     amount: &str,
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    activity_operation(
-        family,
-        child_id,
-        "feed.solids",
-        solids_fields(foods, amount)?,
-        time,
-    )
-}
-
-fn solids_fields(foods: &[String], amount: &str) -> Result<Vec<(u64, Value)>, Error> {
-    let normalized: Vec<_> = foods.iter().map(|food| food.trim()).collect();
-    let amount = amount.trim();
-    if normalized.is_empty()
-        || normalized.len() > 32
-        || normalized
-            .iter()
-            .any(|food| food.is_empty() || food.len() > 256)
-        || amount.len() > 256
-    {
-        return Err(Error::Invalid("solids foods or amount invalid"));
-    }
-    Ok(vec![
-        (
-            100,
-            Value::Array(
-                normalized
-                    .into_iter()
-                    .map(|food| Value::Text(food.into()))
-                    .collect(),
-            ),
-        ),
-        (101, Value::Text(amount.into())),
-    ])
+    let identity = action_identity(family, None, time.saved_at_ms)?;
+    crate::event_actions::solids_operation(identity, child_id, foods, amount, time)
+        .map_err(Error::Invalid)
 }
 
 pub fn edit_solids_operation(
@@ -1579,26 +1361,16 @@ pub fn edit_solids_operation(
     amount: &str,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if activity.scope != Scope::Activity
-        || activity.child_id != Some(child_id)
-        || activity.record_type != "feed.solids"
-        || activity.deleted
-    {
-        return Err(Error::Invalid("solids target unavailable"));
-    }
-    check_time(saved_at_ms)?;
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: activity.id,
-        scope: Scope::Activity,
-        kind: Kind::Set,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: Some(solids_fields(foods, amount)?),
-    })
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::edit_solids_operation(
+        identity,
+        child_id,
+        activity,
+        foods,
+        amount,
+        saved_at_ms,
+    )
+    .map_err(Error::Invalid)
 }
 
 pub fn sleep_operation(
@@ -1608,7 +1380,9 @@ pub fn sleep_operation(
     end_utc_ms: i64,
     end_offset_minutes: i16,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    sleep_operation_with_place(family, child_id, time, end_utc_ms, end_offset_minutes, None)
+    let identity = action_identity(family, None, time.saved_at_ms)?;
+    crate::event_actions::sleep_operation(identity, child_id, time, end_utc_ms, end_offset_minutes)
+        .map_err(Error::Invalid)
 }
 
 pub fn sleep_operation_with_place(
@@ -1619,21 +1393,16 @@ pub fn sleep_operation_with_place(
     end_offset_minutes: i16,
     place: Option<u8>,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    if end_utc_ms < time.start_utc_ms || end_utc_ms > time.saved_at_ms {
-        return Err(Error::Invalid("sleep end outside completed interval"));
-    }
-    if !(-840..=840).contains(&end_offset_minutes) {
-        return Err(Error::Invalid("sleep end offset outside v1 range"));
-    }
-    let mut fields = vec![(
-        2,
-        Value::Array(vec![
-            Value::Integer(end_utc_ms.into()),
-            Value::Integer(end_offset_minutes.into()),
-        ]),
-    )];
-    fields.extend(sleep_place_field(place)?);
-    activity_operation(family, child_id, "sleep", fields, time)
+    let identity = action_identity(family, None, time.saved_at_ms)?;
+    crate::event_actions::sleep_operation_with_place(
+        identity,
+        child_id,
+        time,
+        end_utc_ms,
+        end_offset_minutes,
+        place,
+    )
+    .map_err(Error::Invalid)
 }
 
 pub fn running_sleep_operation(
@@ -1641,7 +1410,8 @@ pub fn running_sleep_operation(
     child_id: [u8; 16],
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    running_sleep_operation_with_place(family, child_id, time, None)
+    let identity = action_identity(family, None, time.saved_at_ms)?;
+    crate::event_actions::running_sleep_operation(identity, child_id, time).map_err(Error::Invalid)
 }
 
 pub fn running_sleep_operation_with_place(
@@ -1650,15 +1420,9 @@ pub fn running_sleep_operation_with_place(
     time: ActivityTime,
     place: Option<u8>,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    activity_operation(family, child_id, "sleep", sleep_place_field(place)?, time)
-}
-
-fn sleep_place_field(place: Option<u8>) -> Result<Vec<(u64, Value)>, Error> {
-    match place {
-        Some(code @ 1..=5) => Ok(vec![(100, Value::Integer(code.into()))]),
-        Some(_) => Err(Error::Invalid("sleep place outside v1 range")),
-        None => Ok(Vec::new()),
-    }
+    let identity = action_identity(family, None, time.saved_at_ms)?;
+    crate::event_actions::running_sleep_operation_with_place(identity, child_id, time, place)
+        .map_err(Error::Invalid)
 }
 
 pub fn edit_sleep_place_operation(
@@ -1668,31 +1432,15 @@ pub fn edit_sleep_place_operation(
     place: Option<u8>,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if activity.scope != Scope::Activity
-        || activity.record_type != "sleep"
-        || activity.child_id != Some(child_id)
-        || activity.deleted
-    {
-        return Err(Error::Invalid("sleep activity unavailable"));
-    }
-    check_time(saved_at_ms)?;
-    let value = match place {
-        Some(code @ 1..=5) => Value::Integer(code.into()),
-        Some(_) => return Err(Error::Invalid("sleep place outside v1 range")),
-        None => Value::Null,
-    };
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: activity.id,
-        scope: Scope::Activity,
-        kind: Kind::Set,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: Some(vec![(100, value)]),
-    })
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::edit_sleep_place_operation(
+        identity,
+        child_id,
+        activity,
+        place,
+        saved_at_ms,
+    )
+    .map_err(Error::Invalid)
 }
 
 pub fn stop_sleep_operation(
@@ -1703,53 +1451,16 @@ pub fn stop_sleep_operation(
     end_offset_minutes: i16,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if activity.scope != Scope::Activity
-        || activity.record_type != "sleep"
-        || activity.child_id != Some(child_id)
-        || activity.deleted
-        || activity
-            .field(2)
-            .is_some_and(|field| field.value != Value::Null)
-    {
-        return Err(Error::Invalid("sleep target is not running"));
-    }
-    let Value::Array(start) = &activity
-        .field(1)
-        .ok_or(Error::Invalid("sleep start absent"))?
-        .value
-    else {
-        return Err(Error::Invalid("sleep start invalid"));
-    };
-    let [Value::Integer(start_utc_ms), Value::Integer(_)] = start.as_slice() else {
-        return Err(Error::Invalid("sleep start invalid"));
-    };
-    let start_utc_ms = i64::try_from(*start_utc_ms)
-        .map_err(|_| Error::Invalid("sleep start outside i64 range"))?;
-    if end_utc_ms < start_utc_ms || end_utc_ms > saved_at_ms {
-        return Err(Error::Invalid("sleep end outside completed interval"));
-    }
-    if !(-840..=840).contains(&end_offset_minutes) {
-        return Err(Error::Invalid("sleep end offset outside v1 range"));
-    }
-    check_time(saved_at_ms)?;
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: activity.id,
-        scope: Scope::Activity,
-        kind: Kind::Set,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: Some(vec![(
-            2,
-            Value::Array(vec![
-                Value::Integer(end_utc_ms.into()),
-                Value::Integer(end_offset_minutes.into()),
-            ]),
-        )]),
-    })
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::stop_sleep_operation(
+        identity,
+        child_id,
+        activity,
+        end_utc_ms,
+        end_offset_minutes,
+        saved_at_ms,
+    )
+    .map_err(Error::Invalid)
 }
 
 pub fn edit_sleep_end_operation(
@@ -1760,54 +1471,16 @@ pub fn edit_sleep_end_operation(
     end_offset_minutes: i16,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if activity.scope != Scope::Activity
-        || activity.record_type != "sleep"
-        || activity.child_id != Some(child_id)
-        || activity.deleted
-        || !matches!(
-            activity.field(2).map(|field| &field.value),
-            Some(Value::Array(_))
-        )
-    {
-        return Err(Error::Invalid("completed sleep target unavailable"));
-    }
-    let Value::Array(start) = &activity
-        .field(1)
-        .ok_or(Error::Invalid("sleep start absent"))?
-        .value
-    else {
-        return Err(Error::Invalid("sleep start invalid"));
-    };
-    let [Value::Integer(start_utc_ms), Value::Integer(_)] = start.as_slice() else {
-        return Err(Error::Invalid("sleep start invalid"));
-    };
-    let start_utc_ms = i64::try_from(*start_utc_ms)
-        .map_err(|_| Error::Invalid("sleep start outside i64 range"))?;
-    if end_utc_ms <= start_utc_ms || end_utc_ms > saved_at_ms {
-        return Err(Error::Invalid("sleep end outside completed interval"));
-    }
-    if !(-840..=840).contains(&end_offset_minutes) {
-        return Err(Error::Invalid("sleep end offset outside v1 range"));
-    }
-    check_time(saved_at_ms)?;
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: activity.id,
-        scope: Scope::Activity,
-        kind: Kind::Set,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: Some(vec![(
-            2,
-            Value::Array(vec![
-                Value::Integer(end_utc_ms.into()),
-                Value::Integer(end_offset_minutes.into()),
-            ]),
-        )]),
-    })
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::edit_sleep_end_operation(
+        identity,
+        child_id,
+        activity,
+        end_utc_ms,
+        end_offset_minutes,
+        saved_at_ms,
+    )
+    .map_err(Error::Invalid)
 }
 
 pub fn delete_activity_operation(
@@ -1816,23 +1489,9 @@ pub fn delete_activity_operation(
     activity: &Record,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if activity.scope != Scope::Activity || activity.child_id != Some(child_id) || activity.deleted
-    {
-        return Err(Error::Invalid("activity target unavailable"));
-    }
-    check_time(saved_at_ms)?;
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: activity.id,
-        scope: Scope::Activity,
-        kind: Kind::Delete,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: None,
-    })
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::delete_activity_operation(identity, child_id, activity, saved_at_ms)
+        .map_err(Error::Invalid)
 }
 
 pub fn restore_activity_operation(
@@ -1841,23 +1500,9 @@ pub fn restore_activity_operation(
     activity: &Record,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if activity.scope != Scope::Activity || activity.child_id != Some(child_id) || !activity.deleted
-    {
-        return Err(Error::Invalid("deleted activity target unavailable"));
-    }
-    check_time(saved_at_ms)?;
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: activity.id,
-        scope: Scope::Activity,
-        kind: Kind::Restore,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: None,
-    })
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::restore_activity_operation(identity, child_id, activity, saved_at_ms)
+        .map_err(Error::Invalid)
 }
 
 pub fn note_operation(
@@ -1886,49 +1531,9 @@ pub fn edit_note_operation(
     note: &str,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if activity.scope != Scope::Activity
-        || activity.child_id != Some(child_id)
-        || activity.deleted
-        || !matches!(
-            activity.record_type.as_str(),
-            "note"
-                | "feed.breast"
-                | "feed.bottle"
-                | "feed.solids"
-                | "sleep"
-                | "pump"
-                | "diaper"
-                | "growth"
-                | "medication"
-                | "temperature"
-        )
-    {
-        return Err(Error::Invalid("note target unavailable"));
-    }
-    check_time(saved_at_ms)?;
-    let note = note.trim();
-    if (note.is_empty() && activity.record_type == "note") || note.len() > 4096 {
-        return Err(Error::Invalid("note outside supported length"));
-    }
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: activity.id,
-        scope: Scope::Activity,
-        kind: Kind::Set,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: Some(vec![(
-            4,
-            if note.is_empty() {
-                Value::Null
-            } else {
-                Value::Text(note.to_owned())
-            },
-        )]),
-    })
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::edit_note_operation(identity, child_id, activity, note, saved_at_ms)
+        .map_err(Error::Invalid)
 }
 
 /// Correct the recorded start of an instantaneous entry. Interval activities
@@ -1941,47 +1546,16 @@ pub fn edit_instant_time_operation(
     offset_minutes: i16,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if activity.scope != Scope::Activity
-        || activity.child_id != Some(child_id)
-        || activity.deleted
-        || !matches!(
-            activity.record_type.as_str(),
-            "note"
-                | "feed.bottle"
-                | "feed.solids"
-                | "diaper"
-                | "growth"
-                | "medication"
-                | "temperature"
-        )
-    {
-        return Err(Error::Invalid("instant activity target unavailable"));
-    }
-    check_time(saved_at_ms)?;
-    if start_utc_ms < 0 || start_utc_ms > saved_at_ms {
-        return Err(Error::Invalid("activity time must not be in the future"));
-    }
-    if !(-840..=840).contains(&offset_minutes) {
-        return Err(Error::Invalid("recorded offset outside v1 range"));
-    }
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: activity.id,
-        scope: Scope::Activity,
-        kind: Kind::Set,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: Some(vec![(
-            1,
-            Value::Array(vec![
-                Value::Integer(start_utc_ms.into()),
-                Value::Integer(offset_minutes.into()),
-            ]),
-        )]),
-    })
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::edit_instant_time_operation(
+        identity,
+        child_id,
+        activity,
+        start_utc_ms,
+        offset_minutes,
+        saved_at_ms,
+    )
+    .map_err(Error::Invalid)
 }
 
 /// Move one completed sleep or pump interval in a single field-set operation.
@@ -1994,51 +1568,16 @@ pub fn move_completed_interval_operation(
     end_utc_ms: i64,
     end_offset_minutes: i16,
 ) -> Result<NewOperation, Error> {
-    if activity.scope != Scope::Activity
-        || activity.child_id != Some(child_id)
-        || activity.deleted
-        || !matches!(activity.record_type.as_str(), "sleep" | "pump")
-        || !matches!(
-            activity.field(2).map(|field| &field.value),
-            Some(Value::Array(_))
-        )
-    {
-        return Err(Error::Invalid("completed interval target unavailable"));
-    }
-    check_time(time.saved_at_ms)?;
-    if time.start_utc_ms < 0 || end_utc_ms <= time.start_utc_ms || end_utc_ms > time.saved_at_ms {
-        return Err(Error::Invalid("completed interval time invalid"));
-    }
-    if !(-840..=840).contains(&time.offset_minutes) || !(-840..=840).contains(&end_offset_minutes) {
-        return Err(Error::Invalid("recorded offset outside v1 range"));
-    }
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(time.saved_at_ms)?,
-        record_id: activity.id,
-        scope: Scope::Activity,
-        kind: Kind::Set,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: Some(vec![
-            (
-                1,
-                Value::Array(vec![
-                    Value::Integer(time.start_utc_ms.into()),
-                    Value::Integer(time.offset_minutes.into()),
-                ]),
-            ),
-            (
-                2,
-                Value::Array(vec![
-                    Value::Integer(end_utc_ms.into()),
-                    Value::Integer(end_offset_minutes.into()),
-                ]),
-            ),
-        ]),
-    })
+    let identity = action_identity(family, Some(activity.id), time.saved_at_ms)?;
+    crate::event_actions::move_completed_interval_operation(
+        identity,
+        child_id,
+        activity,
+        time,
+        end_utc_ms,
+        end_offset_minutes,
+    )
+    .map_err(Error::Invalid)
 }
 
 pub fn edit_bottle_ml_operation(
@@ -2048,45 +1587,15 @@ pub fn edit_bottle_ml_operation(
     amount_ml: i64,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    edit_bottle_measure_operation(
-        family,
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::edit_bottle_ml_operation(
+        identity,
         child_id,
         activity,
-        &amount_ml.to_string(),
-        1,
+        amount_ml,
         saved_at_ms,
     )
-}
-
-fn edit_bottle_measure_operation(
-    family: FamilyHandle,
-    child_id: [u8; 16],
-    activity: &Record,
-    entered: &str,
-    unit: u8,
-    saved_at_ms: i64,
-) -> Result<NewOperation, Error> {
-    if activity.scope != Scope::Activity
-        || activity.child_id != Some(child_id)
-        || activity.record_type != "feed.bottle"
-        || activity.deleted
-    {
-        return Err(Error::Invalid("bottle target unavailable"));
-    }
-    check_time(saved_at_ms)?;
-    let measure = bottle_measure(entered, unit)?;
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: activity.id,
-        scope: Scope::Activity,
-        kind: Kind::Set,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: Some(vec![(100, measure)]),
-    })
+    .map_err(Error::Invalid)
 }
 
 pub fn edit_bottle_entered_operation(
@@ -2098,17 +1607,17 @@ pub fn edit_bottle_entered_operation(
     content: u8,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if !(1..=4).contains(&content) {
-        return Err(Error::Invalid("bottle content invalid"));
-    }
-    let mut operation =
-        edit_bottle_measure_operation(family, child_id, activity, entered, unit, saved_at_ms)?;
-    operation
-        .fields
-        .as_mut()
-        .expect("bottle edit has fields")
-        .push((101, Value::Integer(content.into())));
-    Ok(operation)
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::edit_bottle_entered_operation(
+        identity,
+        child_id,
+        activity,
+        entered,
+        unit,
+        content,
+        saved_at_ms,
+    )
+    .map_err(Error::Invalid)
 }
 
 pub fn edit_bottle_operation(
@@ -2119,15 +1628,16 @@ pub fn edit_bottle_operation(
     content: u8,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    edit_bottle_entered_operation(
-        family,
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::edit_bottle_operation(
+        identity,
         child_id,
         activity,
-        &amount_ml.to_string(),
-        1,
+        amount_ml,
         content,
         saved_at_ms,
     )
+    .map_err(Error::Invalid)
 }
 
 pub fn edit_diaper_kind_operation(
@@ -2137,29 +1647,15 @@ pub fn edit_diaper_kind_operation(
     kind: u8,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if activity.scope != Scope::Activity
-        || activity.child_id != Some(child_id)
-        || activity.record_type != "diaper"
-        || activity.deleted
-    {
-        return Err(Error::Invalid("diaper target unavailable"));
-    }
-    check_time(saved_at_ms)?;
-    if !(1..=4).contains(&kind) {
-        return Err(Error::Invalid("diaper kind outside published codes"));
-    }
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: activity.id,
-        scope: Scope::Activity,
-        kind: Kind::Set,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: Some(vec![(100, Value::Integer(kind.into()))]),
-    })
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::edit_diaper_kind_operation(
+        identity,
+        child_id,
+        activity,
+        kind,
+        saved_at_ms,
+    )
+    .map_err(Error::Invalid)
 }
 
 pub fn growth_operation(
@@ -2169,7 +1665,9 @@ pub fn growth_operation(
     length_mm: Option<i64>,
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    growth_measurements_operation(family, child_id, weight_g, length_mm, None, time)
+    let identity = action_identity(family, None, time.saved_at_ms)?;
+    crate::event_actions::growth_operation(identity, child_id, weight_g, length_mm, time)
+        .map_err(Error::Invalid)
 }
 
 pub fn growth_measurements_operation(
@@ -2180,82 +1678,11 @@ pub fn growth_measurements_operation(
     head_mm: Option<i64>,
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    let fields = growth_fields(weight_g, length_mm, head_mm)?;
-    activity_operation(family, child_id, "growth", fields, time)
-}
-
-fn growth_fields(
-    weight_g: Option<i64>,
-    length_mm: Option<i64>,
-    head_mm: Option<i64>,
-) -> Result<Vec<(u64, Value)>, Error> {
-    if weight_g.is_none() && length_mm.is_none() && head_mm.is_none() {
-        return Err(Error::Invalid("growth needs a measurement"));
-    }
-    if weight_g.is_some_and(|value| !(1..=100_000).contains(&value))
-        || length_mm.is_some_and(|value| !(1..=2_500).contains(&value))
-        || head_mm.is_some_and(|value| !(1..=1_000).contains(&value))
-    {
-        return Err(Error::Invalid("growth measurement outside supported range"));
-    }
-    let mut fields = Vec::new();
-    if let Some(value) = weight_g {
-        fields.push((100, whole_measure(value, 10)));
-    }
-    if let Some(value) = length_mm {
-        fields.push((101, whole_measure(value, 20)));
-    }
-    if let Some(value) = head_mm {
-        fields.push((102, whole_measure(value, 20)));
-    }
-    Ok(fields)
-}
-
-fn entered_growth_measure(
-    input: &MeasurementInput,
-    units: std::ops::RangeInclusive<u8>,
-    maximum: i128,
-) -> Result<Value, Error> {
-    let entered = input.entered.trim();
-    if entered.is_empty() || entered.len() > 16 || !units.contains(&input.unit) {
-        return Err(Error::Invalid("growth decimal or unit invalid"));
-    }
-    let (numerator, denominator) = crate::record_validity::parse_decimal(entered)
-        .ok_or(Error::Invalid("growth decimal invalid"))?;
-    let (factor_num, factor_den) = crate::record_validity::unit_factor(input.unit.into());
-    let scaled = numerator
-        .checked_mul(factor_num)
-        .ok_or(Error::Invalid("growth measurement overflow"))?;
-    let divisor = denominator
-        .checked_mul(factor_den)
-        .ok_or(Error::Invalid("growth measurement overflow"))?;
-    let base = crate::record_validity::round_ratio(scaled, divisor)
-        .map_err(|_| Error::Invalid("growth measurement overflow"))?;
-    if !(1..=maximum).contains(&base) {
-        return Err(Error::Invalid("growth measurement outside supported range"));
-    }
-    Ok(Value::Map(vec![
-        (1, Value::Integer(base)),
-        (2, Value::Text(entered.to_owned())),
-        (3, Value::Integer(input.unit.into())),
-    ]))
-}
-
-fn growth_entered_fields(input: &GrowthInput) -> Result<Vec<(u64, Value)>, Error> {
-    let mut fields = Vec::new();
-    if let Some(weight) = &input.weight {
-        fields.push((100, entered_growth_measure(weight, 10..=13, 100_000)?));
-    }
-    if let Some(length) = &input.length {
-        fields.push((101, entered_growth_measure(length, 20..=22, 2_500)?));
-    }
-    if let Some(head) = &input.head {
-        fields.push((102, entered_growth_measure(head, 20..=22, 1_000)?));
-    }
-    if fields.is_empty() {
-        return Err(Error::Invalid("growth needs a measurement"));
-    }
-    Ok(fields)
+    let identity = action_identity(family, None, time.saved_at_ms)?;
+    crate::event_actions::growth_measurements_operation(
+        identity, child_id, weight_g, length_mm, head_mm, time,
+    )
+    .map_err(Error::Invalid)
 }
 
 pub fn growth_entered_operation(
@@ -2264,13 +1691,9 @@ pub fn growth_entered_operation(
     input: &GrowthInput,
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    activity_operation(
-        family,
-        child_id,
-        "growth",
-        growth_entered_fields(input)?,
-        time,
-    )
+    let identity = action_identity(family, None, time.saved_at_ms)?;
+    crate::event_actions::growth_entered_operation(identity, child_id, input, time)
+        .map_err(Error::Invalid)
 }
 
 pub fn edit_growth_entered_operation(
@@ -2280,26 +1703,15 @@ pub fn edit_growth_entered_operation(
     input: &GrowthInput,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if activity.scope != Scope::Activity
-        || activity.child_id != Some(child_id)
-        || activity.record_type != "growth"
-        || activity.deleted
-    {
-        return Err(Error::Invalid("growth target unavailable"));
-    }
-    check_time(saved_at_ms)?;
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: activity.id,
-        scope: Scope::Activity,
-        kind: Kind::Set,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: Some(growth_entered_fields(input)?),
-    })
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::edit_growth_entered_operation(
+        identity,
+        child_id,
+        activity,
+        input,
+        saved_at_ms,
+    )
+    .map_err(Error::Invalid)
 }
 
 pub fn edit_growth_operation(
@@ -2310,15 +1722,16 @@ pub fn edit_growth_operation(
     length_mm: Option<i64>,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    edit_growth_measurements_operation(
-        family,
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::edit_growth_operation(
+        identity,
         child_id,
         activity,
         weight_g,
         length_mm,
-        None,
         saved_at_ms,
     )
+    .map_err(Error::Invalid)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2331,26 +1744,17 @@ pub fn edit_growth_measurements_operation(
     head_mm: Option<i64>,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if activity.scope != Scope::Activity
-        || activity.child_id != Some(child_id)
-        || activity.record_type != "growth"
-        || activity.deleted
-    {
-        return Err(Error::Invalid("growth target unavailable"));
-    }
-    check_time(saved_at_ms)?;
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: activity.id,
-        scope: Scope::Activity,
-        kind: Kind::Set,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: Some(growth_fields(weight_g, length_mm, head_mm)?),
-    })
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::edit_growth_measurements_operation(
+        identity,
+        child_id,
+        activity,
+        weight_g,
+        length_mm,
+        head_mm,
+        saved_at_ms,
+    )
+    .map_err(Error::Invalid)
 }
 
 pub fn temperature_c_operation(
@@ -2359,7 +1763,9 @@ pub fn temperature_c_operation(
     entered_c: &str,
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    temperature_entered_operation(family, child_id, entered_c, 30, time)
+    let identity = action_identity(family, None, time.saved_at_ms)?;
+    crate::event_actions::temperature_c_operation(identity, child_id, entered_c, time)
+        .map_err(Error::Invalid)
 }
 
 pub fn temperature_entered_operation(
@@ -2369,55 +1775,9 @@ pub fn temperature_entered_operation(
     unit: u8,
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    activity_operation(
-        family,
-        child_id,
-        "temperature",
-        temperature_fields(entered, unit)?,
-        time,
-    )
-}
-
-fn temperature_fields(entered: &str, unit: u8) -> Result<Vec<(u64, Value)>, Error> {
-    let decimal = entered.trim();
-    if decimal.is_empty() || decimal.len() > 16 || !matches!(unit, 30 | 31) {
-        return Err(Error::Invalid("temperature decimal or unit invalid"));
-    }
-    let (numerator, denominator) = crate::record_validity::parse_decimal(decimal)
-        .ok_or(Error::Invalid("temperature decimal invalid"))?;
-    let (scaled, divisor) = if unit == 30 {
-        (
-            numerator
-                .checked_mul(100)
-                .ok_or(Error::Invalid("temperature decimal overflow"))?,
-            denominator,
-        )
-    } else {
-        (
-            numerator
-                .checked_sub(
-                    denominator
-                        .checked_mul(32)
-                        .ok_or(Error::Invalid("temperature decimal overflow"))?,
-                )
-                .and_then(|difference| difference.checked_mul(500))
-                .ok_or(Error::Invalid("temperature decimal overflow"))?,
-            denominator
-                .checked_mul(9)
-                .ok_or(Error::Invalid("temperature decimal overflow"))?,
-        )
-    };
-    let base = crate::record_validity::round_ratio(scaled, divisor)
-        .map_err(|_| Error::Invalid("temperature decimal overflow"))?;
-    i64::try_from(base).map_err(|_| Error::Invalid("temperature outside i64 range"))?;
-    Ok(vec![(
-        100,
-        Value::Map(vec![
-            (1, Value::Integer(base)),
-            (2, Value::Text(decimal.to_owned())),
-            (3, Value::Integer(unit.into())),
-        ]),
-    )])
+    let identity = action_identity(family, None, time.saved_at_ms)?;
+    crate::event_actions::temperature_entered_operation(identity, child_id, entered, unit, time)
+        .map_err(Error::Invalid)
 }
 
 pub fn edit_temperature_c_operation(
@@ -2427,7 +1787,15 @@ pub fn edit_temperature_c_operation(
     entered_c: &str,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    edit_temperature_entered_operation(family, child_id, activity, entered_c, 30, saved_at_ms)
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::edit_temperature_c_operation(
+        identity,
+        child_id,
+        activity,
+        entered_c,
+        saved_at_ms,
+    )
+    .map_err(Error::Invalid)
 }
 
 pub fn edit_temperature_entered_operation(
@@ -2438,26 +1806,16 @@ pub fn edit_temperature_entered_operation(
     unit: u8,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if activity.scope != Scope::Activity
-        || activity.child_id != Some(child_id)
-        || activity.record_type != "temperature"
-        || activity.deleted
-    {
-        return Err(Error::Invalid("temperature target unavailable"));
-    }
-    check_time(saved_at_ms)?;
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: activity.id,
-        scope: Scope::Activity,
-        kind: Kind::Set,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: Some(temperature_fields(entered, unit)?),
-    })
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::edit_temperature_entered_operation(
+        identity,
+        child_id,
+        activity,
+        entered,
+        unit,
+        saved_at_ms,
+    )
+    .map_err(Error::Invalid)
 }
 
 pub fn medication_operation(
@@ -2468,42 +1826,16 @@ pub fn medication_operation(
     dose_unit: &str,
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    activity_operation(
-        family,
+    let identity = action_identity(family, None, time.saved_at_ms)?;
+    crate::event_actions::medication_operation(
+        identity,
         child_id,
-        "medication",
-        medication_fields(name, dose_amount, dose_unit)?,
+        name,
+        dose_amount,
+        dose_unit,
         time,
     )
-}
-
-fn medication_fields(
-    name: &str,
-    dose_amount: &str,
-    dose_unit: &str,
-) -> Result<Vec<(u64, Value)>, Error> {
-    let name = name.trim();
-    let dose_amount = dose_amount.trim();
-    let dose_unit = dose_unit.trim();
-    if name.is_empty()
-        || dose_amount.is_empty()
-        || dose_unit.is_empty()
-        || name.len() > 256
-        || dose_amount.len() > 64
-        || dose_unit.len() > 64
-    {
-        return Err(Error::Invalid("medication name or dose empty or too long"));
-    }
-    Ok(vec![
-        (100, Value::Text(name.to_owned())),
-        (
-            101,
-            Value::Array(vec![
-                Value::Text(dose_amount.to_owned()),
-                Value::Text(dose_unit.to_owned()),
-            ]),
-        ),
-    ])
+    .map_err(Error::Invalid)
 }
 
 pub fn edit_medication_operation(
@@ -2515,78 +1847,21 @@ pub fn edit_medication_operation(
     dose_unit: &str,
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if activity.scope != Scope::Activity
-        || activity.child_id != Some(child_id)
-        || activity.record_type != "medication"
-        || activity.deleted
-    {
-        return Err(Error::Invalid("medication target unavailable"));
-    }
-    check_time(saved_at_ms)?;
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: activity.id,
-        scope: Scope::Activity,
-        kind: Kind::Set,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: Some(medication_fields(name, dose_amount, dose_unit)?),
-    })
-}
-
-fn whole_measure(value: i64, unit: i128) -> Value {
-    Value::Map(vec![
-        (1, Value::Integer(value.into())),
-        (2, Value::Text(value.to_string())),
-        (3, Value::Integer(unit)),
-    ])
-}
-
-fn activity_operation(
-    family: FamilyHandle,
-    child_id: [u8; 16],
-    record_type: &str,
-    fields: Vec<(u64, Value)>,
-    time: ActivityTime,
-) -> Result<([u8; 16], NewOperation), Error> {
-    check_time(time.saved_at_ms)?;
-    if !(-840..=840).contains(&time.offset_minutes) {
-        return Err(Error::Invalid("recorded offset outside v1 range"));
-    }
-    let id = ids::random_v7(time.saved_at_ms)?;
-    let mut all_fields = vec![(
-        1,
-        Value::Array(vec![
-            Value::Integer(time.start_utc_ms.into()),
-            Value::Integer(time.offset_minutes.into()),
-        ]),
-    )];
-    all_fields.extend(fields);
-    Ok((
-        id,
-        NewOperation {
-            family_id: family.family_id,
-            operation_id: ids::random_v7(time.saved_at_ms)?,
-            record_id: id,
-            scope: Scope::Activity,
-            kind: Kind::Create,
-            author_device_id: family.device_id,
-            hlc: placeholder_hlc(family),
-            record_type: Some(record_type.to_owned()),
-            child_id: Some(child_id),
-            fields: Some(all_fields),
-        },
-    ))
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::edit_medication_operation(
+        identity,
+        child_id,
+        activity,
+        name,
+        dose_amount,
+        dose_unit,
+        saved_at_ms,
+    )
+    .map_err(Error::Invalid)
 }
 
 fn check_time(now_ms: i64) -> Result<(), Error> {
-    if now_ms < 0 || (now_ms as u64) >= (1u64 << 48) {
-        return Err(Error::Invalid("time outside UUIDv7 range"));
-    }
-    Ok(())
+    crate::event_actions::check_time(now_ms).map_err(Error::Invalid)
 }
 
 fn placeholder_hlc(family: FamilyHandle) -> Hlc {

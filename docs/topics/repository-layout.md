@@ -52,8 +52,11 @@ canonical CBOR, public authority verification, and domain-separated
 cryptographic primitives without client storage or plaintext event semantics.
 `core/` owns operations, projection, local SQLite journals, shared history,
 durable outboxes, membership, crypto, enrollment, sync, and portable files.
-Portable event constructors and record read models are shared by native and
-browser adapters; only native repository/storage coordination requires SQLite.
+Portable event constructors, measurement/correction rules, record read models,
+and local-day totals are shared by native and browser adapters. The native
+`local_api` supplies random IDs, placeholder clocks, error mapping, and the
+repository facade; its existing type paths remain compatibility reexports.
+Only native repository/storage coordination requires SQLite.
 
 `core-ffi/src/` separates boundary records, local APIs, invitation reads,
 shared authority/enrollment/actions/sync, and feature-gated fixtures. Its

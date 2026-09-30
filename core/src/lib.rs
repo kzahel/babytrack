@@ -10,6 +10,7 @@ pub mod batch;
 pub mod bootstrap;
 mod breast;
 pub mod claim;
+pub mod day_summary;
 pub mod event_actions;
 pub mod read_model;
 pub use babytrack_wire::cbor;

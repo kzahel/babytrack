@@ -7,6 +7,33 @@ use crate::{
     projection::Record,
 };
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MeasurementInput {
+    pub entered: String,
+    pub unit: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GrowthInput {
+    pub weight: Option<MeasurementInput>,
+    pub length: Option<MeasurementInput>,
+    pub head: Option<MeasurementInput>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActivityTime {
+    pub start_utc_ms: i64,
+    pub offset_minutes: i16,
+    pub saved_at_ms: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PumpAmounts {
+    pub left_ml: Option<i64>,
+    pub right_ml: Option<i64>,
+    pub total_ml: Option<i64>,
+}
+
 pub struct Identity {
     pub family: [u8; 16],
     pub device: [u8; 16],
@@ -220,4 +247,41 @@ pub fn edit_breast(
         child_id: None,
         fields: Some(fields),
     })
+}
+
+mod child;
+mod corrections;
+mod intervals;
+mod measurements;
+mod tracking;
+
+pub use child::{edit_child_metadata_operation, rename_child_operation};
+pub use corrections::{
+    delete_activity_operation, edit_bottle_entered_operation, edit_bottle_ml_operation,
+    edit_bottle_operation, edit_diaper_kind_operation, edit_instant_time_operation,
+    edit_note_operation, restore_activity_operation,
+};
+pub use intervals::{
+    edit_pump_amounts_operation, edit_sleep_end_operation, edit_sleep_place_operation,
+    move_completed_interval_operation, pump_operation, running_sleep_operation,
+    running_sleep_operation_with_place, sleep_operation, sleep_operation_with_place,
+    stop_sleep_operation,
+};
+use measurements::whole_measure;
+pub use measurements::{
+    edit_growth_entered_operation, edit_growth_measurements_operation, edit_growth_operation,
+    edit_temperature_c_operation, edit_temperature_entered_operation, growth_entered_operation,
+    growth_measurements_operation, growth_operation, temperature_c_operation,
+    temperature_entered_operation,
+};
+use tracking::activity_operation;
+pub use tracking::{
+    edit_medication_operation, edit_solids_operation, medication_operation, solids_operation,
+};
+
+pub(crate) fn check_time(now_ms: i64) -> Result<(), &'static str> {
+    if now_ms < 0 || (now_ms as u64) >= (1u64 << 48) {
+        return Err("time outside UUIDv7 range");
+    }
+    Ok(())
 }

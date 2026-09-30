@@ -310,14 +310,21 @@ plan applied to events.
 ## Validation
 
 Native and browser capture paths share portable Rust event constructors in
-`core/src/event_actions.rs` and projected record decoding in
-`core/src/read_model.rs`. Platform adapters supply IDs, clock/save metadata,
+`core/src/event_actions.rs` and its child, correction, interval, measurement,
+and tracking modules. Projected record decoding lives in
+`core/src/read_model.rs`; `core/src/day_summary.rs` computes local-day totals
+from actual UTC midnight bounds and the observation cutoff. Both compile
+for wasm without native storage or randomness. Platform adapters supply IDs,
+clock/save metadata,
 storage, and presentation serialization. Existing native API paths remain
 reexports. Child creation validates the trimmed name's UTF-8 byte length,
 matching correction and browser capture. `core/tests/event_parity.rs`
 compares canonical operations and projected display fields across the two
-adapters, including breast-feed correction and invalid inputs. This changes
-no v1 field or encoding contract.
+adapters, including entered measurements, intervals, corrections, and invalid
+inputs. `core/tests/portable_tracking.rs` directly exercises partial edits,
+unknown-field retention, pump amount alternatives, and 23/25-hour windows.
+The native API retains input/read-model reexports and error adapters. This
+changes no v1 field or encoding contract.
 
 - Vectors for unit conversion and display rounding.
 - Vectors for day boundaries across midnight, daylight saving changes, and

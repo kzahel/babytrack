@@ -1,7 +1,7 @@
 # 009: Action and storage boundaries
 
-Status: active, 2026-09-30. The user requested all six follow-up refactors,
-with autonomous implementation and a commit for each validated slice.
+Status: complete with local verification, 2026-09-30. All six requested
+follow-up refactors are delivered, with a commit for each validated slice.
 
 ## Goal and exclusions
 
@@ -31,7 +31,7 @@ Owning topics: [web](../topics/web-client.md),
    native-only API, retaining ID/clock adapters and compatibility reexports.
 6. [x] Separate SQLite schema, journal, outbox/history, enrollment, and copy
    persistence into modules while preserving whole transaction ownership.
-7. [ ] Run final affected cross-platform checks and reconcile documentation.
+7. [x] Run final affected cross-platform checks and reconcile documentation.
 
 ## Gates and completion
 
@@ -86,8 +86,8 @@ gates remain with their milestone owners. Local runs do not imply remote CI.
   trace and cleans up the relay/browser. CI retains diagnostics when present.
   Python/JS compilation, CLI help/list, shell syntax, Actionlint, boundaries,
   and diff checks pass. Complete UI/recovery/capture results are recorded at
-  final verification; the full walkthrough and recovery are running with the
-  new support module.
+  final verification; full UI/recovery/capture runs pass with the new support
+  module.
 
 - Slice 4: wasm boundary implementations now live in seven concern modules;
   the root retains public reexports and shared boundary helpers. Generated
@@ -126,3 +126,31 @@ gates remain with their milestone owners. Local runs do not imply remote CI.
   test; all other errors still fail immediately. The focused recreation case,
   clean-install invitation case, and complete 28-case relay rerun pass.
   Production transactions and coordinator behavior are unchanged.
+
+## Final local verification
+
+Final product code is at `6b4800f`; the bounded join assertion retry is at
+`e17067a`. The six implementation slices and the integration follow-up are
+committed individually. The commands below exercise those product inputs.
+
+| Check | Observed result |
+|---|---|
+| Rust formatting, workspace check/test/Clippy, wasm target check | Pass; 132 workspace tests, including portable actions and SQLite migration/rollback/retry regressions |
+| Cargo deny advisories/bans/licenses/sources | Pass |
+| Swift/Kotlin and wasm fixed-vector smoke; production fixture boundary | Pass |
+| Generated wasm API comparison | Production and fixture TypeScript class/function signatures unchanged |
+| Browser wasm/IndexedDB/relay | All nine isolated scenarios pass; filtered scenario and controlled failure evidence recorded in slice 3 |
+| Responsive local and real-relay shared web UI | Pass, including reload, offline edits, rotated joins, removal copies, and backup restore |
+| Android unit/lint/debug and test APK builds | Pass |
+| Android fixture gallery | 31 cases, 124 variants, 214 images; representative large-font light and dark captures inspected |
+| Android clean-install invitation and real relay | One independent invitation case and all 28 suite cases pass after the bounded assertion retry; focused recreation case also passes |
+| Full caregiver walkthrough | Pass on the final APK, including Family/child selection, logging, correction, deletion, and restart |
+| Document-picker recovery | Readable/protected backups, damaged-file denial, fresh-install restore, and restart pass |
+| Two-emulator relay flow | Pass: independent installations join, exchange encrypted edits, resume after relay restart, recover a removal copy, and join again at the later epoch |
+| Navigation capture | Pass after action/harness changes; light/default and dark/large-font routes captured |
+| Harness/automation/repository checks | Three Python regressions, Python/JS compilation, help/list/filter, shell syntax, Actionlint, workspace boundaries, and diff checks pass |
+
+These are measured local runs. No new remote CI run is claimed. Physical-phone,
+web-origin authority, scale, and release gates remain with their existing
+milestone owners. Both owned read-only emulators were shut down and reaped;
+no owned browser or relay processes remain. The workstream is complete.

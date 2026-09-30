@@ -66,7 +66,13 @@ The completed maintenance workstream is
 [008](008-maintenance-refactors.md): shared event semantics, Android
 coordination, bindings, relay storage, harness/documentation hygiene, and
 minimum-API compatibility, with local cross-platform and emulator evidence.
-It preserves the existing milestone gates.
+The follow-up maintenance workstream is
+[009](009-action-and-storage-boundaries.md): web async coordination, shared
+Android action dispatch, bounded diagnostic harnesses, wasm modules, portable
+event/day behavior, and client SQLite organization. It is complete with local
+workspace, binding, browser/web, Android relay/UI/recovery, and independent
+two-emulator evidence. These maintenance workstreams preserve the existing
+milestone gates.
 
 ## Ordered delivery handoffs
 

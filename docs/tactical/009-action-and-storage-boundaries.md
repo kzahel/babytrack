@@ -25,12 +25,12 @@ Owning topics: [web](../topics/web-client.md),
    semantics into Kotlin or changing the route's coroutine/draft lifetime.
 3. [x] Bound Android harness subprocesses, emit stage progress and failure
    artifacts, and split browser smoke into individually runnable scenarios.
-4. [ ] Separate wasm bindings by local/enrollment/authority/restore/fixture
+4. [x] Separate wasm bindings by local/enrollment/authority/restore/fixture
    concern while preserving generated JavaScript exports and feature gates.
 5. [ ] Move remaining pure event construction and day summaries out of the
    native-only API, retaining ID/clock adapters and compatibility reexports.
 6. [ ] Separate SQLite schema, journal, outbox/history, enrollment, and copy
-  persistence into modules while preserving whole transaction ownership.
+   persistence into modules while preserving whole transaction ownership.
 7. [ ] Run final affected cross-platform checks and reconcile documentation.
 
 ## Gates and completion
@@ -88,3 +88,11 @@ gates remain with their milestone owners. Local runs do not imply remote CI.
   and diff checks pass. Complete UI/recovery/capture results are recorded at
   final verification; the full walkthrough and recovery are running with the
   new support module.
+
+- Slice 4: wasm boundary implementations now live in seven concern modules;
+  the root retains public reexports and shared boundary helpers. Generated
+  TypeScript class/function signatures compare equal for both fixture and
+  production builds. Wasm check/Clippy, fixed encrypted-vector smoke,
+  production fixture-exclusion checks, all nine browser scenarios, and local
+  and shared web UI flows pass. Workspace boundaries and diff checks pass.
+  No protocol interpretation or generated export changed.

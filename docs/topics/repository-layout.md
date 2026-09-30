@@ -59,8 +59,10 @@ browser adapters; only native repository/storage coordination requires SQLite.
 shared authority/enrollment/actions/sync, and feature-gated fixtures. Its
 Kotlin and Swift bindings are generated build outputs, not committed sources.
 UniFFI's pinned MPL-2.0 build/runtime exceptions remain in `deny.toml`.
-`core-wasm/` provides wasm APIs and the IndexedDB local/public/invitation
-adapters. Browser journal and outbox transactions call Rust validation and
+`core-wasm/src/` separates local projection, initial Family/enrollment,
+invitation, public authority, removal probes, restore, and feature-gated
+fixtures. Its root reexports the same generated JavaScript API. The IndexedDB
+local/public/invitation adapters remain app-owned. Browser journal and outbox transactions call Rust validation and
 projection and cover concurrent tabs, reload, rollback, and removal copying.
 
 `server/src/store/` separates schema initialization, opaque object staging,

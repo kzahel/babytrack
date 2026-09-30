@@ -1,0 +1,81 @@
+# 008: Shared model and implementation cleanup
+
+Status: active, 2026-09-30. The user requested all six maintenance items
+from the source review, delivered autonomously with a commit per slice.
+[005](005-m1-android.md) and [006](006-m2-web.md) retain product delivery
+gates; this workstream owns refactor progress and validation evidence.
+
+## Goal and exclusions
+
+Reduce duplicated event behavior and separate implementation responsibilities
+without changing the v1 protocol, exported client APIs, Family promises,
+navigation, draft retention, or transaction guarantees. Keep Rust as the
+owner of event semantics and keep the relay independent of plaintext data.
+Resolve the recorded Android minimum-API lint failures rather than hiding
+them behind a lint baseline. No new features, new crates, visual redesign,
+hosting, publishing, or physical-phone gate claims are included.
+
+Owning decisions: [event model](../topics/event-model.md),
+[sync](../topics/sync-and-encryption.md),
+[Android navigation](../topics/android-navigation.md),
+[web client](../topics/web-client.md), and
+[repository layout](../topics/repository-layout.md).
+
+## Ordered delivery slices
+
+1. [ ] Unify native and browser event builders and overlapping read models
+   in platform-independent core modules. Retain platform ID/clock/storage
+   adapters and browser JSON shape. Add parity checks for overlapping types,
+   invalid input, target identity, and edited breast-feed records.
+2. [ ] Extract Android sharing/enrollment and file backup/recovery
+   coordination from TrackerRoute, and consolidate its loaded screen state.
+   Keep platform launchers at the route boundary, the existing shared save
+   coroutine lifetime, exact selection targets, and failed-save drafts.
+3. [ ] Organize native binding records/conversions, local APIs, sharing,
+   invitations, and fixture APIs into modules. Move reusable native sync
+   orchestration into core while preserving UniFFI exports and API signatures.
+4. [ ] Separate relay storage tests and implementation concerns:
+   initialization/integrity, object staging, authority commits, and reads.
+   Preserve explicit SQLite transaction ownership and wire validation.
+5. [ ] Audit obsolete scaffolding comments and broad dead-code allowances;
+   refresh the current repository map; move Android UI harness helpers into
+   a dedicated support module with all entry points updated.
+6. [ ] Resolve Android API 26 compatibility for generated binding cleanup
+   and navigation-bar resources. Run lint without a NewApi suppression or
+   baseline and add that check to the Android CI gate.
+7. [ ] Run the affected cross-platform integration and boundary checks,
+   reconcile owning documentation, and record the final completion evidence.
+
+## Validation and completion
+
+- Each implementation slice updates this document and commits its completed
+  scope and measured evidence. Do not record an unrun check as passing.
+- Shared model: core tests, workspace formatting/Clippy/tests, wasm build and
+  byte/browser smokes, and native Kotlin/Swift smoke.
+- Android: unit tests, both debug APKs, fixture gallery, lint for compatibility,
+  clean-install invitation and existing real-relay/UI/recovery checks on a
+  disposable emulator when available. Use bundled test tools, not a primary
+  installed browser or personal phone.
+- Bindings: native smoke and fixture API boundary; preserve production and
+  fixture feature builds and generated Kotlin/Swift public names.
+- Relay: server and CLI real-relay tests, workspace dependency boundary,
+  existing authority/negative tests and transaction behavior.
+- Harness: Python compilation, command entry points, actual UI/recovery
+  checks, shell syntax for modified scripts, and diff checks.
+- This is maintenance within reviewed trust boundaries, not a new MVP
+  security gate. Any newly introduced authority or protocol behavior must
+  return to its owning topic/scenarios and named independent review gate.
+
+Completion requires every requested item delivered, relevant checks passed
+or a concrete environmental limit recorded, and a clean committed tree.
+M1 physical-phone, M2 web-origin sharing, and release gates remain with their
+existing owners.
+
+## Evidence
+
+- Planning: source review found duplicate child/activity construction in
+  native `local_api` and portable `web_actions`, duplicated native pull and
+  object hydration orchestration, a large Android route controller, relay
+  tests embedded in storage, and outdated scaffolding comments/layout text.
+  [007](007-android-screen-gallery.md#evidence) records the existing five
+  Android NewApi lint failures. No implementation checks have run yet.

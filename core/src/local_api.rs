@@ -35,52 +35,7 @@ impl From<getrandom::Error> for Error {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Child {
-    pub id: [u8; 16],
-    pub name: String,
-    pub birth_day: Option<i64>,
-    pub sex: Option<u8>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Activity {
-    pub id: [u8; 16],
-    pub child_id: [u8; 16],
-    pub kind: String,
-    pub start_utc_ms: i64,
-    pub offset_minutes: i16,
-    pub end_utc_ms: Option<i64>,
-    pub sleep_place: Option<u8>,
-    pub note: Option<String>,
-    pub diaper_kind: Option<u8>,
-    pub bottle_ml: Option<i64>,
-    pub bottle_entered: Option<String>,
-    pub bottle_unit: Option<u8>,
-    pub bottle_content: Option<u8>,
-    pub breast_side: Option<u8>,
-    pub breast_segments: Option<Vec<BreastSegment>>,
-    pub solids_foods: Option<Vec<String>>,
-    pub solids_amount: Option<String>,
-    pub pump_left_ml: Option<i64>,
-    pub pump_right_ml: Option<i64>,
-    pub pump_total_ml: Option<i64>,
-    pub growth_weight_g: Option<i64>,
-    pub growth_weight_entered: Option<String>,
-    pub growth_weight_unit: Option<u8>,
-    pub growth_length_mm: Option<i64>,
-    pub growth_length_entered: Option<String>,
-    pub growth_length_unit: Option<u8>,
-    pub growth_head_mm: Option<i64>,
-    pub growth_head_entered: Option<String>,
-    pub growth_head_unit: Option<u8>,
-    pub temperature_c: Option<String>,
-    pub temperature_entered: Option<String>,
-    pub temperature_unit: Option<u8>,
-    pub medication_name: Option<String>,
-    pub medication_dose_amount: Option<String>,
-    pub medication_dose_unit: Option<String>,
-}
+pub use crate::read_model::{Activity, Child, activities_from_records, children_from_records};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DayWindow {
@@ -1313,36 +1268,11 @@ pub fn child_operation_with_metadata(
     sex: Option<u8>,
     now_ms: i64,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    check_time(now_ms)?;
-    if name.trim().is_empty() || name.len() > 16 * 1024 {
-        return Err(Error::Invalid("child name empty or too long"));
-    }
-    if sex.is_some_and(|code| !(1..=3).contains(&code)) {
-        return Err(Error::Invalid("child sex code outside published range"));
-    }
-    let mut fields = vec![(1, Value::Text(name.trim().to_owned()))];
-    if let Some(day) = birth_day {
-        fields.push((2, Value::Integer(day.into())));
-    }
-    if let Some(code) = sex {
-        fields.push((3, Value::Integer(code.into())));
-    }
-    let id = ids::random_v7(now_ms)?;
-    Ok((
-        id,
-        NewOperation {
-            family_id: family.family_id,
-            operation_id: ids::random_v7(now_ms)?,
-            record_id: id,
-            scope: Scope::Child,
-            kind: Kind::Create,
-            author_device_id: family.device_id,
-            hlc: placeholder_hlc(family),
-            record_type: Some("child".to_owned()),
-            child_id: None,
-            fields: Some(fields),
-        },
-    ))
+    let identity = action_identity(family, None, now_ms)?;
+    let id = identity.record;
+    let operation =
+        crate::event_actions::child(identity, name, birth_day, sex).map_err(Error::Invalid)?;
+    Ok((id, operation))
 }
 
 pub fn rename_child_operation(
@@ -1417,16 +1347,17 @@ pub fn diaper_operation(
     kind: u8,
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    if !(1..=4).contains(&kind) {
-        return Err(Error::Invalid("diaper kind outside published codes"));
-    }
-    activity_operation(
-        family,
+    let identity = action_identity(family, None, time.saved_at_ms)?;
+    let id = identity.record;
+    let operation = crate::event_actions::diaper(
+        identity,
         child_id,
-        "diaper",
-        vec![(100, Value::Integer(kind.into()))],
-        time,
+        kind,
+        time.start_utc_ms,
+        time.offset_minutes,
     )
+    .map_err(Error::Invalid)?;
+    Ok((id, operation))
 }
 
 pub fn bottle_operation(
@@ -1440,29 +1371,7 @@ pub fn bottle_operation(
 }
 
 fn bottle_measure(entered: &str, unit: u8) -> Result<Value, Error> {
-    let decimal = entered.trim();
-    if decimal.is_empty() || decimal.len() > 16 || !(1..=3).contains(&unit) {
-        return Err(Error::Invalid("bottle amount or unit invalid"));
-    }
-    let (numerator, denominator) = crate::record_validity::parse_decimal(decimal)
-        .ok_or(Error::Invalid("bottle decimal invalid"))?;
-    let (factor_num, factor_den) = crate::record_validity::unit_factor(unit.into());
-    let scaled = numerator
-        .checked_mul(factor_num)
-        .ok_or(Error::Invalid("bottle amount overflow"))?;
-    let divisor = denominator
-        .checked_mul(factor_den)
-        .ok_or(Error::Invalid("bottle amount overflow"))?;
-    let base = crate::record_validity::round_ratio(scaled, divisor)
-        .map_err(|_| Error::Invalid("bottle amount overflow"))?;
-    if !(1..=1_000_000).contains(&base) {
-        return Err(Error::Invalid("bottle amount invalid"));
-    }
-    Ok(Value::Map(vec![
-        (1, Value::Integer(base)),
-        (2, Value::Text(decimal.to_owned())),
-        (3, Value::Integer(unit.into())),
-    ]))
+    crate::event_actions::bottle_measure(entered, unit).map_err(Error::Invalid)
 }
 
 pub fn bottle_entered_operation(
@@ -1473,17 +1382,19 @@ pub fn bottle_entered_operation(
     content: u8,
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    if !(1..=4).contains(&content) {
-        return Err(Error::Invalid("bottle content invalid"));
-    }
-    let measure = bottle_measure(entered, unit)?;
-    activity_operation(
-        family,
+    let identity = action_identity(family, None, time.saved_at_ms)?;
+    let id = identity.record;
+    let operation = crate::event_actions::bottle(
+        identity,
         child_id,
-        "feed.bottle",
-        vec![(100, measure), (101, Value::Integer(content.into()))],
-        time,
+        entered,
+        unit,
+        content,
+        time.start_utc_ms,
+        time.offset_minutes,
     )
+    .map_err(Error::Invalid)?;
+    Ok((id, operation))
 }
 
 pub fn breast_feed_operation(
@@ -1513,21 +1424,18 @@ pub fn breast_feed_segments_operation(
     segments: &[BreastSegment],
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    let fields = breast_segment_fields(segments, time)?;
-    activity_operation(family, child_id, "feed.breast", fields, time)
-}
-
-fn breast_segment_fields(
-    segments: &[BreastSegment],
-    time: ActivityTime,
-) -> Result<Vec<(u64, Value)>, Error> {
-    crate::breast::fields(
+    let identity = action_identity(family, None, time.saved_at_ms)?;
+    let id = identity.record;
+    let operation = crate::event_actions::breast(
+        identity,
+        child_id,
         segments,
         time.start_utc_ms,
         time.offset_minutes,
         time.saved_at_ms,
     )
-    .map_err(Error::Invalid)
+    .map_err(Error::Invalid)?;
+    Ok((id, operation))
 }
 
 pub fn edit_breast_feed_segments_operation(
@@ -1537,39 +1445,9 @@ pub fn edit_breast_feed_segments_operation(
     segments: &[BreastSegment],
     saved_at_ms: i64,
 ) -> Result<NewOperation, Error> {
-    if activity.scope != Scope::Activity
-        || activity.child_id != Some(child_id)
-        || activity.record_type != "feed.breast"
-        || activity.deleted
-    {
-        return Err(Error::Invalid("breast feed target unavailable"));
-    }
-    check_time(saved_at_ms)?;
-    let Some(Value::Array(start)) = activity.field(1).map(|field| &field.value) else {
-        return Err(Error::Invalid("breast feed start unavailable"));
-    };
-    let [Value::Integer(start_ms), Value::Integer(offset)] = start.as_slice() else {
-        return Err(Error::Invalid("breast feed start unavailable"));
-    };
-    let time = ActivityTime {
-        start_utc_ms: i64::try_from(*start_ms)
-            .map_err(|_| Error::Invalid("breast feed start unavailable"))?,
-        offset_minutes: i16::try_from(*offset)
-            .map_err(|_| Error::Invalid("breast feed start unavailable"))?,
-        saved_at_ms,
-    };
-    Ok(NewOperation {
-        family_id: family.family_id,
-        operation_id: ids::random_v7(saved_at_ms)?,
-        record_id: activity.id,
-        scope: Scope::Activity,
-        kind: Kind::Set,
-        author_device_id: family.device_id,
-        hlc: placeholder_hlc(family),
-        record_type: None,
-        child_id: None,
-        fields: Some(breast_segment_fields(segments, time)?),
-    })
+    let identity = action_identity(family, Some(activity.id), saved_at_ms)?;
+    crate::event_actions::edit_breast(identity, child_id, activity, segments, saved_at_ms)
+        .map_err(Error::Invalid)
 }
 
 pub fn pump_operation(
@@ -1988,17 +1866,17 @@ pub fn note_operation(
     note: &str,
     time: ActivityTime,
 ) -> Result<([u8; 16], NewOperation), Error> {
-    let note = note.trim();
-    if note.is_empty() || note.len() > 4096 {
-        return Err(Error::Invalid("note must contain 1 to 4096 bytes"));
-    }
-    activity_operation(
-        family,
+    let identity = action_identity(family, None, time.saved_at_ms)?;
+    let id = identity.record;
+    let operation = crate::event_actions::note(
+        identity,
         child_id,
-        "note",
-        vec![(4, Value::Text(note.to_owned()))],
-        time,
+        note,
+        time.start_utc_ms,
+        time.offset_minutes,
     )
+    .map_err(Error::Invalid)?;
+    Ok((id, operation))
 }
 
 pub fn edit_note_operation(
@@ -2704,297 +2582,6 @@ fn activity_operation(
     ))
 }
 
-pub fn children_from_records<'a>(records: impl Iterator<Item = &'a Record>) -> Vec<Child> {
-    let mut children = records
-        .filter(|record| record.scope == Scope::Child && !record.deleted)
-        .filter_map(|record| {
-            let Value::Text(name) = &record.field(1)?.value else {
-                return None;
-            };
-            Some(Child {
-                id: record.id,
-                name: name.clone(),
-                birth_day: record.field(2).and_then(|field| match field.value {
-                    Value::Integer(value) => i64::try_from(value).ok(),
-                    _ => None,
-                }),
-                sex: record.field(3).and_then(|field| match field.value {
-                    Value::Integer(value) => u8::try_from(value).ok(),
-                    _ => None,
-                }),
-            })
-        })
-        .collect::<Vec<_>>();
-    children.sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
-    children
-}
-
-pub fn activities_from_records<'a>(records: impl Iterator<Item = &'a Record>) -> Vec<Activity> {
-    let mut activities = records
-        .filter(|record| record.scope == Scope::Activity && !record.deleted)
-        .filter_map(activity_summary)
-        .collect::<Vec<_>>();
-    activities.sort_by(|a, b| b.start_utc_ms.cmp(&a.start_utc_ms).then(b.id.cmp(&a.id)));
-    activities
-}
-
-fn activity_summary(record: &Record) -> Option<Activity> {
-    let Value::Array(instant) = &record.field(1)?.value else {
-        return None;
-    };
-    let [Value::Integer(start), Value::Integer(offset)] = instant.as_slice() else {
-        return None;
-    };
-    let diaper_kind = if record.record_type == "diaper" {
-        let Value::Integer(kind) = &record.field(100)?.value else {
-            return None;
-        };
-        u8::try_from(*kind).ok()
-    } else {
-        None
-    };
-    let (bottle_ml, bottle_entered, bottle_unit) = if record.record_type == "feed.bottle" {
-        let Value::Map(measure) = &record.field(100)?.value else {
-            return None;
-        };
-        let Value::Integer(amount) = measure.first()?.1 else {
-            return None;
-        };
-        let entered = match &measure.get(1)?.1 {
-            Value::Text(value) => Some(value.clone()),
-            _ => None,
-        };
-        let unit = match measure.get(2)?.1 {
-            Value::Integer(value) => u8::try_from(value)
-                .ok()
-                .filter(|unit| (1..=3).contains(unit)),
-            _ => None,
-        };
-        (
-            i64::try_from(amount).ok(),
-            entered.filter(|_| unit.is_some()),
-            unit,
-        )
-    } else {
-        (None, None, None)
-    };
-    let bottle_content = if record.record_type == "feed.bottle" {
-        match &record.field(101)?.value {
-            Value::Integer(content) => u8::try_from(*content).ok(),
-            _ => None,
-        }
-    } else {
-        None
-    };
-    let breast_segments = if record.record_type == "feed.breast" {
-        let Value::Array(segments) = &record.field(100)?.value else {
-            return None;
-        };
-        segments
-            .iter()
-            .map(|segment| {
-                let Value::Array(parts) = segment else {
-                    return None;
-                };
-                let [Value::Integer(side), Value::Array(start), Value::Array(end)] =
-                    parts.as_slice()
-                else {
-                    return None;
-                };
-                let [Value::Integer(start_ms), Value::Integer(start_offset)] = start.as_slice()
-                else {
-                    return None;
-                };
-                let [Value::Integer(end_ms), Value::Integer(end_offset)] = end.as_slice() else {
-                    return None;
-                };
-                Some(BreastSegment {
-                    side: u8::try_from(*side).ok()?,
-                    start_utc_ms: i64::try_from(*start_ms).ok()?,
-                    end_utc_ms: i64::try_from(*end_ms).ok()?,
-                    start_offset_minutes: i16::try_from(*start_offset).ok()?,
-                    end_offset_minutes: i16::try_from(*end_offset).ok()?,
-                })
-            })
-            .collect::<Option<Vec<_>>>()
-    } else {
-        None
-    };
-    let breast_side = breast_segments
-        .as_ref()
-        .filter(|segments| segments.len() == 1)
-        .map(|segments| segments[0].side);
-    let (solids_foods, solids_amount) = if record.record_type == "feed.solids" {
-        let Value::Array(foods) = &record.field(100)?.value else {
-            return None;
-        };
-        let Value::Text(amount) = &record.field(101)?.value else {
-            return None;
-        };
-        let foods = foods
-            .iter()
-            .map(|food| match food {
-                Value::Text(text) => Some(text.clone()),
-                _ => None,
-            })
-            .collect::<Option<Vec<_>>>()?;
-        (Some(foods), Some(amount.clone()))
-    } else {
-        (None, None)
-    };
-    let growth_measure = |field| -> Option<(i64, Option<String>, Option<u8>)> {
-        let Value::Map(measure) = &record.field(field)?.value else {
-            return None;
-        };
-        let (1, Value::Integer(value)) = measure.first()? else {
-            return None;
-        };
-        let entered = match measure.get(1) {
-            Some((2, Value::Text(text))) => Some(text.clone()),
-            _ => None,
-        };
-        let unit = match measure.get(2) {
-            Some((3, Value::Integer(code))) => u8::try_from(*code).ok(),
-            _ => None,
-        };
-        Some((i64::try_from(*value).ok()?, entered, unit))
-    };
-    let growth_weight = (record.record_type == "growth")
-        .then(|| growth_measure(100))
-        .flatten();
-    let growth_length = (record.record_type == "growth")
-        .then(|| growth_measure(101))
-        .flatten();
-    let growth_head = (record.record_type == "growth")
-        .then(|| growth_measure(102))
-        .flatten();
-    let pump_measure = |field| -> Option<i64> {
-        let Value::Map(measure) = &record.field(field)?.value else {
-            return None;
-        };
-        let (1, Value::Integer(value)) = measure.first()? else {
-            return None;
-        };
-        i64::try_from(*value).ok()
-    };
-    let (temperature_c, temperature_entered, temperature_unit) =
-        if record.record_type == "temperature" {
-            let Value::Map(measure) = &record.field(100)?.value else {
-                return None;
-            };
-            let (1, Value::Integer(base)) = measure.first()? else {
-                return None;
-            };
-            let base = i64::try_from(*base).ok()?;
-            let entered = match measure.get(1) {
-                Some((2, Value::Text(decimal))) => Some(decimal.clone()),
-                _ => None,
-            };
-            let unit = match measure.get(2) {
-                Some((3, Value::Integer(value))) => u8::try_from(*value)
-                    .ok()
-                    .filter(|unit| matches!(unit, 30 | 31)),
-                _ => None,
-            };
-            let celsius = if unit == Some(30) {
-                entered.clone()
-            } else {
-                let magnitude = base.unsigned_abs();
-                Some(format!(
-                    "{}{}.{:02}",
-                    if base < 0 { "-" } else { "" },
-                    magnitude / 100,
-                    magnitude % 100
-                ))
-            };
-            (celsius, entered.filter(|_| unit.is_some()), unit)
-        } else {
-            (None, None, None)
-        };
-    let (medication_name, medication_dose_amount, medication_dose_unit) =
-        if record.record_type == "medication" {
-            let Value::Text(name) = &record.field(100)?.value else {
-                return None;
-            };
-            let Value::Array(dose) = &record.field(101)?.value else {
-                return None;
-            };
-            let [Value::Text(amount), Value::Text(unit)] = dose.as_slice() else {
-                return None;
-            };
-            (Some(name.clone()), Some(amount.clone()), Some(unit.clone()))
-        } else {
-            (None, None, None)
-        };
-    Some(Activity {
-        id: record.id,
-        child_id: record.child_id?,
-        kind: record.record_type.clone(),
-        start_utc_ms: i64::try_from(*start).ok()?,
-        offset_minutes: i16::try_from(*offset).ok()?,
-        end_utc_ms: record.field(2).and_then(|field| {
-            let Value::Array(parts) = &field.value else {
-                return None;
-            };
-            let [Value::Integer(end), Value::Integer(_)] = parts.as_slice() else {
-                return None;
-            };
-            i64::try_from(*end).ok()
-        }),
-        sleep_place: if record.record_type == "sleep" {
-            record.field(100).and_then(|field| match field.value {
-                Value::Integer(value) => u8::try_from(value).ok(),
-                _ => None,
-            })
-        } else {
-            None
-        },
-        note: match record.field(4).map(|field| &field.value) {
-            Some(Value::Text(note)) => Some(note.clone()),
-            _ => None,
-        },
-        diaper_kind,
-        bottle_ml,
-        bottle_entered,
-        bottle_unit,
-        bottle_content,
-        breast_side,
-        breast_segments,
-        solids_foods,
-        solids_amount,
-        pump_left_ml: if record.record_type == "pump" {
-            pump_measure(100)
-        } else {
-            None
-        },
-        pump_right_ml: if record.record_type == "pump" {
-            pump_measure(101)
-        } else {
-            None
-        },
-        pump_total_ml: if record.record_type == "pump" {
-            pump_measure(102)
-        } else {
-            None
-        },
-        growth_weight_g: growth_weight.as_ref().map(|measure| measure.0),
-        growth_weight_entered: growth_weight.as_ref().and_then(|measure| measure.1.clone()),
-        growth_weight_unit: growth_weight.as_ref().and_then(|measure| measure.2),
-        growth_length_mm: growth_length.as_ref().map(|measure| measure.0),
-        growth_length_entered: growth_length.as_ref().and_then(|measure| measure.1.clone()),
-        growth_length_unit: growth_length.as_ref().and_then(|measure| measure.2),
-        growth_head_mm: growth_head.as_ref().map(|measure| measure.0),
-        growth_head_entered: growth_head.as_ref().and_then(|measure| measure.1.clone()),
-        growth_head_unit: growth_head.as_ref().and_then(|measure| measure.2),
-        temperature_c,
-        temperature_entered,
-        temperature_unit,
-        medication_name,
-        medication_dose_amount,
-        medication_dose_unit,
-    })
-}
-
 fn check_time(now_ms: i64) -> Result<(), Error> {
     if now_ms < 0 || (now_ms as u64) >= (1u64 << 48) {
         return Err(Error::Invalid("time outside UUIDv7 range"));
@@ -3008,4 +2595,22 @@ fn placeholder_hlc(family: FamilyHandle) -> Hlc {
         counter: 0,
         device_id: family.device_id,
     }
+}
+
+fn action_identity(
+    family: FamilyHandle,
+    record: Option<[u8; 16]>,
+    saved_at_ms: i64,
+) -> Result<crate::event_actions::Identity, Error> {
+    check_time(saved_at_ms)?;
+    Ok(crate::event_actions::Identity {
+        family: family.family_id,
+        device: family.device_id,
+        record: match record {
+            Some(id) => id,
+            None => ids::random_v7(saved_at_ms)?,
+        },
+        operation: ids::random_v7(saved_at_ms)?,
+        stamp: placeholder_hlc(family),
+    })
 }

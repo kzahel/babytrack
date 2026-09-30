@@ -1,9 +1,9 @@
 //! Shared validation for a completed breast feed's atomic segment field.
 
 use crate::cbor::Value;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Segment {
     pub side: u8,
     pub start_utc_ms: i64,

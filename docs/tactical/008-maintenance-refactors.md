@@ -23,7 +23,7 @@ Owning decisions: [event model](../topics/event-model.md),
 
 ## Ordered delivery slices
 
-1. [ ] Unify native and browser event builders and overlapping read models
+1. [x] Unify native and browser event builders and overlapping read models
    in platform-independent core modules. Retain platform ID/clock/storage
    adapters and browser JSON shape. Add parity checks for overlapping types,
    invalid input, target identity, and edited breast-feed records.
@@ -79,3 +79,14 @@ existing owners.
   tests embedded in storage, and outdated scaffolding comments/layout text.
   [007](007-android-screen-gallery.md#evidence) records the existing five
   Android NewApi lint failures. No implementation checks have run yet.
+
+- Slice 1: portable `event_actions` now constructs child, diaper, bottle,
+  note, breast-feed, and breast-feed correction operations for both adapters.
+  `read_model` owns typed record decoding; native reexports and browser JSON
+  shapes remain stable. Creation now checks trimmed child-name byte length
+  consistently. Two parity regressions compare canonical bytes, corrected
+  identity, display fields, limits, and invalid input. Core tests, workspace
+  Clippy, rustfmt, wasm byte smoke, Kotlin/Swift smoke, IndexedDB/real-relay
+  browser smoke, local web UI, and shared web UI all pass locally. The two
+  web UI runners rebuild the same directory and must run sequentially; a
+  concurrent invocation collided during npm/build and passed when rerun alone.

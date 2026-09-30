@@ -10,6 +10,8 @@ pub mod batch;
 pub mod bootstrap;
 mod breast;
 pub mod claim;
+pub mod event_actions;
+pub mod read_model;
 pub use babytrack_wire::cbor;
 pub mod control;
 #[cfg(not(target_arch = "wasm32"))]

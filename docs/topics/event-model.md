@@ -307,6 +307,16 @@ plan applied to events.
 
 ## Validation
 
+Native and browser capture paths share portable Rust event constructors in
+`core/src/event_actions.rs` and projected record decoding in
+`core/src/read_model.rs`. Platform adapters supply IDs, clock/save metadata,
+storage, and presentation serialization. Existing native API paths remain
+reexports. Child creation validates the trimmed name's UTF-8 byte length,
+matching correction and browser capture. `core/tests/event_parity.rs`
+compares canonical operations and projected display fields across the two
+adapters, including breast-feed correction and invalid inputs. This changes
+no v1 field or encoding contract.
+
 - Vectors for unit conversion and display rounding.
 - Vectors for day boundaries across midnight, daylight saving changes, and
   travel between zones.

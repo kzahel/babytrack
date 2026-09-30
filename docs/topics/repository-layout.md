@@ -74,6 +74,12 @@ module. Root reexports preserve the existing Rust and UniFFI public names.
 Core-owned bounded log pulling and manifest hydration are reused through
 `active_pull::pull_and_hydrate`; native transport adaptation stays in bindings.
 
+Relay storage lives in `server/src/store/`: initialization, staging, commits,
+authenticated reads, and internal integrity/history/validation helpers have
+separate modules. Storage regressions live in `store/tests.rs`. Commit methods
+retain ownership of their complete SQLite transactions; module extraction
+does not split atomic authority, reservation, or batch updates across calls.
+
 ## Dependency boundaries
 
 - `core-ffi`, `core-wasm`, and `cli` consume the same core. Bindings translate

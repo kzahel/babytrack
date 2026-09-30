@@ -34,7 +34,7 @@ Owning decisions: [event model](../topics/event-model.md),
 3. [x] Organize native binding records/conversions, local APIs, sharing,
    invitations, and fixture APIs into modules. Move reusable native sync
    orchestration into core while preserving UniFFI exports and API signatures.
-4. [ ] Separate relay storage tests and implementation concerns:
+4. [x] Separate relay storage tests and implementation concerns:
    initialization/integrity, object staging, authority commits, and reads.
    Preserve explicit SQLite transaction ownership and wire validation.
 5. [ ] Audit obsolete scaffolding comments and broad dead-code allowances;
@@ -114,3 +114,12 @@ existing owners.
   invitation case, and all 28 relay cases pass. All 514 generated Kotlin
   declaration signatures match the saved pre-refactor production snapshot.
   Workspace boundaries and diff checks pass.
+
+- Slice 4: `server/src/store/` separates initialization, opaque staging,
+  authority/batch commits, authenticated reads, integrity, object/history
+  validation helpers, and tests. The storage facade is 117 lines and the
+  former embedded regressions occupy `store/tests.rs`. Internal helpers have
+  store-scoped visibility; complete transaction bodies remain in their
+  owning commit methods. All 23 server tests and six CLI integration tests
+  pass, including dynamic authority and encrypted relay exchange. Workspace
+  Clippy, rustfmt, dependency boundaries, and diff checks pass.

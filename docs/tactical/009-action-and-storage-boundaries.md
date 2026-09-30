@@ -29,7 +29,7 @@ Owning topics: [web](../topics/web-client.md),
    concern while preserving generated JavaScript exports and feature gates.
 5. [x] Move remaining pure event construction and day summaries out of the
    native-only API, retaining ID/clock adapters and compatibility reexports.
-6. [ ] Separate SQLite schema, journal, outbox/history, enrollment, and copy
+6. [x] Separate SQLite schema, journal, outbox/history, enrollment, and copy
    persistence into modules while preserving whole transaction ownership.
 7. [ ] Run final affected cross-platform checks and reconcile documentation.
 
@@ -107,3 +107,14 @@ gates remain with their milestone owners. Local runs do not imply remote CI.
   smoke, production fixture-exclusion, boundaries, and diff checks pass.
   Native adapters still allocate IDs; SQLite still assigns persisted clocks.
   Android integration on the final storage build belongs to slice 7.
+
+- Slice 6: the client SQLite facade owns its connection and public types;
+  eight modules own schema/migrations, Families, copies, journal, outbox,
+  verified history, enrollment, and prepared authority persistence. All 48
+  method signatures/bodies compare unchanged apart from formatting; no
+  transaction is split or connection added. Original unit-test module paths
+  remain stable. The full core suite (including late-failure copy/enrollment
+  rollback, concurrent migrations, reopen/exact-byte outbox retry, and pending
+  write tests), workspace Clippy, boundaries, and diff checks pass. Final
+  Android unit/lint/APK builds also pass against the extracted storage.
+  Cross-platform integration and final status reconciliation follow in slice 7.

@@ -20,6 +20,12 @@ manifest-object hydration sequence and durable verified prefix on failure.
 Callers still check complete visible history, credentials, and keys before
 reporting readiness. The app supplies the transport; binding adapters invoke
 the core credential signer for each exact request.
+Native SQLite persistence is organized under `core/src/sqlite_store/`, with
+one connection owned by the existing facade. Journal/HLC writes, exact outbox
+retries, verified history/root updates, enrollment CAS, and recovery-copy
+publication retain their complete transaction bodies. Storage organization
+changes neither verification ownership nor committed-prefix guarantees.
+
 User-visible promises, accepted trust limits, and the agreed first-committed
 outcome for competing removals are owned by
 [family-sharing-and-trust.md](family-sharing-and-trust.md). Protocol choices

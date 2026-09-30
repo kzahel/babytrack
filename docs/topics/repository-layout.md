@@ -57,6 +57,11 @@ and local-day totals are shared by native and browser adapters. The native
 `local_api` supplies random IDs, placeholder clocks, error mapping, and the
 repository facade; its existing type paths remain compatibility reexports.
 Only native repository/storage coordination requires SQLite.
+`core/src/sqlite_store/` separates schema/migrations, Family creation, recovery
+and removal copies, the local journal, durable outbox, verified shared history,
+enrollment, and prepared authority actions. Public types and connection
+ownership stay in the facade. Every method retains its whole transaction;
+modules do not add transaction or connection boundaries.
 
 `core-ffi/src/` separates boundary records, local APIs, invitation reads,
 shared authority/enrollment/actions/sync, and feature-gated fixtures. Its

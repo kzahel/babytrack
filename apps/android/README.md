@@ -114,8 +114,9 @@ bash scripts/render_android_gallery.sh
 ```
 
 Open `apps/android/app/build/outputs/screen-gallery/index.html` to scroll
-through the screen gallery. Each case shows dark and light modes at normal
-and 1.5× text. Expand additional scroll positions to see the bottom of long
+through the screen gallery. The default is a 412 × 915 dp phone viewport,
+rendered at 2× image scale for sharper full-size PNGs. Each case shows dark
+and light modes at 100% text first, followed by 150% accessibility checks. Expand additional scroll positions to see the bottom of long
 forms and History; click any image for full size. The gallery also supports
 search. To iterate on one screen or family of states:
 
@@ -123,7 +124,19 @@ search. To iterate on one screen or family of states:
 bash scripts/render_android_gallery.sh -PgalleryCase=capture-bottle
 ```
 
-That command regenerates a filtered gallery (including empty and invalid
+For the optional 360 × 800 dp compact layout stress check:
+
+```sh
+bash scripts/render_android_gallery.sh -PgalleryViewport=compact
+```
+
+It writes a separate `outputs/screen-gallery-compact/index.html`, preserving
+`screen-gallery/`. Combine `-PgalleryViewport=compact` with `-PgalleryCase=…`
+for a focused compact render. The manifest and HTML record the selected
+viewport, image scale, and text size. Robolectric runs Android on the JVM;
+Roborazzi captures the actual Compose screens without booting an emulator.
+
+The filtered command regenerates a filtered gallery (including empty and invalid
 bottle drafts). Run the unfiltered command before sharing a full gallery.
 The first run downloads renderer dependencies and builds generated bindings;
 subsequent runs reuse build outputs. No emulator, native store, relay,

@@ -147,3 +147,24 @@ Local macOS and CI Linux renders have identical pixels in 194 of 214 images;
 the remaining disabled-label anti-aliasing differs by at most one color-channel
 level. Follow the owning interface topic's same-platform baseline direction
 when enabling visual regression tests; no cross-platform pixel gate is added.
+
+## Phone viewport follow-up, 2026-09-30
+
+The user requested a more representative phone render after seeing the
+compact/large-text example. The default gallery now uses 412 × 915 dp at 2×
+image density, with 100% text variants first and explicit 150% labels. An
+optional 360 × 800 dp compact profile writes to its own output directory.
+The owning [interface topic](../topics/interface-design-and-localization.md#fixture-gallery-workflow)
+records the review sizes; the [Android README](../../apps/android/README.md#screen-development-and-fixture-gallery)
+records commands. Metadata and HTML derive their viewport labels from the
+selected profile, and scroll positions/steps retain logical dp at 2× density.
+
+Local validation: all 31 phone cases / 124 variants / 188 PNGs rendered;
+every image measures 824 × 1830 pixels. The focused compact growth case
+renders four variants / eight PNGs at 720 × 1600 pixels without replacing
+the phone gallery. Six Android unit tests pass. Both galleries pass test
+Chromium checks for labels, search, scroll expansion, and full-size image
+links. Representative phone renders were visually inspected. Python/shell
+syntax, workspace boundaries, and diff checks pass. The test browser closes
+at the end of the check. This is a rendering-harness change; existing product
+UI and physical-phone gates remain with their owners.

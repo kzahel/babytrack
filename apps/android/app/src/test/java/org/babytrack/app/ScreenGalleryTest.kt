@@ -20,18 +20,35 @@ import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.ExternalResource
+import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
 import org.robolectric.ParameterizedRobolectricTestRunner
 import org.robolectric.ParameterizedRobolectricTestRunner.Parameters
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /** Actual production composables; no MainActivity, native library, store, or relay. */
 @RunWith(ParameterizedRobolectricTestRunner::class)
-@Config(sdk = [35], qualifiers = "en-rUS-w360dp-h800dp-mdpi", application = Application::class)
+@Config(sdk = [35], qualifiers = "en-rUS-w412dp-h915dp-xhdpi", application = Application::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ScreenGalleryTest(private val caseId: String, private val variant: String) {
-    @get:Rule val compose = createComposeRule()
+    private val viewport = when (System.getProperty("babytrack.gallery.viewport", "phone")) {
+        "phone" -> Viewport("phone", 412, 915)
+        "compact" -> Viewport("compact", 360, 800)
+        else -> error("Use galleryViewport=phone or galleryViewport=compact")
+    }
+    private val compose = createComposeRule()
+    @get:Rule
+    val rules: RuleChain = RuleChain.outerRule(object : ExternalResource() {
+        override fun before() {
+            // Configure display metrics before Compose launches its test Activity.
+            RuntimeEnvironment.setQualifiers("en-rUS-w${viewport.widthDp}dp-h${viewport.heightDp}dp-xhdpi")
+        }
+    }).around(compose)
+
+    private data class Viewport(val name: String, val widthDp: Int, val heightDp: Int)
     private val previousZone = TimeZone.getDefault()
     private val previousLocale = Locale.getDefault()
 
@@ -56,7 +73,7 @@ class ScreenGalleryTest(private val caseId: String, private val variant: String)
         val output = File(requireNotNull(System.getProperty("babytrack.gallery.output")))
         check(output.mkdirs() || output.isDirectory)
         compose.setContent {
-            CompositionLocalProvider(LocalDensity provides Density(1f, fontScale)) {
+            CompositionLocalProvider(LocalDensity provides Density(IMAGE_DENSITY, fontScale)) {
                 BabytrackTheme(darkTheme = dark) { FixtureScreen(fixture, scroll) }
             }
         }
@@ -66,13 +83,13 @@ class ScreenGalleryTest(private val caseId: String, private val variant: String)
         while (true) {
             val filename = "$caseId--$variant--$page.png"
             compose.onRoot().captureRoboImage(File(output, filename).absolutePath)
-            pages.put(JSONObject().put("file", filename).put("scrollDp", scroll.value))
+            pages.put(JSONObject().put("file", filename).put("scrollDp", scroll.value / IMAGE_DENSITY))
             val current = scroll.value
             val maximum = scroll.maxValue
             if (current >= maximum) break
-            check(page < 30) { "Unexpectedly long fixture: $caseId ($maximum dp)" }
+            check(page < 30) { "Unexpectedly long fixture: $caseId ($maximum px)" }
             compose.runOnIdle {
-                runBlocking { scroll.scrollTo((current + 600).coerceAtMost(maximum)) }
+                runBlocking { scroll.scrollTo((current + (600 * IMAGE_DENSITY).toInt()).coerceAtMost(maximum)) }
             }
             compose.waitForIdle()
             page++
@@ -85,13 +102,14 @@ class ScreenGalleryTest(private val caseId: String, private val variant: String)
                     .put("variant", variant)
                     .put("fontScale", fontScale)
                     .put("dark", dark)
-                    .put("widthDp", 360)
-                    .put("heightDp", 800)
+                    .put("viewport", viewport.name)
+                    .put("widthDp", viewport.widthDp)
+                    .put("heightDp", viewport.heightDp)
                     .put("locale", "en-US")
                     .put("timeZone", "UTC")
                     .put("clock", "2026-09-29T14:00:00Z")
                     .put("api", 35)
-                    .put("density", 1)
+                    .put("density", IMAGE_DENSITY)
                     .put("operatingSystem", System.getProperty("os.name"))
                     .put("javaVersion", System.getProperty("java.version"))
                     .put("pages", pages)
@@ -100,6 +118,8 @@ class ScreenGalleryTest(private val caseId: String, private val variant: String)
     }
 
     companion object {
+        private const val IMAGE_DENSITY = 2f
+
         @JvmStatic
         @BeforeClass
         fun onlyWhenRecording() {

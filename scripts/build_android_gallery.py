@@ -36,6 +36,12 @@ def build_gallery(output: Path) -> None:
     for case_id, variants in cases.items():
         if set(variants) != set(VARIANTS):
             raise ValueError(f"Incomplete variant matrix for {case_id}")
+    viewports = {(record.get("viewport", "compact"), record["widthDp"], record["heightDp"], record["density"])
+                 for variants in cases.values() for record in variants.values()}
+    if len(viewports) != 1:
+        raise ValueError("Mixed viewport metadata; render each viewport into its own gallery")
+    viewport, width_dp, height_dp, density = next(iter(viewports))
+    display = f'{viewport.title()} viewport · {width_dp} × {height_dp} dp · {density:g}× image scale'
     # Stable metadata and IDs can become visual baselines later. No pixel gate yet.
     repository = Path(__file__).resolve().parent.parent
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repository, text=True).strip()
@@ -57,9 +63,9 @@ def build_gallery(output: Path) -> None:
                 frames.append(f'<figure><a href="{filename}"><img src="{filename}" loading="lazy" '
                               f'width="{page["widthPx"]}" height="{page["heightPx"]}" '
                               f'alt="{label}, {variant}, page {index + 1}"></a>'
-                              f'<figcaption>Page {index + 1} · scroll {page["scrollDp"]} dp</figcaption></figure>')
+                              f'<figcaption>Page {index + 1} · scroll {page["scrollDp"]:g} dp</figcaption></figure>')
             more = f'<details><summary>{len(frames) - 1} more scroll positions</summary>{"".join(frames[1:])}</details>' if len(frames) > 1 else ""
-            cards.append(f'<article data-variant="{variant}"><h3>{variant.replace("-large", " · 1.5× text")}</h3>{frames[0]}{more}</article>')
+            cards.append(f'<article data-variant="{variant}"><h3>{variant.split("-")[0].title()} · {"150%" if variant.endswith("large") else "100%"} text</h3>{frames[0]}{more}</article>')
         sections.append(f'<section id="{case_id}" data-search="{html.escape(case_id + " " + variants["dark"]["label"], quote=True)}">'
                         f'<h2><a href="#{case_id}">{label}</a></h2><div class="screens">{"".join(cards)}</div></section>')
     document = '''<!doctype html>
@@ -76,8 +82,8 @@ summary{cursor:pointer;padding:8px 0}details[open] summary{margin-bottom:12px}[h
 @media(max-width:1000px){.screens{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:550px){.screens{grid-template-columns:1fr}body{padding:12px}}
 </style>
 <header><h1>Babytrack · Android screen gallery</h1>
-<p>__COUNT__ synthetic cases · actual Compose screens · 360 × 800 dp · API 35 · en-US · UTC · fixed September 29, 2026<br>
-Dark and light, normal and 1.5× text. Additional scroll positions reveal long forms. Click an image for full size.</p>
+<p>__COUNT__ synthetic cases · actual Compose screens · __DISPLAY__ · API 35 · en-US · UTC · fixed September 29, 2026<br>
+Dark and light at 100% text first, then 150% accessibility checks. Additional scroll positions reveal long forms. Click an image for full size.</p>
 <div class="controls"><input id="search" type="search" placeholder="Find a screen or state" aria-label="Find a screen or state">
 <button id="expand">Expand all scroll positions</button><a href="manifest.json">Rendering manifest</a></div></header>
 <main>__SECTIONS__</main>
@@ -86,7 +92,7 @@ document.querySelector('#search').addEventListener('input',e=>{const q=e.target.
 document.querySelector('#expand').addEventListener('click',e=>{const open=e.target.textContent.startsWith('Expand');document.querySelectorAll('details').forEach(d=>d.open=open);e.target.textContent=open?'Collapse scroll positions':'Expand all scroll positions'});
 </script></html>
 '''
-    (output / "index.html").write_text(document.replace("__COUNT__", str(len(cases))).replace("__SECTIONS__", "\n".join(sections)))
+    (output / "index.html").write_text(document.replace("__COUNT__", str(len(cases))).replace("__SECTIONS__", "\n".join(sections)).replace("__DISPLAY__", html.escape(display)))
     print(f"Gallery: {output / 'index.html'} ({len(cases)} cases, {len(cases) * 4} variants)")
 
 

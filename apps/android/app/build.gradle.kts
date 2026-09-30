@@ -85,9 +85,13 @@ val recordScreenGallery by tasks.registering {
 tasks.withType<Test>().configureEach {
     val recording = gradle.startParameter.taskNames.any { it.endsWith("recordScreenGallery") }
     systemProperty("babytrack.gallery.case", providers.gradleProperty("galleryCase").orElse("").get())
+    val galleryViewport = providers.gradleProperty("galleryViewport").orElse("phone").get()
+    require(galleryViewport in listOf("phone", "compact")) { "Use galleryViewport=phone or galleryViewport=compact" }
+    val galleryDirectory = if (galleryViewport == "phone") "screen-gallery" else "screen-gallery-compact"
+    systemProperty("babytrack.gallery.viewport", galleryViewport)
     systemProperty("babytrack.gallery.record", recording.toString())
     systemProperty("roborazzi.test.record", recording.toString())
-    systemProperty("babytrack.gallery.output", layout.buildDirectory.dir("outputs/screen-gallery").get().asFile.absolutePath)
+    systemProperty("babytrack.gallery.output", layout.buildDirectory.dir("outputs/$galleryDirectory").get().asFile.absolutePath)
     if (recording) {
         filter { includeTestsMatching("org.babytrack.app.ScreenGalleryTest") }
         outputs.upToDateWhen { false }

@@ -123,6 +123,14 @@ zone, and stable case IDs. Review dark mode first, alongside light mode and
 1.5× text. Show complete scrollable form content as well as viewport context,
 so controls below the fold are reviewable.
 
+The default review viewport is 412 × 915 dp, with dark/light 100% text shown
+before the 150% accessibility variants. Render PNGs at 2× density without
+changing the logical layout or font size. A separate optional 360 × 800 dp
+compact gallery remains available for constrained-layout checks. Record the
+actual viewport, density, font scale, and scroll distance in dp in metadata;
+HTML labels derive from those inputs. The command lives in the
+[Android README](../../apps/android/README.md#screen-development-and-fixture-gallery).
+
 Keep generated PNGs, rendering metadata, and a scrolling HTML index as local
 build outputs and CI artifacts. Android Studio previews are an additional
 entry point into the same fixtures. Start with visual review; introduce a

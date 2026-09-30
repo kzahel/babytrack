@@ -1,8 +1,9 @@
 # Sync and encryption
 
-Status: M-1 design decided, September 2026; M0 has started with Rust
-canonical CBOR, structural operation decoding, and first crypto byte vectors.
-Most implementation and executed validation remain. The normative v1 byte
+Status: bounded M0 foundation complete;
+[003](../tactical/003-m0-foundation.md#bounded-m0-exit-at-4f5ef18) owns gate
+evidence and the post-M0 coverage queue. Native-managed web joining and
+removal passed the bounded review in [006](../tactical/006-m2-web.md). The normative v1 byte
 and state-machine rules are in
 [records](../protocol/records-v1.md),
 [sharing](../protocol/sharing-v1.md), and

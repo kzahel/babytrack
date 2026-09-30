@@ -1,7 +1,9 @@
 # Event model
 
-Status: M-1 event decisions and v1 record/portable-file contracts agreed,
-September 2026; M0 execution remains.
+Status: v1 event and portable-file contracts implemented through the bounded
+M0 foundation; Android capture/correction and the M2 web subset are described
+below. [005](../tactical/005-m1-android.md) and
+[006](../tactical/006-m2-web.md) own remaining product coverage.
 Owns what gets logged: entities, event types and fields, timers, units, time
 and day boundaries, multiple children, import mapping, and export. How
 events are stored, merged, and synced is owned by

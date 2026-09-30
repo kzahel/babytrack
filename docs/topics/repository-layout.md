@@ -1,8 +1,10 @@
 # Repository layout and scaffolding
 
-Status: scaffold implemented, September 2026; M0 byte-codec work has begun
-in `core/`. Scaffold validation is recorded in
-[002](../tactical/002-repository-scaffold.md).
+Status: bounded M0 foundation complete; the Android developer app and M2
+web preview are implemented. [003](../tactical/003-m0-foundation.md) owns the
+foundation gate, [005](../tactical/005-m1-android.md) and
+[006](../tactical/006-m2-web.md) own product delivery, and
+[008](../tactical/008-maintenance-refactors.md) records maintenance validation.
 Owns directory placement, dependency direction, and when scaffolding is
 introduced. The [MVP plan](../mvp-plan.md) owns stack and milestone scope.
 
@@ -40,45 +42,38 @@ appear implemented.
 | `apps/web/` | Svelte product UI | M2; M0 browser proof belongs to test infrastructure |
 | `apps/ios/` | iOS/watchOS apps and extensions | M3 phone, M4 watch |
 
-The six Rust targets and root build files now exist. The narrow `wire/` crate
-contains canonical CBOR and domain-separated hash/signature/AEAD primitives;
-the core reexports these unchanged for its clients. The core contains
-operation decoding, HPKE primitives, signed
-batch bytes, in-memory projection, HLC, and vector tests. `core-wasm/` now
-calls the shared batch/projection path from JavaScript against fixed vectors.
-`core-ffi/` exposes that path through UniFFI and passes selected Swift and
-Kotlin encrypted vectors. The relay and CLI now run initial-cohort dynamic
-sharing tests; general membership and later epochs remain open.
-The native core has a local-only SQLite journal. `core-wasm/web/` contains
-an IndexedDB local-only journal adapter that calls Rust wasm validation and
-projection; accepted shared history and outboxes remain future work.
-`apps/android/` now contains the first phone UI and source-built Rust
-binding integration. It creates local Families and children, records diaper
-and bottle entries, reads timelines, and saves/restores a readable or
-password-protected file. The
-sharing interface and service adapters remain later work. The web and iOS
-product paths are still future paths. The CBOR vector tests cover only the first byte subset;
-other targets reporting zero cases are not evidence of protocol or product
-correctness. A separate real Chromium harness tests wasm with IndexedDB
-reload, rollback, and Family key separation using fixture data. UniFFI's
-MPL-2.0 runtime/build crates have exact-version
-exceptions in `deny.toml`; generated native bindings are build outputs, not
-committed project sources.
+The six Rust targets implement the bounded M0 foundation. `wire/` contains
+canonical CBOR, public authority verification, and domain-separated
+cryptographic primitives without client storage or plaintext event semantics.
+`core/` owns operations, projection, local SQLite journals, shared history,
+durable outboxes, membership, crypto, enrollment, sync, and portable files.
+Portable event constructors and record read models are shared by native and
+browser adapters; only native repository/storage coordination requires SQLite.
+
+`core-ffi/src/` separates boundary records, local APIs, invitation reads,
+shared authority/enrollment/actions/sync, and feature-gated fixtures. Its
+Kotlin and Swift bindings are generated build outputs, not committed sources.
+UniFFI's pinned MPL-2.0 build/runtime exceptions remain in `deny.toml`.
+`core-wasm/` provides wasm APIs and the IndexedDB local/public/invitation
+adapters. Browser journal and outbox transactions call Rust validation and
+projection and cover concurrent tabs, reload, rollback, and removal copying.
+
+`server/src/store/` separates schema initialization, opaque object staging,
+authority/batch transactions, authenticated reads, integrity/history helpers,
+and storage regressions. The relay uses `wire/`, never the client core.
+The CLI and integration harnesses exercise encrypted native/browser exchange,
+later enrollment, role changes, key rotation, and removal recovery.
+
+`apps/android/` is the source-linked phone developer app for local tracking,
+encrypted sharing, correction, timers, and readable/protected file recovery.
+`apps/web/` is the Svelte product preview for local tracking, native-managed
+joining, shared offline edits, verified removal/private copies, and readable
+file restore. Web-origin sharing, physical-phone gates, iOS, and watches
+remain with their milestone owners. Tests and vector inventories describe
+specific executed coverage; a build alone is not protocol evidence.
 
 The workspace uses package names such as `babytrack-core` rather than a Rust
 crate named `core`, and pins Rust 1.92.0. Path names above remain short.
-
-Native bindings are organized into `records`, `local`, `invitations`,
-`shared/{authority,enrollment,actions,sync}`, and a feature-gated `fixtures`
-module. Root reexports preserve the existing Rust and UniFFI public names.
-Core-owned bounded log pulling and manifest hydration are reused through
-`active_pull::pull_and_hydrate`; native transport adaptation stays in bindings.
-
-Relay storage lives in `server/src/store/`: initialization, staging, commits,
-authenticated reads, and internal integrity/history/validation helpers have
-separate modules. Storage regressions live in `store/tests.rs`. Commit methods
-retain ownership of their complete SQLite transactions; module extraction
-does not split atomic authority, reservation, or batch updates across calls.
 
 ## Dependency boundaries
 
@@ -99,7 +94,8 @@ does not split atomic authority, reservation, or batch updates across calls.
 
 ## Android presentation and render infrastructure
 
-Android keeps production presentation beside the app controller in
+Android keeps production presentation beside the route and focused sharing
+and backup controllers in
 `apps/android/app/src/main/java/org/babytrack/app/`. Screens take display
 state and callbacks; their fixtures live only in `src/debug/`, and the
 Roborazzi/Robolectric renderer lives in `src/test/`. The shared Rust bindings
@@ -111,6 +107,10 @@ HTML gallery under the gitignored Android build directory. The Android CI
 job retains that directory as a synthetic-data artifact. The local commands
 and file map are in the [Android README](../../apps/android/README.md), and
 work status is in [007](../tactical/007-android-screen-gallery.md).
+
+The Android command-driven UI helpers live in `scripts/android_ui.py`.
+Caregiver smoke, recovery, and navigation capture entry points import that
+support module; importing helpers never runs a smoke flow.
 
 ## Validation and alternatives
 

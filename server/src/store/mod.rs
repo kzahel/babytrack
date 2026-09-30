@@ -17,7 +17,7 @@ use rusqlite::{
 use crate::{authority, batch_authority, public_ledger, read_auth, receipt};
 
 #[derive(Debug)]
-#[allow(dead_code)] // Detailed errors are mapped to protocol responses by routes.
+#[allow(dead_code)] // Error variants retain diagnostic details at the relay boundary.
 #[allow(private_interfaces)] // The test-harness feature exposes only Debug/errors.
 pub enum Error {
     Sql(rusqlite::Error),
@@ -72,7 +72,6 @@ impl From<receipt::Error> for Error {
     }
 }
 
-#[allow(dead_code)] // Will be owned by the HTTP service once routes are wired.
 pub struct RelayStore {
     db: Connection,
     relay_seed: [u8; 32],

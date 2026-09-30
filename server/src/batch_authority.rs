@@ -6,7 +6,7 @@ use babytrack_wire::{
 };
 
 #[derive(Debug)]
-#[allow(dead_code)] // Route failures currently map to one protocol status.
+#[allow(dead_code)] // Error variants retain diagnostic details at the relay boundary.
 pub(crate) enum Error {
     Cbor(cbor::Error),
     Crypto(crypto::Error),

@@ -177,6 +177,7 @@ impl RelayStore {
         Ok(store)
     }
 
+    #[cfg(any(test, feature = "test-harness"))]
     pub fn relay_public_key(&self) -> [u8; 32] {
         self.relay_public
     }

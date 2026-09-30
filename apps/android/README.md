@@ -77,6 +77,9 @@ python3 scripts/check_android_ui_smoke.py --quick
 python3 scripts/check_android_recovery_ui.py
 ```
 
+These entry points share ADB/UIAutomator support in
+`scripts/android_ui.py`; importing helpers does not execute a scenario.
+
 Push and PR CI run the quick path through Family setup, diaper logging,
 correction, deletion, and restart, plus the full real-relay instrumentation
 suite and file recovery. The complete local UI walkthrough runs on the daily

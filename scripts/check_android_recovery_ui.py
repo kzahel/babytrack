@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from check_android_ui_smoke import (
+from android_ui import (
     APK, PACKAGE, adb, dismiss_keyboard, find, nodes, scroll_up, serial, tap,
 )
 

@@ -168,6 +168,7 @@ impl RelayStore {
         Ok(receipt::control_commit_response(&committed)?)
     }
 
+    #[cfg(any(test, feature = "test-harness"))]
     pub fn commit_first_claim(
         &mut self,
         path_family: [u8; 16],

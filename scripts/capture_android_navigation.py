@@ -7,7 +7,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from check_android_ui_smoke import (
+from android_ui import (
     APK, PACKAGE, ROOT, adb, dismiss_keyboard, find, serial, tap, tap_tab,
 )
 

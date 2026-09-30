@@ -1,5 +1,5 @@
-//! Exact relay-signed receipt and page encodings. These constructors remain
-//! internal until the server's authority validator and transaction call them.
+//! Exact relay-signed receipt and page encodings used by authenticated routes
+//! and authority/batch transactions.
 
 use crate::batch_authority::VerifiedBatch;
 use babytrack_wire::{
@@ -385,7 +385,6 @@ pub(crate) fn verify_control_receipt(
     })
 }
 
-#[allow(dead_code)] // Called by the authority transaction in the next relay slice.
 pub(crate) fn commit_control(
     candidate_bytes: &[u8],
     relay_seed: &[u8; 32],
@@ -440,7 +439,6 @@ pub(crate) fn commit_control(
     ]))?)
 }
 
-#[allow(dead_code)] // Called by the authority transaction in the next relay slice.
 pub(crate) fn control_commit_response(committed_bytes: &[u8]) -> Result<Vec<u8>, Error> {
     Ok(cbor::encode(&Value::Map(vec![
         (1, Value::Integer(1)),
@@ -448,7 +446,6 @@ pub(crate) fn control_commit_response(committed_bytes: &[u8]) -> Result<Vec<u8>,
     ]))?)
 }
 
-#[allow(dead_code)] // Called by the object staging route in the next relay slice.
 pub(crate) fn object_stage_response(object_bytes: &[u8]) -> Result<Vec<u8>, Error> {
     let hash = crypto::hash("object", object_bytes)?;
     Ok(cbor::encode(&Value::Map(vec![
@@ -632,7 +629,6 @@ pub(crate) fn batch_commit_response(receipt_bytes: &[u8]) -> Result<Vec<u8>, Err
     ]))?)
 }
 
-#[allow(dead_code)] // Used by commit_control after authority wiring.
 fn fixed<const N: usize>(value: &Value) -> Result<[u8; N], Error> {
     let Value::Bytes(bytes) = value else {
         return Err(Error::Invalid("expected bytes"));

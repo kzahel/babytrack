@@ -7,7 +7,7 @@ use babytrack_wire::{
 };
 
 #[derive(Debug)]
-#[allow(dead_code)] // Mapped by the HTTP read route.
+#[allow(dead_code)] // Error variants retain diagnostic details at the relay boundary.
 pub(crate) enum Error {
     Cbor(cbor::Error),
     Crypto(crypto::Error),
@@ -25,7 +25,6 @@ impl From<crypto::Error> for Error {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)] // Request ID is persisted by the store on authenticated reads.
 pub(crate) struct VerifiedRead {
     pub request_id: [u8; 16],
     pub signer_id: [u8; 16],

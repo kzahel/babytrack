@@ -3,6 +3,7 @@
 use super::*;
 
 impl RelayStore {
+    #[cfg(any(test, feature = "test-harness"))]
     pub fn genesis_result(&self, family_id: [u8; 16]) -> Result<Option<Vec<u8>>, Error> {
         let saved: Option<(Vec<u8>, Vec<u8>)> = self
             .db
@@ -19,6 +20,7 @@ impl RelayStore {
         Ok(Some(committed))
     }
 
+    #[cfg(any(test, feature = "test-harness"))]
     pub fn committed_object(
         &self,
         family_id: [u8; 16],

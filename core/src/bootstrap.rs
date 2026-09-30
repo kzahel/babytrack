@@ -96,6 +96,7 @@ impl InvitationBootstrap {
         Ok(descriptor)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn from_committed_issue_with_controls(
         relay_origin: &str,
         relay_public_key: [u8; 32],
@@ -377,6 +378,7 @@ impl InvitationBootstrap {
     pub(crate) fn invitation_sign_seed(&self) -> [u8; 32] {
         self.invitation_sign_seed
     }
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn relay_public_key_internal(&self) -> [u8; 32] {
         self.relay_public_key
     }
@@ -401,6 +403,7 @@ impl InvitationBootstrap {
         self.verify_issue_inner(genesis_bytes, issue_bytes, prior_batches, &[], false)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn verify_issue_sparse(
         &self,
         genesis_bytes: &[u8],

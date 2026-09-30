@@ -9,7 +9,7 @@ use babytrack_wire::{
 use sha2::{Digest, Sha256};
 
 #[derive(Debug)]
-#[allow(dead_code)] // Error detail is consumed by the upcoming route boundary.
+#[allow(dead_code)] // Error variants retain diagnostic details at the relay boundary.
 pub(crate) enum Error {
     Public(public_authority::Error),
     Cbor(cbor::Error),
@@ -33,7 +33,6 @@ impl From<crypto::Error> for Error {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Consumed by the genesis reservation transaction.
 pub(crate) struct GenesisCandidate {
     pub family_id: [u8; 16],
     pub relay_id: [u8; 32],
@@ -46,7 +45,6 @@ pub(crate) struct GenesisCandidate {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Consumed by the object staging transaction.
 pub(crate) struct ManifestEntry {
     pub kind: u16,
     pub object_id: [u8; 16],
@@ -54,7 +52,6 @@ pub(crate) struct ManifestEntry {
     pub object_len: u32,
 }
 
-#[allow(dead_code)] // Called by the genesis reservation transaction.
 pub(crate) fn verify_genesis_candidate(
     candidate_bytes: &[u8],
     relay_public_key: &[u8; 32],
@@ -170,7 +167,6 @@ pub(crate) fn verify_genesis_candidate(
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Used by the first post-genesis control transaction.
 pub(crate) struct IssueCandidate {
     pub family_id: [u8; 16],
     pub transition_id: [u8; 16],
@@ -180,7 +176,6 @@ pub(crate) struct IssueCandidate {
     pub manifest: ManifestEntry,
 }
 
-#[allow(dead_code)] // Used by the first post-genesis control transaction.
 pub(crate) fn verify_first_invite_issue(
     candidate_bytes: &[u8],
     genesis: &GenesisCandidate,
@@ -225,7 +220,6 @@ pub(crate) fn verify_first_invite_issue(
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Used by the pending-claim relay transaction.
 pub(crate) struct ClaimCandidate {
     pub family_id: [u8; 16],
     pub transition_id: [u8; 16],
@@ -238,7 +232,6 @@ pub(crate) struct ClaimCandidate {
     pub role: u64,
 }
 
-#[allow(dead_code)] // Used by the pending-claim relay transaction.
 pub(crate) fn verify_first_claim(
     candidate_bytes: &[u8],
     genesis: &GenesisCandidate,
@@ -329,16 +322,13 @@ fn state_with_pending(
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Consumed by challenge staging and proof validation.
 pub(crate) struct ChallengeCandidate {
     pub transition_id: [u8; 16],
     pub challenge_id: [u8; 16],
     pub challenge_hash: [u8; 32],
-    pub context_bytes: Vec<u8>,
     pub manifest: Vec<ManifestEntry>,
 }
 
-#[allow(dead_code)] // Consumed by challenge staging and proof validation.
 pub(crate) fn verify_first_challenge(
     candidate_bytes: &[u8],
     genesis: &GenesisCandidate,
@@ -369,7 +359,6 @@ pub(crate) fn verify_first_challenge(
         transition_id: prepared.transition_id,
         challenge_id: prepared.challenge_id,
         challenge_hash: prepared.challenge_hash,
-        context_bytes: prepared.context_bytes,
         manifest: prepared
             .manifest
             .into_iter()
@@ -384,13 +373,11 @@ pub(crate) fn verify_first_challenge(
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Consumed by the key-proof transaction.
 pub(crate) struct ProofCandidate {
     pub transition_id: [u8; 16],
     pub proof_hash: [u8; 32],
 }
 
-#[allow(dead_code)] // Consumed by the key-proof transaction.
 pub(crate) fn verify_first_proof(
     candidate_bytes: &[u8],
     genesis: &GenesisCandidate,
@@ -424,7 +411,6 @@ pub(crate) fn verify_first_proof(
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Consumed by the admission staging transaction.
 pub(crate) struct AdmissionCandidate {
     pub transition_id: [u8; 16],
     pub recipient_id: [u8; 16],
@@ -495,7 +481,6 @@ pub(crate) fn verify_first_removal(
     })
 }
 
-#[allow(dead_code)] // Consumed by the admission staging transaction.
 pub(crate) fn verify_first_admission(
     candidate_bytes: &[u8],
     genesis: &GenesisCandidate,

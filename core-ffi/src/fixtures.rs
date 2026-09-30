@@ -18,7 +18,7 @@ impl NativeFamily {
         }))
     }
 
-    /// Fixture-only primitive replay. Production sharing will accept raw
+    /// Fixture-only primitive replay. Production sharing accepts raw
     /// committed entries through a core-owned authorization session.
     pub fn apply_envelope(
         &self,

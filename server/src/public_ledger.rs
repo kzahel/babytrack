@@ -17,7 +17,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-#[allow(dead_code)] // Detailed validation errors are retained by the relay boundary.
+#[allow(dead_code)] // Error variants retain diagnostic details at the relay boundary.
 pub(crate) enum Error {
     Cbor(cbor::Error),
     Crypto(crypto::Error),

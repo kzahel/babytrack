@@ -37,7 +37,7 @@ Owning decisions: [event model](../topics/event-model.md),
 4. [x] Separate relay storage tests and implementation concerns:
    initialization/integrity, object staging, authority commits, and reads.
    Preserve explicit SQLite transaction ownership and wire validation.
-5. [ ] Audit obsolete scaffolding comments and broad dead-code allowances;
+5. [x] Audit obsolete scaffolding comments and broad dead-code allowances;
    refresh the current repository map; move Android UI harness helpers into
    a dedicated support module with all entry points updated.
 6. [ ] Resolve Android API 26 compatibility for generated binding cleanup
@@ -123,3 +123,16 @@ existing owners.
   owning commit methods. All 23 server tests and six CLI integration tests
   pass, including dynamic authority and encrypted relay exchange. Workspace
   Clippy, rustfmt, dependency boundaries, and diff checks pass.
+
+- Slice 5: removed obsolete relay scaffolding comments and blanket item
+  suppressions. Diagnostic error enums retain narrowly documented allowances;
+  four raw storage helpers are now explicitly test/test-harness-only. Removed
+  one unused challenge-context copy while retaining shared-verifier validation.
+  Native-only bootstrap helpers are correctly excluded from wasm. Production
+  relay, workspace, and wasm Clippy pass without warnings; server/CLI tests
+  pass. The repository map and stale event/sync status introductions now link
+  to current gate owners. All three Android script entry points import
+  `android_ui.py`; the 14 moved helper ASTs are unchanged, Python compilation,
+  CLI help, and import-only checks pass without starting a scenario. The full
+  caregiver UI walkthrough is running; its final result, recovery, and capture
+  verification will be recorded with slice 7. Diff/boundary checks pass.

@@ -30,9 +30,9 @@ tactical with its current status.
   removal, private copy, and file recovery pass browser UI flows.
 - [007: Android screen extraction and fixture gallery](007-android-screen-gallery.md)
   — implementation and local validation complete; explicit Android screen
-  boundaries, previews, and a scrolling fixture gallery are delivered, with
-  a verified CI artifact. The hosted first-install join regression and its
-  correction are recorded in 007.
+  boundaries, previews, and an organized offline fixture catalog are delivered.
+  Render artifacts were verified in CI; local catalog checks and the hosted
+  first-install join correction are recorded in 007.
 - [008: Shared model and implementation cleanup](008-maintenance-refactors.md)
   — complete with local validation; shared event builders/read models,
   Android coordination, native bindings, relay storage, harness/documentation

@@ -119,7 +119,11 @@ native stores or calls a relay.
 
 `scripts/render_android_gallery.sh` generates PNGs, metadata, and an offline
 HTML gallery under the gitignored Android build directory. The Android CI
-job retains that directory as a synthetic-data artifact. The local commands
+job retains that directory as a synthetic-data artifact. The builder copies
+the checked-in template, CSS, and JavaScript from `scripts/android-gallery/`
+alongside the images, preserving offline browsing. The Playwright runner
+`tests/browser/gallery-smoke.cjs` covers catalog behavior on desktop and
+mobile widths without an emulator or relay. The local commands
 and file map are in the [Android README](../../apps/android/README.md), and
 work status is in [007](../tactical/007-android-screen-gallery.md).
 

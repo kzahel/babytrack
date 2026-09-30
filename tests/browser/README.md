@@ -27,3 +27,18 @@ a Playwright trace. Override the root with `BABYTRACK_BROWSER_DIAGNOSTICS_DIR`.
 CI retains these artifacts when present. Product UI flows remain in
 `web-ui-smoke.cjs` and `web-sharing-ui.cjs`; their build wrappers share the
 web output directory and must run sequentially.
+
+The offline Android gallery has its own presentation regression runner.
+After generating it with `bash scripts/render_android_gallery.sh`, run:
+
+```sh
+node tests/browser/gallery-smoke.cjs
+# Optional alternate output, including a focused compact gallery:
+node tests/browser/gallery-smoke.cjs apps/android/app/build/outputs/screen-gallery-compact
+```
+
+It opens `index.html` directly from disk in bundled Chromium and checks
+destination/state/search filters, all theme/text comparisons, scroll and
+variant controls, original-image links, keyboard focus, and responsive
+layout at desktop and mobile widths. No relay is needed. Set
+`BABYTRACK_GALLERY_SCREENSHOTS` to a directory to retain catalog screenshots.

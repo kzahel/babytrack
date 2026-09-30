@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Babytrack · Screen library</title><link rel="stylesheet" href="gallery.css"></head>
+<body>
+<header class="masthead"><div><p class="eyebrow">BABYTRACK / ANDROID</p><h1>Screen library</h1></div><div class="header-meta">__COUNT__ screens <span>·</span> __DISPLAY__<a href="manifest.json">Rendering manifest ↗</a></div></header>
+<div class="workspace">
+<aside aria-label="Screen destinations"><h2>Browse</h2><nav id="groups" aria-label="Destinations"></nav><p class="aside-note">Fictional data.<br>Actual app screens.</p></aside>
+<main>
+<div class="toolbar">
+<label class="search"><span class="sr-only">Search screens</span><input id="search" type="search" placeholder="Search screens, states, activities…"></label>
+<div class="filter-row">
+<label>State<select id="state"><option value="all">All states</option></select></label>
+<label>Theme<select id="theme"><option value="dark">Dark</option><option value="light">Light</option><option value="both">Compare both</option></select></label>
+<label>Text size<select id="text"><option value="normal">100% · Default</option><option value="large">150% · Accessibility</option><option value="both">Compare both</option></select></label>
+<button id="reset" class="quiet">Reset filters</button></div>
+</div>
+<div class="results-heading"><div><h2 id="view-title">All screens</h2><p id="results" role="status" aria-live="polite"></p></div><span id="comparison-note">Click a preview to inspect</span></div>
+<div id="gallery" class="gallery"></div>
+<div id="empty" class="empty" hidden><h2>No matching screens</h2><p>Try another destination or clear your filters.</p><button id="empty-reset">Show all screens</button></div>
+<noscript>Enable JavaScript to browse this offline screen library.</noscript>
+</main></div>
+<dialog id="viewer" aria-labelledby="viewer-title">
+<div class="viewer-header"><div><p id="viewer-group" class="eyebrow"></p><h2 id="viewer-title"></h2></div><button id="close-viewer" aria-label="Close preview">✕</button></div>
+<div class="viewer-controls"><label>Variant<select id="viewer-variant"></select></label><a id="original" target="_blank" rel="noopener">Open original PNG ↗</a></div>
+<div class="viewer-image"><img id="viewer-image" alt=""></div>
+<div class="viewer-footer"><button id="previous-page">← Previous scroll</button><span id="page-status" role="status" aria-live="polite"></span><button id="next-page">Next scroll →</button></div>
+</dialog>
+<script id="gallery-data" type="application/json">__DATA__</script><script src="gallery.js"></script>
+</body></html>

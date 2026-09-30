@@ -168,3 +168,27 @@ links. Representative phone renders were visually inspected. Python/shell
 syntax, workspace boundaries, and diff checks pass. The test browser closes
 at the end of the check. This is a rendering-harness change; existing product
 UI and physical-phone gates remain with their owners.
+
+## Catalog follow-up, 2026-09-30
+
+The user requested filtering and organization for the gallery. The offline
+index now groups cases by destination, puts typical states first, and
+combines destination, state, and search filters. It shows one dark/100%
+preview per case by default, with selectors for light mode, 150% text, and
+side-by-side comparisons. A modal viewer provides every scroll capture,
+variant switching, original PNG links, arrow-key navigation, and focus
+restoration on close. Checked-in HTML/CSS/JavaScript assets are copied into
+the generated directory so the whole catalog remains usable from a ZIP.
+The owning interface topic records this review workflow.
+
+Local validation: the full phone catalog (31 cases / 124 variants / 188
+PNGs) and focused compact growth catalog pass the permanent Playwright
+runner at 1440 and 390 pixel widths. Checks cover every destination/state,
+combined search filters, all nine theme/text combinations, empty results,
+scroll and variant controls, original images, keyboard focus, and overflow.
+Desktop and mobile catalog screenshots were visually inspected. Python and
+JavaScript syntax, workspace boundaries, diff checks, and workflow lint pass.
+The Android CI job now runs the same catalog check after rendering; that
+workflow change has only been validated locally. Existing PNGs were reused
+because this follow-up changes the catalog, not Android rendering or app
+behavior. The refreshed offline archive includes all local assets.

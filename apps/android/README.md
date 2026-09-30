@@ -113,12 +113,20 @@ Render all existing screens without an emulator:
 bash scripts/render_android_gallery.sh
 ```
 
-Open `apps/android/app/build/outputs/screen-gallery/index.html` to scroll
-through the screen gallery. The default is a 412 × 915 dp phone viewport,
-rendered at 2× image scale for sharper full-size PNGs. Each case shows dark
-and light modes at 100% text first, followed by 150% accessibility checks. Expand additional scroll positions to see the bottom of long
-forms and History; click any image for full size. The gallery also supports
-search. To iterate on one screen or family of states:
+Open `apps/android/app/build/outputs/screen-gallery/index.html` to browse the
+offline screen library. Destination groups organize Today, History, Family,
+Capture, and child profiles; typical states appear before edge cases. Search
+and state filters combine with destination selection. The default shows one
+dark-mode, 100% text preview per case. Theme and text-size selectors can show
+light mode, 150% text, or compare both side by side.
+
+Click a preview to inspect its full-size image, switch variants, and move
+through additional scroll captures with the buttons or left/right arrow
+keys. Escape closes the viewer; the original PNG is available separately.
+The default is a 412 × 915 dp phone viewport, rendered at 2× image scale.
+All HTML, CSS, JavaScript, and images stay local: unzip the entire artifact
+and open its `index.html` without a server. To iterate on one screen or
+family of states:
 
 ```sh
 bash scripts/render_android_gallery.sh -PgalleryCase=capture-bottle

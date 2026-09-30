@@ -116,6 +116,16 @@ jobs:
         run: apps/android/gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
       - name: Render Android fixture gallery without an emulator
         run: bash scripts/render_android_gallery.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check offline gallery browsing
+        run: |
+          npm ci --ignore-scripts --prefix tests/browser
+          cd tests/browser
+          npx playwright install --with-deps --only-shell chromium
+          cd ../..
+          node tests/browser/gallery-smoke.cjs
       - name: Keep Android screen gallery
         id: screen-gallery
         uses: actions/upload-artifact@v4
@@ -131,8 +141,8 @@ jobs:
           import os
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
               summary.write('### Android screen gallery\n\n')
-              summary.write(f"[Download the scrolling gallery]({os.environ['GALLERY_URL']})\n\n")
-              summary.write('Unzip and open `index.html`: synthetic fixtures rendered with the production Compose screens, in dark/light and normal/1.5× text. Long screens include additional scroll positions.\n')
+              summary.write(f"[Download the screen library]({os.environ['GALLERY_URL']})\n\n")
+              summary.write('Unzip and open `index.html`: browse by destination, filter states, and compare dark/light or normal/1.5× text. Click a preview to inspect additional scroll positions. All fixtures use synthetic data and production Compose screens.\n')
           PY
       - name: Keep dogfood artifact
         uses: actions/upload-artifact@v4

@@ -27,7 +27,7 @@ Owning decisions: [event model](../topics/event-model.md),
    in platform-independent core modules. Retain platform ID/clock/storage
    adapters and browser JSON shape. Add parity checks for overlapping types,
    invalid input, target identity, and edited breast-feed records.
-2. [ ] Extract Android sharing/enrollment and file backup/recovery
+2. [x] Extract Android sharing/enrollment and file backup/recovery
    coordination from TrackerRoute, and consolidate its loaded screen state.
    Keep platform launchers at the route boundary, the existing shared save
    coroutine lifetime, exact selection targets, and failed-save drafts.
@@ -90,3 +90,16 @@ existing owners.
   browser smoke, local web UI, and shared web UI all pass locally. The two
   web UI runners rebuild the same directory and must run sequentially; a
   concurrent invocation collided during npm/build and passed when rerun alone.
+
+- Slice 2: Android sharing/enrollment actions and foreground sync passes now
+  live in `TrackerSharingController`; document launchers and file actions
+  live in `TrackerBackupController`. Both use the route's existing scope.
+  The route publishes one immutable `ScreenData` instead of assigning its
+  loaded fields individually. Unit tests and both APKs pass; the clean-install
+  invitation test and all 28 real-relay cases pass on a read-only disposable
+  emulator. The quick create/diaper/edit/delete/restart UI flow and complete
+  readable/protected file recovery pass at 1.5× text. Recovery exposed existing
+  unscrolled capture/password lookups; those now scroll rather than assuming
+  controls fit above the fold. The gallery renders 31 cases/124 variants;
+  an actual large-text removed-Family render was inspected. Workspace
+  boundaries, Python compilation, and diff checks pass.

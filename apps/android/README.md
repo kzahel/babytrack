@@ -123,6 +123,9 @@ Presentation files:
 - `MainActivity.kt`: Android entry points, invitation intents, file adapters.
 - `TrackerRoute.kt`, `TrackerData.kt`: navigation, data loading, platform and
   Family coordination.
+- `TrackerSharingController.kt`, `TrackerBackupController.kt`: sharing and
+  enrollment actions, typed foreground sync results, file callbacks, and
+  backup/recovery actions using the route's coroutine scope.
 - `CaptureRoute.kt`, `EntryEditController.kt`, `TrackerDrafts.kt`: capture
   and correction actions, with remembered UI drafts and the route's shared
   coroutine scope.

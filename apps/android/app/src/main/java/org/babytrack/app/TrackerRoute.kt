@@ -51,18 +51,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import uniffi.babytrack_core_ffi.ActivityRow
 import uniffi.babytrack_core_ffi.ActivityWhen
 import uniffi.babytrack_core_ffi.BackupFileRow
-import uniffi.babytrack_core_ffi.BackupInfoRow
-import uniffi.babytrack_core_ffi.ChildRow
-import uniffi.babytrack_core_ffi.DaySummaryRow
 import uniffi.babytrack_core_ffi.FamilyRef
 import uniffi.babytrack_core_ffi.NativeLocalStore
-import uniffi.babytrack_core_ffi.RemovedDeviceRow
-import uniffi.babytrack_core_ffi.RestoredOriginRow
-import uniffi.babytrack_core_ffi.SharedSnapshotRow
-import uniffi.babytrack_core_ffi.SharedSyncRow
 
 private data class RemovalCopyNotice(val sourceKey: String, val copy: FamilyRef)
 
@@ -84,2200 +76,1757 @@ internal fun TrackerRoute(
     val feedback = remember { TrackerFeedback() }
     val captureDraft = remember { CaptureDraftState() }
     val edits = remember { EntryEditState() }
+    val sharingState = remember { TrackerSharingState() }
+    val backupState = remember { TrackerBackupState() }
     with(feedback) {
         with(captureDraft) {
             with(edits) {
-                val context = LocalContext.current
-                val activity = context as ComponentActivity
-                var foreground by remember {
-                    mutableStateOf(
-                        activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-                    )
-                }
-                DisposableEffect(activity) {
-                    val observer = LifecycleEventObserver { _, event ->
-                        if (event == Lifecycle.Event.ON_START) foreground = true
-                        if (event == Lifecycle.Event.ON_STOP) foreground = false
-                    }
-                    activity.lifecycle.addObserver(observer)
-                    onDispose { activity.lifecycle.removeObserver(observer) }
-                }
-                val scope = rememberCoroutineScope()
-
-                val notificationPermission =
-                    rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-                        if (it) version++
-                    }
-                var families by remember { mutableStateOf<List<FamilyRef>>(emptyList()) }
-                var removedFamilies by remember { mutableStateOf<List<FamilyRef>>(emptyList()) }
-                var familyChildNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-                var children by remember { mutableStateOf<List<ChildRow>>(emptyList()) }
-                var entries by remember { mutableStateOf<List<ActivityRow>>(emptyList()) }
-                var daySummary by remember { mutableStateOf<DaySummaryRow?>(null) }
-                var daySummaryDay by remember { mutableStateOf<LocalDate?>(null) }
-                var revision by remember { mutableStateOf(0uL) }
-                var restoredOrigin by remember { mutableStateOf<RestoredOriginRow?>(null) }
-                var isShared by remember { mutableStateOf(false) }
-                var activeSharedSnapshot by remember { mutableStateOf<SharedSnapshotRow?>(null) }
-                var activeUnusedInvitationIds by remember {
-                    mutableStateOf<List<ByteArray>?>(emptyList())
-                }
-                var loadedFamilyKey by remember { mutableStateOf<String?>(null) }
-                var loadedChildKey by remember { mutableStateOf<String?>(null) }
-                var activeFamilyIsLocal by remember { mutableStateOf(false) }
-                var saveStatusVersion by remember { mutableStateOf(0) }
-                val selectionPrefs = remember {
-                    context.getSharedPreferences("tracker_selection", Context.MODE_PRIVATE)
-                }
-                val removalNoticePrefs = remember {
-                    context.getSharedPreferences(
-                        "acknowledged_removal_copies",
-                        Context.MODE_PRIVATE,
-                    )
-                }
-                var selectedFamily by remember {
-                    mutableStateOf(selectionPrefs.getString("family", null))
-                }
-                var selectedChild by remember {
-                    mutableStateOf(selectionPrefs.getString("child", null))
-                }
-                var destination by rememberSaveable { mutableStateOf(TrackerDestination.TODAY) }
-                var captureKind by rememberSaveable { mutableStateOf<CaptureKind?>(null) }
-                var showTargetPicker by remember { mutableStateOf(false) }
-                var pendingRemovalNotice by remember { mutableStateOf<RemovalCopyNotice?>(null) }
-                LaunchedEffect(foreground, version, pendingRemovalNotice) {
-                    if (!foreground || pendingRemovalNotice != null) return@LaunchedEffect
-                    runCatching {
-                            withContext(Dispatchers.IO) {
-                                (store.families() + sharing.recipientFamilies())
-                                    .distinctBy { it.familyId.key() }
-                                    .firstNotNullOfOrNull { source ->
-                                        val copy =
-                                            sharing.savedRemovalCopy(source)
-                                                ?: return@firstNotNullOfOrNull null
-                                        val sourceKey = source.familyId.key()
-                                        if (
-                                            removalNoticePrefs.getString(sourceKey, null) ==
-                                                copy.familyId.key()
-                                        )
-                                            null
-                                        else RemovalCopyNotice(sourceKey, copy)
-                                    }
-                            }
+                with(sharingState) {
+                    with(backupState) {
+                        val context = LocalContext.current
+                        val activity = context as ComponentActivity
+                        var foreground by remember {
+                            mutableStateOf(
+                                activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                            )
                         }
-                        .onSuccess { pendingRemovalNotice = it }
-                        .onFailure {
-                            Log.w("BabytrackRemoval", "Could not read saved copy destination", it)
+                        DisposableEffect(activity) {
+                            val observer = LifecycleEventObserver { _, event ->
+                                if (event == Lifecycle.Event.ON_START) foreground = true
+                                if (event == Lifecycle.Event.ON_STOP) foreground = false
+                            }
+                            activity.lifecycle.addObserver(observer)
+                            onDispose { activity.lifecycle.removeObserver(observer) }
                         }
-                }
-                LaunchedEffect(loadedFamilyKey, selectedFamily, selectedChild, children) {
-                    if (selectedFamily != null && loadedFamilyKey == selectedFamily) {
-                        val child =
-                            selectedChild.takeIf { chosen ->
-                                children.any { it.id.key() == chosen }
-                            }
-                        selectionPrefs
-                            .edit()
-                            .putString("family", selectedFamily)
-                            .putString("child", child)
-                            .apply()
-                    }
-                }
-                var childName by remember { mutableStateOf("") }
-                var showAddChildForm by remember { mutableStateOf(false) }
-                var showChildDetails by remember { mutableStateOf(false) }
+                        val scope = rememberCoroutineScope()
 
-                var childBirthDate by remember { mutableStateOf("") }
-                var childSex by remember { mutableStateOf(3u.toUByte()) }
-
-                var timelineFilter by remember { mutableStateOf(TimelineFilter.ALL) }
-                var selectedHistoryDay by rememberSaveable { mutableStateOf<String?>(null) }
-                var expandedEntryKey by remember { mutableStateOf<String?>(null) }
-
-                val snackbarHostState = remember { SnackbarHostState() }
-                LaunchedEffect(message) { message?.let { snackbarHostState.showSnackbar(it) } }
-                var automaticSyncDelayed by remember { mutableStateOf(false) }
-                var automaticSyncBlocked by remember { mutableStateOf(false) }
-                var removalTarget by remember { mutableStateOf<ByteArray?>(null) }
-                var cancelInvitationTarget by remember {
-                    mutableStateOf<PendingInvitationCancel?>(null)
-                }
-                var pendingDeviceRemoval by remember { mutableStateOf<PendingDeviceRemoval?>(null) }
-                var roleChangeTarget by remember { mutableStateOf<PendingRoleChange?>(null) }
-                val deviceLabelPrefs = remember {
-                    context.getSharedPreferences("device_labels", Context.MODE_PRIVATE)
-                }
-                var deviceLabels by remember {
-                    mutableStateOf(
-                        deviceLabelPrefs.all
-                            .mapNotNull { (key, value) -> (value as? String)?.let { key to it } }
-                            .toMap()
-                    )
-                }
-                var deviceLabelTarget by remember { mutableStateOf<String?>(null) }
-                var deviceLabelDraft by remember { mutableStateOf("") }
-
-                LaunchedEffect(recentlyDeleted) {
-                    val target = recentlyDeleted ?: return@LaunchedEffect
-                    val result =
-                        snackbarHostState.showSnackbar(
-                            context.getString(R.string.entry_deleted),
-                            actionLabel = context.getString(R.string.undo),
-                            duration = SnackbarDuration.Long,
-                        )
-                    if (result == SnackbarResult.ActionPerformed) {
-                        runCatching {
-                                withContext(Dispatchers.IO) {
-                                    val at = System.currentTimeMillis()
-                                    if (target.shared)
-                                        sharing.restoreActivity(
-                                            target.family,
-                                            target.childId,
-                                            target.activityId,
-                                            at,
-                                        )
-                                    else
-                                        store.restoreActivity(
-                                            target.family,
-                                            target.childId,
-                                            target.activityId,
-                                            at,
-                                        )
-                                }
+                        val notificationPermission =
+                            rememberLauncherForActivityResult(
+                                ActivityResultContracts.RequestPermission()
+                            ) {
+                                if (it) version++
                             }
-                            .onSuccess {
-                                version++
-                                message = null
-                            }
-                            .onFailure { message = context.getString(R.string.error) }
-                    }
-                    recentlyDeleted = null
-                }
-
-                var relayOrigin by remember { mutableStateOf("") }
-                var relayPublicKey by remember { mutableStateOf("") }
-                var shareStage by remember { mutableStateOf<String?>(null) }
-                var shareInProgress by remember { mutableStateOf(false) }
-                var inviteInProgress by remember { mutableStateOf(false) }
-                var invitationFragment by remember { mutableStateOf<String?>(null) }
-                var receivedFragment by remember { mutableStateOf("") }
-                var showJoinForm by remember { mutableStateOf(false) }
-                var showShareForm by remember { mutableStateOf(false) }
-                var showFamilySetup by remember { mutableStateOf(false) }
-                var showAccessControls by remember { mutableStateOf(false) }
-                var showDataControls by remember { mutableStateOf(false) }
-                var joinStage by remember { mutableStateOf<String?>(null) }
-                var joinInProgress by remember { mutableStateOf(false) }
-                var sharedSnapshot by remember { mutableStateOf<SharedSnapshotRow?>(null) }
-                var recipientFamilies by remember { mutableStateOf<List<FamilyRef>>(emptyList()) }
-                var readyRecipientKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
-                var selectedRecipient by remember { mutableStateOf<String?>(null) }
-                var inviteAsManager by remember { mutableStateOf(false) }
-                LaunchedEffect(incomingInvitation) {
-                    if (incomingInvitation != null) {
-                        receivedFragment = incomingInvitation
-                        showJoinForm = true
-                        destination = TrackerDestination.FAMILY
-                    }
-                }
-                val errorText = stringResource(R.string.error)
-                val savedText = stringResource(R.string.saved)
-                val restoredText = stringResource(R.string.restored)
-                LaunchedEffect(selectedFamily) {
-                    showAccessControls = false
-                    showDataControls = false
-                    showShareForm = false
-                    shareStage = null
-                    invitationFragment = null
-                    relayPublicKey = ""
-                    inviteAsManager = false
-                    childName = ""
-                    childBirthDate = ""
-                    childSex = 3u.toUByte()
-                    val family = families.find { it.familyId.key() == selectedFamily }
-                    relayOrigin =
-                        family
-                            ?.let {
-                                if (
-                                    recipientFamilies.any { recipient ->
-                                        recipient.familyId.key() == it.familyId.key()
-                                    }
-                                ) {
-                                    runCatching { sharing.recipientOrigin(it) }.getOrNull()
-                                } else lastRelayOrigin(it)
-                            }
-                            .orEmpty()
-                }
-                LaunchedEffect(selectedFamily, selectedChild) {
-                    showTargetPicker = false
-                    captureKind = null
-                    if (destination == TrackerDestination.CAPTURE)
-                        destination = TrackerDestination.TODAY
-                    expandedEntryKey = null
-                    recentlyDeleted = null
-                    showChildDetails = false
-                    showAddChildForm = false
-                    childName = ""
-                    childBirthDate = ""
-                    childSex = 3u.toUByte()
-                    amount = ""
-                    bottleUnit = 1u.toUByte()
-                    bottleContent = 2u.toUByte()
-                    breastDraftSegments = emptyList()
-                    breastMinutes = ""
-                    breastSide = 1u.toUByte()
-                    pumpMinutes = ""
-                    pumpLeft = ""
-                    pumpRight = ""
-                    pumpTotal = ""
-                    solidsFoods = ""
-                    solidsAmount = ""
-                    sleepMinutes = ""
-                    sleepPlace = null
-                    noteText = ""
-                    growthWeight = ""
-                    growthWeightUnit = 11u.toUByte()
-                    growthLength = ""
-                    growthLengthUnit = 21u.toUByte()
-                    growthHead = ""
-                    growthHeadUnit = 21u.toUByte()
-                    temperatureEntered = ""
-                    temperatureUnit = 30u.toUByte()
-                    medicationName = ""
-                    doseAmount = ""
-                    doseUnit = ""
-                    pendingChildProfileEdit = null
-                    childProfileSaving = false
-                    pendingDelete = null
-                    pendingNoteEdit = null
-                    pendingTimeEdit = null
-                    pendingBottleEdit = null
-                    pendingBreastEdit = null
-                    pendingDiaperEdit = null
-                    pendingSolidsEdit = null
-                    pendingGrowthEdit = null
-                    pendingPumpEdit = null
-                    pendingMedicationEdit = null
-                    pendingSleepEdit = null
-                    pendingSleepPlaceEdit = null
-                    pendingTemperatureEdit = null
-                    logAtMs = null
-                    timelineFilter = TimelineFilter.ALL
-                    selectedHistoryDay = null
-                }
-                var pendingBackup by remember { mutableStateOf<BackupFileRow?>(null) }
-                var pendingAnalysisCsv by remember { mutableStateOf<ByteArray?>(null) }
-                var protectBackup by remember { mutableStateOf(false) }
-                var backupPassword by remember { mutableStateOf("") }
-                var restorePassword by remember { mutableStateOf("") }
-                var pendingRestore by remember { mutableStateOf<ByteArray?>(null) }
-                var pendingRestoreProtected by remember { mutableStateOf(false) }
-                var restoreInfo by remember { mutableStateOf<BackupInfoRow?>(null) }
-                val passwordNeeded = stringResource(R.string.password_needed)
-                val passwordOrFileError = stringResource(R.string.password_or_file_error)
-                val damagedBackupError = stringResource(R.string.damaged_backup_error)
-                LaunchedEffect(foreground, selectedRecipient) {
-                    if (foreground)
-                        while (isActive) {
-                            val (syncResult, terminalReasons, managerRemovals) =
-                                withContext(Dispatchers.IO) {
-                                    var failed = false
-                                    var blocked = false
-                                    val stages =
-                                        mutableMapOf<
-                                            String,
-                                            uniffi.babytrack_core_ffi.RecipientSyncRow,
-                                        >()
-                                    val terminals = mutableMapOf<String, InvitationTerminalReason>()
-                                    val removals = mutableMapOf<String, RemovedDeviceRow>()
-                                    val localFamilies =
-                                        runCatching { store.families() }
-                                            .getOrElse {
-                                                if (it is kotlinx.coroutines.CancellationException)
-                                                    throw it
-                                                Log.w(
-                                                    "BabytrackSync",
-                                                    "Could not list local Families",
-                                                    it,
-                                                )
-                                                failed = true
-                                                emptyList()
-                                            }
-                                    for (family in localFamilies) {
-                                        val origin = lastRelayOrigin(family) ?: continue
-                                        val canAdvance =
-                                            runCatching {
-                                                    sharing.isShared(family) &&
-                                                        !sharing.isRemoved(family)
-                                                }
-                                                .getOrElse {
-                                                    if (
-                                                        it
-                                                            is
-                                                            kotlinx.coroutines.CancellationException
-                                                    )
-                                                        throw it
-                                                    Log.w(
-                                                        "BabytrackSync",
-                                                        "Could not read shared Family state",
-                                                        it,
-                                                    )
-                                                    failed = true
-                                                    false
-                                                }
-                                        if (canAdvance) {
-                                            runCatching { sharing.advanceManager(family, origin) }
-                                                .onFailure {
-                                                    if (
-                                                        it
-                                                            is
-                                                            kotlinx.coroutines.CancellationException
-                                                    )
-                                                        throw it
-                                                    if (it is VerifiedManagerRemoval)
-                                                        removals[family.familyId.key()] = it.result
-                                                    else {
-                                                        failed = true
-                                                        if (it is SharedUploadBlocked)
-                                                            blocked = true
-                                                    }
-                                                }
-                                        }
-                                    }
-                                    val recipients =
-                                        runCatching { sharing.recipientFamilies() }
-                                            .getOrElse {
-                                                if (it is kotlinx.coroutines.CancellationException)
-                                                    throw it
-                                                Log.w(
-                                                    "BabytrackSync",
-                                                    "Could not list joining Families",
-                                                    it,
-                                                )
-                                                failed = true
-                                                emptyList()
-                                            }
-                                    for (family in recipients) {
-                                        runCatching { sharing.advanceRecipient(family) }
-                                            .onSuccess { stages[family.familyId.key()] = it }
-                                            .onFailure {
-                                                if (it is kotlinx.coroutines.CancellationException)
-                                                    throw it
-                                                if (it is InvitationTerminal)
-                                                    terminals[family.familyId.key()] = it.reason
-                                                else {
-                                                    failed = true
-                                                    if (it is SharedUploadBlocked) blocked = true
-                                                }
-                                            }
-                                    }
-                                    Triple(Triple(failed, blocked, stages), terminals, removals)
-                                }
-                            automaticSyncDelayed = syncResult.first
-                            automaticSyncBlocked = syncResult.second
-                            val recipientStages = syncResult.third
-                            terminalReasons[selectedRecipient]?.let { reason ->
-                                joinStage = terminalInvitationMessage(context, reason)
-                                showJoinForm = true
-                                sharedSnapshot = null
-                            }
-                            managerRemovals[selectedFamily]?.let { removed ->
-                                val copy = removed.privateCopy
-                                if (copy != null) {
-                                    pendingRemovalNotice =
-                                        RemovalCopyNotice(selectedFamily ?: return@let, copy)
-                                    message =
-                                        when (removed.pendingResult) {
-                                            2.toUByte() ->
-                                                context.getString(R.string.history_removed_accepted)
-                                            3.toUByte() ->
-                                                context.getString(R.string.history_removed_rejected)
-                                            0.toUByte() ->
-                                                context.getString(R.string.history_removed_unsent)
-                                            else ->
-                                                context.getString(R.string.history_removed_copied)
-                                        }
-                                } else message = context.getString(R.string.history_removed)
-                            }
-                            recipientStages[selectedRecipient]?.let { progress ->
-                                if (progress.removed) sharedSnapshot = null
-                                joinStage =
-                                    when {
-                                        progress.removed -> removedHistoryMessage(context, progress)
-                                        progress.joinPhase == 8u.toUByte() ->
-                                            context.getString(R.string.pending_join_removed)
-                                        progress.ready ->
-                                            context.getString(R.string.history_ready_auto)
-                                        progress.awaitingGrant ->
-                                            pendingRecipientMessage(context, progress)
-                                        else ->
-                                            context.getString(
-                                                R.string.history_pending,
-                                                progress.verifiedCursor.toLong(),
-                                            )
-                                    }
-                            }
-                            version++
-                            delay(30_000)
+                        var screenData by remember { mutableStateOf<ScreenData?>(null) }
+                        val families = screenData?.families ?: emptyList()
+                        val removedFamilies = screenData?.removedFamilies ?: emptyList()
+                        val familyChildNames = screenData?.familyChildNames ?: emptyMap()
+                        val children = screenData?.children ?: emptyList()
+                        val entries = screenData?.entries ?: emptyList()
+                        val daySummary = screenData?.daySummary
+                        val daySummaryDay = screenData?.daySummaryDay
+                        val revision = screenData?.revision ?: 0uL
+                        val restoredOrigin = screenData?.restoredOrigin
+                        val isShared = screenData?.shared ?: false
+                        val activeSharedSnapshot = screenData?.mainSharedSnapshot
+                        val activeUnusedInvitationIds = screenData?.unusedInvitationIds
+                        val loadedFamilyKey = screenData?.activeFamilyKey
+                        val loadedChildKey = screenData?.activeChildKey
+                        val activeFamilyIsLocal = screenData?.activeFamilyIsLocal ?: false
+                        val selectionPrefs = remember {
+                            context.getSharedPreferences("tracker_selection", Context.MODE_PRIVATE)
                         }
-                }
-                val tooLargeError = stringResource(R.string.backup_too_large)
-                val saveLauncher =
-                    rememberLauncherForActivityResult(
-                        ActivityResultContracts.CreateDocument("application/octet-stream")
-                    ) { uri ->
-                        if (uri != null)
-                            scope.launch {
-                                runCatching {
-                                        withContext(Dispatchers.IO) {
-                                            val file = pendingBackup ?: error("Missing backup")
-                                            writeFile(uri, file.bytes)
-                                            check(recordSave(file))
-                                        }
-                                    }
-                                    .onSuccess {
-                                        message = savedText
-                                        saveStatusVersion++
-                                    }
-                                    .onFailure { message = errorText }
-                                pendingBackup = null
-                            }
-                    }
-                val csvLauncher =
-                    rememberLauncherForActivityResult(
-                        ActivityResultContracts.CreateDocument("text/csv")
-                    ) { uri ->
-                        if (uri != null)
-                            scope.launch {
-                                runCatching {
-                                        withContext(Dispatchers.IO) {
-                                            writeFile(
-                                                uri,
-                                                pendingAnalysisCsv
-                                                    ?: error("Missing analysis export"),
-                                            )
-                                        }
-                                    }
-                                    .onSuccess {
-                                        message = context.getString(R.string.analysis_csv_saved)
-                                    }
-                                    .onFailure { message = errorText }
-                                pendingAnalysisCsv = null
-                            }
-                        else pendingAnalysisCsv = null
-                    }
-                val restoreLauncher =
-                    rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri
-                        ->
-                        if (uri != null)
-                            scope.launch {
-                                pendingRestore = null
-                                restoreInfo = null
-                                restorePassword = ""
-                                pendingRestoreProtected = false
-                                val bytes =
-                                    runCatching {
-                                            withContext(Dispatchers.IO) {
-                                                readFile(uri) ?: error("Missing backup")
-                                            }
-                                        }
-                                        .getOrElse {
-                                            message =
-                                                if (it is BackupTooLarge) tooLargeError
-                                                else errorText
-                                            return@launch
-                                        }
-                                val protected =
-                                    bytes.size >= 5 &&
-                                        bytes.copyOfRange(0, 5).contentEquals("BTBK1".toByteArray())
-                                if (protected) {
-                                    pendingRestore = bytes
-                                    pendingRestoreProtected = true
-                                    message = passwordNeeded
-                                } else {
-                                    runCatching {
-                                            withContext(Dispatchers.IO) {
-                                                store.inspectReadable(bytes)
-                                            }
-                                        }
-                                        .onSuccess { info ->
-                                            pendingRestore = bytes
-                                            restoreInfo = info
-                                            message = null
-                                        }
-                                        .onFailure { message = damagedBackupError }
-                                }
-                            }
-                    }
-                fun change(onSaved: (() -> Unit)? = null, action: () -> Unit) {
-                    scope.launch {
-                        runCatching { withContext(Dispatchers.IO) { action() } }
-                            .onSuccess {
-                                version++
-                                message = null
-                                onSaved?.invoke()
-                            }
-                            .onFailure { message = errorText }
-                    }
-                }
-                LaunchedEffect(version, selectedFamily, selectedChild, selectedRecipient) {
-                    runCatching {
-                            withContext(Dispatchers.IO) {
-                                loadTrackerData(
-                                    store,
-                                    sharing,
-                                    selectedFamily,
-                                    selectedChild,
-                                    selectedRecipient,
-                                )
-                            }
+                        val removalNoticePrefs = remember {
+                            context.getSharedPreferences(
+                                "acknowledged_removal_copies",
+                                Context.MODE_PRIVATE,
+                            )
                         }
-                        .onSuccess { data ->
-                            val all = data.families
-                            val kids = data.children
-                            families = all
-                            removedFamilies = data.removedFamilies
-                            familyChildNames = data.familyChildNames
-                            selectedFamily =
-                                all.find { it.familyId.key() == selectedFamily }?.familyId?.key()
-                                    ?: all.firstOrNull()?.familyId?.key()
-                            activeFamilyIsLocal = data.activeFamilyIsLocal
-                            children = kids
-                            selectedChild =
-                                kids.find { it.id.key() == selectedChild }?.id?.key()
-                                    ?: kids.firstOrNull()?.id?.key()
-                            entries = data.entries
-                            daySummary = data.daySummary
-                            daySummaryDay = data.daySummaryDay
-                            revision = data.revision
-                            restoredOrigin = data.restoredOrigin
-                            isShared = data.shared
-                            activeSharedSnapshot = data.mainSharedSnapshot
-                            activeUnusedInvitationIds = data.unusedInvitationIds
-                            loadedFamilyKey = data.activeFamilyKey
-                            loadedChildKey = data.activeChildKey
-                            recipientFamilies = data.recipients
-                            readyRecipientKeys = data.readyRecipientKeys
-                            selectedRecipient =
-                                data.recipients
-                                    .find { it.familyId.key() == selectedRecipient }
-                                    ?.familyId
-                                    ?.key() ?: data.recipients.firstOrNull()?.familyId?.key()
-                            sharedSnapshot = data.joinedSnapshot
+                        var selectedFamily by remember {
+                            mutableStateOf(selectionPrefs.getString("family", null))
+                        }
+                        var selectedChild by remember {
+                            mutableStateOf(selectionPrefs.getString("child", null))
+                        }
+                        var destination by rememberSaveable {
+                            mutableStateOf(TrackerDestination.TODAY)
+                        }
+                        var captureKind by rememberSaveable { mutableStateOf<CaptureKind?>(null) }
+                        var showTargetPicker by remember { mutableStateOf(false) }
+                        var pendingRemovalNotice by remember {
+                            mutableStateOf<RemovalCopyNotice?>(null)
+                        }
+                        LaunchedEffect(foreground, version, pendingRemovalNotice) {
+                            if (!foreground || pendingRemovalNotice != null) return@LaunchedEffect
                             runCatching {
-                                    SleepTimerNotifications.update(context, data.activeSleepCount)
+                                    withContext(Dispatchers.IO) {
+                                        (store.families() + sharing.recipientFamilies())
+                                            .distinctBy { it.familyId.key() }
+                                            .firstNotNullOfOrNull { source ->
+                                                val copy =
+                                                    sharing.savedRemovalCopy(source)
+                                                        ?: return@firstNotNullOfOrNull null
+                                                val sourceKey = source.familyId.key()
+                                                if (
+                                                    removalNoticePrefs.getString(sourceKey, null) ==
+                                                        copy.familyId.key()
+                                                )
+                                                    null
+                                                else RemovalCopyNotice(sourceKey, copy)
+                                            }
+                                    }
                                 }
+                                .onSuccess { pendingRemovalNotice = it }
                                 .onFailure {
-                                    android.util.Log.w(
-                                        "BabytrackTimer",
-                                        "Could not update sleep notification",
+                                    Log.w(
+                                        "BabytrackRemoval",
+                                        "Could not read saved copy destination",
                                         it,
                                     )
                                 }
                         }
-                        .onFailure {
-                            if (it is kotlinx.coroutines.CancellationException) throw it
-                            Log.e("BabytrackTracker", "Could not load tracker", it)
-                            message = errorText
+                        LaunchedEffect(loadedFamilyKey, selectedFamily, selectedChild, children) {
+                            if (selectedFamily != null && loadedFamilyKey == selectedFamily) {
+                                val child =
+                                    selectedChild.takeIf { chosen ->
+                                        children.any { it.id.key() == chosen }
+                                    }
+                                selectionPrefs
+                                    .edit()
+                                    .putString("family", selectedFamily)
+                                    .putString("child", child)
+                                    .apply()
+                            }
                         }
-                }
-                val family = families.find { it.familyId.key() == selectedFamily }
-                val child =
-                    children
-                        .find { it.id.key() == selectedChild }
-                        ?.takeIf { loadedFamilyKey == selectedFamily }
-                val activeShared = isShared && loadedFamilyKey == selectedFamily
-                val completed =
-                    remember(selectedFamily, saveStatusVersion) { family?.let(lastSave) }
-                val filename = stringResource(R.string.backup_filename)
-                val protectedFilename = stringResource(R.string.protected_backup_filename)
-                val todayScrollState = rememberScrollState()
-                val historyScrollState = rememberScrollState()
-                val familyScrollState = rememberScrollState()
-                val captureScrollState = rememberScrollState()
-                LaunchedEffect(selectedFamily, selectedChild) {
-                    todayScrollState.scrollTo(0)
-                    historyScrollState.scrollTo(0)
-                    familyScrollState.scrollTo(0)
-                    captureScrollState.scrollTo(0)
-                }
-                val route =
-                    if (family == null || child == null) TrackerDestination.FAMILY else destination
-                val scrollState =
-                    when (route) {
-                        TrackerDestination.TODAY -> todayScrollState
-                        TrackerDestination.HISTORY -> historyScrollState
-                        TrackerDestination.FAMILY -> familyScrollState
-                        TrackerDestination.CAPTURE -> captureScrollState
-                    }
-                BackHandler(
-                    enabled = route != TrackerDestination.TODAY && family != null && child != null
-                ) {
-                    destination = TrackerDestination.TODAY
-                    captureKind = null
-                }
-                LaunchedEffect(incomingInvitation) {
-                    if (incomingInvitation != null) familyScrollState.scrollTo(0)
-                }
-                val joinFirst =
-                    incomingInvitation != null &&
-                        (receivedFragment.isNotBlank() || sharedSnapshot == null)
+                        var childName by remember { mutableStateOf("") }
+                        var showAddChildForm by remember { mutableStateOf(false) }
+                        var showChildDetails by remember { mutableStateOf(false) }
 
-                fun finishCapture() {
-                    if (destination == TrackerDestination.CAPTURE) {
-                        destination = TrackerDestination.TODAY
-                        captureKind = null
-                    }
-                }
+                        var childBirthDate by remember { mutableStateOf("") }
+                        var childSex by remember { mutableStateOf(3u.toUByte()) }
 
-                val inviteOrigin =
-                    activeSharedSnapshot
-                        ?.let { snapshot ->
-                            if (activeFamilyIsLocal) lastRelayOrigin(snapshot.family).orEmpty()
-                            else
-                                runCatching { sharing.recipientOrigin(snapshot.family) }
-                                    .getOrNull()
+                        var timelineFilter by remember { mutableStateOf(TimelineFilter.ALL) }
+                        var selectedHistoryDay by rememberSaveable { mutableStateOf<String?>(null) }
+                        var expandedEntryKey by remember { mutableStateOf<String?>(null) }
+
+                        val snackbarHostState = remember { SnackbarHostState() }
+                        LaunchedEffect(message) {
+                            message?.let { snackbarHostState.showSnackbar(it) }
+                        }
+                        var removalTarget by remember { mutableStateOf<ByteArray?>(null) }
+                        var cancelInvitationTarget by remember {
+                            mutableStateOf<PendingInvitationCancel?>(null)
+                        }
+                        var pendingDeviceRemoval by remember {
+                            mutableStateOf<PendingDeviceRemoval?>(null)
+                        }
+                        var roleChangeTarget by remember {
+                            mutableStateOf<PendingRoleChange?>(null)
+                        }
+                        val deviceLabelPrefs = remember {
+                            context.getSharedPreferences("device_labels", Context.MODE_PRIVATE)
+                        }
+                        var deviceLabels by remember {
+                            mutableStateOf(
+                                deviceLabelPrefs.all
+                                    .mapNotNull { (key, value) ->
+                                        (value as? String)?.let { key to it }
+                                    }
+                                    .toMap()
+                            )
+                        }
+                        var deviceLabelTarget by remember { mutableStateOf<String?>(null) }
+                        var deviceLabelDraft by remember { mutableStateOf("") }
+
+                        LaunchedEffect(recentlyDeleted) {
+                            val target = recentlyDeleted ?: return@LaunchedEffect
+                            val result =
+                                snackbarHostState.showSnackbar(
+                                    context.getString(R.string.entry_deleted),
+                                    actionLabel = context.getString(R.string.undo),
+                                    duration = SnackbarDuration.Long,
+                                )
+                            if (result == SnackbarResult.ActionPerformed) {
+                                runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            val at = System.currentTimeMillis()
+                                            if (target.shared)
+                                                sharing.restoreActivity(
+                                                    target.family,
+                                                    target.childId,
+                                                    target.activityId,
+                                                    at,
+                                                )
+                                            else
+                                                store.restoreActivity(
+                                                    target.family,
+                                                    target.childId,
+                                                    target.activityId,
+                                                    at,
+                                                )
+                                        }
+                                    }
+                                    .onSuccess {
+                                        version++
+                                        message = null
+                                    }
+                                    .onFailure { message = context.getString(R.string.error) }
+                            }
+                            recentlyDeleted = null
+                        }
+
+                        val sharedSnapshot = screenData?.joinedSnapshot
+                        val recipientFamilies = screenData?.recipients ?: emptyList()
+                        val readyRecipientKeys = screenData?.readyRecipientKeys ?: emptySet()
+                        LaunchedEffect(incomingInvitation) {
+                            if (incomingInvitation != null) {
+                                receivedFragment = incomingInvitation
+                                showJoinForm = true
+                                destination = TrackerDestination.FAMILY
+                            }
+                        }
+                        val errorText = stringResource(R.string.error)
+                        LaunchedEffect(selectedFamily) {
+                            showAccessControls = false
+                            showDataControls = false
+                            showShareForm = false
+                            shareStage = null
+                            invitationFragment = null
+                            relayPublicKey = ""
+                            inviteAsManager = false
+                            childName = ""
+                            childBirthDate = ""
+                            childSex = 3u.toUByte()
+                            val family = families.find { it.familyId.key() == selectedFamily }
+                            relayOrigin =
+                                family
+                                    ?.let {
+                                        if (
+                                            recipientFamilies.any { recipient ->
+                                                recipient.familyId.key() == it.familyId.key()
+                                            }
+                                        ) {
+                                            runCatching { sharing.recipientOrigin(it) }.getOrNull()
+                                        } else lastRelayOrigin(it)
+                                    }
                                     .orEmpty()
                         }
-                        .orEmpty()
-
-                val familyNumber = families.indexOfFirst { it.familyId.key() == selectedFamily } + 1
-                val title =
-                    if (child != null && familyNumber > 0) {
-                        stringResource(R.string.family_with_child, familyNumber, child.name)
-                    } else
-                        stringResource(
-                            when (route) {
-                                TrackerDestination.TODAY -> R.string.nav_today
-                                TrackerDestination.HISTORY -> R.string.nav_history
-                                TrackerDestination.FAMILY -> R.string.nav_family
-                                TrackerDestination.CAPTURE -> R.string.add_activity
+                        LaunchedEffect(selectedFamily, selectedChild) {
+                            showTargetPicker = false
+                            captureKind = null
+                            if (destination == TrackerDestination.CAPTURE)
+                                destination = TrackerDestination.TODAY
+                            expandedEntryKey = null
+                            recentlyDeleted = null
+                            showChildDetails = false
+                            showAddChildForm = false
+                            childName = ""
+                            childBirthDate = ""
+                            childSex = 3u.toUByte()
+                            amount = ""
+                            bottleUnit = 1u.toUByte()
+                            bottleContent = 2u.toUByte()
+                            breastDraftSegments = emptyList()
+                            breastMinutes = ""
+                            breastSide = 1u.toUByte()
+                            pumpMinutes = ""
+                            pumpLeft = ""
+                            pumpRight = ""
+                            pumpTotal = ""
+                            solidsFoods = ""
+                            solidsAmount = ""
+                            sleepMinutes = ""
+                            sleepPlace = null
+                            noteText = ""
+                            growthWeight = ""
+                            growthWeightUnit = 11u.toUByte()
+                            growthLength = ""
+                            growthLengthUnit = 21u.toUByte()
+                            growthHead = ""
+                            growthHeadUnit = 21u.toUByte()
+                            temperatureEntered = ""
+                            temperatureUnit = 30u.toUByte()
+                            medicationName = ""
+                            doseAmount = ""
+                            doseUnit = ""
+                            pendingChildProfileEdit = null
+                            childProfileSaving = false
+                            pendingDelete = null
+                            pendingNoteEdit = null
+                            pendingTimeEdit = null
+                            pendingBottleEdit = null
+                            pendingBreastEdit = null
+                            pendingDiaperEdit = null
+                            pendingSolidsEdit = null
+                            pendingGrowthEdit = null
+                            pendingPumpEdit = null
+                            pendingMedicationEdit = null
+                            pendingSleepEdit = null
+                            pendingSleepPlaceEdit = null
+                            pendingTemperatureEdit = null
+                            logAtMs = null
+                            timelineFilter = TimelineFilter.ALL
+                            selectedHistoryDay = null
+                        }
+                        LaunchedEffect(foreground, selectedRecipient) {
+                            if (foreground)
+                                while (isActive) {
+                                    val pass =
+                                        withContext(Dispatchers.IO) {
+                                            advanceTrackerSharing(store, sharing, lastRelayOrigin)
+                                        }
+                                    automaticSyncDelayed = pass.delayed
+                                    automaticSyncBlocked = pass.blocked
+                                    val recipientStages = pass.recipients
+                                    pass.terminals[selectedRecipient]?.let { reason ->
+                                        joinStage = terminalInvitationMessage(context, reason)
+                                        showJoinForm = true
+                                        screenData = screenData?.copy(joinedSnapshot = null)
+                                    }
+                                    pass.removals[selectedFamily]?.let { removed ->
+                                        val copy = removed.privateCopy
+                                        if (copy != null) {
+                                            pendingRemovalNotice =
+                                                RemovalCopyNotice(
+                                                    selectedFamily ?: return@let,
+                                                    copy,
+                                                )
+                                            message =
+                                                when (removed.pendingResult) {
+                                                    2.toUByte() ->
+                                                        context.getString(
+                                                            R.string.history_removed_accepted
+                                                        )
+                                                    3.toUByte() ->
+                                                        context.getString(
+                                                            R.string.history_removed_rejected
+                                                        )
+                                                    0.toUByte() ->
+                                                        context.getString(
+                                                            R.string.history_removed_unsent
+                                                        )
+                                                    else ->
+                                                        context.getString(
+                                                            R.string.history_removed_copied
+                                                        )
+                                                }
+                                        } else message = context.getString(R.string.history_removed)
+                                    }
+                                    recipientStages[selectedRecipient]?.let { progress ->
+                                        if (progress.removed)
+                                            screenData = screenData?.copy(joinedSnapshot = null)
+                                        joinStage =
+                                            when {
+                                                progress.removed ->
+                                                    removedHistoryMessage(context, progress)
+                                                progress.joinPhase == 8u.toUByte() ->
+                                                    context.getString(R.string.pending_join_removed)
+                                                progress.ready ->
+                                                    context.getString(R.string.history_ready_auto)
+                                                progress.awaitingGrant ->
+                                                    pendingRecipientMessage(context, progress)
+                                                else ->
+                                                    context.getString(
+                                                        R.string.history_pending,
+                                                        progress.verifiedCursor.toLong(),
+                                                    )
+                                            }
+                                    }
+                                    version++
+                                    delay(30_000)
+                                }
+                        }
+                        fun change(onSaved: (() -> Unit)? = null, action: () -> Unit) {
+                            scope.launch {
+                                runCatching { withContext(Dispatchers.IO) { action() } }
+                                    .onSuccess {
+                                        version++
+                                        message = null
+                                        onSaved?.invoke()
+                                    }
+                                    .onFailure { message = errorText }
                             }
-                        )
-                TrackerScaffold(
-                    state =
-                        TrackerChromeState(
-                            route,
-                            title,
-                            child != null,
-                            family != null && child != null,
-                        ),
-                    scrollState = scrollState,
-                    snackbarHostState = snackbarHostState,
-                    onNavigate = { destination = it },
-                    onBack = {
-                        destination = TrackerDestination.TODAY
-                        captureKind = null
-                    },
-                    onSwitchTarget = { showTargetPicker = true },
-                ) {
-                    if (route == TrackerDestination.FAMILY) {
-                        FamilyScreen(
+                        }
+                        LaunchedEffect(version, selectedFamily, selectedChild, selectedRecipient) {
+                            runCatching {
+                                    withContext(Dispatchers.IO) {
+                                        loadTrackerData(
+                                            store,
+                                            sharing,
+                                            selectedFamily,
+                                            selectedChild,
+                                            selectedRecipient,
+                                        )
+                                    }
+                                }
+                                .onSuccess { data ->
+                                    screenData = data
+                                    val all = data.families
+                                    val kids = data.children
+                                    selectedFamily =
+                                        all.find { it.familyId.key() == selectedFamily }
+                                            ?.familyId
+                                            ?.key() ?: all.firstOrNull()?.familyId?.key()
+                                    selectedChild =
+                                        kids.find { it.id.key() == selectedChild }?.id?.key()
+                                            ?: kids.firstOrNull()?.id?.key()
+                                    selectedRecipient =
+                                        data.recipients
+                                            .find { it.familyId.key() == selectedRecipient }
+                                            ?.familyId
+                                            ?.key()
+                                            ?: data.recipients.firstOrNull()?.familyId?.key()
+                                    runCatching {
+                                            SleepTimerNotifications.update(
+                                                context,
+                                                data.activeSleepCount,
+                                            )
+                                        }
+                                        .onFailure {
+                                            android.util.Log.w(
+                                                "BabytrackTimer",
+                                                "Could not update sleep notification",
+                                                it,
+                                            )
+                                        }
+                                }
+                                .onFailure {
+                                    if (it is kotlinx.coroutines.CancellationException) throw it
+                                    Log.e("BabytrackTracker", "Could not load tracker", it)
+                                    message = errorText
+                                }
+                        }
+                        val family = families.find { it.familyId.key() == selectedFamily }
+                        val child =
+                            children
+                                .find { it.id.key() == selectedChild }
+                                ?.takeIf { loadedFamilyKey == selectedFamily }
+                        val activeShared = isShared && loadedFamilyKey == selectedFamily
+                        val completed =
+                            remember(selectedFamily, saveStatusVersion) { family?.let(lastSave) }
+                        val todayScrollState = rememberScrollState()
+                        val historyScrollState = rememberScrollState()
+                        val familyScrollState = rememberScrollState()
+                        val captureScrollState = rememberScrollState()
+                        LaunchedEffect(selectedFamily, selectedChild) {
+                            todayScrollState.scrollTo(0)
+                            historyScrollState.scrollTo(0)
+                            familyScrollState.scrollTo(0)
+                            captureScrollState.scrollTo(0)
+                        }
+                        val route =
+                            if (family == null || child == null) TrackerDestination.FAMILY
+                            else destination
+                        val scrollState =
+                            when (route) {
+                                TrackerDestination.TODAY -> todayScrollState
+                                TrackerDestination.HISTORY -> historyScrollState
+                                TrackerDestination.FAMILY -> familyScrollState
+                                TrackerDestination.CAPTURE -> captureScrollState
+                            }
+                        BackHandler(
+                            enabled =
+                                route != TrackerDestination.TODAY && family != null && child != null
+                        ) {
+                            destination = TrackerDestination.TODAY
+                            captureKind = null
+                        }
+                        LaunchedEffect(incomingInvitation) {
+                            if (incomingInvitation != null) familyScrollState.scrollTo(0)
+                        }
+                        val joinFirst =
+                            incomingInvitation != null &&
+                                (receivedFragment.isNotBlank() || sharedSnapshot == null)
+
+                        fun finishCapture() {
+                            if (destination == TrackerDestination.CAPTURE) {
+                                destination = TrackerDestination.TODAY
+                                captureKind = null
+                            }
+                        }
+
+                        val inviteOrigin =
+                            activeSharedSnapshot
+                                ?.let { snapshot ->
+                                    if (activeFamilyIsLocal)
+                                        lastRelayOrigin(snapshot.family).orEmpty()
+                                    else
+                                        runCatching { sharing.recipientOrigin(snapshot.family) }
+                                            .getOrNull()
+                                            .orEmpty()
+                                }
+                                .orEmpty()
+
+                        val familyNumber =
+                            families.indexOfFirst { it.familyId.key() == selectedFamily } + 1
+                        val title =
+                            if (child != null && familyNumber > 0) {
+                                stringResource(R.string.family_with_child, familyNumber, child.name)
+                            } else
+                                stringResource(
+                                    when (route) {
+                                        TrackerDestination.TODAY -> R.string.nav_today
+                                        TrackerDestination.HISTORY -> R.string.nav_history
+                                        TrackerDestination.FAMILY -> R.string.nav_family
+                                        TrackerDestination.CAPTURE -> R.string.add_activity
+                                    }
+                                )
+                        val sharingActions =
+                            trackerSharingActions(
+                                context,
+                                sharingState,
+                                feedback,
+                                scope,
+                                sharing,
+                                family,
+                                recipientFamilies,
+                                inviteOrigin,
+                                { selectedFamily },
+                                onInvitationConsumed,
+                                recordRelayOrigin,
+                                errorText,
+                            )
+                        val backupActions =
+                            trackerBackupActions(
+                                backupState,
+                                feedback,
+                                scope,
+                                store,
+                                sharing,
+                                family,
+                                activeShared,
+                                readFile,
+                                writeFile,
+                                availableMemory,
+                                recordSave,
+                                { restored ->
+                                    selectedFamily = restored.familyId.key()
+                                    selectedChild = null
+                                },
+                            )
+                        TrackerScaffold(
                             state =
-                                FamilyUiState(
-                                    family = family,
-                                    child = child,
-                                    families = families,
-                                    children = children,
-                                    selectedFamily = selectedFamily,
-                                    selectedChild = selectedChild,
-                                    familyChildNames = familyChildNames,
-                                    removedFamilies = removedFamilies,
-                                    activeShared = activeShared,
-                                    activeFamilyIsLocal = activeFamilyIsLocal,
-                                    automaticSyncDelayed = automaticSyncDelayed,
-                                    automaticSyncBlocked = automaticSyncBlocked,
-                                    shareStage = shareStage,
-                                    activeSharedSnapshot = activeSharedSnapshot,
-                                    activeUnusedInvitationIds = activeUnusedInvitationIds,
-                                    deviceLabels = deviceLabels,
-                                    showAccessControls = showAccessControls,
-                                    showFamilySetup = showFamilySetup,
-                                    showShareForm = showShareForm,
-                                    shareInProgress = shareInProgress,
-                                    relayOrigin = relayOrigin,
-                                    relayPublicKey = relayPublicKey,
-                                    inviteOrigin = inviteOrigin,
-                                    inviteAsManager = inviteAsManager,
-                                    inviteInProgress = inviteInProgress,
-                                    invitationFragment = invitationFragment,
-                                    joinFirst = joinFirst,
-                                    showJoinForm = showJoinForm,
-                                    recipientFamilies = recipientFamilies,
-                                    readyRecipientKeys = readyRecipientKeys,
-                                    selectedRecipient = selectedRecipient,
-                                    receivedFragment = receivedFragment,
-                                    joinInProgress = joinInProgress,
-                                    sharedSnapshot = sharedSnapshot,
-                                    joinStage = joinStage,
-                                    restoredOrigin = restoredOrigin,
-                                    ageLabel =
-                                        child
-                                            ?.let { childAgeLabel(context, it.birthDateString()) }
-                                            .orEmpty(),
-                                    showChildDetails = showChildDetails,
-                                    showDataControls = showDataControls,
-                                    completed = completed,
-                                    revision = revision,
-                                    protectBackup = protectBackup,
-                                    backupPassword = backupPassword,
-                                    hasPendingRestore = pendingRestore != null,
-                                    pendingRestoreProtected = pendingRestoreProtected,
-                                    restorePassword = restorePassword,
-                                    restoreInfo = restoreInfo,
+                                TrackerChromeState(
+                                    route,
+                                    title,
+                                    child != null,
+                                    family != null && child != null,
                                 ),
-                            actions =
-                                FamilyActions(
-                                    onOpenJoin = action@{ showJoinForm = true },
-                                    onSelectRecipient = action@{ recipient ->
-                                            selectedRecipient = recipient.familyId.key()
-                                            joinStage = null
-                                        },
-                                    onReceivedFragmentChange = action@{ it ->
-                                            receivedFragment = it
-                                        },
-                                    onJoinOrRetry = action@{
-                                            joinInProgress = true
-                                            joinStage = context.getString(R.string.join_preparing)
-                                            scope.launch {
-                                                runCatching {
-                                                        withContext(Dispatchers.IO) {
-                                                            val recipient =
-                                                                recipientFamilies.find {
-                                                                    it.familyId.key() ==
-                                                                        selectedRecipient
-                                                                }
-                                                            val prepared =
-                                                                if (receivedFragment.isNotBlank())
-                                                                    sharing.claim(
-                                                                        receivedFragment.trim()
-                                                                    )
-                                                                else
-                                                                    sharing.retryClaim(
-                                                                        recipient
-                                                                            ?: error(
-                                                                                "No saved recipient claim"
-                                                                            )
-                                                                    )
-                                                            prepared to
-                                                                runCatching {
-                                                                    sharing.advanceRecipient(
-                                                                        prepared.family
-                                                                    )
-                                                                }
-                                                        }
+                            scrollState = scrollState,
+                            snackbarHostState = snackbarHostState,
+                            onNavigate = { destination = it },
+                            onBack = {
+                                destination = TrackerDestination.TODAY
+                                captureKind = null
+                            },
+                            onSwitchTarget = { showTargetPicker = true },
+                        ) {
+                            if (route == TrackerDestination.FAMILY) {
+                                FamilyScreen(
+                                    state =
+                                        FamilyUiState(
+                                            family = family,
+                                            child = child,
+                                            families = families,
+                                            children = children,
+                                            selectedFamily = selectedFamily,
+                                            selectedChild = selectedChild,
+                                            familyChildNames = familyChildNames,
+                                            removedFamilies = removedFamilies,
+                                            activeShared = activeShared,
+                                            activeFamilyIsLocal = activeFamilyIsLocal,
+                                            automaticSyncDelayed = automaticSyncDelayed,
+                                            automaticSyncBlocked = automaticSyncBlocked,
+                                            shareStage = shareStage,
+                                            activeSharedSnapshot = activeSharedSnapshot,
+                                            activeUnusedInvitationIds = activeUnusedInvitationIds,
+                                            deviceLabels = deviceLabels,
+                                            showAccessControls = showAccessControls,
+                                            showFamilySetup = showFamilySetup,
+                                            showShareForm = showShareForm,
+                                            shareInProgress = shareInProgress,
+                                            relayOrigin = relayOrigin,
+                                            relayPublicKey = relayPublicKey,
+                                            inviteOrigin = inviteOrigin,
+                                            inviteAsManager = inviteAsManager,
+                                            inviteInProgress = inviteInProgress,
+                                            invitationFragment = invitationFragment,
+                                            joinFirst = joinFirst,
+                                            showJoinForm = showJoinForm,
+                                            recipientFamilies = recipientFamilies,
+                                            readyRecipientKeys = readyRecipientKeys,
+                                            selectedRecipient = selectedRecipient,
+                                            receivedFragment = receivedFragment,
+                                            joinInProgress = joinInProgress,
+                                            sharedSnapshot = sharedSnapshot,
+                                            joinStage = joinStage,
+                                            restoredOrigin = restoredOrigin,
+                                            ageLabel =
+                                                child
+                                                    ?.let {
+                                                        childAgeLabel(context, it.birthDateString())
                                                     }
-                                                    .onSuccess { (prepared, result) ->
-                                                        selectedRecipient =
-                                                            prepared.family.familyId.key()
-                                                        receivedFragment = ""
-                                                        onInvitationConsumed()
-                                                        version++
-                                                        val progress = result.getOrNull()
-                                                        joinStage =
-                                                            when {
-                                                                progress?.ready == true ->
-                                                                    context.getString(
-                                                                        R.string.history_ready_auto
+                                                    .orEmpty(),
+                                            showChildDetails = showChildDetails,
+                                            showDataControls = showDataControls,
+                                            completed = completed,
+                                            revision = revision,
+                                            protectBackup = protectBackup,
+                                            backupPassword = backupPassword,
+                                            hasPendingRestore = pendingRestore != null,
+                                            pendingRestoreProtected = pendingRestoreProtected,
+                                            restorePassword = restorePassword,
+                                            restoreInfo = restoreInfo,
+                                        ),
+                                    actions =
+                                        FamilyActions(
+                                            onOpenJoin = action@{ showJoinForm = true },
+                                            onSelectRecipient = action@{ recipient ->
+                                                    selectedRecipient = recipient.familyId.key()
+                                                    joinStage = null
+                                                },
+                                            onReceivedFragmentChange = action@{ it ->
+                                                    receivedFragment = it
+                                                },
+                                            onJoinOrRetry = sharingActions.onJoinOrRetry,
+                                            onToggleAccess = action@{
+                                                    showAccessControls = !showAccessControls
+                                                },
+                                            onNameDevice = action@{ target, snapshot ->
+                                                    val key =
+                                                        deviceLabelKey(
+                                                            snapshot.family.familyId,
+                                                            target,
+                                                        )
+                                                    deviceLabelTarget = key
+                                                    deviceLabelDraft = deviceLabels[key].orEmpty()
+                                                },
+                                            onSyncShared = sharingActions.onSyncShared,
+                                            onRemoveDevice = action@{ device ->
+                                                    removalTarget = device.deviceId
+                                                },
+                                            onPromoteDevice = action@{ device, nextRole ->
+                                                    val family = family ?: return@action
+                                                    roleChangeTarget =
+                                                        PendingRoleChange(
+                                                            family,
+                                                            device.deviceId.copyOf(),
+                                                            nextRole,
+                                                            activeFamilyIsLocal,
+                                                        )
+                                                },
+                                            onRemovePendingDevice = action@{ pending ->
+                                                    val family = family ?: return@action
+                                                    pendingDeviceRemoval =
+                                                        PendingDeviceRemoval(
+                                                            family,
+                                                            pending.invitationId.copyOf(),
+                                                            pending.deviceId.copyOf(),
+                                                            activeFamilyIsLocal,
+                                                        )
+                                                },
+                                            onCancelInvitation = action@{ invitationId ->
+                                                    val family = family ?: return@action
+                                                    cancelInvitationTarget =
+                                                        PendingInvitationCancel(
+                                                            family,
+                                                            invitationId.copyOf(),
+                                                            activeFamilyIsLocal,
+                                                        )
+                                                },
+                                            onInviteMember = action@{ inviteAsManager = false },
+                                            onInviteManager = action@{ inviteAsManager = true },
+                                            onCreateInvite = sharingActions.onCreateInvite,
+                                            onShareAndroidInvitation = action@{ fragment ->
+                                                    shareInvitation(
+                                                        context,
+                                                        invitationLink(fragment),
+                                                    )
+                                                },
+                                            onCopyAndroidInvitation = action@{ fragment ->
+                                                    copyInvitation(
+                                                        context,
+                                                        invitationLink(fragment),
+                                                    )
+                                                    message =
+                                                        context.getString(
+                                                            R.string.invitation_copied
+                                                        )
+                                                },
+                                            onShareBrowserInvitation = action@{ fragment ->
+                                                    shareInvitation(
+                                                        context,
+                                                        browserInvitationLink(
+                                                            inviteOrigin,
+                                                            fragment,
+                                                        ),
+                                                    )
+                                                },
+                                            onMakePrivateCopy = action@{
+                                                    val family = family ?: return@action
+                                                    scope.launch {
+                                                        runCatching {
+                                                                withContext(Dispatchers.IO) {
+                                                                    sharing.privateCopy(
+                                                                        family,
+                                                                        System.currentTimeMillis(),
                                                                     )
-                                                                progress?.joinPhase ==
-                                                                    8u.toUByte() ->
+                                                                }
+                                                            }
+                                                            .onSuccess { copy ->
+                                                                selectedFamily = copy.familyId.key()
+                                                                selectedChild = null
+                                                                version++
+                                                                message =
                                                                     context.getString(
                                                                         R.string
-                                                                            .pending_join_removed
-                                                                    )
-                                                                progress?.awaitingGrant == true ->
-                                                                    pendingRecipientMessage(
-                                                                        context,
-                                                                        progress,
-                                                                    )
-                                                                progress != null ->
-                                                                    context.getString(
-                                                                        R.string.history_pending,
-                                                                        progress.verifiedCursor
-                                                                            .toLong(),
-                                                                    )
-                                                                result.exceptionOrNull() is
-                                                                    InvitationTerminal ->
-                                                                    terminalInvitationMessage(
-                                                                        context,
-                                                                        (result.exceptionOrNull()
-                                                                                as
-                                                                                InvitationTerminal)
-                                                                            .reason,
-                                                                    )
-                                                                else ->
-                                                                    context.getString(
-                                                                        R.string
-                                                                            .join_progress_delayed
+                                                                            .private_copy_created
                                                                     )
                                                             }
-                                                        message = null
+                                                            .onFailure { message = errorText }
                                                     }
-                                                    .onFailure { failure ->
-                                                        joinStage =
-                                                            (failure as? InvitationTerminal)
-                                                                ?.reason
-                                                                ?.let {
-                                                                    terminalInvitationMessage(
-                                                                        context,
-                                                                        it,
+                                                },
+                                            onSelectFamily = action@{ item ->
+                                                    selectedFamily = item.familyId.key()
+                                                    selectedChild = null
+                                                    showChildDetails = false
+                                                    showAddChildForm = false
+                                                    childName = ""
+                                                    childBirthDate = ""
+                                                    childSex = 3u.toUByte()
+                                                },
+                                            onContinueInPrivateCopy = action@{ source ->
+                                                    scope.launch {
+                                                        runCatching {
+                                                                withContext(Dispatchers.IO) {
+                                                                    sharing.privateCopy(
+                                                                        source,
+                                                                        System.currentTimeMillis(),
                                                                     )
                                                                 }
-                                                                ?: context.getString(
-                                                                    R.string.join_retry
-                                                                )
-                                                        message =
-                                                            if (failure is InvitationTerminal) null
-                                                            else errorText
-                                                        version++
-                                                    }
-                                                joinInProgress = false
-                                            }
-                                        },
-                                    onToggleAccess = action@{
-                                            showAccessControls = !showAccessControls
-                                        },
-                                    onNameDevice = action@{ target, snapshot ->
-                                            val key =
-                                                deviceLabelKey(snapshot.family.familyId, target)
-                                            deviceLabelTarget = key
-                                            deviceLabelDraft = deviceLabels[key].orEmpty()
-                                        },
-                                    onSyncShared = action@{ snapshot ->
-                                            scope.launch {
-                                                runCatching {
-                                                        withContext(Dispatchers.IO) {
-                                                            sharing.syncRecipientAndUpload(
-                                                                snapshot.family
-                                                            )
-                                                        }
-                                                    }
-                                                    .onSuccess { progress ->
-                                                        version++
-                                                        message =
-                                                            sharedSyncMessage(context, progress)
-                                                    }
-                                                    .onFailure {
-                                                        message =
-                                                            if (it is SharedUploadBlocked)
-                                                                context.getString(
-                                                                    R.string.shared_upload_blocked
-                                                                )
-                                                            else errorText
-                                                    }
-                                            }
-                                        },
-                                    onRemoveDevice = action@{ device ->
-                                            removalTarget = device.deviceId
-                                        },
-                                    onPromoteDevice = action@{ device, nextRole ->
-                                            val family = family ?: return@action
-                                            roleChangeTarget =
-                                                PendingRoleChange(
-                                                    family,
-                                                    device.deviceId.copyOf(),
-                                                    nextRole,
-                                                    activeFamilyIsLocal,
-                                                )
-                                        },
-                                    onRemovePendingDevice = action@{ pending ->
-                                            val family = family ?: return@action
-                                            pendingDeviceRemoval =
-                                                PendingDeviceRemoval(
-                                                    family,
-                                                    pending.invitationId.copyOf(),
-                                                    pending.deviceId.copyOf(),
-                                                    activeFamilyIsLocal,
-                                                )
-                                        },
-                                    onCancelInvitation = action@{ invitationId ->
-                                            val family = family ?: return@action
-                                            cancelInvitationTarget =
-                                                PendingInvitationCancel(
-                                                    family,
-                                                    invitationId.copyOf(),
-                                                    activeFamilyIsLocal,
-                                                )
-                                        },
-                                    onInviteMember = action@{ inviteAsManager = false },
-                                    onInviteManager = action@{ inviteAsManager = true },
-                                    onCreateInvite = action@{ snapshot ->
-                                            val invitedFamily = snapshot.family
-                                            val inviteRole =
-                                                if (inviteAsManager) 2u.toUByte() else 1u.toUByte()
-                                            inviteInProgress = true
-                                            shareStage =
-                                                context.getString(R.string.invite_preparing)
-                                            scope.launch {
-                                                runCatching {
-                                                        withContext(Dispatchers.IO) {
-                                                            sharing.invite(
-                                                                invitedFamily,
-                                                                inviteOrigin,
-                                                                inviteRole,
-                                                            )
-                                                        }
-                                                    }
-                                                    .onSuccess { fragment ->
-                                                        version++
-                                                        if (
-                                                            selectedFamily ==
-                                                                invitedFamily.familyId.key()
-                                                        ) {
-                                                            invitationFragment = fragment
-                                                            shareStage =
-                                                                context.getString(
-                                                                    R.string.invite_confirmed
-                                                                )
-                                                            message = null
-                                                        }
-                                                    }
-                                                    .onFailure {
-                                                        if (
-                                                            it
-                                                                is
-                                                                kotlinx.coroutines.CancellationException
-                                                        )
-                                                            throw it
-                                                        if (
-                                                            selectedFamily ==
-                                                                invitedFamily.familyId.key()
-                                                        ) {
-                                                            shareStage =
-                                                                context.getString(
-                                                                    R.string.share_retry
-                                                                )
-                                                            message = errorText
-                                                        }
-                                                    }
-                                                inviteInProgress = false
-                                            }
-                                        },
-                                    onShareAndroidInvitation = action@{ fragment ->
-                                            shareInvitation(context, invitationLink(fragment))
-                                        },
-                                    onCopyAndroidInvitation = action@{ fragment ->
-                                            copyInvitation(context, invitationLink(fragment))
-                                            message = context.getString(R.string.invitation_copied)
-                                        },
-                                    onShareBrowserInvitation = action@{ fragment ->
-                                            shareInvitation(
-                                                context,
-                                                browserInvitationLink(inviteOrigin, fragment),
-                                            )
-                                        },
-                                    onMakePrivateCopy = action@{
-                                            val family = family ?: return@action
-                                            scope.launch {
-                                                runCatching {
-                                                        withContext(Dispatchers.IO) {
-                                                            sharing.privateCopy(
-                                                                family,
-                                                                System.currentTimeMillis(),
-                                                            )
-                                                        }
-                                                    }
-                                                    .onSuccess { copy ->
-                                                        selectedFamily = copy.familyId.key()
-                                                        selectedChild = null
-                                                        version++
-                                                        message =
-                                                            context.getString(
-                                                                R.string.private_copy_created
-                                                            )
-                                                    }
-                                                    .onFailure { message = errorText }
-                                            }
-                                        },
-                                    onSelectFamily = action@{ item ->
-                                            selectedFamily = item.familyId.key()
-                                            selectedChild = null
-                                            showChildDetails = false
-                                            showAddChildForm = false
-                                            childName = ""
-                                            childBirthDate = ""
-                                            childSex = 3u.toUByte()
-                                        },
-                                    onContinueInPrivateCopy = action@{ source ->
-                                            scope.launch {
-                                                runCatching {
-                                                        withContext(Dispatchers.IO) {
-                                                            sharing.privateCopy(
-                                                                source,
-                                                                System.currentTimeMillis(),
-                                                            )
-                                                        }
-                                                    }
-                                                    .onSuccess { copy ->
-                                                        selectedFamily = copy.familyId.key()
-                                                        selectedChild = null
-                                                        version++
-                                                        message =
-                                                            context.getString(
-                                                                R.string.private_copy_created
-                                                            )
-                                                    }
-                                                    .onFailure { message = errorText }
-                                            }
-                                        },
-                                    onToggleFamilyOptions = action@{
-                                            showFamilySetup = !showFamilySetup
-                                        },
-                                    onNewFamily = action@{
-                                            scope.launch {
-                                                runCatching {
-                                                        withContext(Dispatchers.IO) {
-                                                            store.createFamily(
-                                                                System.currentTimeMillis()
-                                                            )
-                                                        }
-                                                    }
-                                                    .onSuccess { created ->
-                                                        selectedFamily = created.familyId.key()
-                                                        selectedChild = null
-                                                        showFamilySetup = false
-                                                        showChildDetails = false
-                                                        showAddChildForm = false
-                                                        childName = ""
-                                                        childBirthDate = ""
-                                                        childSex = 3u.toUByte()
-                                                        version++
-                                                        message = null
-                                                    }
-                                                    .onFailure { message = errorText }
-                                            }
-                                        },
-                                    onShareFamilyAction = action@{
-                                            val family = family ?: return@action
-                                            shareInProgress = true
-                                            shareStage = context.getString(R.string.share_preparing)
-                                            scope.launch {
-                                                runCatching {
-                                                        withContext(Dispatchers.IO) {
-                                                            val cursor =
-                                                                sharing.promote(
-                                                                    family,
-                                                                    PreviewRelay.origin,
-                                                                    PreviewRelay.publicKey,
-                                                                )
-                                                            cursor to
-                                                                recordRelayOrigin(
-                                                                    family,
-                                                                    PreviewRelay.origin,
-                                                                )
-                                                        }
-                                                    }
-                                                    .onSuccess { (cursor, savedOrigin) ->
-                                                        version++
-                                                        if (
-                                                            selectedFamily == family.familyId.key()
-                                                        ) {
-                                                            relayOrigin = PreviewRelay.origin
-                                                            shareStage =
-                                                                if (savedOrigin)
-                                                                    context.getString(
-                                                                        R.string.share_confirmed,
-                                                                        cursor.toLong(),
-                                                                    )
-                                                                else
+                                                            }
+                                                            .onSuccess { copy ->
+                                                                selectedFamily = copy.familyId.key()
+                                                                selectedChild = null
+                                                                version++
+                                                                message =
                                                                     context.getString(
                                                                         R.string
-                                                                            .share_origin_not_saved
+                                                                            .private_copy_created
                                                                     )
-                                                            showAccessControls = true
-                                                            message =
-                                                                if (savedOrigin) null else errorText
-                                                        }
+                                                            }
+                                                            .onFailure { message = errorText }
                                                     }
-                                                    .onFailure {
-                                                        if (
-                                                            it
-                                                                is
-                                                                kotlinx.coroutines.CancellationException
+                                                },
+                                            onToggleFamilyOptions = action@{
+                                                    showFamilySetup = !showFamilySetup
+                                                },
+                                            onNewFamily = action@{
+                                                    scope.launch {
+                                                        runCatching {
+                                                                withContext(Dispatchers.IO) {
+                                                                    store.createFamily(
+                                                                        System.currentTimeMillis()
+                                                                    )
+                                                                }
+                                                            }
+                                                            .onSuccess { created ->
+                                                                selectedFamily =
+                                                                    created.familyId.key()
+                                                                selectedChild = null
+                                                                showFamilySetup = false
+                                                                showChildDetails = false
+                                                                showAddChildForm = false
+                                                                childName = ""
+                                                                childBirthDate = ""
+                                                                childSex = 3u.toUByte()
+                                                                version++
+                                                                message = null
+                                                            }
+                                                            .onFailure { message = errorText }
+                                                    }
+                                                },
+                                            onShareFamilyAction =
+                                                sharingActions.onShareFamilyAction,
+                                            onOpenSharingControls = action@{ showShareForm = true },
+                                            onRelayOriginChange = action@{ it -> relayOrigin = it },
+                                            onRelayPublicKeyChange = action@{ it ->
+                                                    relayPublicKey = it
+                                                },
+                                            onShareRetryButton = sharingActions.onShareRetryButton,
+                                            onSyncManager = sharingActions.onSyncManager,
+                                            onSelectChild = action@{ item ->
+                                                    selectedChild = item.id.key()
+                                                    showChildDetails = false
+                                                    showAddChildForm = false
+                                                    childName = ""
+                                                    childBirthDate = ""
+                                                    childSex = 3u.toUByte()
+                                                },
+                                            onToggleChildOptions = action@{
+                                                    showChildDetails = !showChildDetails
+                                                },
+                                            onEditChildProfile = action@{
+                                                    val family = family ?: return@action
+                                                    val child = child ?: return@action
+                                                    val birthDate = child.birthDateString()
+                                                    val sex = child.sex ?: 3u.toUByte()
+                                                    pendingChildProfileEdit =
+                                                        PendingChildProfileEdit(
+                                                            family,
+                                                            child.id.copyOf(),
+                                                            activeShared,
+                                                            child.name,
+                                                            child.name,
+                                                            birthDate,
+                                                            birthDate,
+                                                            sex,
+                                                            sex,
                                                         )
-                                                            throw it
-                                                        if (
-                                                            selectedFamily == family.familyId.key()
-                                                        ) {
-                                                            shareStage =
-                                                                context.getString(
-                                                                    R.string.share_retry
-                                                                )
-                                                            message = errorText
-                                                        }
-                                                    }
-                                                shareInProgress = false
-                                            }
-                                        },
-                                    onOpenSharingControls = action@{ showShareForm = true },
-                                    onRelayOriginChange = action@{ it -> relayOrigin = it },
-                                    onRelayPublicKeyChange = action@{ it -> relayPublicKey = it },
-                                    onShareRetryButton = action@{
-                                            val family = family ?: return@action
-                                            shareStage = context.getString(R.string.share_preparing)
-                                            scope.launch {
-                                                runCatching {
-                                                        withContext(Dispatchers.IO) {
-                                                            sharing.promote(
-                                                                family,
-                                                                relayOrigin.trim(),
-                                                                relayPublicKey,
-                                                            )
-                                                        }
-                                                    }
-                                                    .onSuccess { cursor ->
-                                                        shareStage =
-                                                            context.getString(
-                                                                R.string.share_confirmed,
-                                                                cursor.toLong(),
-                                                            )
-                                                        version++
-                                                        message =
-                                                            if (
-                                                                recordRelayOrigin(
+                                                },
+                                            onAddAnotherChild = action@{
+                                                    showAddChildForm = true
+                                                    childName = ""
+                                                    childBirthDate = ""
+                                                    childSex = 3u.toUByte()
+                                                },
+                                            onAddChild = action@{ showAddChildForm = true },
+                                            onToggleData = action@{
+                                                    showDataControls = !showDataControls
+                                                },
+                                            onToggleBackupProtection =
+                                                backupActions.onToggleBackupProtection,
+                                            onBackupPasswordChange =
+                                                backupActions.onBackupPasswordChange,
+                                            onSaveBackup = backupActions.onSaveBackup,
+                                            onExportAnalysisCsv = backupActions.onExportAnalysisCsv,
+                                            onRestoreBackup = backupActions.onRestoreBackup,
+                                            onRestorePasswordChange =
+                                                backupActions.onRestorePasswordChange,
+                                            onInspectProtected = backupActions.onInspectProtected,
+                                            onConfirmRestore = backupActions.onConfirmRestore,
+                                        ),
+                                )
+                            }
+
+                            if (family != null) {
+
+                                if (child != null && route == TrackerDestination.TODAY) {
+                                    TodayScreen(
+                                        state =
+                                            TodayUiState(
+                                                activeShared = activeShared,
+                                                ageLabel =
+                                                    childAgeLabel(context, child.birthDateString()),
+                                                automaticSyncDelayed = automaticSyncDelayed,
+                                                automaticSyncBlocked = automaticSyncBlocked,
+                                                summaryIsCurrent =
+                                                    loadedChildKey == selectedChild &&
+                                                        daySummaryDay ==
+                                                            LocalDate.now(ZoneId.systemDefault()),
+                                                daySummary = daySummary,
+                                                entries = entries,
+                                                entriesAreCurrent = loadedChildKey == selectedChild,
+                                            ),
+                                        actions =
+                                            TodayActions(
+                                                onStopSleep = action@{ timer ->
+                                                        val end = System.currentTimeMillis()
+                                                        val endOffset =
+                                                            (TimeZone.getDefault().getOffset(end) /
+                                                                    60_000)
+                                                                .toShort()
+                                                        change {
+                                                            if (activeShared)
+                                                                sharing.stopSleep(
                                                                     family,
-                                                                    relayOrigin.trim(),
+                                                                    timer.childId,
+                                                                    timer.id,
+                                                                    end,
+                                                                    endOffset,
                                                                 )
-                                                            )
-                                                                null
-                                                            else errorText
-                                                    }
-                                                    .onFailure {
-                                                        shareStage =
-                                                            context.getString(R.string.share_retry)
-                                                        message = errorText
-                                                    }
-                                            }
-                                        },
-                                    onSyncManager = action@{
-                                            val family = family ?: return@action
-                                            scope.launch {
-                                                runCatching {
-                                                        withContext(Dispatchers.IO) {
-                                                            sharing.syncAndUpload(
-                                                                family,
-                                                                relayOrigin.trim(),
-                                                            )
+                                                            else
+                                                                store.stopSleep(
+                                                                    family,
+                                                                    timer.childId,
+                                                                    timer.id,
+                                                                    end,
+                                                                    endOffset,
+                                                                    end,
+                                                                )
                                                         }
-                                                    }
-                                                    .onSuccess { progress ->
-                                                        shareStage =
-                                                            sharedSyncMessage(context, progress)
-                                                        version++
-                                                        message = null
-                                                    }
-                                                    .onFailure {
-                                                        message =
-                                                            if (it is SharedUploadBlocked)
-                                                                context.getString(
-                                                                    R.string.shared_upload_blocked
+                                                    },
+                                                onStartSleep = action@{
+                                                        change(
+                                                            onSaved = {
+                                                                if (
+                                                                    Build.VERSION.SDK_INT >= 33 &&
+                                                                        context.checkSelfPermission(
+                                                                            Manifest.permission
+                                                                                .POST_NOTIFICATIONS
+                                                                        ) !=
+                                                                            PackageManager
+                                                                                .PERMISSION_GRANTED
                                                                 )
-                                                            else errorText
-                                                    }
-                                            }
+                                                                    notificationPermission.launch(
+                                                                        Manifest.permission
+                                                                            .POST_NOTIFICATIONS
+                                                                    )
+                                                            }
+                                                        ) {
+                                                            if (activeShared)
+                                                                sharing.startSleepWithPlace(
+                                                                    family,
+                                                                    child.id,
+                                                                    nowTime(),
+                                                                    null,
+                                                                )
+                                                            else
+                                                                store.startSleepWithPlace(
+                                                                    family,
+                                                                    child.id,
+                                                                    nowTime(),
+                                                                    null,
+                                                                )
+                                                        }
+                                                    },
+                                                onQuickWetDiaper = action@{
+                                                        change {
+                                                            val at = nowTime()
+                                                            if (activeShared)
+                                                                sharing.logDiaper(
+                                                                    family,
+                                                                    child.id,
+                                                                    1u.toUByte(),
+                                                                    at,
+                                                                )
+                                                            else
+                                                                store.logDiaper(
+                                                                    family,
+                                                                    child.id,
+                                                                    1u.toUByte(),
+                                                                    at,
+                                                                )
+                                                        }
+                                                    },
+                                                onOpenBottle = action@{
+                                                        captureKind = CaptureKind.BOTTLE
+                                                        destination = TrackerDestination.CAPTURE
+                                                    },
+                                                onOpenDiaper = action@{
+                                                        captureKind = CaptureKind.DIAPER
+                                                        destination = TrackerDestination.CAPTURE
+                                                    },
+                                                onAddActivity = action@{
+                                                        captureKind = null
+                                                        destination = TrackerDestination.CAPTURE
+                                                    },
+                                                onViewTimeline = action@{
+                                                        destination = TrackerDestination.HISTORY
+                                                    },
+                                            ),
+                                    )
+                                }
+                                if (child != null && route == TrackerDestination.CAPTURE) {
+                                    CaptureRoute(
+                                        draft = captureDraft,
+                                        captureKind = captureKind,
+                                        family = family,
+                                        child = child,
+                                        activeShared = activeShared,
+                                        store = store,
+                                        sharing = sharing,
+                                        scope = scope,
+                                        feedback = feedback,
+                                        errorText = errorText,
+                                        performChange = { onSaved, action ->
+                                            change(onSaved, action)
                                         },
-                                    onSelectChild = action@{ item ->
-                                            selectedChild = item.id.key()
-                                            showChildDetails = false
-                                            showAddChildForm = false
-                                            childName = ""
-                                            childBirthDate = ""
-                                            childSex = 3u.toUByte()
+                                        onSelectKind = { kind ->
+                                            captureKind = kind
+                                            scope.launch { captureScrollState.scrollTo(0) }
                                         },
-                                    onToggleChildOptions = action@{
-                                            showChildDetails = !showChildDetails
-                                        },
-                                    onEditChildProfile = action@{
-                                            val family = family ?: return@action
-                                            val child = child ?: return@action
-                                            val birthDate = child.birthDateString()
-                                            val sex = child.sex ?: 3u.toUByte()
-                                            pendingChildProfileEdit =
-                                                PendingChildProfileEdit(
-                                                    family,
-                                                    child.id.copyOf(),
-                                                    activeShared,
-                                                    child.name,
-                                                    child.name,
-                                                    birthDate,
-                                                    birthDate,
-                                                    sex,
-                                                    sex,
+                                        finishCapture = ::finishCapture,
+                                        requestTimerNotification = {
+                                            if (
+                                                Build.VERSION.SDK_INT >= 33 &&
+                                                    context.checkSelfPermission(
+                                                        Manifest.permission.POST_NOTIFICATIONS
+                                                    ) != PackageManager.PERMISSION_GRANTED
+                                            )
+                                                notificationPermission.launch(
+                                                    Manifest.permission.POST_NOTIFICATIONS
                                                 )
                                         },
-                                    onAddAnotherChild = action@{
-                                            showAddChildForm = true
-                                            childName = ""
-                                            childBirthDate = ""
-                                            childSex = 3u.toUByte()
-                                        },
-                                    onAddChild = action@{ showAddChildForm = true },
-                                    onToggleData = action@{ showDataControls = !showDataControls },
-                                    onToggleBackupProtection = action@{
-                                            protectBackup = !protectBackup
-                                        },
-                                    onBackupPasswordChange = action@{ it -> backupPassword = it },
-                                    onSaveBackup = action@{
-                                            val family = family ?: return@action
-                                            scope.launch {
-                                                val password = backupPassword
-                                                val protected = protectBackup
-                                                runCatching {
-                                                        withContext(Dispatchers.IO) {
-                                                            if (activeShared)
-                                                                sharing.backupFile(
-                                                                    family,
-                                                                    System.currentTimeMillis(),
-                                                                    if (protected) password
-                                                                    else null,
-                                                                    availableMemory().toULong(),
-                                                                )
-                                                            else
-                                                                store.backupFile(
-                                                                    family,
-                                                                    System.currentTimeMillis(),
-                                                                    if (protected) password
-                                                                    else null,
-                                                                    availableMemory().toULong(),
-                                                                )
-                                                        }
-                                                    }
-                                                    .onSuccess {
-                                                        pendingBackup = it
-                                                        backupPassword = ""
-                                                        saveLauncher.launch(
-                                                            if (protected) protectedFilename
-                                                            else filename
-                                                        )
-                                                    }
-                                                    .onFailure { message = errorText }
-                                            }
-                                        },
-                                    onExportAnalysisCsv = action@{
-                                            val family = family ?: return@action
-                                            scope.launch {
-                                                runCatching {
-                                                        withContext(Dispatchers.IO) {
-                                                            if (activeShared)
-                                                                sharing.analysisCsv(family)
-                                                            else store.analysisCsv(family)
-                                                        }
-                                                    }
-                                                    .onSuccess {
-                                                        pendingAnalysisCsv = it
-                                                        csvLauncher.launch("babytrack-analysis.csv")
-                                                    }
-                                                    .onFailure { message = errorText }
-                                            }
-                                        },
-                                    onRestoreBackup = action@{
-                                            restoreLauncher.launch(
-                                                arrayOf("application/octet-stream", "*/*")
-                                            )
-                                        },
-                                    onRestorePasswordChange = action@{ it ->
-                                            restorePassword = it
-                                            restoreInfo = null
-                                        },
-                                    onInspectProtected = action@{
-                                            val bytes = pendingRestore ?: return@action
-                                            val password = restorePassword
-                                            scope.launch {
-                                                runCatching {
-                                                        withContext(Dispatchers.IO) {
-                                                            store.inspectProtected(
-                                                                bytes,
-                                                                password,
-                                                                availableMemory().toULong(),
-                                                            )
-                                                        }
-                                                    }
-                                                    .onSuccess { info ->
-                                                        restoreInfo = info
-                                                        message = null
-                                                    }
-                                                    .onFailure { message = passwordOrFileError }
-                                            }
-                                        },
-                                    onConfirmRestore = action@{
-                                            val bytes = pendingRestore ?: return@action
-                                            val protected = pendingRestoreProtected
-                                            val password = restorePassword
-                                            scope.launch {
-                                                runCatching {
-                                                        withContext(Dispatchers.IO) {
-                                                            if (protected)
-                                                                store.restoreProtected(
-                                                                    bytes,
-                                                                    password,
-                                                                    availableMemory().toULong(),
-                                                                    System.currentTimeMillis(),
-                                                                )
-                                                            else
-                                                                store.restore(
-                                                                    bytes,
-                                                                    System.currentTimeMillis(),
-                                                                )
-                                                        }
-                                                    }
-                                                    .onSuccess { restored ->
-                                                        pendingRestore = null
-                                                        restoreInfo = null
-                                                        restorePassword = ""
-                                                        selectedFamily = restored.familyId.key()
-                                                        selectedChild = null
-                                                        version++
-                                                        message = restoredText
-                                                    }
-                                                    .onFailure {
-                                                        message =
-                                                            if (protected) passwordOrFileError
-                                                            else errorText
-                                                    }
-                                            }
-                                        },
-                                ),
-                        )
-                    }
-
-                    if (family != null) {
-
-                        if (child != null && route == TrackerDestination.TODAY) {
-                            TodayScreen(
-                                state =
-                                    TodayUiState(
-                                        activeShared = activeShared,
-                                        ageLabel = childAgeLabel(context, child.birthDateString()),
-                                        automaticSyncDelayed = automaticSyncDelayed,
-                                        automaticSyncBlocked = automaticSyncBlocked,
-                                        summaryIsCurrent =
-                                            loadedChildKey == selectedChild &&
-                                                daySummaryDay ==
-                                                    LocalDate.now(ZoneId.systemDefault()),
-                                        daySummary = daySummary,
-                                        entries = entries,
-                                        entriesAreCurrent = loadedChildKey == selectedChild,
-                                    ),
-                                actions =
-                                    TodayActions(
-                                        onStopSleep = action@{ timer ->
-                                                val end = System.currentTimeMillis()
-                                                val endOffset =
-                                                    (TimeZone.getDefault().getOffset(end) / 60_000)
-                                                        .toShort()
-                                                change {
-                                                    if (activeShared)
-                                                        sharing.stopSleep(
-                                                            family,
-                                                            timer.childId,
-                                                            timer.id,
-                                                            end,
-                                                            endOffset,
-                                                        )
-                                                    else
-                                                        store.stopSleep(
-                                                            family,
-                                                            timer.childId,
-                                                            timer.id,
-                                                            end,
-                                                            endOffset,
-                                                            end,
-                                                        )
-                                                }
-                                            },
-                                        onStartSleep = action@{
-                                                change(
-                                                    onSaved = {
-                                                        if (
-                                                            Build.VERSION.SDK_INT >= 33 &&
-                                                                context.checkSelfPermission(
-                                                                    Manifest.permission
-                                                                        .POST_NOTIFICATIONS
-                                                                ) !=
-                                                                    PackageManager
-                                                                        .PERMISSION_GRANTED
-                                                        )
-                                                            notificationPermission.launch(
-                                                                Manifest.permission
-                                                                    .POST_NOTIFICATIONS
-                                                            )
-                                                    }
-                                                ) {
-                                                    if (activeShared)
-                                                        sharing.startSleepWithPlace(
-                                                            family,
-                                                            child.id,
-                                                            nowTime(),
-                                                            null,
-                                                        )
-                                                    else
-                                                        store.startSleepWithPlace(
-                                                            family,
-                                                            child.id,
-                                                            nowTime(),
-                                                            null,
-                                                        )
-                                                }
-                                            },
-                                        onQuickWetDiaper = action@{
-                                                change {
-                                                    val at = nowTime()
-                                                    if (activeShared)
-                                                        sharing.logDiaper(
-                                                            family,
-                                                            child.id,
-                                                            1u.toUByte(),
-                                                            at,
-                                                        )
-                                                    else
-                                                        store.logDiaper(
-                                                            family,
-                                                            child.id,
-                                                            1u.toUByte(),
-                                                            at,
-                                                        )
-                                                }
-                                            },
-                                        onOpenBottle = action@{
-                                                captureKind = CaptureKind.BOTTLE
-                                                destination = TrackerDestination.CAPTURE
-                                            },
-                                        onOpenDiaper = action@{
-                                                captureKind = CaptureKind.DIAPER
-                                                destination = TrackerDestination.CAPTURE
-                                            },
-                                        onAddActivity = action@{
-                                                captureKind = null
-                                                destination = TrackerDestination.CAPTURE
-                                            },
-                                        onViewTimeline = action@{
-                                                destination = TrackerDestination.HISTORY
-                                            },
-                                    ),
-                            )
-                        }
-                        if (child != null && route == TrackerDestination.CAPTURE) {
-                            CaptureRoute(
-                                draft = captureDraft,
-                                captureKind = captureKind,
-                                family = family,
-                                child = child,
-                                activeShared = activeShared,
-                                store = store,
-                                sharing = sharing,
-                                scope = scope,
-                                feedback = feedback,
-                                errorText = errorText,
-                                performChange = { onSaved, action -> change(onSaved, action) },
-                                onSelectKind = { kind ->
-                                    captureKind = kind
-                                    scope.launch { captureScrollState.scrollTo(0) }
-                                },
-                                finishCapture = ::finishCapture,
-                                requestTimerNotification = {
-                                    if (
-                                        Build.VERSION.SDK_INT >= 33 &&
-                                            context.checkSelfPermission(
-                                                Manifest.permission.POST_NOTIFICATIONS
-                                            ) != PackageManager.PERMISSION_GRANTED
                                     )
-                                        notificationPermission.launch(
-                                            Manifest.permission.POST_NOTIFICATIONS
-                                        )
-                                },
-                            )
-                        }
-                        if (child != null && route == TrackerDestination.HISTORY) {
-                            HistoryScreen(
-                                state =
-                                    HistoryUiState(
-                                        selectedHistoryDay = selectedHistoryDay,
-                                        timelineFilter = timelineFilter,
-                                        entriesAreCurrent = loadedChildKey == selectedChild,
-                                        entries = entries,
-                                        expandedEntryKey = expandedEntryKey,
-                                    ),
-                                actions =
-                                    HistoryActions(
-                                        onChooseHistoryDay = action@{
-                                                val day =
-                                                    selectedHistoryDay?.let { LocalDate.parse(it) }
-                                                        ?: LocalDate.now()
-                                                DatePickerDialog(
-                                                        context,
-                                                        { _, year, month, date ->
-                                                            selectedHistoryDay =
-                                                                LocalDate.of(year, month + 1, date)
-                                                                    .toString()
-                                                            expandedEntryKey = null
-                                                        },
-                                                        day.year,
-                                                        day.monthValue - 1,
-                                                        day.dayOfMonth,
-                                                    )
-                                                    .apply {
-                                                        datePicker.maxDate =
-                                                            System.currentTimeMillis()
-                                                    }
-                                                    .show()
-                                            },
-                                        onShowAllDays = action@{
-                                                selectedHistoryDay = null
-                                                expandedEntryKey = null
-                                            },
-                                        onTimelineFilterChange = action@{ filter ->
-                                                timelineFilter = filter
-                                            },
-                                        onToggleEntryActions = action@{ entryKey ->
-                                                expandedEntryKey =
-                                                    if (expandedEntryKey == entryKey) null
-                                                    else entryKey
-                                            },
-                                        onStopSleep = action@{ entry ->
-                                                val end = System.currentTimeMillis()
-                                                val endOffset =
-                                                    (TimeZone.getDefault().getOffset(end) / 60_000)
-                                                        .toShort()
-                                                change {
-                                                    if (activeShared)
-                                                        sharing.stopSleep(
-                                                            family,
-                                                            entry.childId,
-                                                            entry.id,
-                                                            end,
-                                                            endOffset,
-                                                        )
-                                                    else
-                                                        store.stopSleep(
-                                                            family,
-                                                            entry.childId,
-                                                            entry.id,
-                                                            end,
-                                                            endOffset,
-                                                            end,
-                                                        )
-                                                }
-                                            },
-                                        onEditSleep = action@{ entry ->
-                                                pendingSleepEdit =
-                                                    PendingSleepEdit(
-                                                        family,
-                                                        entry.childId.copyOf(),
-                                                        entry.id.copyOf(),
-                                                        activeShared,
-                                                        entry.startUtcMs,
-                                                        ((entry.endUtcMs!! - entry.startUtcMs) /
-                                                                60_000L)
-                                                            .toString(),
-                                                    )
-                                            },
-                                        onEditSleepPlace = action@{ entry ->
-                                                pendingSleepPlaceEdit =
-                                                    PendingSleepPlaceEdit(
-                                                        family,
-                                                        entry.childId.copyOf(),
-                                                        entry.id.copyOf(),
-                                                        activeShared,
-                                                        entry.sleepPlace,
-                                                    )
-                                            },
-                                        onAddActivityNote = action@{ entry ->
-                                                pendingNoteEdit =
-                                                    PendingNoteEdit(
-                                                        family,
-                                                        entry.childId.copyOf(),
-                                                        entry.id.copyOf(),
-                                                        activeShared,
-                                                        entry.note.orEmpty(),
-                                                        entry.kind == "note",
-                                                        entry.note != null,
-                                                    )
-                                            },
-                                        onEditEntryTime = action@{ entry ->
-                                                pendingTimeEdit =
-                                                    PendingTimeEdit(
-                                                        family,
-                                                        entry.childId.copyOf(),
-                                                        entry.id.copyOf(),
-                                                        activeShared,
-                                                        entry.startUtcMs,
-                                                        entry.offsetMinutes,
-                                                    )
-                                            },
-                                        onMoveCompletedSession = action@{ entry ->
-                                                pendingTimeEdit =
-                                                    PendingTimeEdit(
-                                                        family,
-                                                        entry.childId.copyOf(),
-                                                        entry.id.copyOf(),
-                                                        activeShared,
-                                                        entry.startUtcMs,
-                                                        entry.offsetMinutes,
-                                                        intervalDurationMs =
-                                                            entry.endUtcMs!! - entry.startUtcMs,
-                                                    )
-                                            },
-                                        onEditBottle = action@{ entry ->
-                                                pendingBottleEdit =
-                                                    PendingBottleEdit(
-                                                        family,
-                                                        entry.childId.copyOf(),
-                                                        entry.id.copyOf(),
-                                                        activeShared,
-                                                        localizedEntered(
-                                                            context,
-                                                            entry.bottleEntered
-                                                                ?: entry.bottleMl.toString(),
-                                                        ),
-                                                        entry.bottleUnit ?: 1u.toUByte(),
-                                                        entry.bottleContent ?: 4u.toUByte(),
-                                                    )
-                                            },
-                                        onEditBreast = action@{ entry ->
-                                                val savedSegments = entry.breastSegments!!
-                                                pendingBreastEdit =
-                                                    PendingBreastEdit(
-                                                        family,
-                                                        entry.childId.copyOf(),
-                                                        entry.id.copyOf(),
-                                                        activeShared,
-                                                        entry.startUtcMs,
-                                                        entry.offsetMinutes,
-                                                        savedSegments.map {
-                                                            it.side to
-                                                                ((it.endUtcMs - it.startUtcMs) /
-                                                                        60_000L)
-                                                                    .toString()
-                                                        },
-                                                        savedSegments.mapIndexed { index, segment ->
-                                                            if (index == 0) 0L
+                                }
+                                if (child != null && route == TrackerDestination.HISTORY) {
+                                    HistoryScreen(
+                                        state =
+                                            HistoryUiState(
+                                                selectedHistoryDay = selectedHistoryDay,
+                                                timelineFilter = timelineFilter,
+                                                entriesAreCurrent = loadedChildKey == selectedChild,
+                                                entries = entries,
+                                                expandedEntryKey = expandedEntryKey,
+                                            ),
+                                        actions =
+                                            HistoryActions(
+                                                onChooseHistoryDay = action@{
+                                                        val day =
+                                                            selectedHistoryDay?.let {
+                                                                LocalDate.parse(it)
+                                                            } ?: LocalDate.now()
+                                                        DatePickerDialog(
+                                                                context,
+                                                                { _, year, month, date ->
+                                                                    selectedHistoryDay =
+                                                                        LocalDate.of(
+                                                                                year,
+                                                                                month + 1,
+                                                                                date,
+                                                                            )
+                                                                            .toString()
+                                                                    expandedEntryKey = null
+                                                                },
+                                                                day.year,
+                                                                day.monthValue - 1,
+                                                                day.dayOfMonth,
+                                                            )
+                                                            .apply {
+                                                                datePicker.maxDate =
+                                                                    System.currentTimeMillis()
+                                                            }
+                                                            .show()
+                                                    },
+                                                onShowAllDays = action@{
+                                                        selectedHistoryDay = null
+                                                        expandedEntryKey = null
+                                                    },
+                                                onTimelineFilterChange = action@{ filter ->
+                                                        timelineFilter = filter
+                                                    },
+                                                onToggleEntryActions = action@{ entryKey ->
+                                                        expandedEntryKey =
+                                                            if (expandedEntryKey == entryKey) null
+                                                            else entryKey
+                                                    },
+                                                onStopSleep = action@{ entry ->
+                                                        val end = System.currentTimeMillis()
+                                                        val endOffset =
+                                                            (TimeZone.getDefault().getOffset(end) /
+                                                                    60_000)
+                                                                .toShort()
+                                                        change {
+                                                            if (activeShared)
+                                                                sharing.stopSleep(
+                                                                    family,
+                                                                    entry.childId,
+                                                                    entry.id,
+                                                                    end,
+                                                                    endOffset,
+                                                                )
                                                             else
-                                                                segment.startUtcMs -
-                                                                    savedSegments[index - 1]
-                                                                        .endUtcMs
-                                                        },
-                                                    )
-                                            },
-                                        onEditDiaper = action@{ entry ->
-                                                pendingDiaperEdit =
-                                                    PendingDiaperEdit(
-                                                        family,
-                                                        entry.childId.copyOf(),
-                                                        entry.id.copyOf(),
-                                                        activeShared,
-                                                        entry.diaperKind!!,
-                                                    )
-                                            },
-                                        onEditSolids = action@{ entry ->
-                                                pendingSolidsEdit =
-                                                    PendingSolidsEdit(
-                                                        family,
-                                                        entry.childId.copyOf(),
-                                                        entry.id.copyOf(),
-                                                        activeShared,
-                                                        entry.solidsFoods!!.joinToString("\n"),
-                                                        entry.solidsAmount.orEmpty(),
-                                                    )
-                                            },
-                                        onEditPump = action@{ entry ->
-                                                pendingPumpEdit =
-                                                    PendingPumpEdit(
-                                                        family,
-                                                        entry.childId.copyOf(),
-                                                        entry.id.copyOf(),
-                                                        activeShared,
-                                                        entry.pumpLeftMl?.toString().orEmpty(),
-                                                        entry.pumpRightMl?.toString().orEmpty(),
-                                                        entry.pumpTotalMl?.toString().orEmpty(),
-                                                    )
-                                            },
-                                        onEditMedication = action@{ entry ->
-                                                pendingMedicationEdit =
-                                                    PendingMedicationEdit(
-                                                        family,
-                                                        entry.childId.copyOf(),
-                                                        entry.id.copyOf(),
-                                                        activeShared,
-                                                        entry.medicationName.orEmpty(),
-                                                        entry.medicationDoseAmount.orEmpty(),
-                                                        entry.medicationDoseUnit.orEmpty(),
-                                                    )
-                                            },
-                                        onEditGrowth = action@{ entry ->
-                                                pendingGrowthEdit =
-                                                    PendingGrowthEdit(
-                                                        family,
-                                                        entry.childId.copyOf(),
-                                                        entry.id.copyOf(),
-                                                        activeShared,
-                                                        localizedEntered(
-                                                            context,
-                                                            entry.growthWeightEntered
-                                                                ?: entry.growthWeightG
+                                                                store.stopSleep(
+                                                                    family,
+                                                                    entry.childId,
+                                                                    entry.id,
+                                                                    end,
+                                                                    endOffset,
+                                                                    end,
+                                                                )
+                                                        }
+                                                    },
+                                                onEditSleep = action@{ entry ->
+                                                        pendingSleepEdit =
+                                                            PendingSleepEdit(
+                                                                family,
+                                                                entry.childId.copyOf(),
+                                                                entry.id.copyOf(),
+                                                                activeShared,
+                                                                entry.startUtcMs,
+                                                                ((entry.endUtcMs!! -
+                                                                        entry.startUtcMs) / 60_000L)
+                                                                    .toString(),
+                                                            )
+                                                    },
+                                                onEditSleepPlace = action@{ entry ->
+                                                        pendingSleepPlaceEdit =
+                                                            PendingSleepPlaceEdit(
+                                                                family,
+                                                                entry.childId.copyOf(),
+                                                                entry.id.copyOf(),
+                                                                activeShared,
+                                                                entry.sleepPlace,
+                                                            )
+                                                    },
+                                                onAddActivityNote = action@{ entry ->
+                                                        pendingNoteEdit =
+                                                            PendingNoteEdit(
+                                                                family,
+                                                                entry.childId.copyOf(),
+                                                                entry.id.copyOf(),
+                                                                activeShared,
+                                                                entry.note.orEmpty(),
+                                                                entry.kind == "note",
+                                                                entry.note != null,
+                                                            )
+                                                    },
+                                                onEditEntryTime = action@{ entry ->
+                                                        pendingTimeEdit =
+                                                            PendingTimeEdit(
+                                                                family,
+                                                                entry.childId.copyOf(),
+                                                                entry.id.copyOf(),
+                                                                activeShared,
+                                                                entry.startUtcMs,
+                                                                entry.offsetMinutes,
+                                                            )
+                                                    },
+                                                onMoveCompletedSession = action@{ entry ->
+                                                        pendingTimeEdit =
+                                                            PendingTimeEdit(
+                                                                family,
+                                                                entry.childId.copyOf(),
+                                                                entry.id.copyOf(),
+                                                                activeShared,
+                                                                entry.startUtcMs,
+                                                                entry.offsetMinutes,
+                                                                intervalDurationMs =
+                                                                    entry.endUtcMs!! -
+                                                                        entry.startUtcMs,
+                                                            )
+                                                    },
+                                                onEditBottle = action@{ entry ->
+                                                        pendingBottleEdit =
+                                                            PendingBottleEdit(
+                                                                family,
+                                                                entry.childId.copyOf(),
+                                                                entry.id.copyOf(),
+                                                                activeShared,
+                                                                localizedEntered(
+                                                                    context,
+                                                                    entry.bottleEntered
+                                                                        ?: entry.bottleMl.toString(),
+                                                                ),
+                                                                entry.bottleUnit ?: 1u.toUByte(),
+                                                                entry.bottleContent ?: 4u.toUByte(),
+                                                            )
+                                                    },
+                                                onEditBreast = action@{ entry ->
+                                                        val savedSegments = entry.breastSegments!!
+                                                        pendingBreastEdit =
+                                                            PendingBreastEdit(
+                                                                family,
+                                                                entry.childId.copyOf(),
+                                                                entry.id.copyOf(),
+                                                                activeShared,
+                                                                entry.startUtcMs,
+                                                                entry.offsetMinutes,
+                                                                savedSegments.map {
+                                                                    it.side to
+                                                                        ((it.endUtcMs -
+                                                                                it.startUtcMs) /
+                                                                                60_000L)
+                                                                            .toString()
+                                                                },
+                                                                savedSegments.mapIndexed {
+                                                                    index,
+                                                                    segment ->
+                                                                    if (index == 0) 0L
+                                                                    else
+                                                                        segment.startUtcMs -
+                                                                            savedSegments[index - 1]
+                                                                                .endUtcMs
+                                                                },
+                                                            )
+                                                    },
+                                                onEditDiaper = action@{ entry ->
+                                                        pendingDiaperEdit =
+                                                            PendingDiaperEdit(
+                                                                family,
+                                                                entry.childId.copyOf(),
+                                                                entry.id.copyOf(),
+                                                                activeShared,
+                                                                entry.diaperKind!!,
+                                                            )
+                                                    },
+                                                onEditSolids = action@{ entry ->
+                                                        pendingSolidsEdit =
+                                                            PendingSolidsEdit(
+                                                                family,
+                                                                entry.childId.copyOf(),
+                                                                entry.id.copyOf(),
+                                                                activeShared,
+                                                                entry.solidsFoods!!.joinToString(
+                                                                    "\n"
+                                                                ),
+                                                                entry.solidsAmount.orEmpty(),
+                                                            )
+                                                    },
+                                                onEditPump = action@{ entry ->
+                                                        pendingPumpEdit =
+                                                            PendingPumpEdit(
+                                                                family,
+                                                                entry.childId.copyOf(),
+                                                                entry.id.copyOf(),
+                                                                activeShared,
+                                                                entry.pumpLeftMl
                                                                     ?.toString()
                                                                     .orEmpty(),
-                                                        ),
-                                                        entry.growthWeightUnit ?: 10u.toUByte(),
-                                                        localizedEntered(
-                                                            context,
-                                                            entry.growthLengthEntered
-                                                                ?: entry.growthLengthMm
+                                                                entry.pumpRightMl
                                                                     ?.toString()
                                                                     .orEmpty(),
-                                                        ),
-                                                        entry.growthLengthUnit ?: 20u.toUByte(),
-                                                        localizedEntered(
-                                                            context,
-                                                            entry.growthHeadEntered
-                                                                ?: entry.growthHeadMm
+                                                                entry.pumpTotalMl
                                                                     ?.toString()
                                                                     .orEmpty(),
-                                                        ),
-                                                        entry.growthHeadUnit ?: 20u.toUByte(),
-                                                    )
-                                            },
-                                        onEditTemperature = action@{ entry ->
-                                                pendingTemperatureEdit =
-                                                    PendingTemperatureEdit(
-                                                        family,
-                                                        entry.childId.copyOf(),
-                                                        entry.id.copyOf(),
-                                                        activeShared,
-                                                        localizedEntered(
-                                                            context,
-                                                            entry.temperatureEntered
-                                                                ?: entry.temperatureC!!,
-                                                        ),
-                                                        entry.temperatureUnit ?: 30u.toUByte(),
-                                                    )
-                                            },
-                                        onDeleteEntry = action@{ entry ->
-                                                pendingDelete =
-                                                    PendingActivityDelete(
-                                                        family,
-                                                        entry.childId.copyOf(),
-                                                        entry.id.copyOf(),
-                                                        activeShared,
-                                                    )
-                                            },
-                                    ),
-                            )
-                        }
-                    }
+                                                            )
+                                                    },
+                                                onEditMedication = action@{ entry ->
+                                                        pendingMedicationEdit =
+                                                            PendingMedicationEdit(
+                                                                family,
+                                                                entry.childId.copyOf(),
+                                                                entry.id.copyOf(),
+                                                                activeShared,
+                                                                entry.medicationName.orEmpty(),
+                                                                entry.medicationDoseAmount
+                                                                    .orEmpty(),
+                                                                entry.medicationDoseUnit.orEmpty(),
+                                                            )
+                                                    },
+                                                onEditGrowth = action@{ entry ->
+                                                        pendingGrowthEdit =
+                                                            PendingGrowthEdit(
+                                                                family,
+                                                                entry.childId.copyOf(),
+                                                                entry.id.copyOf(),
+                                                                activeShared,
+                                                                localizedEntered(
+                                                                    context,
+                                                                    entry.growthWeightEntered
+                                                                        ?: entry.growthWeightG
+                                                                            ?.toString()
+                                                                            .orEmpty(),
+                                                                ),
+                                                                entry.growthWeightUnit
+                                                                    ?: 10u.toUByte(),
+                                                                localizedEntered(
+                                                                    context,
+                                                                    entry.growthLengthEntered
+                                                                        ?: entry.growthLengthMm
+                                                                            ?.toString()
+                                                                            .orEmpty(),
+                                                                ),
+                                                                entry.growthLengthUnit
+                                                                    ?: 20u.toUByte(),
+                                                                localizedEntered(
+                                                                    context,
+                                                                    entry.growthHeadEntered
+                                                                        ?: entry.growthHeadMm
+                                                                            ?.toString()
+                                                                            .orEmpty(),
+                                                                ),
+                                                                entry.growthHeadUnit
+                                                                    ?: 20u.toUByte(),
+                                                            )
+                                                    },
+                                                onEditTemperature = action@{ entry ->
+                                                        pendingTemperatureEdit =
+                                                            PendingTemperatureEdit(
+                                                                family,
+                                                                entry.childId.copyOf(),
+                                                                entry.id.copyOf(),
+                                                                activeShared,
+                                                                localizedEntered(
+                                                                    context,
+                                                                    entry.temperatureEntered
+                                                                        ?: entry.temperatureC!!,
+                                                                ),
+                                                                entry.temperatureUnit
+                                                                    ?: 30u.toUByte(),
+                                                            )
+                                                    },
+                                                onDeleteEntry = action@{ entry ->
+                                                        pendingDelete =
+                                                            PendingActivityDelete(
+                                                                family,
+                                                                entry.childId.copyOf(),
+                                                                entry.id.copyOf(),
+                                                                activeShared,
+                                                            )
+                                                    },
+                                            ),
+                                    )
+                                }
+                            }
 
-                    message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                }
-                if (showAddChildForm && family != null)
-                    ChildProfileScreen(
-                        editing = false,
-                        name = childName,
-                        birthDate = childBirthDate,
-                        sex = childSex,
-                        saving = childProfileSaving,
-                        canClearBirthDate = true,
-                        onNameChange = { childName = it },
-                        onBirthDateChange = { childBirthDate = it },
-                        onSexChange = { childSex = it },
-                        onDismiss = { if (!childProfileSaving) showAddChildForm = false },
-                        onSave = save@{
-                                val name = childName.trim()
-                                if (name.isEmpty()) return@save
-                                val birthDay =
-                                    runCatching {
-                                            childBirthDate
-                                                .takeIf { it.isNotBlank() }
-                                                ?.let { LocalDate.parse(it).toEpochDay() }
+                            message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        }
+                        if (showAddChildForm && family != null)
+                            ChildProfileScreen(
+                                editing = false,
+                                name = childName,
+                                birthDate = childBirthDate,
+                                sex = childSex,
+                                saving = childProfileSaving,
+                                canClearBirthDate = true,
+                                onNameChange = { childName = it },
+                                onBirthDateChange = { childBirthDate = it },
+                                onSexChange = { childSex = it },
+                                onDismiss = { if (!childProfileSaving) showAddChildForm = false },
+                                onSave = save@{
+                                        val name = childName.trim()
+                                        if (name.isEmpty()) return@save
+                                        val birthDay =
+                                            runCatching {
+                                                    childBirthDate
+                                                        .takeIf { it.isNotBlank() }
+                                                        ?.let { LocalDate.parse(it).toEpochDay() }
+                                                }
+                                                .getOrElse {
+                                                    message =
+                                                        context.getString(
+                                                            R.string.birth_date_invalid
+                                                        )
+                                                    return@save
+                                                }
+                                        childProfileSaving = true
+                                        scope.launch {
+                                            runCatching {
+                                                    withContext(Dispatchers.IO) {
+                                                        if (activeShared)
+                                                            sharing.addChildWithMetadata(
+                                                                family,
+                                                                name,
+                                                                birthDay,
+                                                                childSex,
+                                                                System.currentTimeMillis(),
+                                                            )
+                                                        else
+                                                            store.addChildWithMetadata(
+                                                                family,
+                                                                name,
+                                                                birthDay,
+                                                                childSex,
+                                                                System.currentTimeMillis(),
+                                                            )
+                                                    }
+                                                }
+                                                .onSuccess { created ->
+                                                    selectedChild = created.key()
+                                                    showAddChildForm = false
+                                                    showChildDetails = false
+                                                    childName = ""
+                                                    childBirthDate = ""
+                                                    childSex = 3u.toUByte()
+                                                    version++
+                                                    message = null
+                                                }
+                                                .onFailure { message = errorText }
+                                            childProfileSaving = false
                                         }
-                                        .getOrElse {
-                                            message = context.getString(R.string.birth_date_invalid)
-                                            return@save
-                                        }
-                                childProfileSaving = true
-                                scope.launch {
-                                    runCatching {
-                                            withContext(Dispatchers.IO) {
-                                                if (activeShared)
-                                                    sharing.addChildWithMetadata(
-                                                        family,
-                                                        name,
-                                                        birthDay,
-                                                        childSex,
-                                                        System.currentTimeMillis(),
+                                    },
+                            )
+                        if (showTargetPicker) {
+                            AlertDialog(
+                                onDismissRequest = { showTargetPicker = false },
+                                title = { Text(stringResource(R.string.switch_target)) },
+                                text = {
+                                    Column(
+                                        Modifier.verticalScroll(rememberScrollState()),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(
+                                            stringResource(R.string.families),
+                                            style = MaterialTheme.typography.titleMedium,
+                                        )
+                                        families.forEachIndexed { index, item ->
+                                            val name = familyChildNames[item.familyId.key()]
+                                            val label =
+                                                if (name == null)
+                                                    stringResource(
+                                                        R.string.family_number,
+                                                        index + 1,
                                                     )
                                                 else
-                                                    store.addChildWithMetadata(
-                                                        family,
+                                                    stringResource(
+                                                        R.string.family_with_child,
+                                                        index + 1,
                                                         name,
-                                                        birthDay,
-                                                        childSex,
-                                                        System.currentTimeMillis(),
                                                     )
-                                            }
-                                        }
-                                        .onSuccess { created ->
-                                            selectedChild = created.key()
-                                            showAddChildForm = false
-                                            showChildDetails = false
-                                            childName = ""
-                                            childBirthDate = ""
-                                            childSex = 3u.toUByte()
-                                            version++
-                                            message = null
-                                        }
-                                        .onFailure { message = errorText }
-                                    childProfileSaving = false
-                                }
-                            },
-                    )
-                if (showTargetPicker) {
-                    AlertDialog(
-                        onDismissRequest = { showTargetPicker = false },
-                        title = { Text(stringResource(R.string.switch_target)) },
-                        text = {
-                            Column(
-                                Modifier.verticalScroll(rememberScrollState()),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Text(
-                                    stringResource(R.string.families),
-                                    style = MaterialTheme.typography.titleMedium,
-                                )
-                                families.forEachIndexed { index, item ->
-                                    val name = familyChildNames[item.familyId.key()]
-                                    val label =
-                                        if (name == null)
-                                            stringResource(R.string.family_number, index + 1)
-                                        else
-                                            stringResource(
-                                                R.string.family_with_child,
-                                                index + 1,
-                                                name,
+                                            FilterChip(
+                                                selected = item.familyId.key() == selectedFamily,
+                                                onClick = {
+                                                    selectedFamily = item.familyId.key()
+                                                    selectedChild = null
+                                                    showTargetPicker = false
+                                                },
+                                                label = { Text(label) },
                                             )
-                                    FilterChip(
-                                        selected = item.familyId.key() == selectedFamily,
-                                        onClick = {
-                                            selectedFamily = item.familyId.key()
-                                            selectedChild = null
-                                            showTargetPicker = false
-                                        },
-                                        label = { Text(label) },
-                                    )
-                                }
-                                if (children.isNotEmpty()) {
+                                        }
+                                        if (children.isNotEmpty()) {
+                                            Text(
+                                                stringResource(R.string.children),
+                                                style = MaterialTheme.typography.titleMedium,
+                                            )
+                                            children.forEach { item ->
+                                                FilterChip(
+                                                    selected = item.id.key() == selectedChild,
+                                                    onClick = {
+                                                        selectedChild = item.id.key()
+                                                        showTargetPicker = false
+                                                    },
+                                                    label = { Text(item.name) },
+                                                )
+                                            }
+                                        }
+                                    }
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = { showTargetPicker = false }) {
+                                        Text(stringResource(R.string.cancel))
+                                    }
+                                },
+                            )
+                        }
+                        pendingRemovalNotice?.let { notice ->
+                            AlertDialog(
+                                onDismissRequest = {},
+                                title = {
+                                    Text(stringResource(R.string.history_removed_copy_title))
+                                },
+                                text = {
                                     Text(
-                                        stringResource(R.string.children),
-                                        style = MaterialTheme.typography.titleMedium,
-                                    )
-                                    children.forEach { item ->
-                                        FilterChip(
-                                            selected = item.id.key() == selectedChild,
-                                            onClick = {
-                                                selectedChild = item.id.key()
-                                                showTargetPicker = false
-                                            },
-                                            label = { Text(item.name) },
+                                        stringResource(
+                                            R.string.history_removed_copy_destination,
+                                            notice.sourceKey.take(8),
+                                            notice.copy.familyId.key().take(8),
                                         )
-                                    }
-                                }
-                            }
-                        },
-                        confirmButton = {
-                            TextButton(onClick = { showTargetPicker = false }) {
-                                Text(stringResource(R.string.cancel))
-                            }
-                        },
-                    )
-                }
-                pendingRemovalNotice?.let { notice ->
-                    AlertDialog(
-                        onDismissRequest = {},
-                        title = { Text(stringResource(R.string.history_removed_copy_title)) },
-                        text = {
-                            Text(
-                                stringResource(
-                                    R.string.history_removed_copy_destination,
-                                    notice.sourceKey.take(8),
-                                    notice.copy.familyId.key().take(8),
-                                )
-                            )
-                        },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    val copyKey = notice.copy.familyId.key()
-                                    if (
-                                        selectionPrefs
-                                            .edit()
-                                            .putString("family", copyKey)
-                                            .remove("child")
-                                            .commit() &&
-                                            removalNoticePrefs
-                                                .edit()
-                                                .putString(notice.sourceKey, copyKey)
-                                                .commit()
+                                    )
+                                },
+                                confirmButton = {
+                                    Button(
+                                        onClick = {
+                                            val copyKey = notice.copy.familyId.key()
+                                            if (
+                                                selectionPrefs
+                                                    .edit()
+                                                    .putString("family", copyKey)
+                                                    .remove("child")
+                                                    .commit() &&
+                                                    removalNoticePrefs
+                                                        .edit()
+                                                        .putString(notice.sourceKey, copyKey)
+                                                        .commit()
+                                            ) {
+                                                selectedFamily = copyKey
+                                                selectedChild = null
+                                                pendingRemovalNotice = null
+                                                version++
+                                            } else message = errorText
+                                        }
                                     ) {
-                                        selectedFamily = copyKey
-                                        selectedChild = null
-                                        pendingRemovalNotice = null
-                                        version++
-                                    } else message = errorText
-                                }
-                            ) {
-                                Text(stringResource(R.string.continue_in_private_copy))
-                            }
-                        },
-                    )
-                }
-                EntryEditController(edits, store, sharing, scope, feedback, errorText) {
-                    onSaved,
-                    action ->
-                    change(onSaved, action)
-                }
-                cancelInvitationTarget?.let { target ->
-                    AlertDialog(
-                        onDismissRequest = { cancelInvitationTarget = null },
-                        title = { Text(stringResource(R.string.cancel_invitation_title)) },
-                        text = {
-                            Text(
-                                stringResource(
-                                    R.string.cancel_invitation_warning,
-                                    target.invitationId.key(),
-                                )
+                                        Text(stringResource(R.string.continue_in_private_copy))
+                                    }
+                                },
                             )
-                        },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    cancelInvitationTarget = null
-                                    scope.launch {
-                                        runCatching {
-                                                withContext(Dispatchers.IO) {
-                                                    val origin =
-                                                        if (target.localManager)
-                                                            lastRelayOrigin(target.family)
-                                                                ?: error("Relay origin unavailable")
-                                                        else sharing.recipientOrigin(target.family)
-                                                    sharing.cancelInvitation(
-                                                        target.family,
-                                                        origin,
-                                                        target.invitationId,
-                                                    )
-                                                }
+                        }
+                        EntryEditController(edits, store, sharing, scope, feedback, errorText) {
+                            onSaved,
+                            action ->
+                            change(onSaved, action)
+                        }
+                        cancelInvitationTarget?.let { target ->
+                            AlertDialog(
+                                onDismissRequest = { cancelInvitationTarget = null },
+                                title = { Text(stringResource(R.string.cancel_invitation_title)) },
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            R.string.cancel_invitation_warning,
+                                            target.invitationId.key(),
+                                        )
+                                    )
+                                },
+                                confirmButton = {
+                                    Button(
+                                        onClick = {
+                                            cancelInvitationTarget = null
+                                            scope.launch {
+                                                runCatching {
+                                                        withContext(Dispatchers.IO) {
+                                                            val origin =
+                                                                if (target.localManager)
+                                                                    lastRelayOrigin(target.family)
+                                                                        ?: error(
+                                                                            "Relay origin unavailable"
+                                                                        )
+                                                                else
+                                                                    sharing.recipientOrigin(
+                                                                        target.family
+                                                                    )
+                                                            sharing.cancelInvitation(
+                                                                target.family,
+                                                                origin,
+                                                                target.invitationId,
+                                                            )
+                                                        }
+                                                    }
+                                                    .onSuccess {
+                                                        invitationFragment = null
+                                                        version++
+                                                        message =
+                                                            context.getString(
+                                                                R.string.invitation_canceled
+                                                            )
+                                                    }
+                                                    .onFailure { message = errorText }
                                             }
-                                            .onSuccess {
-                                                invitationFragment = null
-                                                version++
-                                                message =
-                                                    context.getString(R.string.invitation_canceled)
-                                            }
-                                            .onFailure { message = errorText }
+                                        }
+                                    ) {
+                                        Text(stringResource(R.string.confirm_cancel_invitation))
                                     }
-                                }
-                            ) {
-                                Text(stringResource(R.string.confirm_cancel_invitation))
-                            }
-                        },
-                        dismissButton = {
-                            OutlinedButton(onClick = { cancelInvitationTarget = null }) {
-                                Text(stringResource(R.string.cancel))
-                            }
-                        },
-                    )
-                }
-                pendingDeviceRemoval?.let { target ->
-                    val label =
-                        deviceLabels[deviceLabelKey(target.family.familyId, target.deviceId)]
-                            ?.takeIf { it.isNotBlank() } ?: target.deviceId.key().take(8)
-                    AlertDialog(
-                        onDismissRequest = { pendingDeviceRemoval = null },
-                        title = { Text(stringResource(R.string.remove_pending_device_title)) },
-                        text = {
-                            Text(stringResource(R.string.remove_pending_device_warning, label))
-                        },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    pendingDeviceRemoval = null
-                                    scope.launch {
-                                        runCatching {
-                                                withContext(Dispatchers.IO) {
-                                                    val origin =
-                                                        if (target.localManager)
-                                                            lastRelayOrigin(target.family)
-                                                                ?: error("Relay origin unavailable")
-                                                        else sharing.recipientOrigin(target.family)
-                                                    sharing.removePendingDevice(
-                                                        target.family,
-                                                        origin,
-                                                        target.invitationId,
-                                                        target.deviceId,
-                                                    )
-                                                }
-                                            }
-                                            .onSuccess {
-                                                activeSharedSnapshot = it
-                                                version++
-                                                message =
-                                                    context.getString(
-                                                        R.string.pending_device_removed
-                                                    )
-                                            }
-                                            .onFailure { message = errorText }
+                                },
+                                dismissButton = {
+                                    OutlinedButton(onClick = { cancelInvitationTarget = null }) {
+                                        Text(stringResource(R.string.cancel))
                                     }
-                                }
-                            ) {
-                                Text(stringResource(R.string.confirm_remove_pending_device))
-                            }
-                        },
-                        dismissButton = {
-                            OutlinedButton(onClick = { pendingDeviceRemoval = null }) {
-                                Text(stringResource(R.string.cancel))
-                            }
-                        },
-                    )
-                }
-                roleChangeTarget?.let { target ->
-                    val label =
-                        deviceLabels[deviceLabelKey(target.family.familyId, target.targetId)]
-                            ?.takeIf { it.isNotBlank() } ?: target.targetId.key().take(8)
-                    AlertDialog(
-                        onDismissRequest = { roleChangeTarget = null },
-                        title = { Text(stringResource(R.string.change_device_role_title)) },
-                        text = {
-                            Text(
-                                stringResource(
-                                    R.string.change_device_role_warning,
-                                    label,
-                                    if (target.newRole == 2.toUByte())
-                                        stringResource(R.string.manager_role)
-                                    else stringResource(R.string.member_role),
-                                )
+                                },
                             )
-                        },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    roleChangeTarget = null
-                                    scope.launch {
-                                        runCatching {
-                                                withContext(Dispatchers.IO) {
-                                                    val origin =
-                                                        if (target.localManager)
-                                                            lastRelayOrigin(target.family)
-                                                                ?: error("Relay origin unavailable")
-                                                        else sharing.recipientOrigin(target.family)
-                                                    sharing.changeDeviceRole(
-                                                        target.family,
-                                                        origin,
-                                                        target.targetId,
-                                                        target.newRole,
-                                                    )
-                                                }
+                        }
+                        pendingDeviceRemoval?.let { target ->
+                            val label =
+                                deviceLabels[
+                                        deviceLabelKey(target.family.familyId, target.deviceId)]
+                                    ?.takeIf { it.isNotBlank() } ?: target.deviceId.key().take(8)
+                            AlertDialog(
+                                onDismissRequest = { pendingDeviceRemoval = null },
+                                title = {
+                                    Text(stringResource(R.string.remove_pending_device_title))
+                                },
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            R.string.remove_pending_device_warning,
+                                            label,
+                                        )
+                                    )
+                                },
+                                confirmButton = {
+                                    Button(
+                                        onClick = {
+                                            pendingDeviceRemoval = null
+                                            scope.launch {
+                                                runCatching {
+                                                        withContext(Dispatchers.IO) {
+                                                            val origin =
+                                                                if (target.localManager)
+                                                                    lastRelayOrigin(target.family)
+                                                                        ?: error(
+                                                                            "Relay origin unavailable"
+                                                                        )
+                                                                else
+                                                                    sharing.recipientOrigin(
+                                                                        target.family
+                                                                    )
+                                                            sharing.removePendingDevice(
+                                                                target.family,
+                                                                origin,
+                                                                target.invitationId,
+                                                                target.deviceId,
+                                                            )
+                                                        }
+                                                    }
+                                                    .onSuccess {
+                                                        screenData =
+                                                            screenData?.copy(
+                                                                mainSharedSnapshot = it
+                                                            )
+                                                        version++
+                                                        message =
+                                                            context.getString(
+                                                                R.string.pending_device_removed
+                                                            )
+                                                    }
+                                                    .onFailure { message = errorText }
                                             }
-                                            .onSuccess {
-                                                activeSharedSnapshot = it
-                                                version++
-                                                message =
-                                                    context.getString(R.string.device_role_changed)
-                                            }
-                                            .onFailure { message = errorText }
+                                        }
+                                    ) {
+                                        Text(stringResource(R.string.confirm_remove_pending_device))
                                     }
-                                }
-                            ) {
-                                Text(stringResource(R.string.confirm_device_role_change))
-                            }
-                        },
-                        dismissButton = {
-                            OutlinedButton(onClick = { roleChangeTarget = null }) {
-                                Text(stringResource(R.string.cancel))
-                            }
-                        },
-                    )
-                }
-                removalTarget?.let { target ->
-                    val targetLabel =
-                        family
-                            ?.let { deviceLabels[deviceLabelKey(it.familyId, target)] }
-                            ?.takeIf { it.isNotBlank() }
-                    val targetDescription =
-                        if (targetLabel == null) target.key()
-                        else context.getString(R.string.named_device_id, targetLabel, target.key())
-                    AlertDialog(
-                        onDismissRequest = { removalTarget = null },
-                        title = { Text(stringResource(R.string.remove_device_title)) },
-                        text = {
-                            Text(stringResource(R.string.remove_device_warning, targetDescription))
-                        },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    removalTarget = null
-                                    val chosen = family ?: return@Button
-                                    scope.launch {
-                                        runCatching {
-                                                withContext(Dispatchers.IO) {
-                                                    sharing.removeDevice(
-                                                        chosen,
-                                                        relayOrigin.trim(),
-                                                        target,
-                                                    )
-                                                }
-                                            }
-                                            .onSuccess {
-                                                activeSharedSnapshot = it
-                                                version++
-                                                message = context.getString(R.string.device_removed)
-                                            }
-                                            .onFailure { message = errorText }
+                                },
+                                dismissButton = {
+                                    OutlinedButton(onClick = { pendingDeviceRemoval = null }) {
+                                        Text(stringResource(R.string.cancel))
                                     }
-                                }
-                            ) {
-                                Text(stringResource(R.string.confirm_remove_device))
-                            }
-                        },
-                        dismissButton = {
-                            OutlinedButton(onClick = { removalTarget = null }) {
-                                Text(stringResource(R.string.cancel))
-                            }
-                        },
-                    )
-                }
-                deviceLabelTarget?.let { key ->
-                    AlertDialog(
-                        onDismissRequest = { deviceLabelTarget = null },
-                        title = { Text(stringResource(R.string.device_label_title)) },
-                        text = {
-                            OutlinedTextField(
-                                value = deviceLabelDraft,
-                                onValueChange = { deviceLabelDraft = it.take(40) },
-                                label = { Text(stringResource(R.string.device_label_hint)) },
-                                singleLine = true,
+                                },
                             )
-                        },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    val label = deviceLabelDraft.trim()
-                                    if (label.isEmpty()) {
-                                        deviceLabelPrefs.edit().remove(key).apply()
-                                        deviceLabels = deviceLabels - key
-                                    } else {
-                                        deviceLabelPrefs.edit().putString(key, label).apply()
-                                        deviceLabels = deviceLabels + (key to label)
+                        }
+                        roleChangeTarget?.let { target ->
+                            val label =
+                                deviceLabels[
+                                        deviceLabelKey(target.family.familyId, target.targetId)]
+                                    ?.takeIf { it.isNotBlank() } ?: target.targetId.key().take(8)
+                            AlertDialog(
+                                onDismissRequest = { roleChangeTarget = null },
+                                title = { Text(stringResource(R.string.change_device_role_title)) },
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            R.string.change_device_role_warning,
+                                            label,
+                                            if (target.newRole == 2.toUByte())
+                                                stringResource(R.string.manager_role)
+                                            else stringResource(R.string.member_role),
+                                        )
+                                    )
+                                },
+                                confirmButton = {
+                                    Button(
+                                        onClick = {
+                                            roleChangeTarget = null
+                                            scope.launch {
+                                                runCatching {
+                                                        withContext(Dispatchers.IO) {
+                                                            val origin =
+                                                                if (target.localManager)
+                                                                    lastRelayOrigin(target.family)
+                                                                        ?: error(
+                                                                            "Relay origin unavailable"
+                                                                        )
+                                                                else
+                                                                    sharing.recipientOrigin(
+                                                                        target.family
+                                                                    )
+                                                            sharing.changeDeviceRole(
+                                                                target.family,
+                                                                origin,
+                                                                target.targetId,
+                                                                target.newRole,
+                                                            )
+                                                        }
+                                                    }
+                                                    .onSuccess {
+                                                        screenData =
+                                                            screenData?.copy(
+                                                                mainSharedSnapshot = it
+                                                            )
+                                                        version++
+                                                        message =
+                                                            context.getString(
+                                                                R.string.device_role_changed
+                                                            )
+                                                    }
+                                                    .onFailure { message = errorText }
+                                            }
+                                        }
+                                    ) {
+                                        Text(stringResource(R.string.confirm_device_role_change))
                                     }
-                                    deviceLabelTarget = null
-                                }
-                            ) {
-                                Text(stringResource(R.string.save_changes))
-                            }
-                        },
-                        dismissButton = {
-                            OutlinedButton(onClick = { deviceLabelTarget = null }) {
-                                Text(stringResource(R.string.cancel))
-                            }
-                        },
-                    )
+                                },
+                                dismissButton = {
+                                    OutlinedButton(onClick = { roleChangeTarget = null }) {
+                                        Text(stringResource(R.string.cancel))
+                                    }
+                                },
+                            )
+                        }
+                        removalTarget?.let { target ->
+                            val targetLabel =
+                                family
+                                    ?.let { deviceLabels[deviceLabelKey(it.familyId, target)] }
+                                    ?.takeIf { it.isNotBlank() }
+                            val targetDescription =
+                                if (targetLabel == null) target.key()
+                                else
+                                    context.getString(
+                                        R.string.named_device_id,
+                                        targetLabel,
+                                        target.key(),
+                                    )
+                            AlertDialog(
+                                onDismissRequest = { removalTarget = null },
+                                title = { Text(stringResource(R.string.remove_device_title)) },
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            R.string.remove_device_warning,
+                                            targetDescription,
+                                        )
+                                    )
+                                },
+                                confirmButton = {
+                                    Button(
+                                        onClick = {
+                                            removalTarget = null
+                                            val chosen = family ?: return@Button
+                                            scope.launch {
+                                                runCatching {
+                                                        withContext(Dispatchers.IO) {
+                                                            sharing.removeDevice(
+                                                                chosen,
+                                                                relayOrigin.trim(),
+                                                                target,
+                                                            )
+                                                        }
+                                                    }
+                                                    .onSuccess {
+                                                        screenData =
+                                                            screenData?.copy(
+                                                                mainSharedSnapshot = it
+                                                            )
+                                                        version++
+                                                        message =
+                                                            context.getString(
+                                                                R.string.device_removed
+                                                            )
+                                                    }
+                                                    .onFailure { message = errorText }
+                                            }
+                                        }
+                                    ) {
+                                        Text(stringResource(R.string.confirm_remove_device))
+                                    }
+                                },
+                                dismissButton = {
+                                    OutlinedButton(onClick = { removalTarget = null }) {
+                                        Text(stringResource(R.string.cancel))
+                                    }
+                                },
+                            )
+                        }
+                        deviceLabelTarget?.let { key ->
+                            AlertDialog(
+                                onDismissRequest = { deviceLabelTarget = null },
+                                title = { Text(stringResource(R.string.device_label_title)) },
+                                text = {
+                                    OutlinedTextField(
+                                        value = deviceLabelDraft,
+                                        onValueChange = { deviceLabelDraft = it.take(40) },
+                                        label = {
+                                            Text(stringResource(R.string.device_label_hint))
+                                        },
+                                        singleLine = true,
+                                    )
+                                },
+                                confirmButton = {
+                                    Button(
+                                        onClick = {
+                                            val label = deviceLabelDraft.trim()
+                                            if (label.isEmpty()) {
+                                                deviceLabelPrefs.edit().remove(key).apply()
+                                                deviceLabels = deviceLabels - key
+                                            } else {
+                                                deviceLabelPrefs
+                                                    .edit()
+                                                    .putString(key, label)
+                                                    .apply()
+                                                deviceLabels = deviceLabels + (key to label)
+                                            }
+                                            deviceLabelTarget = null
+                                        }
+                                    ) {
+                                        Text(stringResource(R.string.save_changes))
+                                    }
+                                },
+                                dismissButton = {
+                                    OutlinedButton(onClick = { deviceLabelTarget = null }) {
+                                        Text(stringResource(R.string.cancel))
+                                    }
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -2294,54 +1843,6 @@ internal fun activityWhen(atMs: Long): ActivityWhen =
         (TimeZone.getDefault().getOffset(atMs) / 60_000).toShort(),
         System.currentTimeMillis(),
     )
-
-private fun terminalInvitationMessage(context: Context, reason: InvitationTerminalReason): String =
-    context.getString(
-        when (reason) {
-            InvitationTerminalReason.CLAIMED -> R.string.join_claimed
-            InvitationTerminalReason.CANCELED -> R.string.join_canceled
-            InvitationTerminalReason.EXPIRED -> R.string.join_expired
-            InvitationTerminalReason.ISSUER_INVALID -> R.string.join_issuer_invalid
-        }
-    )
-
-private fun sharedSyncMessage(context: Context, progress: SharedSyncRow): String =
-    when {
-        !progress.ready ->
-            context.getString(R.string.history_pending, progress.verifiedCursor.toLong())
-        progress.outboxState == 2.toUByte() -> context.getString(R.string.shared_upload_uncertain)
-        progress.outboxState == 1.toUByte() -> context.getString(R.string.shared_upload_pending)
-        else -> context.getString(R.string.shared_synced, progress.verifiedCursor.toLong())
-    }
-
-private fun pendingRecipientMessage(
-    context: Context,
-    progress: uniffi.babytrack_core_ffi.RecipientSyncRow,
-): String =
-    when (progress.joinPhase.toInt()) {
-        2 -> context.getString(R.string.history_awaiting_challenge)
-        3 -> context.getString(R.string.history_challenge_received)
-        4 -> context.getString(R.string.history_proof_committed)
-        else ->
-            context.getString(
-                R.string.history_awaiting_grant,
-                progress.pendingControlCursor.toLong(),
-            )
-    }
-
-private fun removedHistoryMessage(
-    context: Context,
-    progress: uniffi.babytrack_core_ffi.RecipientSyncRow,
-): String =
-    when {
-        progress.privateCopy == null -> context.getString(R.string.history_removed)
-        progress.pendingResult == 0.toUByte() -> context.getString(R.string.history_removed_unsent)
-        progress.pendingResult == 2.toUByte() ->
-            context.getString(R.string.history_removed_accepted)
-        progress.pendingResult == 3.toUByte() ->
-            context.getString(R.string.history_removed_rejected)
-        else -> context.getString(R.string.history_removed_copied)
-    }
 
 internal fun savedTime(utcMs: Long): String =
     DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(utcMs))

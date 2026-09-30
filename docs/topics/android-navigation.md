@@ -150,6 +150,14 @@ Screen composables receive immutable display state and callbacks. Rendering
 must not open stores, run sync, request permissions, or write records.
 Read-only binding rows may cross this boundary; event semantics remain in Rust.
 
+The controller publishes loaded `ScreenData` as one immutable snapshot.
+`TrackerSharingController` owns sharing/enrollment actions and the typed
+foreground pass result; `TrackerBackupController` owns file-dialog callbacks,
+backup/export, and restore coordination. Both receive the route's existing
+coroutine scope, so navigating away from a form does not cancel an accepted
+save. Selection and navigation stay in the route, including clean-install
+joining without a preexisting Family.
+
 The fixture gallery renders the production composables with synthetic states.
 It includes primary destinations, the activity chooser, every capture type,
 and child-profile forms, plus pending and removed states. It supplements the

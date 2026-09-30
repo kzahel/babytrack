@@ -118,3 +118,11 @@ gates remain with their milestone owners. Local runs do not imply remote CI.
   write tests), workspace Clippy, boundaries, and diff checks pass. Final
   Android unit/lint/APK builds also pass against the extracted storage.
   Cross-platform integration and final status reconciliation follow in slice 7.
+
+- Integration follow-up: the first final 28-case relay run exposed a transient
+  SQLite-busy race between the recreated activity's join coordinator and the
+  test's independent assertion connection. The assertion now retries only
+  `DatabaseBusy` within its existing deadline, matching the neighboring join
+  test; all other errors still fail immediately. The focused recreation case,
+  clean-install invitation case, and complete 28-case relay rerun pass.
+  Production transactions and coordinator behavior are unchanged.

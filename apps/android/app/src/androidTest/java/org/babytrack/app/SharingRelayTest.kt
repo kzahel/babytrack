@@ -1126,6 +1126,12 @@ class SharingRelayTest {
                     NativeSharedStore.open(context.filesDir.resolve("families.db").absolutePath).use { core ->
                         core.recipientFirstJoinAction(recipient, wrappingAfter) == 0u.toUByte()
                     }
+                } catch (failure: Exception) {
+                    // The recreated app can write the saved join state while
+                    // this independent assertion connection reads it. Retry
+                    // only that transient lock within the existing deadline.
+                    if (!failure.message.orEmpty().contains("DatabaseBusy")) throw failure
+                    false
                 } finally {
                     wrappingAfter.fill(0)
                 }

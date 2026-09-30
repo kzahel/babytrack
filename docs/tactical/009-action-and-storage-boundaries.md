@@ -21,7 +21,7 @@ Owning topics: [web](../topics/web-client.md),
 
 1. [x] Extract web selection/loading/join/poll coordination, publish coherent
    snapshots, reject stale async results, and regress delayed Family switching.
-2. [ ] Centralize Android local/shared action dispatch without moving event
+2. [x] Centralize Android local/shared action dispatch without moving event
    semantics into Kotlin or changing the route's coroutine/draft lifetime.
 3. [ ] Bound Android harness subprocesses, emit stage progress and failure
    artifacts, and split browser smoke into individually runnable scenarios.
@@ -63,3 +63,13 @@ gates remain with their milestone owners. Local runs do not imply remote CI.
   web UI flows (joins, rotation, removal, offline edits, export/restore/reload).
   The build runner includes the controller regressions. Boundary and diff
   checks pass; no protocol, authority, or IndexedDB contract changes.
+
+- Slice 2: `TrackingActions` and its router replace 33 repeated dispatch
+  branches across capture, correction, quick actions, child actions, and Undo.
+  The native adapter and existing sharing coordinator implement the interface;
+  saved target flags and IDs remain call arguments. A source comparison proves
+  exact call/argument preservation across all 33 replacements. Android unit
+  tests, lint, both APKs, 31-case gallery, clean-install invitation and all 28
+  real-relay cases, and the quick caregiver edit/delete/restart UI flow pass.
+  Coroutine ownership and draft clearing callbacks are unchanged. Diff checks
+  pass; the full walkthrough is included in final verification.

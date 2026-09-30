@@ -14,14 +14,12 @@ import kotlinx.coroutines.withContext
 import uniffi.babytrack_core_ffi.ActivityWhen
 import uniffi.babytrack_core_ffi.BreastSegmentRow
 import uniffi.babytrack_core_ffi.MedicationInput
-import uniffi.babytrack_core_ffi.NativeLocalStore
 import uniffi.babytrack_core_ffi.PumpInput
 
 @Composable
 internal fun EntryEditController(
     edits: EntryEditState,
-    store: NativeLocalStore,
-    sharing: ShareCoordinator,
+    actions: TrackingActionRouter,
     scope: kotlinx.coroutines.CoroutineScope,
     feedback: TrackerFeedback,
     errorText: String,
@@ -41,15 +39,9 @@ internal fun EntryEditController(
                                     pendingDelete = null
                                     val savedAtMs = System.currentTimeMillis()
                                     change(onSaved = { recentlyDeleted = target }) {
-                                        if (target.shared)
-                                            sharing.deleteActivity(
-                                                target.family,
-                                                target.childId,
-                                                target.activityId,
-                                                savedAtMs,
-                                            )
-                                        else
-                                            store.deleteActivity(
+                                        actions
+                                            .forTarget(target.shared)
+                                            .deleteActivity(
                                                 target.family,
                                                 target.childId,
                                                 target.activityId,
@@ -175,8 +167,9 @@ internal fun EntryEditController(
                                                     target.offsetMinutes,
                                                     savedAtMs,
                                                 )
-                                            if (target.shared)
-                                                sharing.moveCompletedInterval(
+                                            actions
+                                                .forTarget(target.shared)
+                                                .moveCompletedInterval(
                                                     target.family,
                                                     target.childId,
                                                     target.activityId,
@@ -184,35 +177,17 @@ internal fun EntryEditController(
                                                     end,
                                                     endOffset,
                                                 )
-                                            else
-                                                store.moveCompletedInterval(
+                                        } else
+                                            actions
+                                                .forTarget(target.shared)
+                                                .editInstantTime(
                                                     target.family,
                                                     target.childId,
                                                     target.activityId,
-                                                    time,
-                                                    end,
-                                                    endOffset,
-                                                )
-                                        } else if (target.shared)
-                                            sharing.editInstantTime(
-                                                target.family,
-                                                target.childId,
-                                                target.activityId,
-                                                target.startUtcMs,
-                                                target.offsetMinutes,
-                                                savedAtMs,
-                                            )
-                                        else
-                                            store.editInstantTime(
-                                                target.family,
-                                                target.childId,
-                                                target.activityId,
-                                                ActivityWhen(
                                                     target.startUtcMs,
                                                     target.offsetMinutes,
                                                     savedAtMs,
-                                                ),
-                                            )
+                                                )
                                     }
                                 },
                             onCancel = action@{ pendingTimeEdit = null },
@@ -231,16 +206,9 @@ internal fun EntryEditController(
                             onSaveChanges = action@{
                                     val savedAtMs = System.currentTimeMillis()
                                     change(onSaved = { pendingNoteEdit = null }) {
-                                        if (target.shared)
-                                            sharing.editNote(
-                                                target.family,
-                                                target.childId,
-                                                target.activityId,
-                                                target.text,
-                                                savedAtMs,
-                                            )
-                                        else
-                                            store.editNote(
+                                        actions
+                                            .forTarget(target.shared)
+                                            .editNote(
                                                 target.family,
                                                 target.childId,
                                                 target.activityId,
@@ -275,18 +243,9 @@ internal fun EntryEditController(
                             onSaveChanges = action@{
                                     val savedAtMs = System.currentTimeMillis()
                                     change(onSaved = { pendingBottleEdit = null }) {
-                                        if (target.shared)
-                                            sharing.editBottleEntered(
-                                                target.family,
-                                                target.childId,
-                                                target.activityId,
-                                                canonicalDecimal(target.amount),
-                                                target.unit,
-                                                target.content,
-                                                savedAtMs,
-                                            )
-                                        else
-                                            store.editBottleEntered(
+                                        actions
+                                            .forTarget(target.shared)
+                                            .editBottleEntered(
                                                 target.family,
                                                 target.childId,
                                                 target.activityId,
@@ -371,16 +330,9 @@ internal fun EntryEditController(
                                         }
                                     pendingBreastEdit = null
                                     change {
-                                        if (target.shared)
-                                            sharing.editBreastFeedSegments(
-                                                target.family,
-                                                target.childId,
-                                                target.activityId,
-                                                segments,
-                                                savedAtMs,
-                                            )
-                                        else
-                                            store.editBreastFeedSegments(
+                                        actions
+                                            .forTarget(target.shared)
+                                            .editBreastFeedSegments(
                                                 target.family,
                                                 target.childId,
                                                 target.activityId,
@@ -406,16 +358,9 @@ internal fun EntryEditController(
                                     pendingDiaperEdit = null
                                     val savedAtMs = System.currentTimeMillis()
                                     change {
-                                        if (target.shared)
-                                            sharing.editDiaperKind(
-                                                target.family,
-                                                target.childId,
-                                                target.activityId,
-                                                target.kind,
-                                                savedAtMs,
-                                            )
-                                        else
-                                            store.editDiaperKind(
+                                        actions
+                                            .forTarget(target.shared)
+                                            .editDiaperKind(
                                                 target.family,
                                                 target.childId,
                                                 target.activityId,
@@ -449,17 +394,9 @@ internal fun EntryEditController(
                                             .map { it.trim() }
                                             .filter { it.isNotEmpty() }
                                     change {
-                                        if (target.shared)
-                                            sharing.editSolids(
-                                                target.family,
-                                                target.childId,
-                                                target.activityId,
-                                                foods,
-                                                target.amount,
-                                                savedAtMs,
-                                            )
-                                        else
-                                            store.editSolids(
+                                        actions
+                                            .forTarget(target.shared)
+                                            .editSolids(
                                                 target.family,
                                                 target.childId,
                                                 target.activityId,
@@ -526,16 +463,9 @@ internal fun EntryEditController(
                                         )
                                     val savedAtMs = System.currentTimeMillis()
                                     change(onSaved = { pendingGrowthEdit = null }) {
-                                        if (target.shared)
-                                            sharing.editGrowthEntered(
-                                                target.family,
-                                                target.childId,
-                                                target.activityId,
-                                                input,
-                                                savedAtMs,
-                                            )
-                                        else
-                                            store.editGrowthEntered(
+                                        actions
+                                            .forTarget(target.shared)
+                                            .editGrowthEntered(
                                                 target.family,
                                                 target.childId,
                                                 target.activityId,
@@ -576,16 +506,9 @@ internal fun EntryEditController(
                                         )
                                     val savedAtMs = System.currentTimeMillis()
                                     change {
-                                        if (target.shared)
-                                            sharing.editPumpAmounts(
-                                                target.family,
-                                                target.childId,
-                                                target.activityId,
-                                                input,
-                                                savedAtMs,
-                                            )
-                                        else
-                                            store.editPumpAmounts(
+                                        actions
+                                            .forTarget(target.shared)
+                                            .editPumpAmounts(
                                                 target.family,
                                                 target.childId,
                                                 target.activityId,
@@ -623,16 +546,9 @@ internal fun EntryEditController(
                                         )
                                     val savedAtMs = System.currentTimeMillis()
                                     change {
-                                        if (target.shared)
-                                            sharing.editMedication(
-                                                target.family,
-                                                target.childId,
-                                                target.activityId,
-                                                input,
-                                                savedAtMs,
-                                            )
-                                        else
-                                            store.editMedication(
+                                        actions
+                                            .forTarget(target.shared)
+                                            .editMedication(
                                                 target.family,
                                                 target.childId,
                                                 target.activityId,
@@ -690,15 +606,9 @@ internal fun EntryEditController(
                                         runCatching {
                                                 withContext(Dispatchers.IO) {
                                                     if (name != target.originalName) {
-                                                        if (target.shared)
-                                                            sharing.renameChild(
-                                                                target.family,
-                                                                target.childId,
-                                                                name,
-                                                                System.currentTimeMillis(),
-                                                            )
-                                                        else
-                                                            store.renameChild(
+                                                        actions
+                                                            .forTarget(target.shared)
+                                                            .renameChild(
                                                                 target.family,
                                                                 target.childId,
                                                                 name,
@@ -710,16 +620,9 @@ internal fun EntryEditController(
                                                             target.originalBirthDate ||
                                                             target.sex != target.originalSex
                                                     ) {
-                                                        if (target.shared)
-                                                            sharing.editChildMetadata(
-                                                                target.family,
-                                                                target.childId,
-                                                                birthDay,
-                                                                target.sex,
-                                                                System.currentTimeMillis(),
-                                                            )
-                                                        else
-                                                            store.editChildMetadata(
+                                                        actions
+                                                            .forTarget(target.shared)
+                                                            .editChildMetadata(
                                                                 target.family,
                                                                 target.childId,
                                                                 birthDay,
@@ -764,17 +667,9 @@ internal fun EntryEditController(
                                     val offset =
                                         (TimeZone.getDefault().getOffset(newEnd) / 60_000).toShort()
                                     change {
-                                        if (target.shared)
-                                            sharing.editSleepEnd(
-                                                target.family,
-                                                target.childId,
-                                                target.activityId,
-                                                newEnd,
-                                                offset,
-                                                savedAtMs,
-                                            )
-                                        else
-                                            store.editSleepEnd(
+                                        actions
+                                            .forTarget(target.shared)
+                                            .editSleepEnd(
                                                 target.family,
                                                 target.childId,
                                                 target.activityId,
@@ -801,16 +696,9 @@ internal fun EntryEditController(
                                     pendingSleepPlaceEdit = null
                                     val savedAtMs = System.currentTimeMillis()
                                     change {
-                                        if (target.shared)
-                                            sharing.editSleepPlace(
-                                                target.family,
-                                                target.childId,
-                                                target.activityId,
-                                                target.place,
-                                                savedAtMs,
-                                            )
-                                        else
-                                            store.editSleepPlace(
+                                        actions
+                                            .forTarget(target.shared)
+                                            .editSleepPlace(
                                                 target.family,
                                                 target.childId,
                                                 target.activityId,
@@ -844,17 +732,9 @@ internal fun EntryEditController(
                             onSaveChanges = action@{
                                     val savedAtMs = System.currentTimeMillis()
                                     change(onSaved = { pendingTemperatureEdit = null }) {
-                                        if (target.shared)
-                                            sharing.editTemperatureEntered(
-                                                target.family,
-                                                target.childId,
-                                                target.activityId,
-                                                canonicalDecimal(target.entered),
-                                                target.unit,
-                                                savedAtMs,
-                                            )
-                                        else
-                                            store.editTemperatureEntered(
+                                        actions
+                                            .forTarget(target.shared)
+                                            .editTemperatureEntered(
                                                 target.family,
                                                 target.childId,
                                                 target.activityId,

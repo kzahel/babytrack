@@ -151,6 +151,11 @@ must not open stores, run sync, request permissions, or write records.
 Read-only binding rows may cross this boundary; event semantics remain in Rust.
 
 The controller publishes loaded `ScreenData` as one immutable snapshot.
+`TrackingActions` is the app-owned local/shared write interface. Capture,
+correction, quick actions, child actions, and Undo dispatch through its router
+using the saved target's shared flag. The native adapter and sharing coordinator
+forward into Rust; Kotlin adds no event semantics or storage behavior. The
+route's accepted-save coroutine and failed-save draft rules remain unchanged.
 `TrackerSharingController` owns sharing/enrollment actions and the typed
 foreground pass result; `TrackerBackupController` owns file-dialog callbacks,
 backup/export, and restore coordination. Both receive the route's existing

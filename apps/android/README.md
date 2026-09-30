@@ -141,6 +141,8 @@ Presentation files:
 - `TrackerSharingController.kt`, `TrackerBackupController.kt`: sharing and
   enrollment actions, typed foreground sync results, file callbacks, and
   backup/recovery actions using the route's coroutine scope.
+- `TrackingActions.kt`: common local/shared write interface and native adapter;
+  `ShareCoordinator` implements the shared side through the Rust bindings.
 - `CaptureRoute.kt`, `EntryEditController.kt`, `TrackerDrafts.kt`: capture
   and correction actions, with remembered UI drafts and the route's shared
   coroutine scope.

@@ -73,6 +73,8 @@ internal fun TrackerRoute(
     lastRelayOrigin: (FamilyRef) -> String?,
     recordRelayOrigin: (FamilyRef, String) -> Boolean,
 ) {
+    val trackingActions =
+        remember(store, sharing) { TrackingActionRouter(NativeTrackingActions(store), sharing) }
     val feedback = remember { TrackerFeedback() }
     val captureDraft = remember { CaptureDraftState() }
     val edits = remember { EntryEditState() }
@@ -239,15 +241,9 @@ internal fun TrackerRoute(
                                 runCatching {
                                         withContext(Dispatchers.IO) {
                                             val at = System.currentTimeMillis()
-                                            if (target.shared)
-                                                sharing.restoreActivity(
-                                                    target.family,
-                                                    target.childId,
-                                                    target.activityId,
-                                                    at,
-                                                )
-                                            else
-                                                store.restoreActivity(
+                                            trackingActions
+                                                .forTarget(target.shared)
+                                                .restoreActivity(
                                                     target.family,
                                                     target.childId,
                                                     target.activityId,
@@ -926,22 +922,14 @@ internal fun TrackerRoute(
                                                                     60_000)
                                                                 .toShort()
                                                         change {
-                                                            if (activeShared)
-                                                                sharing.stopSleep(
+                                                            trackingActions
+                                                                .forTarget(activeShared)
+                                                                .stopSleep(
                                                                     family,
                                                                     timer.childId,
                                                                     timer.id,
                                                                     end,
                                                                     endOffset,
-                                                                )
-                                                            else
-                                                                store.stopSleep(
-                                                                    family,
-                                                                    timer.childId,
-                                                                    timer.id,
-                                                                    end,
-                                                                    endOffset,
-                                                                    end,
                                                                 )
                                                         }
                                                     },
@@ -963,15 +951,9 @@ internal fun TrackerRoute(
                                                                     )
                                                             }
                                                         ) {
-                                                            if (activeShared)
-                                                                sharing.startSleepWithPlace(
-                                                                    family,
-                                                                    child.id,
-                                                                    nowTime(),
-                                                                    null,
-                                                                )
-                                                            else
-                                                                store.startSleepWithPlace(
+                                                            trackingActions
+                                                                .forTarget(activeShared)
+                                                                .startSleepWithPlace(
                                                                     family,
                                                                     child.id,
                                                                     nowTime(),
@@ -982,15 +964,9 @@ internal fun TrackerRoute(
                                                 onQuickWetDiaper = action@{
                                                         change {
                                                             val at = nowTime()
-                                                            if (activeShared)
-                                                                sharing.logDiaper(
-                                                                    family,
-                                                                    child.id,
-                                                                    1u.toUByte(),
-                                                                    at,
-                                                                )
-                                                            else
-                                                                store.logDiaper(
+                                                            trackingActions
+                                                                .forTarget(activeShared)
+                                                                .logDiaper(
                                                                     family,
                                                                     child.id,
                                                                     1u.toUByte(),
@@ -1023,8 +999,7 @@ internal fun TrackerRoute(
                                         family = family,
                                         child = child,
                                         activeShared = activeShared,
-                                        store = store,
-                                        sharing = sharing,
+                                        actions = trackingActions,
                                         scope = scope,
                                         feedback = feedback,
                                         errorText = errorText,
@@ -1107,22 +1082,14 @@ internal fun TrackerRoute(
                                                                     60_000)
                                                                 .toShort()
                                                         change {
-                                                            if (activeShared)
-                                                                sharing.stopSleep(
+                                                            trackingActions
+                                                                .forTarget(activeShared)
+                                                                .stopSleep(
                                                                     family,
                                                                     entry.childId,
                                                                     entry.id,
                                                                     end,
                                                                     endOffset,
-                                                                )
-                                                            else
-                                                                store.stopSleep(
-                                                                    family,
-                                                                    entry.childId,
-                                                                    entry.id,
-                                                                    end,
-                                                                    endOffset,
-                                                                    end,
                                                                 )
                                                         }
                                                     },
@@ -1384,16 +1351,9 @@ internal fun TrackerRoute(
                                         scope.launch {
                                             runCatching {
                                                     withContext(Dispatchers.IO) {
-                                                        if (activeShared)
-                                                            sharing.addChildWithMetadata(
-                                                                family,
-                                                                name,
-                                                                birthDay,
-                                                                childSex,
-                                                                System.currentTimeMillis(),
-                                                            )
-                                                        else
-                                                            store.addChildWithMetadata(
+                                                        trackingActions
+                                                            .forTarget(activeShared)
+                                                            .addChildWithMetadata(
                                                                 family,
                                                                 name,
                                                                 birthDay,
@@ -1521,7 +1481,7 @@ internal fun TrackerRoute(
                                 },
                             )
                         }
-                        EntryEditController(edits, store, sharing, scope, feedback, errorText) {
+                        EntryEditController(edits, trackingActions, scope, feedback, errorText) {
                             onSaved,
                             action ->
                             change(onSaved, action)

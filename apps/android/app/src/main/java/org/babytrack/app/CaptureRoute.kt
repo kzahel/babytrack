@@ -15,7 +15,6 @@ import uniffi.babytrack_core_ffi.BreastSegmentRow
 import uniffi.babytrack_core_ffi.ChildRow
 import uniffi.babytrack_core_ffi.FamilyRef
 import uniffi.babytrack_core_ffi.MedicationInput
-import uniffi.babytrack_core_ffi.NativeLocalStore
 import uniffi.babytrack_core_ffi.PumpInput
 
 @Composable
@@ -25,8 +24,7 @@ internal fun androidx.compose.foundation.layout.ColumnScope.CaptureRoute(
     family: FamilyRef,
     child: ChildRow,
     activeShared: Boolean,
-    store: NativeLocalStore,
-    sharing: ShareCoordinator,
+    actions: TrackingActionRouter,
     scope: kotlinx.coroutines.CoroutineScope,
     feedback: TrackerFeedback,
     errorText: String,
@@ -134,8 +132,9 @@ internal fun androidx.compose.foundation.layout.ColumnScope.CaptureRoute(
                         onResetLogTime = action@{ logAtMs = null },
                         onLogDiaper = action@{ kind ->
                                 logCompleted { at ->
-                                    if (activeShared) sharing.logDiaper(family, child.id, kind, at)
-                                    else store.logDiaper(family, child.id, kind, at)
+                                    actions
+                                        .forTarget(activeShared)
+                                        .logDiaper(family, child.id, kind, at)
                                 }
                             },
                         onBottleContentChange = action@{ content -> bottleContent = content },
@@ -154,17 +153,9 @@ internal fun androidx.compose.foundation.layout.ColumnScope.CaptureRoute(
                                 val content = bottleContent
                                 logCompleted(onSaved = { if (amount == entered) amount = "" }) { at
                                     ->
-                                    if (activeShared)
-                                        sharing.logBottleEntered(
-                                            family,
-                                            child.id,
-                                            canonicalDecimal(entered),
-                                            unit,
-                                            content,
-                                            at,
-                                        )
-                                    else
-                                        store.logBottleEntered(
+                                    actions
+                                        .forTarget(activeShared)
+                                        .logBottleEntered(
                                             family,
                                             child.id,
                                             canonicalDecimal(entered),
@@ -215,15 +206,9 @@ internal fun androidx.compose.foundation.layout.ColumnScope.CaptureRoute(
                                 scope.launch {
                                     runCatching {
                                             withContext(Dispatchers.IO) {
-                                                if (activeShared)
-                                                    sharing.logBreastFeedSegments(
-                                                        family,
-                                                        child.id,
-                                                        segments,
-                                                        interval,
-                                                    )
-                                                else
-                                                    store.logBreastFeedSegments(
+                                                actions
+                                                    .forTarget(activeShared)
+                                                    .logBreastFeedSegments(
                                                         family,
                                                         child.id,
                                                         segments,
@@ -283,16 +268,9 @@ internal fun androidx.compose.foundation.layout.ColumnScope.CaptureRoute(
                                 scope.launch {
                                     runCatching {
                                             withContext(Dispatchers.IO) {
-                                                if (activeShared)
-                                                    sharing.logPump(
-                                                        family,
-                                                        child.id,
-                                                        input,
-                                                        interval,
-                                                        end.startUtcMs,
-                                                    )
-                                                else
-                                                    store.logPump(
+                                                actions
+                                                    .forTarget(activeShared)
+                                                    .logPump(
                                                         family,
                                                         child.id,
                                                         input,
@@ -327,22 +305,9 @@ internal fun androidx.compose.foundation.layout.ColumnScope.CaptureRoute(
                                 scope.launch {
                                     runCatching {
                                             withContext(Dispatchers.IO) {
-                                                if (activeShared)
-                                                    sharing.logSolids(
-                                                        family,
-                                                        child.id,
-                                                        foods,
-                                                        eaten,
-                                                        at,
-                                                    )
-                                                else
-                                                    store.logSolids(
-                                                        family,
-                                                        child.id,
-                                                        foods,
-                                                        eaten,
-                                                        at,
-                                                    )
+                                                actions
+                                                    .forTarget(activeShared)
+                                                    .logSolids(family, child.id, foods, eaten, at)
                                             }
                                         }
                                         .onSuccess {
@@ -366,15 +331,9 @@ internal fun androidx.compose.foundation.layout.ColumnScope.CaptureRoute(
                                         finishCapture()
                                     }
                                 ) {
-                                    if (activeShared)
-                                        sharing.startSleepWithPlace(
-                                            family,
-                                            child.id,
-                                            nowTime(),
-                                            enteredPlace,
-                                        )
-                                    else
-                                        store.startSleepWithPlace(
+                                    actions
+                                        .forTarget(activeShared)
+                                        .startSleepWithPlace(
                                             family,
                                             child.id,
                                             nowTime(),
@@ -408,17 +367,9 @@ internal fun androidx.compose.foundation.layout.ColumnScope.CaptureRoute(
                                         if (sleepPlace == enteredPlace) sleepPlace = null
                                     }
                                 ) {
-                                    if (activeShared)
-                                        sharing.logSleepWithPlace(
-                                            family,
-                                            child.id,
-                                            whenStarted,
-                                            end,
-                                            endOffset,
-                                            enteredPlace,
-                                        )
-                                    else
-                                        store.logSleepWithPlace(
+                                    actions
+                                        .forTarget(activeShared)
+                                        .logSleepWithPlace(
                                             family,
                                             child.id,
                                             whenStarted,
@@ -473,20 +424,9 @@ internal fun androidx.compose.foundation.layout.ColumnScope.CaptureRoute(
                                 scope.launch {
                                     runCatching {
                                             withContext(Dispatchers.IO) {
-                                                if (activeShared)
-                                                    sharing.logGrowthEntered(
-                                                        family,
-                                                        child.id,
-                                                        input,
-                                                        at,
-                                                    )
-                                                else
-                                                    store.logGrowthEntered(
-                                                        family,
-                                                        child.id,
-                                                        input,
-                                                        at,
-                                                    )
+                                                actions
+                                                    .forTarget(activeShared)
+                                                    .logGrowthEntered(family, child.id, input, at)
                                             }
                                         }
                                         .onSuccess {
@@ -519,16 +459,9 @@ internal fun androidx.compose.foundation.layout.ColumnScope.CaptureRoute(
                                 scope.launch {
                                     runCatching {
                                             withContext(Dispatchers.IO) {
-                                                if (activeShared)
-                                                    sharing.logTemperatureEntered(
-                                                        family,
-                                                        child.id,
-                                                        canonicalDecimal(entered),
-                                                        unit,
-                                                        at,
-                                                    )
-                                                else
-                                                    store.logTemperatureEntered(
+                                                actions
+                                                    .forTarget(activeShared)
+                                                    .logTemperatureEntered(
                                                         family,
                                                         child.id,
                                                         canonicalDecimal(entered),
@@ -561,15 +494,9 @@ internal fun androidx.compose.foundation.layout.ColumnScope.CaptureRoute(
                                 scope.launch {
                                     runCatching {
                                             withContext(Dispatchers.IO) {
-                                                if (activeShared)
-                                                    sharing.logMedication(
-                                                        family,
-                                                        child.id,
-                                                        input,
-                                                        at,
-                                                    )
-                                                else
-                                                    store.logMedication(family, child.id, input, at)
+                                                actions
+                                                    .forTarget(activeShared)
+                                                    .logMedication(family, child.id, input, at)
                                             }
                                         }
                                         .onSuccess {
@@ -592,9 +519,9 @@ internal fun androidx.compose.foundation.layout.ColumnScope.CaptureRoute(
                                 scope.launch {
                                     runCatching {
                                             withContext(Dispatchers.IO) {
-                                                if (activeShared)
-                                                    sharing.logNote(family, child.id, note, at)
-                                                else store.logNote(family, child.id, note, at)
+                                                actions
+                                                    .forTarget(activeShared)
+                                                    .logNote(family, child.id, note, at)
                                             }
                                         }
                                         .onSuccess {

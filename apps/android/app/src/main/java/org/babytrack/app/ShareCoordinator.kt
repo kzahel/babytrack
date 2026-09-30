@@ -31,7 +31,7 @@ internal class ShareCoordinator(
     context: Context,
     databasePath: String,
     private val relayProvider: (String) -> RelayTransport = ::RelayTransport,
-) : AutoCloseable {
+) : AutoCloseable, TrackingActions {
     private val keys = DeviceWrappingKey(context)
     private val core = NativeSharedStore.open(databasePath)
 
@@ -376,45 +376,45 @@ internal class ShareCoordinator(
         core.addSharedChild(family, wrapping, name, nowMs)
     }
 
-    fun addChildWithMetadata(
+    override fun addChildWithMetadata(
         family: FamilyRef, name: String, birthDay: Long?, sex: UByte?, nowMs: Long,
     ): ByteArray = withWrapping { wrapping ->
         core.addSharedChildWithMetadata(family, wrapping, name, birthDay, sex, nowMs)
     }
 
-    fun renameChild(family: FamilyRef, childId: ByteArray, name: String, savedAtMs: Long): Unit =
+    override fun renameChild(family: FamilyRef, childId: ByteArray, name: String, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.renameSharedChild(family, wrapping, childId, name, savedAtMs) }
 
-    fun editChildMetadata(family: FamilyRef, childId: ByteArray, birthDay: Long?, sex: UByte?, savedAtMs: Long): Unit =
+    override fun editChildMetadata(family: FamilyRef, childId: ByteArray, birthDay: Long?, sex: UByte?, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedChildMetadata(family, wrapping, childId, birthDay, sex, savedAtMs) }
 
-    fun logDiaper(family: FamilyRef, childId: ByteArray, kind: UByte, time: ActivityWhen): ByteArray =
+    override fun logDiaper(family: FamilyRef, childId: ByteArray, kind: UByte, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedDiaper(family, wrapping, childId, kind, time) }
 
     fun logBottleMl(family: FamilyRef, childId: ByteArray, amountMl: Long, content: UByte, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedBottleMl(family, wrapping, childId, amountMl, content, time) }
 
-    fun logBottleEntered(family: FamilyRef, childId: ByteArray, entered: String, unit: UByte,
+    override fun logBottleEntered(family: FamilyRef, childId: ByteArray, entered: String, unit: UByte,
                          content: UByte, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedBottleEntered(family, wrapping, childId, entered, unit, content, time) }
 
     fun logBreastFeed(family: FamilyRef, childId: ByteArray, side: UByte, time: ActivityWhen, endUtcMs: Long): ByteArray =
         withWrapping { wrapping -> core.logSharedBreastFeed(family, wrapping, childId, side, time, endUtcMs) }
 
-    fun logBreastFeedSegments(family: FamilyRef, childId: ByteArray,
+    override fun logBreastFeedSegments(family: FamilyRef, childId: ByteArray,
                               segments: List<uniffi.babytrack_core_ffi.BreastSegmentRow>, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedBreastFeedSegments(family, wrapping, childId, segments, time) }
 
-    fun logPump(family: FamilyRef, childId: ByteArray, input: uniffi.babytrack_core_ffi.PumpInput, time: ActivityWhen, endUtcMs: Long): ByteArray =
+    override fun logPump(family: FamilyRef, childId: ByteArray, input: uniffi.babytrack_core_ffi.PumpInput, time: ActivityWhen, endUtcMs: Long): ByteArray =
         withWrapping { wrapping -> core.logSharedPump(family, wrapping, childId, input, time, endUtcMs) }
 
-    fun logSolids(family: FamilyRef, childId: ByteArray, foods: List<String>, amount: String, time: ActivityWhen): ByteArray =
+    override fun logSolids(family: FamilyRef, childId: ByteArray, foods: List<String>, amount: String, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedSolids(family, wrapping, childId, foods, amount, time) }
 
     fun logSleep(family: FamilyRef, childId: ByteArray, time: ActivityWhen, endUtcMs: Long, endOffsetMinutes: Short): ByteArray =
         withWrapping { wrapping -> core.logSharedSleep(family, wrapping, childId, time, endUtcMs, endOffsetMinutes) }
 
-    fun logSleepWithPlace(family: FamilyRef, childId: ByteArray, time: ActivityWhen,
+    override fun logSleepWithPlace(family: FamilyRef, childId: ByteArray, time: ActivityWhen,
                           endUtcMs: Long, endOffsetMinutes: Short, place: UByte?): ByteArray =
         withWrapping { wrapping -> core.logSharedSleepWithPlace(family, wrapping, childId, time,
             endUtcMs, endOffsetMinutes, place) }
@@ -422,39 +422,39 @@ internal class ShareCoordinator(
     fun startSleep(family: FamilyRef, childId: ByteArray, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.startSharedSleep(family, wrapping, childId, time) }
 
-    fun startSleepWithPlace(family: FamilyRef, childId: ByteArray, time: ActivityWhen, place: UByte?): ByteArray =
+    override fun startSleepWithPlace(family: FamilyRef, childId: ByteArray, time: ActivityWhen, place: UByte?): ByteArray =
         withWrapping { wrapping -> core.startSharedSleepWithPlace(family, wrapping, childId, time, place) }
 
-    fun stopSleep(family: FamilyRef, childId: ByteArray, activityId: ByteArray, endUtcMs: Long, endOffsetMinutes: Short): Unit =
+    override fun stopSleep(family: FamilyRef, childId: ByteArray, activityId: ByteArray, endUtcMs: Long, endOffsetMinutes: Short): Unit =
         withWrapping { wrapping -> core.stopSharedSleep(family, wrapping, childId, activityId,
             ActivityWhen(endUtcMs, endOffsetMinutes, endUtcMs)) }
 
-    fun editSleepEnd(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+    override fun editSleepEnd(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
                      endUtcMs: Long, endOffsetMinutes: Short, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedSleepEnd(family, wrapping, childId, activityId,
             ActivityWhen(endUtcMs, endOffsetMinutes, savedAtMs)) }
 
-    fun editSleepPlace(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+    override fun editSleepPlace(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
                        place: UByte?, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedSleepPlace(family, wrapping, childId, activityId,
             place, savedAtMs) }
 
-    fun deleteActivity(family: FamilyRef, childId: ByteArray, activityId: ByteArray, savedAtMs: Long): Unit =
+    override fun deleteActivity(family: FamilyRef, childId: ByteArray, activityId: ByteArray, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.deleteSharedActivity(family, wrapping, childId, activityId, savedAtMs) }
 
-    fun restoreActivity(family: FamilyRef, childId: ByteArray, activityId: ByteArray, savedAtMs: Long): Unit =
+    override fun restoreActivity(family: FamilyRef, childId: ByteArray, activityId: ByteArray, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.restoreSharedActivity(family, wrapping, childId, activityId, savedAtMs) }
 
-    fun editNote(family: FamilyRef, childId: ByteArray, activityId: ByteArray, note: String, savedAtMs: Long): Unit =
+    override fun editNote(family: FamilyRef, childId: ByteArray, activityId: ByteArray, note: String, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedNote(family, wrapping, childId, activityId, note, savedAtMs) }
 
-    fun editInstantTime(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+    override fun editInstantTime(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
                         startUtcMs: Long, offsetMinutes: Short, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedInstantTime(
             family, wrapping, childId, activityId, ActivityWhen(startUtcMs, offsetMinutes, savedAtMs),
         ) }
 
-    fun moveCompletedInterval(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+    override fun moveCompletedInterval(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
                               time: ActivityWhen, endUtcMs: Long, endOffsetMinutes: Short): Unit =
         withWrapping { wrapping -> core.moveSharedCompletedInterval(
             family, wrapping, childId, activityId, time, endUtcMs, endOffsetMinutes,
@@ -467,20 +467,20 @@ internal class ShareCoordinator(
                    amountMl: Long, content: UByte, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedBottle(family, wrapping, childId, activityId, amountMl, content, savedAtMs) }
 
-    fun editBottleEntered(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+    override fun editBottleEntered(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
                           entered: String, unit: UByte, content: UByte, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedBottleEntered(
             family, wrapping, childId, activityId, entered, unit, content, savedAtMs,
         ) }
 
-    fun editBreastFeedSegments(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+    override fun editBreastFeedSegments(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
                                segments: List<uniffi.babytrack_core_ffi.BreastSegmentRow>, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedBreastFeedSegments(family, wrapping, childId, activityId, segments, savedAtMs) }
 
-    fun editDiaperKind(family: FamilyRef, childId: ByteArray, activityId: ByteArray, kind: UByte, savedAtMs: Long): Unit =
+    override fun editDiaperKind(family: FamilyRef, childId: ByteArray, activityId: ByteArray, kind: UByte, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedDiaperKind(family, wrapping, childId, activityId, kind, savedAtMs) }
 
-    fun editSolids(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+    override fun editSolids(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
                    foods: List<String>, amount: String, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedSolids(family, wrapping, childId, activityId, foods, amount, savedAtMs) }
 
@@ -492,15 +492,15 @@ internal class ShareCoordinator(
                                weightG: Long?, lengthMm: Long?, headMm: Long?, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedGrowthMeasurements(family, wrapping, childId, activityId, weightG, lengthMm, headMm, savedAtMs) }
 
-    fun editGrowthEntered(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+    override fun editGrowthEntered(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
                           input: uniffi.babytrack_core_ffi.GrowthInputRow, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedGrowthEntered(family, wrapping, childId, activityId, input, savedAtMs) }
 
-    fun editPumpAmounts(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+    override fun editPumpAmounts(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
                         input: uniffi.babytrack_core_ffi.PumpInput, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedPumpAmounts(family, wrapping, childId, activityId, input, savedAtMs) }
 
-    fun editMedication(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+    override fun editMedication(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
                        input: uniffi.babytrack_core_ffi.MedicationInput, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedMedication(family, wrapping, childId, activityId, input, savedAtMs) }
 
@@ -508,13 +508,13 @@ internal class ShareCoordinator(
                          enteredC: String, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedTemperatureC(family, wrapping, childId, activityId, enteredC, savedAtMs) }
 
-    fun editTemperatureEntered(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
+    override fun editTemperatureEntered(family: FamilyRef, childId: ByteArray, activityId: ByteArray,
                                entered: String, unit: UByte, savedAtMs: Long): Unit =
         withWrapping { wrapping -> core.editSharedTemperatureEntered(
             family, wrapping, childId, activityId, entered, unit, savedAtMs,
         ) }
 
-    fun logNote(family: FamilyRef, childId: ByteArray, note: String, time: ActivityWhen): ByteArray =
+    override fun logNote(family: FamilyRef, childId: ByteArray, note: String, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedNote(family, wrapping, childId, note, time) }
 
     fun logGrowth(family: FamilyRef, childId: ByteArray, weightG: Long?, lengthMm: Long?, time: ActivityWhen): ByteArray =
@@ -523,18 +523,18 @@ internal class ShareCoordinator(
     fun logGrowthMeasurements(family: FamilyRef, childId: ByteArray, weightG: Long?, lengthMm: Long?, headMm: Long?, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedGrowthMeasurements(family, wrapping, childId, weightG, lengthMm, headMm, time) }
 
-    fun logGrowthEntered(family: FamilyRef, childId: ByteArray,
+    override fun logGrowthEntered(family: FamilyRef, childId: ByteArray,
                          input: uniffi.babytrack_core_ffi.GrowthInputRow, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedGrowthEntered(family, wrapping, childId, input, time) }
 
     fun logTemperatureC(family: FamilyRef, childId: ByteArray, enteredC: String, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedTemperatureC(family, wrapping, childId, enteredC, time) }
 
-    fun logTemperatureEntered(family: FamilyRef, childId: ByteArray, entered: String,
+    override fun logTemperatureEntered(family: FamilyRef, childId: ByteArray, entered: String,
                               unit: UByte, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedTemperatureEntered(family, wrapping, childId, entered, unit, time) }
 
-    fun logMedication(family: FamilyRef, childId: ByteArray, input: uniffi.babytrack_core_ffi.MedicationInput, time: ActivityWhen): ByteArray =
+    override fun logMedication(family: FamilyRef, childId: ByteArray, input: uniffi.babytrack_core_ffi.MedicationInput, time: ActivityWhen): ByteArray =
         withWrapping { wrapping -> core.logSharedMedication(family, wrapping, childId, input, time) }
 
     fun syncAndUpload(family: FamilyRef, origin: String): SharedSyncRow {

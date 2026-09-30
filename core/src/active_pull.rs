@@ -61,6 +61,29 @@ pub struct HydrationProgress {
     pub remaining: bool,
 }
 
+/// One bounded pass over signed history and its referenced opaque objects.
+/// Readiness still requires the caller's credential/key checks after this pass.
+pub struct SyncProgress {
+    pub pull: PullProgress,
+    pub hydration: HydrationProgress,
+}
+
+pub async fn pull_and_hydrate<F, Fut, E>(
+    store: &mut SqliteStore,
+    family: FamilyHandle,
+    max_pages: usize,
+    max_objects: usize,
+    mut fetch: F,
+) -> Result<SyncProgress, Error>
+where
+    F: FnMut(String) -> Fut,
+    Fut: Future<Output = Result<Vec<u8>, E>>,
+{
+    let pull = pull_active_log(store, family, max_pages, &mut fetch).await?;
+    let hydration = hydrate_manifest_objects(store, family, max_objects, fetch).await?;
+    Ok(SyncProgress { pull, hydration })
+}
+
 struct ManifestObject {
     id: [u8; 16],
     kind: u16,

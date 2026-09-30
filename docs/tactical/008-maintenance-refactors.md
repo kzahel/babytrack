@@ -31,7 +31,7 @@ Owning decisions: [event model](../topics/event-model.md),
    coordination from TrackerRoute, and consolidate its loaded screen state.
    Keep platform launchers at the route boundary, the existing shared save
    coroutine lifetime, exact selection targets, and failed-save drafts.
-3. [ ] Organize native binding records/conversions, local APIs, sharing,
+3. [x] Organize native binding records/conversions, local APIs, sharing,
    invitations, and fixture APIs into modules. Move reusable native sync
    orchestration into core while preserving UniFFI exports and API signatures.
 4. [ ] Separate relay storage tests and implementation concerns:
@@ -103,3 +103,14 @@ existing owners.
   controls fit above the fold. The gallery renders 31 cases/124 variants;
   an actual large-text removed-Family render was inspected. Workspace
   boundaries, Python compilation, and diff checks pass.
+
+- Slice 3: native bindings now separate records/conversions, local APIs,
+  invitations, shared authority/enrollment/actions/sync, and fixtures. Root
+  reexports retain public names; the entry point is 87 lines. Core
+  `active_pull::pull_and_hydrate` owns the previously repeated bounded pass,
+  retaining signing through core credentials and app-owned transport. Core
+  tests, workspace Clippy/format, native Kotlin/Swift smoke, production
+  fixture exclusion, Android unit tests and both APKs, the clean-install
+  invitation case, and all 28 relay cases pass. All 514 generated Kotlin
+  declaration signatures match the saved pre-refactor production snapshot.
+  Workspace boundaries and diff checks pass.

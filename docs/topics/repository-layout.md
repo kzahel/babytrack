@@ -68,6 +68,12 @@ committed project sources.
 The workspace uses package names such as `babytrack-core` rather than a Rust
 crate named `core`, and pins Rust 1.92.0. Path names above remain short.
 
+Native bindings are organized into `records`, `local`, `invitations`,
+`shared/{authority,enrollment,actions,sync}`, and a feature-gated `fixtures`
+module. Root reexports preserve the existing Rust and UniFFI public names.
+Core-owned bounded log pulling and manifest hydration are reused through
+`active_pull::pull_and_hydrate`; native transport adaptation stays in bindings.
+
 ## Dependency boundaries
 
 - `core-ffi`, `core-wasm`, and `cli` consume the same core. Bindings translate

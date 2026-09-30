@@ -12,6 +12,13 @@ differs.
 Owns the operation log, merge rules, keys, invites, removal, recovery, server
 API, protocol versioning, and threat model. The event payloads themselves are
 owned by [event-model.md](event-model.md).
+
+The native recipient and manager adapters share the core's bounded
+`active_pull::pull_and_hydrate` pass. It preserves the ordered log pull then
+manifest-object hydration sequence and durable verified prefix on failure.
+Callers still check complete visible history, credentials, and keys before
+reporting readiness. The app supplies the transport; binding adapters invoke
+the core credential signer for each exact request.
 User-visible promises, accepted trust limits, and the agreed first-committed
 outcome for competing removals are owned by
 [family-sharing-and-trust.md](family-sharing-and-trust.md). Protocol choices

@@ -38,3 +38,6 @@ tactical with its current status.
   Android coordination, native bindings, relay storage, harness/documentation
   cleanup, and minimum-API
   compatibility, with a validated commit per slice.
+- [009: Action and storage boundaries](009-action-and-storage-boundaries.md)
+  — active; web async state, Android action dispatch, harness diagnostics,
+  wasm modules, portable core behavior, and client SQLite organization.

@@ -26,6 +26,11 @@ appear implemented.
 
 ## Implementation layout
 
+Android's app-specific `uniffi.toml` configures SDK-compatible generated
+cleanup independently of the Kotlin JVM smoke bindings. Its build script and
+configuration are Gradle task inputs; API 26 unit coverage and `lintDebug`
+guard minimum-API compatibility.
+
 | Path | Responsibility | Introduced |
 |---|---|---|
 | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` | Workspace, reproducible dependency/toolchain choices | Scaffolding |

@@ -44,6 +44,8 @@ val buildRust by tasks.registering(Exec::class) {
     inputs.files(fileTree(repoRoot.resolve("core-ffi")) { include("src/**", "Cargo.toml") })
     inputs.files(fileTree(repoRoot.resolve("wire")) { include("src/**", "Cargo.toml") })
     inputs.file(repoRoot.resolve("Cargo.lock"))
+    inputs.file(repoRoot.resolve("scripts/build_android_core.sh"))
+    inputs.file(rootProject.projectDir.resolve("uniffi.toml"))
     outputs.dir(generated)
     commandLine("bash", repoRoot.resolve("scripts/build_android_core.sh"), generated.get().asFile)
 }

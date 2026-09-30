@@ -40,7 +40,7 @@ Owning decisions: [event model](../topics/event-model.md),
 5. [x] Audit obsolete scaffolding comments and broad dead-code allowances;
    refresh the current repository map; move Android UI harness helpers into
    a dedicated support module with all entry points updated.
-6. [ ] Resolve Android API 26 compatibility for generated binding cleanup
+6. [x] Resolve Android API 26 compatibility for generated binding cleanup
    and navigation-bar resources. Run lint without a NewApi suppression or
    baseline and add that check to the Android CI gate.
 7. [ ] Run the affected cross-platform integration and boundary checks,
@@ -136,3 +136,13 @@ existing owners.
   CLI help, and import-only checks pass without starting a scenario. The full
   caregiver UI walkthrough is running; its final result, recovery, and capture
   verification will be recorded with slice 7. Diff/boundary checks pass.
+
+- Slice 6: Android generation now uses a dedicated UniFFI global config,
+  selecting SDK-guarded Android cleanup and JNA below API 34 without changing
+  JVM smoke generation. An API 26 Robolectric test proves fallback selection
+  and exactly-once explicit cleanup. The first run correctly failed with the
+  old JVM backend; correcting the pinned generator's global config schema
+  made it pass. API 27 navigation-bar attributes now live in version-qualified
+  day/night resources. All six Android unit tests, both debug APKs, and
+  `lintDebug` pass with no NewApi suppression or baseline. CI now runs lint;
+  the generator script/configuration are tracked Gradle inputs.

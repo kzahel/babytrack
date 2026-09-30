@@ -1,0 +1,4 @@
+[defaults.bindings.kotlin]
+# Generate SDK-guarded Android cleanup with JNA fallback on older releases.
+# JVM smoke bindings keep their separate default generation settings.
+android = true

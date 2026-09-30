@@ -54,6 +54,18 @@ for current evidence and remaining gates.
 
 ## Automated checks
 
+The app supports API 26. Android binding generation uses
+`apps/android/uniffi.toml` to select UniFFI's SDK-guarded Android cleaner,
+with JNA cleanup below API 34. JVM smoke bindings retain JVM generation.
+An API 26 Robolectric regression checks fallback selection and exactly-once
+cleanup. Navigation-bar appearance attributes introduced in API 27 live in
+the matching version-qualified theme resources. Run the compatibility gate
+without a lint baseline:
+
+```sh
+apps/android/gradlew :app:testDebugUnitTest :app:lintDebug
+```
+
 The real-relay Android instrumentation suite uses separate device stores and
 a disposable relay. With an emulator running, build both APKs and run:
 

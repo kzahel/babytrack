@@ -13,6 +13,7 @@ case "$(uname -s)" in
   *) echo "unsupported host for UniFFI generation" >&2; exit 1 ;;
 esac
 cargo run -p babytrack-core-ffi --features bindgen --bin uniffi-bindgen --locked -- \
-  generate "$library_path" --language kotlin --out-dir "$out_dir/kotlin" --no-format
+  generate "$library_path" --language kotlin --config apps/android/uniffi.toml \
+  --out-dir "$out_dir/kotlin" --no-format
 cargo ndk -t arm64-v8a -t x86_64 -o "$out_dir/jniLibs" \
   build --release -p babytrack-core-ffi --locked

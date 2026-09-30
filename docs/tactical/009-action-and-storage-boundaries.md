@@ -23,7 +23,7 @@ Owning topics: [web](../topics/web-client.md),
    snapshots, reject stale async results, and regress delayed Family switching.
 2. [x] Centralize Android local/shared action dispatch without moving event
    semantics into Kotlin or changing the route's coroutine/draft lifetime.
-3. [ ] Bound Android harness subprocesses, emit stage progress and failure
+3. [x] Bound Android harness subprocesses, emit stage progress and failure
    artifacts, and split browser smoke into individually runnable scenarios.
 4. [ ] Separate wasm bindings by local/enrollment/authority/restore/fixture
    concern while preserving generated JavaScript exports and feature gates.
@@ -73,3 +73,18 @@ gates remain with their milestone owners. Local runs do not imply remote CI.
   real-relay cases, and the quick caregiver edit/delete/restart UI flow pass.
   Coroutine ownership and draft clearing callbacks are unchanged. Diff checks
   pass; the full walkthrough is included in final verification.
+
+- Slice 3: Android subprocesses now have bounded timeouts; scenario wrappers
+  emit progress and retain available screenshot/logcat/XML failure evidence.
+  Three regressions cover actual subprocess timeout, diagnostic failure that
+  preserves the original exception, and partial artifact capture. A controlled
+  failure on a disposable emulator confirms real capture. Browser smoke now
+  has nine named, independently isolated scenarios; all pass and a filtered
+  rebase run passes. A source comparison confirms unchanged scenario bodies,
+  assertions, and fixture inputs apart from relay routing. A controlled native
+  exchange failure retains the original assertion, relay log, and Playwright
+  trace and cleans up the relay/browser. CI retains diagnostics when present.
+  Python/JS compilation, CLI help/list, shell syntax, Actionlint, boundaries,
+  and diff checks pass. Complete UI/recovery/capture results are recorded at
+  final verification; the full walkthrough and recovery are running with the
+  new support module.

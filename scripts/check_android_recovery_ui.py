@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 from android_ui import (
-    APK, PACKAGE, adb, dismiss_keyboard, find, nodes, scroll_up, serial, tap,
+    APK, PACKAGE, adb, dismiss_keyboard, find, nodes, scroll_up, serial, tap, run_scenario, stage,
 )
 
 
@@ -24,6 +24,7 @@ TEST_PASSWORD = "TestPassphrase42"
 
 
 def reinstall(target: str) -> None:
+    stage("Recovery: fresh installation")
     adb(target, "uninstall", PACKAGE)
     adb(target, "install", str(APK))
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
@@ -61,6 +62,7 @@ def main() -> None:
 
     tap(target, "Family", actionable=True)
     tap(target, "Data and backups", scroll=True)
+    stage("Recovery: save backup")
     tap(target, "Save backup", scroll=True)
     tap(target, "SAVE")
     find(target, "Last completed file save:", scroll=True, contains=True)
@@ -69,13 +71,13 @@ def main() -> None:
         raise AssertionError(f"Saved backup was unexpectedly short: {size} bytes")
     readable = subprocess.run(
         ["adb", "-s", target, "exec-out", "cat", DOWNLOAD],
-        check=True, capture_output=True,
+        check=True, capture_output=True, timeout=60,
     ).stdout
     with tempfile.TemporaryDirectory() as scratch:
         corrupt = Path(scratch) / CORRUPT_FILENAME
         corrupt.write_bytes(readable[:len(readable) // 2])
         subprocess.run(["adb", "-s", target, "push", str(corrupt), CORRUPT_DOWNLOAD],
-                       check=True, capture_output=True)
+                       check=True, capture_output=True, timeout=60)
     tap(target, "Today", actionable=True)
     tap(target, "Add activity", scroll=True, actionable=True)
     tap(target, "Add note", scroll=True, actionable=True)
@@ -88,12 +90,14 @@ def main() -> None:
 
     reinstall(target)
     find(target, "New Family")
+    stage("Recovery: open saved file")
     tap(target, "Restore backup")
     tap(target, CORRUPT_FILENAME)
     find(target, "This backup file is damaged or unsupported. No Family was restored.")
     if any(node.attrib.get("text", "").startswith("Family 1")
            for node in nodes(target).iter("node")):
         raise AssertionError("Damaged backup created a Family")
+    stage("Recovery: open saved file")
     tap(target, "Restore backup")
     tap(target, FILENAME)
     find(target, "File saved at ", scroll=True, contains=True)
@@ -126,6 +130,7 @@ def main() -> None:
     tap(target, "Backup password", scroll=True)
     adb(target, "shell", "input", "text", TEST_PASSWORD)
     dismiss_keyboard(target)
+    stage("Recovery: save backup")
     tap(target, "Save backup", scroll=True)
     tap(target, "SAVE")
     find(target, "Last completed file save:", scroll=True, contains=True)
@@ -135,6 +140,7 @@ def main() -> None:
 
     reinstall(target)
     find(target, "New Family")
+    stage("Recovery: open saved file")
     tap(target, "Restore backup")
     tap(target, PROTECTED_FILENAME)
     find(target, "Password for protected backup")
@@ -162,4 +168,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     argparse.ArgumentParser(description=__doc__).parse_args()
-    main()
+    run_scenario("file-recovery", main)

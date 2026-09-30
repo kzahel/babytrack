@@ -91,6 +91,12 @@ python3 scripts/check_android_recovery_ui.py
 
 These entry points share ADB/UIAutomator support in
 `scripts/android_ui.py`; importing helpers does not execute a scenario.
+Commands have bounded subprocess timeouts. Each runner emits stage progress
+and keeps available screenshot, recent logcat, and last UI XML diagnostics
+under `app/build/outputs/ui-diagnostics/` on failure. CI retains those files;
+`BABYTRACK_ANDROID_DIAGNOSTICS_DIR` can override the output root. Diagnostic
+failure preserves the original scenario error. Harness regressions run with
+`python3 scripts/test_android_ui.py` and in the emulator CI runner.
 
 Push and PR CI run the quick path through Family setup, diaper logging,
 correction, deletion, and restart, plus the full real-relay instrumentation

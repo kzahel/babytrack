@@ -116,6 +116,12 @@ work status is in [007](../tactical/007-android-screen-gallery.md).
 The Android command-driven UI helpers live in `scripts/android_ui.py`.
 Caregiver smoke, recovery, and navigation capture entry points import that
 support module; importing helpers never runs a smoke flow.
+Its subprocesses are bounded; scenario wrappers emit progress and preserve
+available failure artifacts without masking the original failure. Browser
+smoke scenarios live in `tests/browser/browser-smoke/`, with fixture and relay
+support plus a small selectable runner. Every scenario owns a fresh browser
+context and its disposable relay processes. Their usage and artifact locations
+are documented in the Android and browser READMEs.
 
 ## Validation and alternatives
 

@@ -87,6 +87,13 @@ jobs:
         run: bash scripts/check_web_ui.sh
       - name: Exercise web joining and shared tracking
         run: bash scripts/check_web_shared_ui.sh
+      - name: Keep browser failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: babytrack-browser-diagnostics
+          path: target/browser-diagnostics/
+          if-no-files-found: ignore
 
   android:
     name: Android debug APK
@@ -169,7 +176,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: babytrack-android-navigation
-          path: local-references/android-redesign-qa/*.png
+          path: |
+            local-references/android-redesign-qa/*.png
+            apps/android/app/build/outputs/ui-diagnostics/
           if-no-files-found: ignore
 
   required:

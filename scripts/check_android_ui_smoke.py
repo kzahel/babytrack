@@ -9,7 +9,7 @@ import re
 from android_ui import (
     APK, PACKAGE, adb, dismiss_keyboard, find, nodes, open_capture,
     open_entry_actions, open_family, open_history,
-    scroll_up, serial, tap, tap_tab,
+    scroll_up, serial, tap, tap_tab, run_scenario,
 )
 
 
@@ -325,4 +325,5 @@ def main(quick: bool = False) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--quick", action="store_true", help="Run the short push/PR UI path")
-    main(parser.parse_args().quick)
+    args = parser.parse_args()
+    run_scenario("caregiver-quick" if args.quick else "caregiver-full", lambda: main(args.quick))

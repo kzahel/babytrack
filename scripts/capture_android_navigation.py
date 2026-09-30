@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from android_ui import (
-    APK, PACKAGE, ROOT, adb, dismiss_keyboard, find, serial, tap, tap_tab,
+    APK, PACKAGE, ROOT, adb, dismiss_keyboard, find, serial, tap, tap_tab, run_scenario, stage,
 )
 
 
@@ -17,9 +17,10 @@ OUTPUT = ROOT / "local-references" / "android-redesign-qa"
 
 
 def capture(target: str, name: str) -> None:
+    stage(f"Navigation capture: {name}")
     screenshot = subprocess.run(
         ["adb", "-s", target, "exec-out", "screencap", "-p"],
-        check=True, capture_output=True,
+        check=True, capture_output=True, timeout=20,
     ).stdout
     (OUTPUT / f"{name}.png").write_bytes(screenshot)
 
@@ -76,4 +77,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     argparse.ArgumentParser(description=__doc__).parse_args()
-    main()
+    run_scenario("navigation-capture", main)

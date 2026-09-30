@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import time
+from datetime import datetime, timezone
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -17,9 +18,9 @@ APK = ROOT / "apps/android/app/build/outputs/apk/debug/app-debug.apk"
 PACKAGE = "org.babytrack.app"
 
 
-def command(*args: str) -> str:
+def command(*args: str, timeout: float = 60) -> str:
     for attempt in range(4):
-        result = subprocess.run(args, capture_output=True, text=True)
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
         if result.returncode == 0:
             return result.stdout
         if args[0] != "adb" or result.returncode != 255 or attempt == 3:
@@ -42,8 +43,49 @@ def serial() -> str:
     return devices[0]
 
 
-def adb(target: str, *args: str) -> str:
-    return command("adb", "-s", target, *args)
+def adb(target: str, *args: str, timeout: float = 60) -> str:
+    return command("adb", "-s", target, *args, timeout=timeout)
+
+
+def stage(label: str) -> None:
+    print(f"[{datetime.now(timezone.utc).isoformat(timespec='seconds')}] {label}", flush=True)
+
+
+def capture_failure(target: str, name: str) -> Path:
+    output = Path(os.environ.get("BABYTRACK_ANDROID_DIAGNOSTICS_DIR", str(
+        ROOT / "apps/android/app/build/outputs/ui-diagnostics"))) / f"{name}-{time.time_ns()}"
+    output.mkdir(parents=True, exist_ok=True)
+    commands = {
+        "screen.png": ("exec-out", "screencap", "-p"),
+        "logcat.txt": ("logcat", "-d", "-t", "500"),
+        "last-ui.xml": ("exec-out", "cat", "/sdcard/babytrack-ui.xml"),
+    }
+    for filename, args in commands.items():
+        try:
+            result = subprocess.run(("adb", "-s", target, *args), capture_output=True, timeout=10)
+            if result.returncode == 0:
+                (output / filename).write_bytes(result.stdout)
+            else:
+                (output / f"{filename}.error.txt").write_bytes(result.stderr)
+        except Exception as cause:
+            (output / f"{filename}.error.txt").write_text(str(cause))
+    return output
+
+
+def run_scenario(name: str, action) -> None:
+    target = serial()
+    if adb(target, "shell", "getprop", "ro.kernel.qemu").strip() != "1":
+        raise RuntimeError("This scenario runs only on a disposable emulator")
+    stage(f"{name}: start on {target}")
+    try:
+        action()
+    except BaseException:
+        try:
+            stage(f"{name}: failure artifacts at {capture_failure(target, name)}")
+        except Exception as cause:
+            stage(f"{name}: could not save diagnostics: {cause}")
+        raise
+    stage(f"{name}: complete")
 
 
 def nodes(target: str) -> ET.Element:
@@ -52,7 +94,7 @@ def nodes(target: str) -> ET.Element:
     last_dump = ""
     for attempt in range(3):
         adb(target, "shell", "rm", "-f", "/sdcard/babytrack-ui.xml")
-        last_dump = adb(target, "shell", "uiautomator", "dump", "/sdcard/babytrack-ui.xml")
+        last_dump = adb(target, "shell", "uiautomator", "dump", "/sdcard/babytrack-ui.xml", timeout=20)
         if "dumped to:" in last_dump:
             return ET.fromstring(adb(target, "exec-out", "cat", "/sdcard/babytrack-ui.xml"))
         if attempt < 2:
@@ -134,6 +176,7 @@ def tap_tab(target: str, label: str) -> None:
 
 
 def open_capture(target: str, activity: str) -> None:
+    stage(f"Capture: {activity}")
     tap_tab(target, "Today")
     tap(target, "Add activity", scroll=True, actionable=True)
     tap(target, activity, scroll=True, actionable=True)
@@ -149,6 +192,7 @@ def open_family(target: str) -> None:
 
 def open_entry_actions(target: str, entry_label: str) -> None:
     """Expand the actions on the named History row, even after scrolling."""
+    stage(f"History correction: {entry_label}")
     find(target, entry_label, scroll=True)
     for _ in range(4):
         root = nodes(target)
@@ -172,4 +216,3 @@ def open_entry_actions(target: str, entry_label: str) -> None:
         adb(target, "shell", "input", "swipe", str(width // 2), str(height * 7 // 10),
             str(width // 2), str(height * 5 // 10), "300")
     raise AssertionError(f"No details action found for {entry_label!r}")
-

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+python3 scripts/test_android_ui.py
 bash scripts/check_android_relay_emulator.sh
 if [[ "${GITHUB_EVENT_NAME:-}" == schedule || "${GITHUB_EVENT_NAME:-}" == workflow_dispatch ]]; then
   python3 scripts/check_android_ui_smoke.py

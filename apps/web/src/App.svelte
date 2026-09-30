@@ -1,20 +1,13 @@
 <script>
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import { copy as c, ageLabel } from './strings.js';
-  import { families, createFamily, snapshot, addChild, logActivity, logBreastFeed, editBreastFeed,
-    rememberInvitation, pendingInvitations, continueInvitation, approveInvitation,
-    dismissInvitation, syncFamily,
-    familySyncStatus, copyRemovedFamily, exportFamily, restoreFamily } from './core.js';
+  import * as api from './core.js';
+  import { createTrackerController } from './tracker-controller.js';
   import { readDraft, persistDraft, tapSide, completedSegments, sideTotals,
     durationLabel, editableSegments, rebuiltSegments } from './breast-timer.js';
 
-  let loading = true;
   let error = '';
   let notice = '';
-  let familyRows = [];
-  let family = '';
-  let child = '';
-  let data = { children: [], activities: [] };
   let tab = 'today';
   let screen = '';
   let childName = '';
@@ -30,174 +23,72 @@
   let editTarget = null;
   let editRows = [];
   let invitationInput = '';
-  let pendingFragment = '';
-  let joinStage = '';
-  let syncStage = '';
-  let removedInfo = null;
-  let privateCopy = '';
-  let backupGap = false;
-  let backupCursor = 0;
-  let polling = false;
+  let actionSequence = 0;
   const terminalJoinStages = [c.inviteClaimed, c.inviteCanceled, c.inviteExpired, c.inviteInvalidated];
 
-  $: sharedSelected = familyRows.find((row) => row.family === family)?.source === 'shared';
+  $: sharedSelected = $tracker.familyRows.find((row) => row.family === $tracker.family)?.source === 'shared';
   $: selectedChild = data.children.find((row) => row.id === child);
   $: familyLabel = c.familyNumber(familyRows.findIndex((row) => row.family === family) + 1);
   $: entries = data.activities.filter((row) => row.childId === child);
   $: todayEntries = entries.filter((row) => new Date(row.startMs).toDateString() === new Date().toDateString());
 
+  const tracker = createTrackerController({ api, copy: c, preferences: localStorage,
+    onSelect: () => { screen = ''; editTarget = null; tab = 'today'; },
+    onRemoval: () => { screen = ''; editTarget = null; },
+    onRememberInvitation: () => history.replaceState(null, '', location.pathname + location.search) });
+  $: ({ loading, familyRows, family, child, data, pendingFragment, joinStage,
+    syncStage, removedInfo, privateCopy, backupGap, backupCursor } = $tracker);
+  $: breastDraft = $tracker.family && $tracker.child ? readDraft($tracker.family, $tracker.child) : null;
+
   onMount(() => {
     const clock = setInterval(() => nowMs = Date.now(), 1000);
     const poller = setInterval(() => { if (document.visibilityState === 'visible') poll(); }, 15000);
-    (async () => {
-      try {
-        if (location.hash.startsWith('#bt-invite=')) {
-          pendingFragment = await rememberInvitation(location.hash);
-          history.replaceState(null, '', location.pathname + location.search);
-        }
-        pendingFragment ||= (await pendingInvitations())[0] || '';
-        familyRows = await families();
-        family = familyRows.find((row) => row.family === localStorage.getItem('babytrack-family'))?.family || familyRows[0]?.family || '';
-        if (family) await refresh();
-      } catch (cause) { error = message(cause); }
-      loading = false;
-      await poll();
-    })();
-    return () => { clearInterval(clock); clearInterval(poller); };
+    void tracker.initialize(location.hash).catch((cause) => error = message(cause));
+    return () => { clearInterval(clock); clearInterval(poller); tracker.dispose(); };
   });
 
   function message(cause) { return cause?.message || String(cause); }
   async function run(action) {
+    const sequence = ++actionSequence;
     error = '';
     notice = '';
     try { await action(); }
-    catch (cause) { error = message(cause); }
+    catch (cause) { if (sequence === actionSequence) error = message(cause); }
   }
-  async function afterSave(outcome) {
-    if (outcome?.redirectFamily) {
-      familyRows = await families();
-      family = outcome.redirectFamily;
-      localStorage.setItem('babytrack-family', family);
-      await tick();
-      await refresh();
-      notice = c.redirectedCopy;
-    } else {
-      await refresh();
-      if (sharedSelected) { syncStage = c.savedPending; void poll(); }
-    }
+  async function afterSave(outcome, target) {
+    const active = await tracker.afterSave(outcome, target);
+    if (active && outcome?.redirectFamily) notice = c.redirectedCopy;
+    return active;
   }
-  async function refresh() {
-    data = await snapshot(family);
-    if (sharedSelected) {
-      const status = await familySyncStatus(family);
-      removedInfo = status.removal;
-      privateCopy = status.privateCopy || '';
-      backupGap = status.knownIncomplete || !!status.removal?.knownGap;
-      backupCursor = status.cursor;
-      syncStage = removedInfo ? (privateCopy ? c.removedCopied : c.removedArchive) :
-        status.pending || status.queued ? c.savedPending :
-        status.knownIncomplete ? c.syncMore : c.syncReady;
-    } else { removedInfo = null; privateCopy = ''; backupGap = false; backupCursor = 0; }
-    child = data.children.find((row) => row.id === child)?.id || data.children[0]?.id || '';
-    breastDraft = readDraft(family, child);
-  }
-  async function poll() {
-    if (polling) return;
-    polling = true;
-    try {
-      if (pendingFragment) {
-        joinStage = c.joining;
-        const progress = await continueInvitation(pendingFragment);
-        joinStage = c[progress.stage] || c.joining;
-        if (progress.stage === 'ready') {
-          pendingFragment = '';
-          familyRows = await families();
-          family = progress.family;
-          localStorage.setItem('babytrack-family', family);
-          await refresh();
-          tab = 'today';
-          joinStage = '';
-        }
-      }
-      if (family && familyRows.find((row) => row.family === family)?.source === 'shared') {
-        const progress = await syncFamily(family);
-        if (progress.removed && progress.privateCopy) familyRows = await families();
-        await refresh();
-        if (progress.removed) {
-          screen = '';
-          syncStage = progress.privateCopy ? c.removedCopied : c.removedArchive;
-        } else {
-          const status = await familySyncStatus(family);
-          syncStage = status.pending || status.queued ? c.savedPending :
-            status.knownIncomplete ? c.syncMore : c.syncReady;
-        }
-      }
-    } catch (cause) {
-      if (pendingFragment) joinStage = `${c.joinPending} · ${message(cause)}`;
-      else {
-        const status = family && sharedSelected ? await familySyncStatus(family).catch(() => null) : null;
-        syncStage = status?.pending || status?.queued ? c.savedPending : c.syncFailed;
-      }
-    } finally { polling = false; }
-  }
+  const poll = () => tracker.poll();
   async function startJoin() {
     await run(async () => {
-      pendingFragment = await rememberInvitation(invitationInput);
+      const value = invitationInput;
       invitationInput = '';
-      await approveInvitation(pendingFragment);
-      joinStage = c.joining;
-      await poll();
+      await tracker.startJoin(value);
     });
   }
-  async function confirmJoin() {
-    await run(async () => {
-      await approveInvitation(pendingFragment);
-      joinStage = c.joining;
-      await poll();
-    });
-  }
-  async function dismissJoin() {
-    await run(async () => {
-      await dismissInvitation(pendingFragment);
-      pendingFragment = '';
-      joinStage = '';
-    });
-  }
+  const confirmJoin = () => run(() => tracker.confirmJoin());
+  const dismissJoin = () => run(() => tracker.dismissJoin());
   async function makeFamily() {
-    await run(async () => {
-      family = await createFamily();
-      localStorage.setItem('babytrack-family', family);
-      familyRows = await families();
-      await refresh();
-      screen = 'child';
-    });
+    await run(async () => { if (await tracker.makeFamily()) screen = 'child'; });
   }
   async function selectFamily(value) {
-    await run(async () => {
-      family = value;
-      localStorage.setItem('babytrack-family', family);
-      await refresh();
-      tab = 'today';
-    });
+    screen = ''; editTarget = null;
+    await run(async () => { await tracker.selectFamily(value); tab = 'today'; });
   }
-  async function makeRemovedCopy() {
-    await run(async () => {
-      const copy = await copyRemovedFamily(family);
-      familyRows = await families();
-      privateCopy = copy;
-      syncStage = c.removedCopied;
-    });
-  }
+  const makeRemovedCopy = () => run(() => tracker.makeRemovedCopy());
   async function openPrivateCopy() {
     if (privateCopy) await selectFamily(privateCopy);
   }
   async function downloadBackup() {
     await run(async () => {
-      const readable = await exportFamily(family);
+      const targetFamily = family;
+      const readable = await api.exportFamily(targetFamily);
       const url = URL.createObjectURL(new Blob([readable], { type: 'application/x-ndjson' }));
       const link = document.createElement('a');
       link.href = url;
-      link.download = `babytrack-${family.slice(0, 8)}.jsonl`;
+      link.download = `babytrack-${targetFamily.slice(0, 8)}.jsonl`;
       document.body.append(link);
       link.click();
       link.remove();
@@ -207,33 +98,31 @@
   async function restoreBackup(file) {
     if (!file) return;
     await run(async () => {
-      family = await restoreFamily(file);
-      localStorage.setItem('babytrack-family', family);
-      familyRows = await families();
-      await refresh();
-      screen = ''; tab = 'today';
+      if (await tracker.restoreBackup(file)) { screen = ''; tab = 'today'; }
     });
   }
   function selectChild(value) {
-    child = value;
-    breastDraft = readDraft(family, child);
-    screen = '';
+    actionSequence++;
+    tracker.selectChild(value);
+    screen = ''; editTarget = null;
   }
   async function saveChild() {
     await run(async () => {
-      const outcome = await addChild(family, childName, birthDate, sex);
-      await afterSave(outcome);
-      child = data.children.at(-1)?.id || child;
+      const target = tracker.target();
+      const outcome = await api.addChild(target.family, childName, birthDate, sex);
+      if (!await afterSave(outcome, target)) return;
+      tracker.selectChild($tracker.data.children.at(-1)?.id || $tracker.child);
       childName = ''; birthDate = ''; sex = '';
       screen = '';
     });
   }
   async function saveActivity() {
     await run(async () => {
-      const outcome = await logActivity(family, child, activityType, {
+      const target = tracker.target();
+      const outcome = await api.logActivity(target.family, target.child, activityType, {
         kind: diaperKind, ml: bottleMl, content: bottleContent, note: noteText,
       });
-      await afterSave(outcome);
+      if (!await afterSave(outcome, target)) return;
       bottleMl = ''; noteText = '';
       screen = '';
       tab = 'today';
@@ -260,13 +149,14 @@
   async function saveBreast() {
     error = '';
     notice = '';
-    const targetFamily = family;
-    const targetChild = child;
+    const target = tracker.target();
+    const targetFamily = target.family;
+    const targetChild = target.child;
     try {
       const segments = completedSegments(breastDraft);
-      const outcome = await logBreastFeed(targetFamily, targetChild, segments);
+      const outcome = await api.logBreastFeed(targetFamily, targetChild, segments);
       persistDraft(targetFamily, targetChild, null);
-      await afterSave(outcome);
+      if (!await afterSave(outcome, target)) return;
       screen = '';
       tab = 'today';
     } catch (cause) { error = timerError(cause); }
@@ -278,7 +168,7 @@
     screen = '';
   }
   function beginBreastEdit(row) {
-    editTarget = { family, child, id: row.id, segments: row.breastSegments };
+    editTarget = { ...tracker.target(), id: row.id, segments: row.breastSegments };
     editRows = editableSegments(row.breastSegments);
     screen = 'breast-edit';
     error = '';
@@ -290,9 +180,10 @@
     error = '';
     notice = '';
     try {
-      const segments = rebuiltSegments(editTarget.segments, editRows);
-      const outcome = await editBreastFeed(editTarget.family, editTarget.child, editTarget.id, segments);
-      await afterSave(outcome);
+      const target = editTarget;
+      const segments = rebuiltSegments(target.segments, editRows);
+      const outcome = await api.editBreastFeed(target.family, target.child, target.id, segments);
+      if (!await afterSave(outcome, target)) return;
       editTarget = null;
       screen = '';
       tab = 'history';

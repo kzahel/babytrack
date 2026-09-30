@@ -19,7 +19,7 @@ Owning topics: [web](../topics/web-client.md),
 
 ## Ordered delivery slices
 
-1. [ ] Extract web selection/loading/join/poll coordination, publish coherent
+1. [x] Extract web selection/loading/join/poll coordination, publish coherent
    snapshots, reject stale async results, and regress delayed Family switching.
 2. [ ] Centralize Android local/shared action dispatch without moving event
    semantics into Kotlin or changing the route's coroutine/draft lifetime.
@@ -30,7 +30,7 @@ Owning topics: [web](../topics/web-client.md),
 5. [ ] Move remaining pure event construction and day summaries out of the
    native-only API, retaining ID/clock adapters and compatibility reexports.
 6. [ ] Separate SQLite schema, journal, outbox/history, enrollment, and copy
-   persistence into modules while preserving whole transaction ownership.
+  persistence into modules while preserving whole transaction ownership.
 7. [ ] Run final affected cross-platform checks and reconcile documentation.
 
 ## Gates and completion
@@ -54,3 +54,12 @@ gates remain with their milestone owners. Local runs do not imply remote CI.
   web selection used across awaits, unbounded ADB subprocesses, a monolithic
   browser smoke, interleaved wasm exports, remaining portable behavior in
   native `local_api`, and multiple SQLite responsibilities in one source file.
+
+- Slice 1: the web controller owns selection/loading, joins, polling, and
+  removal/restore coordination; rendering and drafts remain in the component.
+  Selection generations, refresh ordering, and disposal guard publications.
+  Save completion retains its target and private-copy child selection.
+  Six focused async regressions pass, along with local and real-relay shared
+  web UI flows (joins, rotation, removal, offline edits, export/restore/reload).
+  The build runner includes the controller regressions. Boundary and diff
+  checks pass; no protocol, authority, or IndexedDB contract changes.

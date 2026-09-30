@@ -9,6 +9,14 @@ The [MVP plan](../mvp-plan.md#milestones) owns milestone scope and the
 
 ## Current direction
 
+`tracker-controller.js` owns selection, coherent loaded snapshots, invitation
+progress, and polling. `App.svelte` owns rendering, navigation, and form drafts.
+Async publications carry a selection generation and captured Family; newer
+refreshes supersede earlier ones and route disposal prevents publication.
+Durable writes keep their original target, and their later completion cannot
+redirect a different selection. Fragment removal follows durable remembering;
+verification and storage remain in the core adapters.
+
 The web app follows the Android Today, History, Family, and focused capture
 routes. Narrow screens use bottom navigation; tablet and desktop widths use a
 side rail and a wider content column. Child, Family, local/shared, and pending

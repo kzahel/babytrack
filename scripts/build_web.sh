@@ -8,4 +8,5 @@ wasm-bindgen --target web --out-dir apps/web/src/generated \
   target/wasm32-unknown-unknown/release/babytrack_core_wasm.wasm
 cd apps/web
 npm ci --silent
+npm test
 npm run build

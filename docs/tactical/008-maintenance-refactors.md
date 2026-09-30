@@ -1,6 +1,6 @@
 # 008: Shared model and implementation cleanup
 
-Status: active, 2026-09-30. The user requested all six maintenance items
+Status: complete, 2026-09-30. The user requested all six maintenance items
 from the source review, delivered autonomously with a commit per slice.
 [005](005-m1-android.md) and [006](006-m2-web.md) retain product delivery
 gates; this workstream owns refactor progress and validation evidence.
@@ -43,7 +43,7 @@ Owning decisions: [event model](../topics/event-model.md),
 6. [x] Resolve Android API 26 compatibility for generated binding cleanup
    and navigation-bar resources. Run lint without a NewApi suppression or
    baseline and add that check to the Android CI gate.
-7. [ ] Run the affected cross-platform integration and boundary checks,
+7. [x] Run the affected cross-platform integration and boundary checks,
    reconcile owning documentation, and record the final completion evidence.
 
 ## Validation and completion
@@ -146,3 +146,26 @@ existing owners.
   day/night resources. All six Android unit tests, both debug APKs, and
   `lintDebug` pass with no NewApi suppression or baseline. CI now runs lint;
   the generator script/configuration are tracked Gradle inputs.
+
+- Slice 7, final verification: all 128 workspace tests, workspace
+  and wasm builds, rustfmt, workspace/wasm/production-relay Clippy, dependency
+  policy, fixture API exclusion, Kotlin/Swift and wasm byte smokes pass.
+  Browser IndexedDB/encrypted exchange, local web UI, and shared web UI pass.
+  Android's clean-install invitation case and all 28 real-relay cases pass
+  with the final bindings. Readable/protected recovery, damaged-file and
+  wrong-password rejection, fresh-install restore, and restart pass. The
+  final gallery renders 31 cases/124 variants/214 viewport images; every
+  image link resolves and a large-text growth render was inspected. Native
+  navigation capture passes; its dark 1.5× Family render was inspected.
+  Actionlint, Python compilation, shell syntax, and workspace/diff checks pass.
+  Harness entry points now handle `--help` without launching a scenario.
+  The complete caregiver walkthrough passes at 1.5× text in a 320×640 dp
+  viewport. Its growth correction now scrolls to the named editable field
+  instead of using fixed swipes; the obsolete fixed-dialog helper is removed.
+  The separate two-emulator flow passes admission, bidirectional encrypted
+  edits, offline writes, removal/rotation, relay restart, private-copy recovery,
+  and later rotated-epoch admission. Its plaintext relay-storage checks pass.
+  All locally started test browsers, relays, and read-only emulators are reaped.
+  Every requested maintenance item is complete with local evidence; no remote
+  CI run, physical-phone validation, web-origin sharing, or release gate is
+  claimed by this workstream.

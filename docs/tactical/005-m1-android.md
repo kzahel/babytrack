@@ -551,14 +551,16 @@ rendering from capture/correction actions and provides synthetic dark/light
 and large-text renders without an emulator. Its CI artifact is an offline
 scrolling HTML gallery; visual regression baselines remain a later step.
 This infrastructure does not close the physical-phone, TalkBack, or keyboard
-validation gates above. Its evidence also records the existing five API-level
-lint errors for a separate compatibility follow-up.
+validation gates above. [008](008-maintenance-refactors.md#evidence) resolves
+the five API-level lint errors recorded during 007 and adds the compatibility
+check to CI, including an API 26 generated-cleanup regression.
 
 ## CI and review handoff
 
-The Android CI job builds APKs. Its emulator job runs the full real-relay
-instrumentation suite, a short command-driven UI path through common local
-logging/edit/delete/restart, and the document-picker recovery flow across
+The Android CI job runs unit tests and lint and builds APKs. Its emulator job
+runs the full real-relay instrumentation suite, a short command-driven UI
+path through common local logging/edit/delete/restart, and document-picker
+recovery across
 fresh installations on pushes and PRs. The complete headed UI walkthrough
 runs daily and on manual workflow dispatch; both modes use the same script
 and emulator guard. This keeps broad UI coverage without making every

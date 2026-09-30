@@ -91,8 +91,9 @@ Implementation and validation results will be recorded with each slice.
   errors: three in generated UniFFI `java.lang.ref.Cleaner` calls (API 33),
   and two in unchanged light/night `windowLightNavigationBar` resources
   (API 27), against minSdk 26. This work changes neither those resources nor
-  the binding generator. These are separate compatibility follow-ups; lint
-  is not currently part of the required CI job.
+  the binding generator. These were separate compatibility follow-ups; lint
+  was not part of that CI job. [008 slice 6](008-maintenance-refactors.md#evidence)
+  subsequently resolved all five errors and added `lintDebug` to CI.
 
 - Existing UI harness issue: the latest pre-refactor CI run
   [36619014402](https://github.com/kzahel/babytrack/actions/runs/36619014402)
@@ -139,7 +140,8 @@ Local verification also passed:
 
 Every locally started test browser, relay, and read-only emulator was reaped.
 No physical-phone, TalkBack, keyboard/inset, or RTL gate is closed by this
-workstream. The existing lint compatibility errors remain as recorded above.
+workstream. The later compatibility fix and lint gate are recorded in
+[008](008-maintenance-refactors.md#evidence).
 
 Local macOS and CI Linux renders have identical pixels in 194 of 214 images;
 the remaining disabled-label anti-aliasing differs by at most one color-channel

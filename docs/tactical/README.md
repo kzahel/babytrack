@@ -34,6 +34,7 @@ tactical with its current status.
   a verified CI artifact. The hosted first-install join regression and its
   correction are recorded in 007.
 - [008: Shared model and implementation cleanup](008-maintenance-refactors.md)
-  — active; shared event builders/read models, Android coordination, native
-  bindings, relay storage, harness/documentation cleanup, and minimum-API
+  — complete with local validation; shared event builders/read models,
+  Android coordination, native bindings, relay storage, harness/documentation
+  cleanup, and minimum-API
   compatibility, with a validated commit per slice.

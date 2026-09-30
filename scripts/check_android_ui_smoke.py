@@ -8,7 +8,7 @@ import re
 
 from android_ui import (
     APK, PACKAGE, adb, dismiss_keyboard, find, nodes, open_capture,
-    open_entry_actions, open_family, open_history, scroll_dialog_down,
+    open_entry_actions, open_family, open_history,
     scroll_up, serial, tap, tap_tab,
 )
 
@@ -210,8 +210,7 @@ def main(quick: bool = False) -> None:
     tap(target, "Save changes", scroll=True)
     find(target, "Growth · 4.3 kg · 54 cm · head 35 cm", scroll=True)
     tap(target, "Edit growth", scroll=True)
-    scroll_dialog_down(target)
-    tap(target, "35")
+    tap(target, "Head circumference", scroll=True, actionable=True)
     adb(target, "shell", "input", "keyevent", "123")
     for _ in range(2):
         adb(target, "shell", "input", "keyevent", "67")

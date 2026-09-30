@@ -62,10 +62,11 @@ headed emulator check creates a Family and child, logs and deletes a diaper
 through the UI, and verifies both states after restart. CI runs this after
 relay instrumentation.
 
-The active maintenance workstream is
+The completed maintenance workstream is
 [008](008-maintenance-refactors.md): shared event semantics, Android
 coordination, bindings, relay storage, harness/documentation hygiene, and
-minimum-API compatibility. It preserves the existing milestone gates.
+minimum-API compatibility, with local cross-platform and emulator evidence.
+It preserves the existing milestone gates.
 
 ## Ordered delivery handoffs
 

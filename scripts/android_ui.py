@@ -119,16 +119,6 @@ def scroll_up(target: str, times: int = 4) -> None:
             str(height * 3 // 10), str(width // 2), str(height * 4 // 5), "300")
 
 
-def scroll_dialog_down(target: str, times: int = 2) -> None:
-    sizes = re.findall(r"(\d+)x(\d+)", adb(target, "shell", "wm", "size"))
-    if not sizes:
-        raise RuntimeError("Android display size unavailable")
-    width, height = map(int, sizes[-1])
-    for _ in range(times):
-        adb(target, "shell", "input", "swipe", str(width // 2),
-            str(height * 62 // 100), str(width // 2), str(height * 38 // 100), "350")
-
-
 def dismiss_keyboard(target: str) -> None:
     if "mInputShown=true" in adb(target, "shell", "dumpsys", "input_method"):
         adb(target, "shell", "input", "keyevent", "4")
@@ -182,5 +172,4 @@ def open_entry_actions(target: str, entry_label: str) -> None:
         adb(target, "shell", "input", "swipe", str(width // 2), str(height * 7 // 10),
             str(width // 2), str(height * 5 // 10), "300")
     raise AssertionError(f"No details action found for {entry_label!r}")
-
 

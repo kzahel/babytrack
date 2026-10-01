@@ -178,9 +178,11 @@ feed started on one parent's phone shows as running on the other's watch.
 Breastfeeding side switches and pauses are segments inside the one event.
 Two devices both running a timer for the same activity produce two events;
 the UI offers to merge them rather than guessing.
-This is the intended shared-timer behavior. The current web breastfeeding
-timer keeps an unsaved local draft until Save; live cross-device breast-timer
-sync and timer merging remain unimplemented.
+This is the intended shared-timer behavior. The current web and Android
+breastfeeding timers keep an unsaved, device-local draft until Save; live
+cross-device breast-timer sync and timer merging remain unimplemented. A
+running pumping stopwatch on Android is likewise a local draft that fills
+the completed interval at Save.
 
 ## Units
 

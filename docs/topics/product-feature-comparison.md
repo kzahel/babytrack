@@ -2,7 +2,10 @@
 
 Status: research synthesis and proposed priorities, September 30, 2026.
 The Android welcome and first-child form are implemented in the working
-build; remaining priorities and Today refinements are proposals.
+build. Priorities 1–3's presentation work (Today, capture, live nursing and
+pumping timers, History day view) is being delivered in
+[010](../tactical/010-android-design-pass.md); reports and later priorities
+remain proposals.
 This topic owns the competitor comparison and its prioritization rationale.
 Recommendations here are proposals, not changes to the agreed MVP or delivery
 order. The [MVP plan](../mvp-plan.md#milestones) owns committed scope;

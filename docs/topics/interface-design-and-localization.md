@@ -1,6 +1,8 @@
 # Interface design and localization
 
-Status: M1 direction, with the Android color foundation implemented. This
+Status: M1 direction, with the Android color foundation implemented and the
+activity identity and screen templates below being delivered in
+[010](../tactical/010-android-design-pass.md). This
 topic owns the visual language and localization rules for product screens.
 The [Android navigation topic](android-navigation.md) owns routes and screen
 behavior; [005](../tactical/005-m1-android.md) owns delivery evidence. The
@@ -35,8 +37,32 @@ than literal colors in individual screens.
 
 The Material surface-container roles use neutral green-gray tones, so cards,
 chips, and bottom navigation do not fall back to the library's default
-purple and pink colors. A future violet care accent can be a category token
-when those illustrations exist; it is not a global selection color.
+purple and pink colors.
+
+### Activity identity
+
+Each activity group has one category token pair: an accent and a tonal
+container, in light and dark. Feeds (bottle, breast, pumping, solids) use a
+warm apricot, sleep a dusk blue, diapers a sage green, health records
+(growth, temperature, medication) a muted violet, and notes a neutral sand.
+The accent colors an icon inside a small rounded container; a home tile may
+use the tonal container as its surface. Do not flood whole screens or Save
+buttons with category color: Save, Start, and Stop keep the primary role so
+the main action looks the same everywhere. Category colors are not
+selection, success, or error colors.
+
+Icons come from the Apache-2.0 AndroidX Material Icons library (outlined
+style). Every activity shows its icon with its text label; screen readers
+read the label, so the icon is decorative. The 2026-10-01 research review
+found both reference apps use per-activity color and iconography to make
+the home screen scannable; Babytrack keeps that idea with quieter tonal
+surfaces and no illustration or mascot artwork.
+
+Time is shown in the most useful compact form: a clock time for today
+("1:35 PM"), "Yesterday" plus time, then a short date without the current
+year. Glanceable state on Today uses elapsed time ("25 min ago"). Running
+timers show a live elapsed clock. All of these derive from an explicit
+current instant supplied to the screen, so fixtures stay deterministic.
 
 Primary text on primary, ink on surface, and container foregrounds were
 chosen at or above 4.5:1 contrast. Future activity colors require the same
@@ -70,18 +96,33 @@ that obscures whether a write or sync is complete.
   at larger text sizes. Saving disables edits and Back until the local write
   resolves. The owning route and recovery
   behavior are in [Android navigation](android-navigation.md).
-- **Today:** selected target and sync status first; running timer; a small
-  number of large, labeled quick actions; compact summary and recent
-  entries. Keep the strongest accent for the primary action.
-- **Capture:** activity name and target at top; time and fields in a simple
-  column; one prominent Save near the bottom. Show validation beside its
-  field. A failed Save leaves input intact.
-- **History:** readable day headings and compact event rows. Accent plus
-  text/icon identifies type; time, amount, and status have separate
-  typographic emphasis. Edits open focused detail.
-- **Family:** quieter utility layout with clearly separated children,
-  access, pending enrollment, data files, and settings. Pending and removed
-  states use specific words and actions rather than a generic badge.
+- **Today:** the selected child's name and age first, with sharing/sync
+  status as a quiet chip that becomes an explicit warning only when work is
+  delayed or blocked. Three state tiles — Feed, Sleep, Diaper — show the
+  last event's elapsed time and detail; the sleep tile becomes a live
+  elapsed clock with Stop while a timer runs. A short row of secondary
+  actions (quick wet diaper, all activities) follows. An empty day shows one
+  short prompt instead of zero totals. Recent entries use the shared entry
+  row and link to History.
+- **Capture:** one template for every activity: the activity icon and name
+  with the child in the top bar, a tappable time row ("Now" or the chosen
+  time), the fields in a simple column, and one full-width Save in a bottom
+  bar that stays above the keyboard. Choices use single-row groups or large
+  icon tiles, not wrapped chip grids. Show validation beside its field. A
+  failed Save leaves input intact. The activity chooser is a grouped icon
+  grid (Feeding, Sleep and diapers, Health, Notes).
+- **Timers:** a running timer shows a large elapsed clock. Nursing has two
+  large side buttons, each with its own elapsed time, plus Pause and a
+  last-side hint; manual minute entry remains available.
+- **History:** a Day view (default) with a week strip, the day's summary from
+  the core, and compact entry rows; an All view keeps the day-grouped list.
+  Filters are one scrolling chip row. Each row shows icon, title, detail,
+  and time; tapping it reveals that entry's actions.
+- **Family:** a settings-style list. A child card (avatar, name, age, edit)
+  comes first; rows with an icon, title, and one line of supporting text
+  open children, sharing and access, data and backups, and Family options.
+  Pending and removed states use specific words and actions rather than a
+  generic badge. Developer relay setup stays under Family options.
 - **Child profile:** use a full-height form for create and edit, a simple
   initial avatar, and one reachable Save action. Show name, a locale-formatted
   birth date picker, growth-chart sex, and age derived from the local birth

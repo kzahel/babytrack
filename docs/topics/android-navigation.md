@@ -93,23 +93,35 @@ flowchart TD
    pending enrollment and a restore preview take precedence over the welcome.
    Cancelling the initial file picker returns to the welcome. A pending
    attempt can resume in the background without reopening its screen.
-2. **Today.** Put the current target and running sleep state above the fold.
-   Keep quick actions limited to the highest-frequency events, with an
-   obvious Add activity action for the rest. Show recent entries from the
-   same projection as History. A running timer remains visible here and in
-   the existing notification/widget; the screen does not maintain a second
-   timer or alter its saved target.
-3. **Capture.** Open a dedicated form or sheet for each supported activity.
-   Show Family, child, activity type, and event time before Save. Preserve a
+2. **Today.** Put the current child and running sleep state above the fold.
+   Feed, Sleep, and Diaper tiles show each group's last event from the same
+   projection as History and open its capture form; the Sleep tile starts or
+   stops the timer directly. Keep further quick actions limited to the
+   highest-frequency events, with an obvious Add activity action for the
+   rest. A running timer remains visible here and in the existing
+   notification/widget; the screen's elapsed clock reads the saved start and
+   does not maintain a second timer or alter its saved target.
+3. **Capture.** Open a dedicated form for each supported activity.
+   Show child, activity type, and event time before Save; the Family is named
+   in the top bar only when more than one Family is available. Preserve a
    draft after a failed save, clear it after success, and return to the
    caller. Switching target closes or explicitly discards a target-bound
    draft, as the current app does. Existing correction and deletion actions
-   stay on the same record through Rust.
-4. **History.** Start with the existing day-grouped, filtered list. Entry
-   detail handles edit/delete and the existing short Undo. A simple date
-   selector is enough for M1; week grids, charts, and averages can follow
-   only if daily use shows a need. Preserve unknown-event placeholders.
-5. **Family.** Put device access and join progress beside backup, restore,
+   stay on the same record through Rust. A live nursing timer is an unsaved,
+   target-scoped UI draft kept in private app preferences across process
+   death, like the web timer in the [event model](event-model.md#timers);
+   Save writes one segment list through the existing Rust action and clears
+   the draft only after the write succeeds. Android rounds each timed side to
+   whole minutes (at least one) so the saved entry remains correctable with
+   the minute-based correction form; pauses are kept as gaps.
+4. **History.** Default to a Day view: a week strip and date picker select
+   the day, the core's day summary for that day appears above its entries,
+   and an All view keeps the day-grouped list. Entry rows reveal
+   edit/delete actions and the existing short Undo. Charts and averages
+   remain outside this scope until the reports decision in the
+   [comparison topic](product-feature-comparison.md#proposed-priority-order).
+   Preserve unknown-event placeholders.
+5. **Family.** Present a settings-style list. Put device access and join progress beside backup, restore,
    analysis export, and child management. Show current local/shared status
    in plain language. Keep any developer relay configuration visibly
    separate from caregiver actions. In the debug preview, Share this Family

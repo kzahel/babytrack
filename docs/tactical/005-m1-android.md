@@ -372,7 +372,9 @@ physical-phone or remote CI result is claimed by this slice.
   remaining count/duration grammar, expanded pseudolocale copy, and
   accessible status labels. Per-app pseudo-locale `ar-XB` alone did not
   mirror the UI; a restarted system locale did, and the main routes were
-  inspected in that mode.
+  inspected in that mode. The activity identity, screen templates, and live
+  nursing timer are delivered by [010](010-android-design-pass.md); this
+  item stays open for the grammar, pseudolocale, and status-label work.
 - [x] Create and switch local Families, add/select children, log bottle and
   diaper, and inspect a persisted timeline through the shared Rust core on
   an emulator. The UI smoke runs after restart in CI.

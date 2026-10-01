@@ -44,12 +44,11 @@ def main() -> None:
             adb(target, "shell", "rm", f"/storage/emulated/0/Download/{name}")
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
 
-    tap(target, "New Family")
-    tap(target, "Add child", scroll=True)
-    tap(target, "Child’s name", scroll=True)
+    tap(target, "Add your child")
+    tap(target, "Name or nickname", scroll=True)
     adb(target, "shell", "input", "text", "RecoveryChild")
     dismiss_keyboard(target)
-    tap(target, "Add child", scroll=True)
+    tap(target, "Start tracking", scroll=True)
     find(target, "Family 1 · RecoveryChild")
     tap(target, "Add activity", scroll=True, actionable=True)
     tap(target, "Add note", scroll=True, actionable=True)
@@ -89,7 +88,7 @@ def main() -> None:
     find(target, "Changes since that save are not in that file.", scroll=True)
 
     reinstall(target)
-    find(target, "New Family")
+    find(target, "Add your child")
     stage("Recovery: open saved file")
     tap(target, "Restore backup")
     tap(target, CORRUPT_FILENAME)
@@ -139,7 +138,7 @@ def main() -> None:
         raise AssertionError(f"Protected backup was unexpectedly short: {protected_size} bytes")
 
     reinstall(target)
-    find(target, "New Family")
+    find(target, "Add your child")
     stage("Recovery: open saved file")
     tap(target, "Restore backup")
     tap(target, PROTECTED_FILENAME)

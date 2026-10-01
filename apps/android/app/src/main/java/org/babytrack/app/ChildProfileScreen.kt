@@ -2,6 +2,7 @@ package org.babytrack.app
 
 import android.app.DatePickerDialog
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -110,12 +112,11 @@ internal fun ChildProfileScreen(
     onSexChange: (UByte) -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit,
+    onboarding: Boolean = false,
+    errorMessage: String? = null,
 ) {
     val context = LocalContext.current
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
+    val content: @Composable () -> Unit = {
         ChildProfileContent(
             ChildProfileUiState(
                 editing,
@@ -125,6 +126,8 @@ internal fun ChildProfileScreen(
                 saving,
                 canClearBirthDate,
                 childAgeLabel(context, birthDate),
+                onboarding,
+                errorMessage,
             ),
             ChildProfileActions(
                 onNameChange,
@@ -136,6 +139,15 @@ internal fun ChildProfileScreen(
             ),
         )
     }
+    if (onboarding) {
+        BackHandler { if (!saving) onDismiss() }
+        content()
+    } else {
+        Dialog(
+            onDismissRequest = onDismiss,
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) { content() }
+    }
 }
 
 internal data class ChildProfileUiState(
@@ -146,6 +158,8 @@ internal data class ChildProfileUiState(
     val saving: Boolean,
     val canClearBirthDate: Boolean,
     val ageLabel: String,
+    val onboarding: Boolean = false,
+    val errorMessage: String? = null,
 )
 
 internal data class ChildProfileActions(
@@ -185,13 +199,14 @@ internal fun ChildProfileContent(
                     title = {
                         Text(
                             stringResource(
-                                if (editing) R.string.edit_child_profile
+                                if (state.onboarding) R.string.onboarding_add_child
+                                else if (editing) R.string.edit_child_profile
                                 else R.string.create_child_profile
                             )
                         )
                     },
                     navigationIcon = {
-                        IconButton(onClick = onDismiss) {
+                        IconButton(onClick = onDismiss, enabled = !saving) {
                             Icon(
                                 painterResource(R.drawable.ic_back),
                                 contentDescription = stringResource(R.string.back),
@@ -201,7 +216,7 @@ internal fun ChildProfileContent(
                 )
             },
             bottomBar = {
-                Surface(Modifier.navigationBarsPadding(), shadowElevation = 8.dp) {
+                Surface(Modifier.navigationBarsPadding().imePadding(), shadowElevation = 8.dp) {
                     Column {
                         Button(
                             onClick = onSave,
@@ -210,11 +225,14 @@ internal fun ChildProfileContent(
                         ) {
                             Text(
                                 stringResource(
-                                    if (editing) R.string.save_changes else R.string.add_child
+                                    if (state.onboarding && saving) R.string.onboarding_saving
+                                    else if (state.onboarding) R.string.onboarding_start
+                                    else if (editing) R.string.save_changes
+                                    else R.string.add_child
                                 )
                             )
                         }
-                        Spacer(Modifier.height(40.dp))
+                        if (!state.onboarding) Spacer(Modifier.height(40.dp))
                     }
                 }
             },
@@ -234,23 +252,39 @@ internal fun ChildProfileContent(
                             .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
+                    if (state.onboarding && name.isBlank()) {
+                        Icon(
+                            painterResource(R.drawable.ic_child),
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    } else {
+                        Text(
+                            name.trim().firstOrNull()?.uppercase() ?: "?",
+                            style = MaterialTheme.typography.headlineLarge,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                }
+                if (!state.onboarding) {
                     Text(
-                        name.trim().firstOrNull()?.uppercase() ?: "?",
-                        style = MaterialTheme.typography.headlineLarge,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ageLabel,
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Text(
-                    ageLabel,
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 HorizontalDivider()
                 OutlinedTextField(
                     value = name,
                     onValueChange = { onNameChange(it.take(16 * 1024)) },
-                    label = { Text(stringResource(R.string.child_name)) },
+                    label = {
+                        Text(stringResource(
+                            if (state.onboarding) R.string.onboarding_name else R.string.child_name
+                        ))
+                    },
+                    enabled = !saving,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -258,34 +292,38 @@ internal fun ChildProfileContent(
                     Text(stringResource(R.string.birth_date), fontWeight = FontWeight.SemiBold)
                     OutlinedButton(
                         onClick = onChooseBirthDate,
+                        enabled = !saving,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     ) {
                         Text(birthDateLabel(context, birthDate))
                     }
                     if (birthDate.isNotBlank() && canClearBirthDate)
-                        TextButton(onClick = { onBirthDateChange("") }) {
+                        TextButton(onClick = { onBirthDateChange("") }, enabled = !saving) {
                             Text(stringResource(R.string.clear_birth_date))
                         }
                 }
-                HorizontalDivider()
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        stringResource(R.string.growth_chart_sex),
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    listOf(
-                            1u.toUByte() to R.string.sex_female,
-                            2u.toUByte() to R.string.sex_male,
-                            3u.toUByte() to R.string.sex_unspecified,
+                state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (!state.onboarding) {
+                    HorizontalDivider()
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            stringResource(R.string.growth_chart_sex),
+                            fontWeight = FontWeight.SemiBold,
                         )
-                        .forEach { (code, label) ->
-                            FilterChip(
-                                selected = sex == code,
-                                onClick = { onSexChange(code) },
-                                label = { Text(stringResource(label)) },
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        listOf(
+                                1u.toUByte() to R.string.sex_female,
+                                2u.toUByte() to R.string.sex_male,
+                                3u.toUByte() to R.string.sex_unspecified,
                             )
-                        }
+                            .forEach { (code, label) ->
+                                FilterChip(
+                                    selected = sex == code,
+                                    onClick = { onSexChange(code) },
+                                    label = { Text(stringResource(label)) },
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                                )
+                            }
+                    }
                 }
             }
         }

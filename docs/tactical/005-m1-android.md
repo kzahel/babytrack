@@ -555,6 +555,68 @@ validation gates above. [008](008-maintenance-refactors.md#evidence) resolves
 the five API-level lint errors recorded during 007 and adds the compatibility
 check to CI, including an API 26 generated-cleanup regression.
 
+## Child-first onboarding
+
+Accepted and implemented on 2026-09-30 following the
+[competitor synthesis](../topics/product-feature-comparison.md). The
+[Android navigation topic](../topics/android-navigation.md#screen-behavior)
+owns route behavior and the
+[interface topic](../topics/interface-design-and-localization.md#screen-composition)
+owns presentation. This slice changes Android first use, not the web preview
+or the shared data model.
+
+- [x] Replace the initial Family-creation step with a privacy-focused welcome,
+  a primary **Add your child** action, and directly reachable Join/Restore.
+- [x] Require only a name or nickname in the first child form. Keep birthday
+  optional, defer growth-chart sex to normal profile
+  editing, and keep **Start tracking** above the keyboard.
+- [x] Retain the private UI draft through Back and reopening. Write no Family
+  before submission; use Rust to create the Family and child. Reuse a staged
+  or sole empty local Family after interrupted setup rather than duplicate it.
+  Recover an already completed child write if the process ended before the
+  draft was cleared. Errors retain the entered details.
+- [x] Keep incoming invitations and saved pending enrollment ahead of the
+  welcome; retain file preview/password/confirmation behavior, and return
+  to the welcome when its initial file picker is cancelled.
+- [x] Add welcome, blank/filled profile, saving, and retry fixtures to the
+  existing renderer. Generated screenshots and catalogs remain gitignored.
+- [ ] Validate this first-use slice on a physical phone with TalkBack and
+  one-handed use. This does not close the existing M1 physical-device gate.
+
+Copy refinement on 2026-09-30 removes the welcome eyebrow, intro and benefit
+card, redundant name guidance, and birthday helper text. Field labels and
+actions carry the first-use screens; the optional privacy explanation uses
+a short title and factual copy.
+
+Local evidence, working tree based on `104008f`:
+
+- Android unit tests (including durable draft and partial-write retry), lint,
+  debug APK and instrumentation APK builds pass offline.
+- The short UI path passes on a disposable read-only emulator at 320 × 640
+  dp with 1.5× text: privacy explanation, Back without a staged Family,
+  retained nickname after force-stop, first diaper,
+  edit/delete, and restart.
+- The clean-install invitation-first test and full 28-case real-relay
+  instrumentation suite pass. A first rerun caught the loading branch hiding
+  the prefilled join form; the corrected branch lets incoming invitations
+  render independently of local target loading and leaves load errors visible.
+- The final offline check passes in airplane mode: nickname-only setup,
+  first diaper, and restart retain the same Family and record. The keyboard
+  geometry check confirms the entire save button ends at y=341 while the
+  keyboard starts at y=357 on the 320 × 640 dp emulator. First setup now uses
+  a normal full-screen page with resize/inset handling rather than a separate
+  dialog; the earlier dialog overlapped the keyboard despite footer padding.
+  Join cancellation and initial file-picker cancellation return to the welcome.
+  The large-text privacy panel scrolls through the complete explanation and
+  dismisses to the welcome.
+- Document-picker recovery passes from fresh installations for readable and
+  password-protected files, including damaged-file and wrong-password denial.
+- The full fixture gallery renders 35 cases / 140 variants. The focused compact
+  onboarding gallery renders 5 cases / 20 variants at 360 × 800 dp. Both have
+  dark/light and normal/1.5× text; their offline catalog tests pass at desktop
+  and mobile widths. The ADB helper now swipes within the actual scrollable
+  content so fixed footers cannot consume its search gesture.
+
 ## CI and review handoff
 
 The Android CI job runs unit tests and lint and builds APKs. Its emulator job

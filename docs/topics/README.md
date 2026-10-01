@@ -11,6 +11,9 @@ over a concern from the plan, the plan keeps a short summary and links here.
 
 ## Active topics
 
+- [Product feature comparison](product-feature-comparison.md) — read when
+  prioritizing caregiver features or first-use improvements against the
+  observed Nara and Huckleberry flows; proposals here do not change MVP scope.
 - [Family sharing and trust](family-sharing-and-trust.md) — read before
   changing user-visible sharing, access-change conflicts, private copies,
   recovery promises, or trust boundaries; pair it with relevant scenarios.

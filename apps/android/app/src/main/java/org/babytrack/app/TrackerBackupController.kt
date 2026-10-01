@@ -55,6 +55,7 @@ internal fun trackerBackupActions(
     availableMemory: () -> Long,
     recordSave: (BackupFileRow) -> Boolean,
     onRestored: (FamilyRef) -> Unit,
+    onRestoreCancelled: () -> Unit = {},
 ): TrackerBackupActions {
     val context = LocalContext.current
     val errorText = stringResource(R.string.error)
@@ -113,7 +114,8 @@ internal fun trackerBackupActions(
                 }
             val restoreLauncher =
                 rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-                    if (uri != null)
+                    if (uri == null) onRestoreCancelled()
+                    else
                         scope.launch {
                             pendingRestore = null
                             restoreInfo = null

@@ -278,18 +278,16 @@ internal object ScreenFixtures {
                 "History · entry actions",
                 history = history().copy(expandedEntryKey = typicalEntries.first().id.key()),
             ),
-            ScreenFixture(
-                "family-first-run",
-                "Family · first run",
-                family =
-                    family()
-                        .copy(
-                            family = null,
-                            child = null,
-                            families = emptyList(),
-                            children = emptyList(),
-                        ),
-            ),
+            ScreenFixture("onboarding-welcome", "Onboarding · welcome", welcome = true),
+            ScreenFixture("onboarding-profile", "Onboarding · child profile",
+                profile = ChildProfileUiState(false, "", "", 3u, false, true, "", onboarding = true)),
+            ScreenFixture("onboarding-ready", "Onboarding · ready to track",
+                profile = ChildProfileUiState(false, "Rowan", "", 3u, false, true, "", onboarding = true)),
+            ScreenFixture("onboarding-saving", "Onboarding · setting up",
+                profile = ChildProfileUiState(false, "Rowan", "2026-06-29", 3u, true, true, "", onboarding = true)),
+            ScreenFixture("onboarding-retry", "Onboarding · retry after interrupted setup",
+                profile = ChildProfileUiState(false, "Rowan", "", 3u, false, true, "", onboarding = true,
+                    errorMessage = "Couldn’t finish setup. Your details are saved here. Please try again.")),
             ScreenFixture("family-local", "Family · local", family = family()),
             ScreenFixture(
                 "family-options",
@@ -383,6 +381,7 @@ internal data class ScreenFixture(
     val family: FamilyUiState? = null,
     val capture: CaptureUiState? = null,
     val profile: ChildProfileUiState? = null,
+    val welcome: Boolean = false,
 ) {
     val route: TrackerDestination
         get() =
@@ -396,6 +395,10 @@ internal data class ScreenFixture(
 
 @Composable
 internal fun FixtureScreen(fixture: ScreenFixture, scrollState: ScrollState) {
+    if (fixture.welcome) {
+        OnboardingWelcomeScreen(scrollState = scrollState)
+        return
+    }
     fixture.profile?.let {
         ChildProfileContent(it, ChildProfileActions(), scrollState)
         return

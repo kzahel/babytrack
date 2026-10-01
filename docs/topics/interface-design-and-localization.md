@@ -58,6 +58,18 @@ that obscures whether a write or sync is complete.
 
 ### Screen composition
 
+- **Welcome and first child:** an accountless/privacy headline and a fixed
+  bottom **Add your child** action. Omit marketing subtitles, benefit cards,
+  and instructions that repeat the controls.
+  Join and Restore remain directly reachable. Content scrolls independently
+  of the footer at smaller sizes and larger text. The first child form uses
+  a name or nickname, a birth date labeled optional, and a
+  fixed **Start tracking** button that moves above the keyboard. Other
+  profile details are deferred to the normal editor. Failed setup retains
+  input and shows a retry explanation on the form; the privacy panel scrolls
+  at larger text sizes. Saving disables edits and Back until the local write
+  resolves. The owning route and recovery
+  behavior are in [Android navigation](android-navigation.md).
 - **Today:** selected target and sync status first; running timer; a small
   number of large, labeled quick actions; compact summary and recent
   entries. Keep the strongest accent for the primary action.

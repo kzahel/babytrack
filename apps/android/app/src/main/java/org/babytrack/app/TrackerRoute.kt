@@ -86,6 +86,10 @@ internal fun TrackerRoute(
                 with(sharingState) {
                     with(backupState) {
                         val context = LocalContext.current
+                        val onboarding = remember {
+                            OnboardingDraft(context.getSharedPreferences("onboarding_draft", Context.MODE_PRIVATE))
+                        }
+                        var firstRunTask by rememberSaveable { mutableStateOf("welcome") }
                         val activity = context as ComponentActivity
                         var foreground by remember {
                             mutableStateOf(
@@ -486,6 +490,13 @@ internal fun TrackerRoute(
                             children
                                 .find { it.id.key() == selectedChild }
                                 ?.takeIf { loadedFamilyKey == selectedFamily }
+                        // Recover a completed native write if the process ended before the UI cleared its draft.
+                        LaunchedEffect(child?.id?.key(), loadedFamilyKey, onboarding.saving) {
+                            if (child != null && loadedFamilyKey == selectedFamily && !onboarding.saving &&
+                                (families.size == 1 || onboarding.stagedFamilyKey == selectedFamily)) {
+                                onboarding.clear()
+                            }
+                        }
                         val activeShared = isShared && loadedFamilyKey == selectedFamily
                         val completed =
                             remember(selectedFamily, saveStatusVersion) { family?.let(lastSave) }
@@ -585,11 +596,48 @@ internal fun TrackerRoute(
                                 availableMemory,
                                 recordSave,
                                 { restored ->
+                                    onboarding.clear()
+                                    firstRunTask = "welcome"
+                                    destination = TrackerDestination.TODAY
                                     selectedFamily = restored.familyId.key()
                                     selectedChild = null
                                 },
+                                onRestoreCancelled = { firstRunTask = "welcome" },
                             )
-                        TrackerScaffold(
+                        val needsLocalSetup = screenData != null && loadedFamilyKey == selectedFamily &&
+                            (families.isEmpty() ||
+                                (family != null && activeFamilyIsLocal && children.isEmpty() &&
+                                    loadedFamilyKey == selectedFamily &&
+                                    (families.size == 1 || onboarding.stagedFamilyKey == selectedFamily)))
+                        val canShowWelcome = needsLocalSetup && !joinFirst &&
+                            incomingInvitation == null && recipientFamilies.isEmpty() &&
+                            pendingRestore == null && restoreInfo == null &&
+                            !showJoinForm && firstRunTask == "welcome"
+                        BackHandler(enabled = needsLocalSetup && !onboarding.open &&
+                            firstRunTask != "welcome" && incomingInvitation == null &&
+                            recipientFamilies.isEmpty()) {
+                            firstRunTask = "welcome"
+                            showJoinForm = false
+                            pendingRestore = null
+                            restoreInfo = null
+                            restorePassword = ""
+                        }
+                        if (canShowWelcome) {
+                            if (!onboarding.open) OnboardingWelcomeScreen(
+                                onAddChild = { onboarding.updateOpen(true) },
+                                onJoin = {
+                                    firstRunTask = "join"
+                                    showJoinForm = true
+                                },
+                                onRestore = {
+                                    firstRunTask = "restore"
+                                    backupActions.onRestoreBackup()
+                                },
+                            )
+                        } else if (!joinFirst && message == null &&
+                            (screenData == null || (family == null && selectedFamily != null))) {
+                            Text(stringResource(R.string.loading))
+                        } else TrackerScaffold(
                             state =
                                 TrackerChromeState(
                                     route,
@@ -636,7 +684,7 @@ internal fun TrackerRoute(
                                             inviteAsManager = inviteAsManager,
                                             inviteInProgress = inviteInProgress,
                                             invitationFragment = invitationFragment,
-                                            joinFirst = joinFirst,
+                                            joinFirst = joinFirst || (needsLocalSetup && firstRunTask == "join"),
                                             showJoinForm = showJoinForm,
                                             recipientFamilies = recipientFamilies,
                                             readyRecipientKeys = readyRecipientKeys,
@@ -1318,6 +1366,76 @@ internal fun TrackerRoute(
                             }
 
                             message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        }
+                        if (canShowWelcome && onboarding.open) {
+                            ChildProfileScreen(
+                                editing = false,
+                                name = onboarding.name,
+                                birthDate = onboarding.birthDate,
+                                sex = 3u,
+                                saving = onboarding.saving,
+                                canClearBirthDate = true,
+                                onboarding = true,
+                                errorMessage = onboarding.error,
+                                onNameChange = onboarding::updateName,
+                                onBirthDateChange = onboarding::updateBirthDate,
+                                onSexChange = {},
+                                onDismiss = { if (!onboarding.saving) onboarding.updateOpen(false) },
+                                onSave = save@{
+                                    if (onboarding.saving) return@save
+                                    val name = onboarding.name.trim()
+                                    if (name.isEmpty()) return@save
+                                    if (name.toByteArray(Charsets.UTF_8).size > 16 * 1024) {
+                                        onboarding.error = context.getString(R.string.onboarding_name_too_long)
+                                        return@save
+                                    }
+                                    val birthDay = runCatching {
+                                        onboarding.birthDate.takeIf { it.isNotBlank() }
+                                            ?.let { LocalDate.parse(it).toEpochDay() }
+                                    }.getOrElse {
+                                        onboarding.error = context.getString(R.string.birth_date_invalid)
+                                        return@save
+                                    }
+                                    onboarding.saving = true
+                                    onboarding.error = null
+                                    scope.launch {
+                                        runCatching {
+                                            withContext(Dispatchers.IO) {
+                                                val localFamilies = store.families()
+                                                val staged = localFamilies.find {
+                                                    it.familyId.key() == onboarding.stagedFamilyKey
+                                                } ?: localFamilies.singleOrNull()?.takeIf {
+                                                    store.children(it).isEmpty()
+                                                }
+                                                // A process interruption after the child write must not add it twice.
+                                                val existingChild = staged?.let { store.children(it).firstOrNull() }
+                                                if (staged != null && existingChild != null) staged to existingChild.id
+                                                else finishLocalOnboarding(
+                                                    existingFamily = staged,
+                                                    createFamily = { store.createFamily(System.currentTimeMillis()) },
+                                                    rememberFamily = onboarding::rememberFamily,
+                                                    addChild = {
+                                                        store.addChildWithMetadata(it, name, birthDay, 3u,
+                                                            System.currentTimeMillis())
+                                                    },
+                                                )
+                                            }
+                                        }.onSuccess { (createdFamily, createdChild) ->
+                                            selectedFamily = createdFamily.familyId.key()
+                                            selectedChild = createdChild.key()
+                                            destination = TrackerDestination.TODAY
+                                            onboarding.clear()
+                                            message = null
+                                            version++
+                                        }.onFailure {
+                                            if (it is kotlinx.coroutines.CancellationException) throw it
+                                            onboarding.error = context.getString(R.string.onboarding_save_error)
+                                            version++
+                                        }
+                                        onboarding.saving = false
+                                    }
+                                },
+                            )
                         }
                         if (showAddChildForm && family != null)
                             ChildProfileScreen(

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import time
 
 from android_ui import (
     APK, PACKAGE, adb, dismiss_keyboard, find, nodes, open_capture,
@@ -23,19 +24,30 @@ def main(quick: bool = False) -> None:
     adb(target, "shell", "pm", "clear", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     find(target, "Join a Family")
-    tap(target, "New Family")
-    tap(target, "Family options")
-    # The preview sharing card can push developer controls below the fold on
-    # shorter viewports or larger text. Check the control through scrolling.
-    find(target, "Sharing controls", scroll=True)
-    tap(target, "Hide Family options", scroll=True)
-    tap(target, "Add child", scroll=True)
-    tap(target, "Child’s name", scroll=True)
+    tap(target, "Privacy", scroll=True)
+    find(target, "Privacy")
+    tap(target, "Got it")
+    tap(target, "Add your child")
+    tap(target, "Name or nickname", scroll=True)
     adb(target, "shell", "input", "text", "UITestChild")
     dismiss_keyboard(target)
-    tap(target, "Add child", scroll=True)
+    # Leaving setup preserves the draft but must not create an empty Family.
+    adb(target, "shell", "input", "keyevent", "4")
+    find(target, "Add your child")
+    tap(target, "Add your child")
+    find(target, "UITestChild")
+    adb(target, "shell", "am", "force-stop", PACKAGE)
+    adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    find(target, "UITestChild")
+    tap(target, "Name or nickname", scroll=True)
+    # Let the IME finish opening so the tap exercises the visible save footer.
+    time.sleep(1)
+    tap(target, "Start tracking", scroll=True, actionable=True)
     find(target, "Family 1 · UITestChild")
     tap(target, "Family", actionable=True)
+    tap(target, "Family options")
+    find(target, "Sharing controls", scroll=True)
+    tap(target, "Hide Family options", scroll=True)
     tap(target, "Child options", scroll=True)
     find(target, "Edit child profile", scroll=True)
     find(target, "Add another child", scroll=True)

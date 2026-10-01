@@ -51,7 +51,7 @@ def build_gallery(output: Path) -> None:
                 "cases": [record for variants in cases.values() for record in variants.values()]}
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     groups = [{"id": key, "label": label} for key, label in [
-        ("today", "Today"), ("history", "History"), ("family", "Family"),
+        ("onboarding", "Onboarding"), ("today", "Today"), ("history", "History"), ("family", "Family"),
         ("capture", "Capture"), ("child", "Child profile"), ("other", "Other"),
     ]]
     states = [{"id": key, "label": label} for key, label in [
@@ -61,6 +61,8 @@ def build_gallery(output: Path) -> None:
         ("edge", "Layout edge cases"),
     ]]
     overrides = {
+        "onboarding-welcome": "empty", "onboarding-profile": "empty",
+        "onboarding-retry": "attention", "onboarding-saving": "pending",
         "today-empty": "empty", "history-empty": "empty", "family-first-run": "empty",
         "capture-bottle-empty": "empty", "today-sync-pending": "pending",
         "family-join-pending": "pending", "family-shared-pending": "pending",

@@ -379,4 +379,16 @@
     <string name="sleep_widget_one">1 sleep timer running</string>
     <string name="sleep_widget_many">%1$d sleep timers running</string>
     <string name="sleep_widget_open">Open Babytrack to view sleep timers</string>
+    <string name="onboarding_title">Private baby tracking.\nNo account required.</string>
+    <string name="onboarding_add_child">Add your child</string>
+    <string name="onboarding_name">Name or nickname</string>
+    <string name="onboarding_start">Start tracking</string>
+    <string name="onboarding_saving">Setting up…</string>
+    <string name="onboarding_privacy_link">Privacy</string>
+    <string name="onboarding_privacy_title">Privacy</string>
+    <string name="onboarding_privacy_body">Tracking is stored on this device and works offline.\n\nIf you share, invited caregivers can read shared records; our service cannot.\n\nAnyone with an unprotected backup can read it.</string>
+    <string name="onboarding_got_it">Got it</string>
+    <string name="onboarding_name_too_long">Please use a shorter name or nickname.</string>
+    <string name="onboarding_save_error">Couldn’t finish setup. Your details are saved here. Please try again.</string>
+    <string name="loading">Loading…</string>
 </resources>

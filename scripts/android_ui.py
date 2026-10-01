@@ -131,11 +131,20 @@ def find(target: str, label: str, *, scroll: bool = False, occurrence: int = 0,
             return matches[occurrence]
         if scroll and scroll_count < 50:
             down = scroll_count < 25
-            adb(
-                target, "shell", "input", "swipe", str(width // 2),
-                str(height * 7 // 10 if down else height * 4 // 10), str(width // 2),
-                str(height * 4 // 10 if down else height * 7 // 10), "360",
-            )
+            # Focus the gesture on the scrollable content, not a pinned footer.
+            areas = [node for node in root.iter("node")
+                     if node.attrib.get("scrollable") == "true"]
+            bounds = [list(map(int, re.findall(r"\d+", node.attrib["bounds"])))
+                      for node in areas]
+            if bounds:
+                x1, y1, x2, y2 = max(bounds, key=lambda box: (box[2] - box[0]) * (box[3] - box[1]))
+                x = (x1 + x2) // 2
+                low, high = y1 + (y2 - y1) * 4 // 5, y1 + (y2 - y1) // 4
+            else:
+                x, low, high = width // 2, height * 7 // 10, height * 4 // 10
+            adb(target, "shell", "input", "swipe", str(x),
+                str(low if down else high), str(x),
+                str(high if down else low), "360")
             time.sleep(0.25)
             scroll_count += 1
         else:

@@ -53,10 +53,11 @@ day/filter/scroll state preserved.
 
 ```mermaid
 flowchart TD
-  Start[First run] --> Create[Create local Family and child]
+  Start[Private, accountless welcome] --> Create[Name or nickname; optional birthday]
+  Create --> Save[Start tracking: create local Family and child]
   Start --> Join[Join from link]
   Start --> Restore[Restore file]
-  Create --> Today
+  Save --> Today
   Restore --> Today
   Join --> Pending[Join progress]
   Pending -->|Verified grant and history| Today
@@ -75,11 +76,23 @@ flowchart TD
 
 ## Screen behavior
 
-1. **First run.** Show Create Family, Join Family, and Restore file. No
-   account or relay is needed to create and log locally. A link opens Join
+1. **First run.** Show a private, accountless welcome with **Add your child**
+   as the primary action, plus **Join a Family** and **Restore backup**.
+   One child form requires only a name or nickname; birth date is optional
+   without additional form instructions. Growth-chart sex stays in the regular
+   profile editor. **Start tracking** creates the local Family and child through the
+   Rust core, then opens Today. No account, relay, permission prompt, or
+   tracking-preference checklist is needed. A quiet privacy explanation
+   describes device storage, optional sharing, and backup access without
+   claiming that shared or exported records have no readers.
+   The private app preferences retain the UI draft across reopening. Back
+   before saving creates no Family; failed or interrupted setup reuses its
+   staged local Family, preserving input and avoiding duplicate creation.
+   The draft is not canonical child storage. A link opens Join directly
    with its link filled in and an explicit Start or retry action. A saved
-   pending attempt shows its verified stage and can resume in the
-   background; it does not force the caregiver to reopen the screen.
+   pending enrollment and a restore preview take precedence over the welcome.
+   Cancelling the initial file picker returns to the welcome. A pending
+   attempt can resume in the background without reopening its screen.
 2. **Today.** Put the current target and running sleep state above the fold.
    Keep quick actions limited to the highest-frequency events, with an
    obvious Add activity action for the rest. Show recent entries from the
@@ -102,7 +115,7 @@ flowchart TD
    separate from caregiver actions. In the debug preview, Share this Family
    uses the pinned disposable relay directly; manual relay setup remains
    under Family options, and invitation handoff lives in Family access.
-6. **Child profile.** Create and edit use the same focused screen with name,
+6. **Child profile.** After first use, create and edit use the same focused screen with name,
    birth date, growth-chart sex, derived age, and one Save action. The age
    appears with the selected child on Today and Family. A missing birth date
    is labeled unknown. Editing keeps the same child ID and activities; it

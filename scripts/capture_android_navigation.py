@@ -67,7 +67,7 @@ def main() -> None:
             adb(target, "shell", "input", "keyevent", "4")
             tap_tab(target, "Today")
             tap(target, "Add activity", scroll=True, actionable=True)
-            find(target, "Log completed sleep", scroll=True)
+            find(target, "Temperature", scroll=True)
             capture(target, f"{theme}-{scale}-capture")
     finally:
         adb(target, "shell", "settings", "put", "system", "font_scale", original_scale)

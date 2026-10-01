@@ -17,8 +17,11 @@ import uniffi.babytrack_core_ffi.FamilyRef
 import uniffi.babytrack_core_ffi.MedicationInput
 import uniffi.babytrack_core_ffi.PumpInput
 
+internal data class CaptureModel(val state: CaptureUiState, val actions: CaptureActions)
+
+/** Binds the capture draft to its screen state and Rust-backed save actions. */
 @Composable
-internal fun androidx.compose.foundation.layout.ColumnScope.CaptureRoute(
+internal fun captureModel(
     draft: CaptureDraftState,
     captureKind: CaptureKind?,
     family: FamilyRef,
@@ -32,9 +35,11 @@ internal fun androidx.compose.foundation.layout.ColumnScope.CaptureRoute(
     onSelectKind: (CaptureKind) -> Unit,
     finishCapture: () -> Unit,
     requestTimerNotification: () -> Unit,
-) {
+    lastBottle: Pair<String, UByte>?,
+    nowMs: Long,
+): CaptureModel {
     val context = LocalContext.current
-    with(draft) {
+    return with(draft) {
         fun change(onSaved: (() -> Unit)? = null, action: () -> Unit) =
             performChange(onSaved, action)
         fun logCompleted(onSaved: (() -> Unit)? = null, action: (ActivityWhen) -> Unit) {
@@ -51,7 +56,7 @@ internal fun androidx.compose.foundation.layout.ColumnScope.CaptureRoute(
             }
         }
         with(feedback) {
-            CaptureScreen(
+            CaptureModel(
                 state =
                     CaptureUiState(
                         childName = child.name,
@@ -83,6 +88,9 @@ internal fun androidx.compose.foundation.layout.ColumnScope.CaptureRoute(
                         doseAmount = doseAmount,
                         doseUnit = doseUnit,
                         noteText = noteText,
+                        diaperKind = diaperKind,
+                        lastBottle = lastBottle,
+                        nowMs = nowMs,
                     ),
                 actions =
                     CaptureActions(
@@ -130,14 +138,19 @@ internal fun androidx.compose.foundation.layout.ColumnScope.CaptureRoute(
                                     .show()
                             },
                         onResetLogTime = action@{ logAtMs = null },
+                        onDiaperKindChange = action@{ kind -> diaperKind = kind },
                         onLogDiaper = action@{ kind ->
-                                logCompleted { at ->
+                                logCompleted(onSaved = { if (diaperKind == kind) diaperKind = null }) { at ->
                                     actions
                                         .forTarget(activeShared)
                                         .logDiaper(family, child.id, kind, at)
                                 }
                             },
                         onBottleContentChange = action@{ content -> bottleContent = content },
+                        onRepeatBottle = action@{ entered, unit ->
+                                bottleUnit = unit
+                                amount = localizedEntered(context, entered)
+                            },
                         onBottleUnitChange = action@{ unit ->
                                 if (bottleUnit != unit) {
                                     bottleUnit = unit

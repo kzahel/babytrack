@@ -354,6 +354,7 @@ internal fun TrackerRoute(
                             pendingSleepPlaceEdit = null
                             pendingTemperatureEdit = null
                             logAtMs = null
+                            diaperKind = null
                             timelineFilter = TimelineFilter.ALL
                             selectedHistoryDay = null
                         }
@@ -556,7 +557,9 @@ internal fun TrackerRoute(
                         val familyNumber =
                             families.indexOfFirst { it.familyId.key() == selectedFamily } + 1
                         val title =
-                            if (child != null && familyNumber > 0) {
+                            if (child != null && route == TrackerDestination.CAPTURE) {
+                                stringResource(captureKind?.label ?: R.string.add_activity)
+                            } else if (child != null && familyNumber > 0) {
                                 child.name
                             } else
                                 stringResource(
@@ -637,7 +640,51 @@ internal fun TrackerRoute(
                         } else if (!joinFirst && message == null &&
                             (screenData == null || (family == null && selectedFamily != null))) {
                             Text(stringResource(R.string.loading))
-                        } else TrackerScaffold(
+                        } else {
+                        val capture =
+                            if (family != null && child != null && route == TrackerDestination.CAPTURE)
+                                    captureModel(
+                                        draft = captureDraft,
+                                        captureKind = captureKind,
+                                        family = family,
+                                        child = child,
+                                        activeShared = activeShared,
+                                        actions = trackingActions,
+                                        scope = scope,
+                                        feedback = feedback,
+                                        errorText = errorText,
+                                        performChange = { onSaved, action ->
+                                            change(onSaved, action)
+                                        },
+                                        onSelectKind = { kind ->
+                                            captureKind = kind
+                                            scope.launch { captureScrollState.scrollTo(0) }
+                                        },
+                                        finishCapture = ::finishCapture,
+                                        requestTimerNotification = {
+                                            if (
+                                                Build.VERSION.SDK_INT >= 33 &&
+                                                    context.checkSelfPermission(
+                                                        Manifest.permission.POST_NOTIFICATIONS
+                                                    ) != PackageManager.PERMISSION_GRANTED
+                                            )
+                                                notificationPermission.launch(
+                                                    Manifest.permission.POST_NOTIFICATIONS
+                                                )
+                                        },
+                                        lastBottle =
+                                            entries
+                                                .filter {
+                                                    it.kind == "feed.bottle" &&
+                                                        it.bottleEntered != null &&
+                                                        it.bottleUnit != null
+                                                }
+                                                .maxByOrNull { it.startUtcMs }
+                                                ?.let { it.bottleEntered!! to it.bottleUnit!! },
+                                        nowMs = System.currentTimeMillis(),
+                                    )
+                            else null
+                        TrackerScaffold(
                             state =
                                 TrackerChromeState(
                                     route,
@@ -645,8 +692,14 @@ internal fun TrackerRoute(
                                     child != null,
                                     family != null && child != null,
                                     subtitle =
-                                        if (child != null && familyNumber > 0 && families.size > 1)
+                                        if (child != null && route == TrackerDestination.CAPTURE)
+                                            stringResource(R.string.capture_for_child, child.name)
+                                        else if (child != null && familyNumber > 0 && families.size > 1)
                                             stringResource(R.string.family_number, familyNumber)
+                                        else null,
+                                    titleKind =
+                                        if (route == TrackerDestination.CAPTURE)
+                                            captureKind?.activityKind
                                         else null,
                                 ),
                             scrollState = scrollState,
@@ -657,6 +710,10 @@ internal fun TrackerRoute(
                                 captureKind = null
                             },
                             onSwitchTarget = { showTargetPicker = true },
+                            bottomAction =
+                                capture
+                                    ?.takeIf { it.state.captureKind != null }
+                                    ?.let { model -> { CaptureSaveActions(model.state, model.actions) } },
                         ) {
                             if (route == TrackerDestination.FAMILY) {
                                 FamilyScreen(
@@ -1054,38 +1111,7 @@ internal fun TrackerRoute(
                                             ),
                                     )
                                 }
-                                if (child != null && route == TrackerDestination.CAPTURE) {
-                                    CaptureRoute(
-                                        draft = captureDraft,
-                                        captureKind = captureKind,
-                                        family = family,
-                                        child = child,
-                                        activeShared = activeShared,
-                                        actions = trackingActions,
-                                        scope = scope,
-                                        feedback = feedback,
-                                        errorText = errorText,
-                                        performChange = { onSaved, action ->
-                                            change(onSaved, action)
-                                        },
-                                        onSelectKind = { kind ->
-                                            captureKind = kind
-                                            scope.launch { captureScrollState.scrollTo(0) }
-                                        },
-                                        finishCapture = ::finishCapture,
-                                        requestTimerNotification = {
-                                            if (
-                                                Build.VERSION.SDK_INT >= 33 &&
-                                                    context.checkSelfPermission(
-                                                        Manifest.permission.POST_NOTIFICATIONS
-                                                    ) != PackageManager.PERMISSION_GRANTED
-                                            )
-                                                notificationPermission.launch(
-                                                    Manifest.permission.POST_NOTIFICATIONS
-                                                )
-                                        },
-                                    )
-                                }
+                                capture?.let { CaptureScreen(it.state, it.actions) }
                                 if (child != null && route == TrackerDestination.HISTORY) {
                                     HistoryScreen(
                                         state =
@@ -1380,6 +1406,7 @@ internal fun TrackerRoute(
                             }
 
                             message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        }
                         }
                         if (canShowWelcome && onboarding.open) {
                             ChildProfileScreen(

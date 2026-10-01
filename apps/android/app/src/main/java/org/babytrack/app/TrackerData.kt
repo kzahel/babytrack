@@ -61,16 +61,16 @@ internal enum class TrackerDestination {
 }
 
 internal enum class CaptureKind(val label: Int) {
-    DIAPER(R.string.log_diaper),
-    BOTTLE(R.string.log_bottle),
-    BREAST(R.string.log_breast),
-    PUMP(R.string.log_pump),
-    SOLIDS(R.string.log_solids),
-    SLEEP(R.string.log_sleep),
-    GROWTH(R.string.log_growth),
-    TEMPERATURE(R.string.log_temperature),
-    MEDICATION(R.string.log_medication),
-    NOTE(R.string.log_note),
+    DIAPER(R.string.event_diaper),
+    BOTTLE(R.string.event_bottle),
+    BREAST(R.string.event_breast),
+    PUMP(R.string.event_pump),
+    SOLIDS(R.string.event_solids),
+    SLEEP(R.string.event_sleep),
+    GROWTH(R.string.event_growth),
+    TEMPERATURE(R.string.event_temperature),
+    MEDICATION(R.string.event_medication),
+    NOTE(R.string.event_note),
 }
 
 internal fun activityLabel(kind: String): Int =

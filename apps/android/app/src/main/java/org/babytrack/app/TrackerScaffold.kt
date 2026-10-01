@@ -11,6 +11,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.verticalScroll
@@ -44,6 +46,8 @@ internal data class TrackerChromeState(
     val canNavigate: Boolean,
     /** Shown under the child's name only when it distinguishes a Family. */
     val subtitle: String? = null,
+    /** The open capture form's activity kind, for its badge. */
+    val titleKind: String? = null,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,6 +59,7 @@ internal fun TrackerScaffold(
     onNavigate: (TrackerDestination) -> Unit = {},
     onBack: () -> Unit = {},
     onSwitchTarget: () -> Unit = {},
+    bottomAction: (@Composable RowScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     with(state) {
@@ -101,7 +106,25 @@ internal fun TrackerScaffold(
                                     contentDescription = null,
                                 )
                             }
-                        } else Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        } else
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                titleKind?.let { ActivityBadge(it, size = 36.dp) }
+                                Column {
+                                    Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    subtitle?.let {
+                                        Text(
+                                            it,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = MaterialTheme.typography.labelMedium,
+                                        )
+                                    }
+                                }
+                            }
                     },
                     colors =
                         TopAppBarDefaults.topAppBarColors(
@@ -111,7 +134,9 @@ internal fun TrackerScaffold(
             },
             containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
-                if (canNavigate && route != TrackerDestination.CAPTURE) {
+                if (route == TrackerDestination.CAPTURE && bottomAction != null) {
+                    BottomActionBar(bottomAction)
+                } else if (canNavigate && route != TrackerDestination.CAPTURE) {
                     NavigationBar {
                         listOf(
                                 Triple(

@@ -119,6 +119,7 @@ internal object ScreenFixtures {
             doseAmount = "",
             doseUnit = "",
             noteText = "",
+            nowMs = nowMs,
         )
 
     fun today() =
@@ -229,6 +230,8 @@ internal object ScreenFixtures {
                 medicationName = "Example only",
                 doseAmount = "1",
                 doseUnit = "unit",
+                diaperKind = 3u,
+                lastBottle = "120" to 1u.toUByte(),
             )
     val cases: List<ScreenFixture> =
         listOf(
@@ -405,8 +408,27 @@ internal fun FixtureScreen(fixture: ScreenFixture, scrollState: ScrollState) {
         return
     }
     val hasChild = fixture.family?.child != null || fixture.route != TrackerDestination.FAMILY
-    val title = if (hasChild) ScreenFixtures.child.name else stringResource(R.string.nav_family)
-    TrackerScaffold(TrackerChromeState(fixture.route, title, hasChild, hasChild), scrollState) {
+    val capture = fixture.capture
+    val title =
+        when {
+            capture != null -> stringResource(capture.captureKind?.label ?: R.string.add_activity)
+            hasChild -> ScreenFixtures.child.name
+            else -> stringResource(R.string.nav_family)
+        }
+    TrackerScaffold(
+        TrackerChromeState(
+            fixture.route,
+            title,
+            hasChild,
+            hasChild,
+            subtitle =
+                capture?.let { stringResource(R.string.capture_for_child, it.childName) },
+            titleKind = capture?.captureKind?.activityKind,
+        ),
+        scrollState,
+        bottomAction =
+            capture?.takeIf { it.captureKind != null }?.let { { CaptureSaveActions(it, CaptureActions()) } },
+    ) {
         fixture.today?.let { TodayScreen(it, TodayActions()) }
         fixture.history?.let { HistoryScreen(it, HistoryActions()) }
         fixture.family?.let { FamilyScreen(it, FamilyActions()) }

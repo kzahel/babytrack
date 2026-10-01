@@ -116,13 +116,11 @@
     <string name="sleep_place_car">Car</string>
     <string name="sleep_place_other">Other place</string>
     <string name="sleep_place_entry">Place: %1$s</string>
-    <string name="log_bottle">Log bottle</string>
     <string name="bottle_breast_milk">Breast milk</string>
     <string name="bottle_formula">Formula</string>
     <string name="bottle_mixed">Mixed</string>
     <string name="bottle_other">Other</string>
     <string name="bottle_with_entered">Bottle · %1$s %2$s · %3$s</string>
-    <string name="log_breast">Log breast feed</string>
     <string name="breast_left">Left</string>
     <string name="breast_right">Right</string>
     <string name="breast_minutes">Minutes on selected side</string>
@@ -133,7 +131,6 @@
     <string name="breast_segments_draft">Segments: %1$s</string>
     <string name="add_breast_segment">Add segment</string>
     <string name="remove_last_segment">Remove last segment</string>
-    <string name="log_pump">Log pumping</string>
     <string name="pump_minutes">Minutes pumping</string>
     <string name="pump_left_ml">Left (mL)</string>
     <string name="pump_right_ml">Right (mL)</string>
@@ -146,24 +143,17 @@
     <string name="view_timeline">View timeline</string>
     <string name="jump_to_bottle">Bottle</string>
     <string name="jump_to_sleep">Sleep</string>
-    <string name="log_time_title">When it happened</string>
-    <string name="log_time_now">New entries use the current time.</string>
-    <string name="log_time_selected">Next completed entry: %1$s</string>
-    <string name="log_time_choose">Log earlier</string>
-    <string name="log_time_reset">Use current time</string>
     <string name="log_time_future">Choose a time that has already passed.</string>
     <string name="edit_entry_time">Edit time</string>
     <string name="choose_entry_time">Choose date and time</string>
     <string name="move_completed_session">Move session</string>
     <string name="session_end_time">Ends %1$s</string>
     <string name="pump_edit_hint">Enter separate left/right amounts or one total. Clear the other fields when switching.</string>
-    <string name="log_solids">Log solids</string>
     <string name="solids_foods">Foods (one per line)</string>
     <string name="solids_amount">Amount eaten (optional)</string>
     <string name="save_solids">Save solids</string>
     <string name="solids_entry">Solids · %1$s</string>
     <string name="solids_entry_amount">Solids · %1$s · %2$s</string>
-    <string name="log_sleep">Log completed sleep</string>
     <string name="start_sleep">Start sleep timer</string>
     <string name="stop_sleep">Stop sleep</string>
     <string name="sleep_running">Sleep · running</string>
@@ -174,7 +164,6 @@
     <string name="sleep_minutes">Minutes slept</string>
     <string name="save_sleep">Save sleep</string>
     <string name="sleep_duration">Sleep · %1$d min</string>
-    <string name="log_note">Add note</string>
     <string name="note_text">What happened?</string>
     <string name="save_note">Save note</string>
     <string name="edit_note">Edit note</string>
@@ -192,7 +181,6 @@
     <string name="growth_edit_hint">Leave a measurement blank to keep its saved value. Delete the entry to remove it.</string>
     <string name="note_entry">Note · %1$s</string>
     <string name="activity_note">Note: %1$s</string>
-    <string name="log_growth">Log growth</string>
     <string name="weight_g">Weight (g)</string>
     <string name="length_mm">Length (mm)</string>
     <string name="head_mm">Head circumference (mm)</string>
@@ -215,14 +203,12 @@
     <string name="growth_both">Growth · %1$d g · %2$d mm</string>
     <string name="growth_weight">Growth · %1$d g</string>
     <string name="growth_length">Growth · %1$d mm</string>
-    <string name="log_temperature">Log temperature</string>
     <string name="temperature_c">Temperature (°C)</string>
     <string name="temperature_f">Temperature (°F)</string>
     <string name="unit_celsius">°C</string>
     <string name="unit_fahrenheit">°F</string>
     <string name="save_temperature">Save temperature</string>
     <string name="temperature_entry">Temperature · %1$s %2$s</string>
-    <string name="log_medication">Log medication</string>
     <string name="medication_name">Medication name</string>
     <string name="dose_amount">Dose amount</string>
     <string name="dose_unit">Dose unit</string>
@@ -426,4 +412,22 @@
     <!-- %1$s is a duration such as "1 h 20 min". -->
     <string name="today_sleep_total">%1$s of sleep</string>
     <string name="today_empty">Nothing logged today yet.</string>
+    <!-- Capture template -->
+    <string name="capture_group_feeding">Feeding</string>
+    <string name="capture_group_sleep_diapers">Sleep and diapers</string>
+    <string name="capture_group_health">Health</string>
+    <string name="capture_group_notes">Notes</string>
+    <string name="log_time_now_short">Now</string>
+    <string name="log_time_change">Change time</string>
+    <string name="log_time_use_now">Use now</string>
+    <string name="save_diaper">Save diaper</string>
+    <string name="save_bottle">Save bottle</string>
+    <string name="bottle_content_title">In the bottle</string>
+    <string name="bottle_unit_title">Unit</string>
+    <string name="bottle_less">Less</string>
+    <string name="bottle_more">More</string>
+    <!-- %1$s is an amount, %2$s its unit. -->
+    <string name="bottle_repeat">Same as last: %1$s %2$s</string>
+    <string name="breast_side_title">Side</string>
+    <string name="pump_amount_title">Amount</string>
 </resources>

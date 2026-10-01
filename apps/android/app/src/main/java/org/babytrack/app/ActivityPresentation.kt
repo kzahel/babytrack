@@ -1,13 +1,10 @@
 package org.babytrack.app
 
 import android.content.Context
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import java.text.DecimalFormatSymbols
 import java.time.LocalDate
 import uniffi.babytrack_core_ffi.ChildRow
@@ -108,18 +105,12 @@ internal fun GrowthUnitChoices(
     selected: UByte,
     onSelect: (UByte) -> Unit,
 ) {
-    Text(stringResource(title))
-    units.chunked(2).forEach { row ->
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            row.forEach { (unit, label) ->
-                FilterChip(
-                    selected = selected == unit,
-                    onClick = { onSelect(unit) },
-                    label = { Text(stringResource(label)) },
-                )
-            }
-        }
-    }
+    Text(
+        stringResource(title),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    SegmentedChoice(units.map { (unit, label) -> unit to stringResource(label) }, selected, onSelect)
 }
 
 internal val massUnits =

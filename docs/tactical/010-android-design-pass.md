@@ -39,7 +39,7 @@ icons, or assets.
 3. [x] Today: child-first header, live state tiles for feed, sleep, and
    diaper (last event, detail, elapsed sleep clock with Stop), a real empty
    state, recent entries as entry rows, and sync status as a quiet chip.
-4. [ ] Capture template: activity title and child at the top, a tappable
+4. [x] Capture template: activity title and child at the top, a tappable
    time row, the form body, and a full-width bottom Save. Grouped icon grid
    for the activity chooser; icon tiles for diaper; large bottle amount with
    steppers and a repeat-last-amount choice; single-row choice groups.
@@ -107,3 +107,18 @@ icons, or assets.
   emulator, and the updated Today-summary and header-switch instrumentation
   cases pass. UI scripts now wait for the Feeding tile and the child name
   instead of the former "Family 1 · name" title.
+
+- Slice 4: every capture form shares one template: the activity badge,
+  name, and "For <child>" in the top bar; a time row ("Now", or the chosen
+  time with Use now and Change time); the form; and a full-width Save in a
+  bottom bar that stays above the keyboard. The chooser is a grouped grid of
+  category tiles with short names. Diaper uses four icon tiles and an
+  explicit Save. Bottle uses a single chip row, a segmented unit choice,
+  minus/plus steppers (10 mL or 0.5 fl oz), and a "Same as last" chip from
+  the most recent saved bottle. Growth units are segmented in capture and
+  correction dialogs. `captureModel` now returns the state and actions so
+  the route can place Save outside the scroll area; Rust calls and draft
+  rules are unchanged. The 14 capture cases were rendered in all variants
+  and inspected (the time row was reflowed after a 150% text check). Unit
+  tests, lint, both APKs, the full caregiver UI smoke, and the comma-decimal
+  bottle, unsent-draft, and Today-summary instrumentation cases pass.

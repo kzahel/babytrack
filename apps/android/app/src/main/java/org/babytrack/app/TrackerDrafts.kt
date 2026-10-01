@@ -42,6 +42,7 @@ internal class CaptureDraftState {
     var doseAmount by mutableStateOf("")
     var doseUnit by mutableStateOf("")
     var logAtMs by mutableStateOf<Long?>(null)
+    var diaperKind by mutableStateOf<UByte?>(null)
 
     fun logTime(): ActivityWhen = activityWhen(logAtMs ?: System.currentTimeMillis())
 

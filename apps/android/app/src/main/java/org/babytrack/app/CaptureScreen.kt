@@ -1,27 +1,43 @@
 package org.babytrack.app
 
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Air
+import androidx.compose.material.icons.outlined.Circle
+import androidx.compose.material.icons.outlined.JoinFull
+import androidx.compose.material.icons.outlined.Remove
+import androidx.compose.material.icons.outlined.WaterDrop
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import java.text.DateFormat
-import java.util.Date
+import java.math.BigDecimal
 
 internal data class CaptureUiState(
     val childName: String,
@@ -53,16 +69,22 @@ internal data class CaptureUiState(
     val doseAmount: String,
     val doseUnit: String,
     val noteText: String,
+    val diaperKind: UByte? = null,
+    /** The most recent saved bottle, as entered, for one-tap repeat. */
+    val lastBottle: Pair<String, UByte>? = null,
+    val nowMs: Long = 0L,
 )
 
 internal data class CaptureActions(
     val onCaptureKindChange: (CaptureKind) -> Unit = { _ -> },
     val onLogTimeChoose: () -> Unit = {},
     val onResetLogTime: () -> Unit = {},
+    val onDiaperKindChange: (UByte) -> Unit = { _ -> },
     val onLogDiaper: (UByte) -> Unit = { _ -> },
     val onBottleContentChange: (UByte) -> Unit = { _ -> },
     val onBottleUnitChange: (UByte) -> Unit = { _ -> },
     val onAmountChange: (String) -> Unit = { _ -> },
+    val onRepeatBottle: (String, UByte) -> Unit = { _, _ -> },
     val onSaveBottle: () -> Unit = {},
     val onBreastSideChange: (UByte) -> Unit = { _ -> },
     val onBreastMinutesChange: (String) -> Unit = { _ -> },
@@ -99,459 +121,523 @@ internal data class CaptureActions(
     val onSaveNote: () -> Unit = {},
 )
 
+private val chooserGroups =
+    listOf(
+        R.string.capture_group_feeding to
+            listOf(CaptureKind.BOTTLE, CaptureKind.BREAST, CaptureKind.PUMP, CaptureKind.SOLIDS),
+        R.string.capture_group_sleep_diapers to listOf(CaptureKind.SLEEP, CaptureKind.DIAPER),
+        R.string.capture_group_health to
+            listOf(CaptureKind.GROWTH, CaptureKind.TEMPERATURE, CaptureKind.MEDICATION),
+        R.string.capture_group_notes to listOf(CaptureKind.NOTE),
+    )
+
+internal val diaperChoices =
+    listOf(
+        Triple(1u.toUByte(), Icons.Outlined.WaterDrop, R.string.wet),
+        Triple(2u.toUByte(), Icons.Outlined.Circle, R.string.dirty),
+        Triple(3u.toUByte(), Icons.Outlined.JoinFull, R.string.both),
+        Triple(4u.toUByte(), Icons.Outlined.Air, R.string.dry),
+    )
+
+internal val bottleContents =
+    listOf(
+        1u.toUByte() to R.string.bottle_breast_milk,
+        2u.toUByte() to R.string.bottle_formula,
+        3u.toUByte() to R.string.bottle_mixed,
+        4u.toUByte() to R.string.bottle_other,
+    )
+
+internal val bottleUnits =
+    listOf(
+        1u.toUByte() to R.string.unit_ml,
+        2u.toUByte() to R.string.unit_us_fl_oz,
+        3u.toUByte() to R.string.unit_uk_fl_oz,
+    )
+
+internal val sleepPlaces =
+    listOf(
+        null to R.string.sleep_place_unspecified,
+        1u.toUByte() to R.string.sleep_place_crib,
+        2u.toUByte() to R.string.sleep_place_pram,
+        3u.toUByte() to R.string.sleep_place_contact,
+        4u.toUByte() to R.string.sleep_place_car,
+        5u.toUByte() to R.string.sleep_place_other,
+    )
+
 @Composable
 internal fun ColumnScope.CaptureScreen(state: CaptureUiState, actions: CaptureActions) {
-    val context = LocalContext.current
     with(state) {
         if (captureKind == null) {
-            Text(stringResource(R.string.add_activity), style = MaterialTheme.typography.titleLarge)
-            CaptureKind.entries.chunked(2).forEach { kinds ->
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    kinds.forEach { kind ->
-                        OutlinedButton(
-                            onClick = { actions.onCaptureKindChange(kind) },
-                            modifier = Modifier.weight(1f).heightIn(min = 88.dp),
-                        ) {
-                            Text(stringResource(kind.label), textAlign = TextAlign.Center)
-                        }
-                    }
+            ActivityChooser(actions.onCaptureKindChange)
+            return
+        }
+        TimeRow(
+            value =
+                if (logAtMs == null) stringResource(R.string.log_time_now_short)
+                else compactDateTime(LocalContext.current, logAtMs!!, nowMs),
+            chooseLabel = stringResource(R.string.log_time_change),
+            onChoose = actions.onLogTimeChoose,
+            resetLabel = if (logAtMs != null) stringResource(R.string.log_time_use_now) else null,
+            onReset = actions.onResetLogTime,
+        )
+        when (captureKind) {
+            CaptureKind.DIAPER -> DiaperForm(state, actions)
+            CaptureKind.BOTTLE -> BottleForm(state, actions)
+            CaptureKind.BREAST -> BreastForm(state, actions)
+            CaptureKind.PUMP -> PumpForm(state, actions)
+            CaptureKind.SOLIDS -> SolidsForm(state, actions)
+            CaptureKind.SLEEP -> SleepForm(state, actions)
+            CaptureKind.GROWTH -> GrowthForm(state, actions)
+            CaptureKind.TEMPERATURE -> TemperatureForm(state, actions)
+            CaptureKind.MEDICATION -> MedicationForm(state, actions)
+            CaptureKind.NOTE -> NoteForm(state, actions)
+        }
+    }
+}
+
+/** The bottom bar's actions for the open form; the chooser has none. */
+@Composable
+internal fun RowScope.CaptureSaveActions(state: CaptureUiState, actions: CaptureActions) {
+    with(state) {
+        when (captureKind) {
+            null -> Unit
+            CaptureKind.DIAPER ->
+                PrimaryAction(stringResource(R.string.save_diaper), enabled = diaperKind != null) {
+                    diaperKind?.let(actions.onLogDiaper)
                 }
-            }
-        } else {
-            Text(
-                stringResource(R.string.capture_for_child, childName),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                stringResource(R.string.log_time_title),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                if (logAtMs == null) stringResource(R.string.log_time_now)
-                else
-                    stringResource(
-                        R.string.log_time_selected,
-                        DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-                            .format(Date(logAtMs!!)),
-                    )
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = actions.onLogTimeChoose) {
-                    Text(stringResource(R.string.log_time_choose))
-                }
-                if (logAtMs != null)
-                    OutlinedButton(onClick = actions.onResetLogTime) {
-                        Text(stringResource(R.string.log_time_reset))
-                    }
-            }
-            if (captureKind == CaptureKind.DIAPER) {
-                Text(
-                    stringResource(R.string.log_diaper),
-                    style = MaterialTheme.typography.titleLarge,
+            CaptureKind.BOTTLE ->
+                PrimaryAction(
+                    stringResource(R.string.save_bottle),
+                    enabled = validBottleAmount(amount, bottleUnit),
+                    onClick = actions.onSaveBottle,
                 )
-                listOf(
-                        1u.toUByte() to R.string.wet,
-                        2u.toUByte() to R.string.dirty,
-                        3u.toUByte() to R.string.both,
-                        4u.toUByte() to R.string.dry,
-                    )
-                    .chunked(2)
-                    .forEach { options ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            options.forEach { (kind, label) ->
-                                Button(onClick = { actions.onLogDiaper(kind) }) {
-                                    Text(stringResource(label))
-                                }
-                            }
-                        }
-                    }
-            }
-            if (captureKind == CaptureKind.BOTTLE) {
-                Text(
-                    stringResource(R.string.log_bottle),
-                    style = MaterialTheme.typography.titleLarge,
-                )
-                listOf(
-                        1u.toUByte() to R.string.bottle_breast_milk,
-                        2u.toUByte() to R.string.bottle_formula,
-                        3u.toUByte() to R.string.bottle_mixed,
-                        4u.toUByte() to R.string.bottle_other,
-                    )
-                    .chunked(2)
-                    .forEach { options ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            options.forEach { (content, label) ->
-                                FilterChip(
-                                    selected = bottleContent == content,
-                                    onClick = { actions.onBottleContentChange(content) },
-                                    label = { Text(stringResource(label)) },
-                                )
-                            }
-                        }
-                    }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(
-                            1u.toUByte() to R.string.unit_ml,
-                            2u.toUByte() to R.string.unit_us_fl_oz,
-                            3u.toUByte() to R.string.unit_uk_fl_oz,
-                        )
-                        .forEach { (unit, label) ->
-                            FilterChip(
-                                selected = bottleUnit == unit,
-                                onClick = { actions.onBottleUnitChange(unit) },
-                                label = { Text(stringResource(label)) },
-                            )
-                        }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = amount,
-                        onValueChange = { it -> actions.onAmountChange(it) },
-                        label = { Text(stringResource(R.string.bottle_amount)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                    )
-                    Button(
-                        enabled = validBottleAmount(amount, bottleUnit),
-                        onClick = actions.onSaveBottle,
-                    ) {
-                        Text(stringResource(R.string.log_bottle))
-                    }
-                }
-            }
-            if (captureKind == CaptureKind.BREAST) {
-                Text(
-                    stringResource(R.string.log_breast),
-                    style = MaterialTheme.typography.titleLarge,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(
-                            1u.toUByte() to R.string.breast_left,
-                            2u.toUByte() to R.string.breast_right,
-                        )
-                        .forEach { (side, label) ->
-                            FilterChip(
-                                selected = breastSide == side,
-                                onClick = { actions.onBreastSideChange(side) },
-                                label = { Text(stringResource(label)) },
-                            )
-                        }
-                }
-                OutlinedTextField(
-                    value = breastMinutes,
-                    onValueChange = { it -> actions.onBreastMinutesChange(it) },
-                    label = { Text(stringResource(R.string.breast_minutes)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                )
-                if (breastDraftSegments.isNotEmpty()) {
-                    Text(
-                        stringResource(
-                            R.string.breast_segments_draft,
-                            breastDraftSegments.joinToString(" → ") { (side, minutes) ->
-                                context.getString(
-                                    R.string.breast_segment_summary,
-                                    context.getString(
-                                        if (side == 1u.toUByte()) R.string.breast_left
-                                        else R.string.breast_right
-                                    ),
-                                    minutes,
-                                )
-                            },
-                        )
-                    )
-                    OutlinedButton(onClick = actions.onRemoveBreastSegment) {
-                        Text(stringResource(R.string.remove_last_segment))
-                    }
-                }
-                val breastNextMinutes = breastMinutes.toLongOrNull()
-                val breastTotalMinutes =
-                    breastDraftSegments.sumOf { it.second } + (breastNextMinutes ?: 0L)
-                OutlinedButton(
-                    enabled =
-                        breastNextMinutes != null &&
-                            breastNextMinutes in 1L..240L &&
-                            breastDraftSegments.size < 7 &&
-                            breastTotalMinutes <= 240L,
-                    onClick = actions.onAddBreastSegment,
-                ) {
-                    Text(stringResource(R.string.add_breast_segment))
-                }
-                Button(
-                    enabled =
-                        breastNextMinutes != null &&
-                            breastNextMinutes in 1L..240L &&
-                            breastDraftSegments.size < 8 &&
-                            breastTotalMinutes <= 240L,
+            CaptureKind.BREAST ->
+                PrimaryAction(
+                    stringResource(R.string.save_breast),
+                    enabled = breastCanSave(state),
                     onClick = actions.onSaveBreast,
+                )
+            CaptureKind.PUMP ->
+                PrimaryAction(
+                    stringResource(R.string.save_pump),
+                    enabled = pumpCanSave(state),
+                    onClick = actions.onSavePump,
+                )
+            CaptureKind.SOLIDS ->
+                PrimaryAction(
+                    stringResource(R.string.save_solids),
+                    enabled = solidsFoods.isNotBlank(),
+                    onClick = actions.onSaveSolids,
+                )
+            CaptureKind.SLEEP -> {
+                OutlinedButton(
+                    onClick = actions.onStartSleep,
+                    modifier = Modifier.weight(1f).heightIn(min = 56.dp),
                 ) {
-                    Text(stringResource(R.string.save_breast))
+                    Text(stringResource(R.string.start_sleep), textAlign = TextAlign.Center)
                 }
+                PrimaryAction(
+                    stringResource(R.string.save_sleep),
+                    enabled = (sleepMinutes.toLongOrNull() ?: 0L) in 1L..1440L,
+                    onClick = actions.onSaveSleep,
+                )
             }
-            if (captureKind == CaptureKind.PUMP) {
-                Text(stringResource(R.string.log_pump), style = MaterialTheme.typography.titleLarge)
-                OutlinedTextField(
-                    value = pumpMinutes,
-                    onValueChange = { it -> actions.onPumpMinutesChange(it) },
-                    label = { Text(stringResource(R.string.pump_minutes)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = pumpLeft,
-                        onValueChange = { it -> actions.onPumpLeftChange(it) },
-                        label = { Text(stringResource(R.string.pump_left_ml)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                    )
-                    OutlinedTextField(
-                        value = pumpRight,
-                        onValueChange = { it -> actions.onPumpRightChange(it) },
-                        label = { Text(stringResource(R.string.pump_right_ml)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                    )
-                }
-                OutlinedTextField(
-                    value = pumpTotal,
-                    onValueChange = { it -> actions.onPumpTotalChange(it) },
-                    label = { Text(stringResource(R.string.pump_total_ml)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                )
-                val pumpDuration = pumpMinutes.toLongOrNull() ?: 0L
-                val pumpSides = (pumpLeft.toLongOrNull() ?: 0L) + (pumpRight.toLongOrNull() ?: 0L)
-                val pumpCanSave =
-                    pumpDuration in 1L..240L &&
-                        ((pumpTotal.isBlank() && pumpSides > 0L) ||
-                            (pumpLeft.isBlank() &&
-                                pumpRight.isBlank() &&
-                                (pumpTotal.toLongOrNull() ?: 0L) > 0L))
-                Button(enabled = pumpCanSave, onClick = actions.onSavePump) {
-                    Text(stringResource(R.string.save_pump))
-                }
-            }
-            if (captureKind == CaptureKind.SOLIDS) {
-                Text(
-                    stringResource(R.string.log_solids),
-                    style = MaterialTheme.typography.titleLarge,
-                )
-                OutlinedTextField(
-                    value = solidsFoods,
-                    onValueChange = { it -> actions.onSolidsFoodsChange(it) },
-                    label = { Text(stringResource(R.string.solids_foods)) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = solidsAmount,
-                    onValueChange = { it -> actions.onSolidsAmountChange(it) },
-                    label = { Text(stringResource(R.string.solids_amount)) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Button(enabled = solidsFoods.isNotBlank(), onClick = actions.onSaveSolids) {
-                    Text(stringResource(R.string.save_solids))
-                }
-            }
-            if (captureKind == CaptureKind.SLEEP) {
-                Text(
-                    stringResource(R.string.log_sleep),
-                    style = MaterialTheme.typography.titleLarge,
-                )
-                Text(stringResource(R.string.sleep_place_title))
-                listOf(
-                        null to R.string.sleep_place_unspecified,
-                        1u.toUByte() to R.string.sleep_place_crib,
-                        2u.toUByte() to R.string.sleep_place_pram,
-                        3u.toUByte() to R.string.sleep_place_contact,
-                        4u.toUByte() to R.string.sleep_place_car,
-                        5u.toUByte() to R.string.sleep_place_other,
-                    )
-                    .chunked(2)
-                    .forEach { options ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            options.forEach { (place, label) ->
-                                FilterChip(
-                                    selected = sleepPlace == place,
-                                    onClick = { actions.onSleepPlaceChange(place) },
-                                    label = { Text(stringResource(label)) },
-                                )
-                            }
-                        }
-                    }
-                Button(onClick = actions.onStartSleep) {
-                    Text(stringResource(R.string.start_sleep))
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = sleepMinutes,
-                        onValueChange = { it -> actions.onSleepMinutesChange(it) },
-                        label = { Text(stringResource(R.string.sleep_minutes)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                    )
-                    Button(
-                        enabled = (sleepMinutes.toLongOrNull() ?: 0L) in 1L..1440L,
-                        onClick = actions.onSaveSleep,
-                    ) {
-                        Text(stringResource(R.string.save_sleep))
-                    }
-                }
-            }
-            if (captureKind == CaptureKind.GROWTH) {
-                Text(
-                    stringResource(R.string.log_growth),
-                    style = MaterialTheme.typography.titleLarge,
-                )
-                GrowthUnitChoices(
-                    R.string.weight_unit,
-                    massUnits,
-                    growthWeightUnit,
-                    onSelect = { it -> actions.onGrowthWeightUnitChange(it) },
-                )
-                OutlinedTextField(
-                    value = growthWeight,
-                    onValueChange = { it -> actions.onGrowthWeightChange(it) },
-                    label = { Text(stringResource(R.string.weight)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-                GrowthUnitChoices(
-                    R.string.length_unit,
-                    lengthUnits,
-                    growthLengthUnit,
-                    onSelect = { it -> actions.onGrowthLengthUnitChange(it) },
-                )
-                OutlinedTextField(
-                    value = growthLength,
-                    onValueChange = { it -> actions.onGrowthLengthChange(it) },
-                    label = { Text(stringResource(R.string.length)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-                GrowthUnitChoices(
-                    R.string.head_unit,
-                    lengthUnits,
-                    growthHeadUnit,
-                    onSelect = { it -> actions.onGrowthHeadUnitChange(it) },
-                )
-                OutlinedTextField(
-                    value = growthHead,
-                    onValueChange = { it -> actions.onGrowthHeadChange(it) },
-                    label = { Text(stringResource(R.string.head_circumference)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-                Button(
+            CaptureKind.GROWTH ->
+                PrimaryAction(
+                    stringResource(R.string.save_growth),
                     enabled =
                         listOf(growthWeight, growthLength, growthHead).any { it.isNotBlank() } &&
                             validGrowthAmount(growthWeight, growthWeightUnit) &&
                             validGrowthAmount(growthLength, growthLengthUnit) &&
                             validGrowthAmount(growthHead, growthHeadUnit),
                     onClick = actions.onSaveGrowth,
-                ) {
-                    Text(stringResource(R.string.save_growth))
-                }
-            }
-            if (captureKind == CaptureKind.TEMPERATURE) {
-                Text(
-                    stringResource(R.string.log_temperature),
-                    style = MaterialTheme.typography.titleLarge,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(
-                            30u.toUByte() to R.string.unit_celsius,
-                            31u.toUByte() to R.string.unit_fahrenheit,
-                        )
-                        .forEach { (unit, label) ->
-                            FilterChip(
-                                selected = temperatureUnit == unit,
-                                onClick = { actions.onTemperatureUnitChange(unit) },
-                                label = { Text(stringResource(label)) },
-                            )
-                        }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = temperatureEntered,
-                        onValueChange = { it -> actions.onTemperatureEnteredChange(it) },
-                        label = {
-                            Text(
-                                stringResource(
-                                    if (temperatureUnit == 30u.toUByte()) R.string.temperature_c
-                                    else R.string.temperature_f
-                                )
-                            )
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                    )
-                    Button(
-                        enabled = validTemperature(temperatureEntered),
-                        onClick = actions.onSaveTemperature,
-                    ) {
-                        Text(stringResource(R.string.save_temperature))
-                    }
-                }
-            }
-            if (captureKind == CaptureKind.MEDICATION) {
-                Text(
-                    stringResource(R.string.log_medication),
-                    style = MaterialTheme.typography.titleLarge,
+            CaptureKind.TEMPERATURE ->
+                PrimaryAction(
+                    stringResource(R.string.save_temperature),
+                    enabled = validTemperature(temperatureEntered),
+                    onClick = actions.onSaveTemperature,
                 )
-                OutlinedTextField(
-                    value = medicationName,
-                    onValueChange = { it -> actions.onMedicationNameChange(it) },
-                    label = { Text(stringResource(R.string.medication_name)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = doseAmount,
-                        onValueChange = { it -> actions.onDoseAmountChange(it) },
-                        label = { Text(stringResource(R.string.dose_amount)) },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                    )
-                    OutlinedTextField(
-                        value = doseUnit,
-                        onValueChange = { it -> actions.onDoseUnitChange(it) },
-                        label = { Text(stringResource(R.string.dose_unit)) },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                    )
-                }
-                Button(
+            CaptureKind.MEDICATION ->
+                PrimaryAction(
+                    stringResource(R.string.save_medication),
                     enabled =
-                        medicationName.isNotBlank() &&
-                            doseAmount.isNotBlank() &&
-                            doseUnit.isNotBlank(),
+                        medicationName.isNotBlank() && doseAmount.isNotBlank() && doseUnit.isNotBlank(),
                     onClick = actions.onSaveMedication,
-                ) {
-                    Text(stringResource(R.string.save_medication))
-                }
-            }
-            if (captureKind == CaptureKind.NOTE) {
-                Text(stringResource(R.string.log_note), style = MaterialTheme.typography.titleLarge)
-                OutlinedTextField(
-                    value = noteText,
-                    onValueChange = { it -> actions.onNoteTextChange(it) },
-                    label = { Text(stringResource(R.string.note_text)) },
-                    modifier = Modifier.fillMaxWidth(),
                 )
-                Button(enabled = noteText.isNotBlank(), onClick = actions.onSaveNote) {
-                    Text(stringResource(R.string.save_note))
-                }
+            CaptureKind.NOTE ->
+                PrimaryAction(
+                    stringResource(R.string.save_note),
+                    enabled = noteText.isNotBlank(),
+                    onClick = actions.onSaveNote,
+                )
+        }
+    }
+}
+
+private fun breastCanSave(state: CaptureUiState): Boolean {
+    val next = state.breastMinutes.toLongOrNull()
+    val total = state.breastDraftSegments.sumOf { it.second } + (next ?: 0L)
+    return next != null && next in 1L..240L && state.breastDraftSegments.size < 8 && total <= 240L
+}
+
+private fun pumpCanSave(state: CaptureUiState): Boolean =
+    with(state) {
+        val duration = pumpMinutes.toLongOrNull() ?: 0L
+        val sides = (pumpLeft.toLongOrNull() ?: 0L) + (pumpRight.toLongOrNull() ?: 0L)
+        duration in 1L..240L &&
+            ((pumpTotal.isBlank() && sides > 0L) ||
+                (pumpLeft.isBlank() && pumpRight.isBlank() && (pumpTotal.toLongOrNull() ?: 0L) > 0L))
+    }
+
+@Composable
+private fun ColumnScope.ActivityChooser(onSelect: (CaptureKind) -> Unit) {
+    chooserGroups.forEach { (heading, kinds) ->
+        SectionHeader(stringResource(heading))
+        kinds.chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { kind -> ChooserTile(kind, Modifier.weight(1f)) { onSelect(kind) } }
+                if (row.size == 1) Column(Modifier.weight(1f)) {}
             }
         }
     }
+}
+
+@Composable
+private fun ChooserTile(kind: CaptureKind, modifier: Modifier, onClick: () -> Unit) {
+    val colors = categoryColors(kind.activityKind)
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = colors.container,
+        modifier = modifier.heightIn(min = 72.dp).clip(MaterialTheme.shapes.medium).clickable(onClick = onClick),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                activityIcon(kind.activityKind),
+                contentDescription = null,
+                tint = colors.accent,
+                modifier = Modifier.size(28.dp),
+            )
+            Text(stringResource(kind.label), style = MaterialTheme.typography.titleSmall)
+        }
+    }
+}
+
+@Composable
+private fun FieldLabel(id: Int) {
+    Text(
+        stringResource(id),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun DiaperForm(state: CaptureUiState, actions: CaptureActions) {
+    ChoiceTiles(
+        diaperChoices.map { (kind, icon, label) -> Triple(kind, icon, stringResource(label)) },
+        selected = state.diaperKind,
+        onSelect = actions.onDiaperKindChange,
+    )
+}
+
+private fun bottleStep(unit: UByte): BigDecimal =
+    if (unit == 1u.toUByte()) BigDecimal(10) else BigDecimal("0.5")
+
+/** The amount after one stepper press, in the draft's display form. */
+internal fun steppedBottleAmount(context: Context, amount: String, unit: UByte, up: Boolean): String {
+    val current = canonicalDecimal(amount).toBigDecimalOrNull() ?: BigDecimal.ZERO
+    val step = bottleStep(unit)
+    val next = if (up) current + step else (current - step).max(BigDecimal.ZERO)
+    return if (next.signum() == 0) "" else localizedEntered(context, next.stripTrailingZeros().toPlainString())
+}
+
+@Composable
+private fun BottleForm(state: CaptureUiState, actions: CaptureActions) {
+    val context = LocalContext.current
+    with(state) {
+        FieldLabel(R.string.bottle_content_title)
+        ChipRow(
+            bottleContents.map { (value, label) -> value to stringResource(label) },
+            bottleContent,
+            actions.onBottleContentChange,
+        )
+        FieldLabel(R.string.bottle_unit_title)
+        SegmentedChoice(
+            bottleUnits.map { (value, label) -> value to stringResource(label) },
+            bottleUnit,
+            actions.onBottleUnitChange,
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilledTonalIconButton(
+                onClick = { actions.onAmountChange(steppedBottleAmount(context, amount, bottleUnit, false)) },
+                modifier = Modifier.size(56.dp),
+            ) {
+                Icon(Icons.Outlined.Remove, contentDescription = stringResource(R.string.bottle_less))
+            }
+            OutlinedTextField(
+                value = amount,
+                onValueChange = { it -> actions.onAmountChange(it) },
+                label = { Text(stringResource(R.string.bottle_amount)) },
+                suffix = { Text(stringResource(bottleUnits.first { it.first == bottleUnit }.second)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                textStyle = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+            )
+            FilledTonalIconButton(
+                onClick = { actions.onAmountChange(steppedBottleAmount(context, amount, bottleUnit, true)) },
+                modifier = Modifier.size(56.dp),
+            ) {
+                Icon(Icons.Outlined.Add, contentDescription = stringResource(R.string.bottle_more))
+            }
+        }
+        lastBottle?.let { (entered, unit) ->
+            val shown =
+                stringResource(
+                    R.string.bottle_repeat,
+                    localizedEntered(context, entered),
+                    stringResource(bottleUnits.firstOrNull { it.first == unit }?.second ?: R.string.unit_ml),
+                )
+            AssistChip(onClick = { actions.onRepeatBottle(entered, unit) }, label = { Text(shown) })
+        }
+    }
+}
+
+@Composable
+private fun BreastForm(state: CaptureUiState, actions: CaptureActions) {
+    val context = LocalContext.current
+    with(state) {
+        FieldLabel(R.string.breast_side_title)
+        SegmentedChoice(
+            listOf(1u.toUByte() to stringResource(R.string.breast_left), 2u.toUByte() to stringResource(R.string.breast_right)),
+            breastSide,
+            actions.onBreastSideChange,
+        )
+        OutlinedTextField(
+            value = breastMinutes,
+            onValueChange = { it -> actions.onBreastMinutesChange(it) },
+            label = { Text(stringResource(R.string.breast_minutes)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        if (breastDraftSegments.isNotEmpty()) {
+            Text(
+                stringResource(
+                    R.string.breast_segments_draft,
+                    breastDraftSegments.joinToString(" → ") { (side, minutes) ->
+                        context.getString(
+                            R.string.breast_segment_summary,
+                            context.getString(
+                                if (side == 1u.toUByte()) R.string.breast_left else R.string.breast_right
+                            ),
+                            minutes,
+                        )
+                    },
+                ),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+        val next = breastMinutes.toLongOrNull()
+        val total = breastDraftSegments.sumOf { it.second } + (next ?: 0L)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                enabled = next != null && next in 1L..240L && breastDraftSegments.size < 7 && total <= 240L,
+                onClick = actions.onAddBreastSegment,
+            ) {
+                Text(stringResource(R.string.add_breast_segment))
+            }
+            if (breastDraftSegments.isNotEmpty())
+                TextButton(onClick = actions.onRemoveBreastSegment) {
+                    Text(stringResource(R.string.remove_last_segment))
+                }
+        }
+    }
+}
+
+@Composable
+private fun PumpForm(state: CaptureUiState, actions: CaptureActions) {
+    with(state) {
+        OutlinedTextField(
+            value = pumpMinutes,
+            onValueChange = { it -> actions.onPumpMinutesChange(it) },
+            label = { Text(stringResource(R.string.pump_minutes)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        FieldLabel(R.string.pump_amount_title)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = pumpLeft,
+                onValueChange = { it -> actions.onPumpLeftChange(it) },
+                label = { Text(stringResource(R.string.pump_left_ml)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = pumpRight,
+                onValueChange = { it -> actions.onPumpRightChange(it) },
+                label = { Text(stringResource(R.string.pump_right_ml)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+            )
+        }
+        OutlinedTextField(
+            value = pumpTotal,
+            onValueChange = { it -> actions.onPumpTotalChange(it) },
+            label = { Text(stringResource(R.string.pump_total_ml)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+    }
+}
+
+@Composable
+private fun SolidsForm(state: CaptureUiState, actions: CaptureActions) {
+    OutlinedTextField(
+        value = state.solidsFoods,
+        onValueChange = { it -> actions.onSolidsFoodsChange(it) },
+        label = { Text(stringResource(R.string.solids_foods)) },
+        minLines = 3,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = state.solidsAmount,
+        onValueChange = { it -> actions.onSolidsAmountChange(it) },
+        label = { Text(stringResource(R.string.solids_amount)) },
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+private fun SleepForm(state: CaptureUiState, actions: CaptureActions) {
+    OutlinedTextField(
+        value = state.sleepMinutes,
+        onValueChange = { it -> actions.onSleepMinutesChange(it) },
+        label = { Text(stringResource(R.string.sleep_minutes)) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+    )
+    FieldLabel(R.string.sleep_place_title)
+    ChipRow(
+        sleepPlaces.map { (place, label) -> place to stringResource(label) },
+        state.sleepPlace,
+        actions.onSleepPlaceChange,
+    )
+}
+
+@Composable
+private fun GrowthForm(state: CaptureUiState, actions: CaptureActions) {
+    with(state) {
+        OutlinedTextField(
+            value = growthWeight,
+            onValueChange = { it -> actions.onGrowthWeightChange(it) },
+            label = { Text(stringResource(R.string.weight)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        GrowthUnitChoices(R.string.weight_unit, massUnits, growthWeightUnit, actions.onGrowthWeightUnitChange)
+        OutlinedTextField(
+            value = growthLength,
+            onValueChange = { it -> actions.onGrowthLengthChange(it) },
+            label = { Text(stringResource(R.string.length)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        GrowthUnitChoices(R.string.length_unit, lengthUnits, growthLengthUnit, actions.onGrowthLengthUnitChange)
+        OutlinedTextField(
+            value = growthHead,
+            onValueChange = { it -> actions.onGrowthHeadChange(it) },
+            label = { Text(stringResource(R.string.head_circumference)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        GrowthUnitChoices(R.string.head_unit, lengthUnits, growthHeadUnit, actions.onGrowthHeadUnitChange)
+    }
+}
+
+@Composable
+private fun TemperatureForm(state: CaptureUiState, actions: CaptureActions) {
+    with(state) {
+        SegmentedChoice(
+            listOf(
+                30u.toUByte() to stringResource(R.string.unit_celsius),
+                31u.toUByte() to stringResource(R.string.unit_fahrenheit),
+            ),
+            temperatureUnit,
+            actions.onTemperatureUnitChange,
+        )
+        OutlinedTextField(
+            value = temperatureEntered,
+            onValueChange = { it -> actions.onTemperatureEnteredChange(it) },
+            label = {
+                Text(
+                    stringResource(
+                        if (temperatureUnit == 30u.toUByte()) R.string.temperature_c
+                        else R.string.temperature_f
+                    )
+                )
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            textStyle = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+    }
+}
+
+@Composable
+private fun MedicationForm(state: CaptureUiState, actions: CaptureActions) {
+    with(state) {
+        OutlinedTextField(
+            value = medicationName,
+            onValueChange = { it -> actions.onMedicationNameChange(it) },
+            label = { Text(stringResource(R.string.medication_name)) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = doseAmount,
+                onValueChange = { it -> actions.onDoseAmountChange(it) },
+                label = { Text(stringResource(R.string.dose_amount)) },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = doseUnit,
+                onValueChange = { it -> actions.onDoseUnitChange(it) },
+                label = { Text(stringResource(R.string.dose_unit)) },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+            )
+        }
+    }
+}
+
+@Composable
+private fun NoteForm(state: CaptureUiState, actions: CaptureActions) {
+    OutlinedTextField(
+        value = state.noteText,
+        onValueChange = { it -> actions.onNoteTextChange(it) },
+        label = { Text(stringResource(R.string.note_text)) },
+        minLines = 4,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }

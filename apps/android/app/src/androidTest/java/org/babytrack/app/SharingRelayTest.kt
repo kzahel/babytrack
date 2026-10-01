@@ -179,13 +179,12 @@ class SharingRelayTest {
             }
             composeRule.onNodeWithText(addActivity)
                 .performScrollTo().performClick()
-            composeRule.onNodeWithText(context.getString(R.string.log_bottle)).performClick()
+            composeRule.onNodeWithText(context.getString(R.string.event_bottle)).performClick()
             composeRule.onNodeWithText(context.getString(R.string.unit_us_fl_oz))
                 .performScrollTo().performClick()
             composeRule.onNodeWithText(context.getString(R.string.bottle_amount))
                 .performScrollTo().performTextInput("4,5")
-            composeRule.onAllNodesWithText(context.getString(R.string.log_bottle))
-                .onLast().performScrollTo().performClick()
+            composeRule.onNodeWithText(context.getString(R.string.save_bottle)).performClick()
             openTab(R.string.nav_history)
             composeRule.waitUntil(25_000) {
                 composeRule.onAllNodesWithText("Bottle · 4.5 US fl oz · Formula")
@@ -256,7 +255,7 @@ class SharingRelayTest {
             }
             composeRule.onNodeWithText(context.getString(R.string.add_activity))
                 .performScrollTo().performClick()
-            composeRule.onNodeWithText(context.getString(R.string.log_bottle))
+            composeRule.onNodeWithText(context.getString(R.string.event_bottle))
                 .performScrollTo().performClick()
             composeRule.onNode(hasSetTextAction()).performTextInput("47")
             composeRule.onNodeWithContentDescription(context.getString(R.string.back)).performClick()
@@ -271,7 +270,7 @@ class SharingRelayTest {
             composeRule.waitForIdle()
             composeRule.onNodeWithText(context.getString(R.string.add_activity))
                 .performScrollTo().performClick()
-            composeRule.onNodeWithText(context.getString(R.string.log_bottle))
+            composeRule.onNodeWithText(context.getString(R.string.event_bottle))
                 .performScrollTo().performClick()
             val draft = composeRule.onNode(hasSetTextAction()).fetchSemanticsNode()
                 .config[SemanticsProperties.EditableText].text

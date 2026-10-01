@@ -222,8 +222,15 @@ def open_entry_actions(target: str, entry_label: str) -> None:
             row = parents[row]
         if row is None or row.attrib.get("clickable") != "true":
             return None
+        # The main column is the tallest scrollable node; a short sideways chip
+        # row is not. Content that fits reports no vertical scroller, so fall
+        # back to the region above the navigation bar.
         areas = [bounds(n) for n in root.iter("node") if n.attrib.get("scrollable") == "true"]
-        area = max(areas, key=lambda b: (b[2] - b[0]) * (b[3] - b[1])) if areas else [0, 0, width, height]
+        tall = [b for b in areas if b[3] - b[1] > height // 3]
+        tabs = [bounds(n)[1] for n in root.iter("node")
+                if n.attrib.get("text") in ("Today", "History", "Family")]
+        bottom = min([y for y in tabs if y > height // 2], default=height)
+        area = max(tall, key=lambda b: b[3] - b[1]) if tall else [0, 0, width, bottom]
         return bounds(row), area, root
 
     def expanded(row: list[int], area: list[int], root: ET.Element) -> bool:

@@ -58,7 +58,7 @@ def main() -> None:
             find(target, "All days")
             capture(target, f"{theme}-{scale}-history")
             tap_tab(target, "Family")
-            find(target, "Family options")
+            find(target, "Child options")
             capture(target, f"{theme}-{scale}-family")
             tap(target, "Child options", scroll=True)
             tap(target, "Edit child profile", scroll=True)

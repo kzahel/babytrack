@@ -51,7 +51,7 @@ icons, or assets.
 6. [x] History: Day/All modes, a week strip, the core day summary for the
    selected day, compact entry rows, a single scrolling filter row, and entry
    actions revealed from the row without a per-row "Details" link.
-7. [ ] Family as a settings list: child card, list rows with icons and
+7. [x] Family as a settings list: child card, list rows with icons and
    supporting text for children, sharing/access, data and backups, and
    Family options. Developer relay setup stays visibly separate.
 8. [ ] Validate and reconcile: unit, lint, both APKs, the fixture gallery
@@ -158,3 +158,16 @@ icons, or assets.
   Today heading. Unit tests, lint, both APKs, the harness regressions, and
   the sleep-move, Undo, diaper time-edit, and header-switch instrumentation
   cases pass.
+
+- Slice 7: Family is a sectioned settings list. A child card shows the
+  avatar, name, age, and local/shared status with an expandable Child
+  options row (Edit child profile, Add another child); children and
+  Families are selectable rows with a check; Sharing groups device counts
+  and pending work with an expandable Family access row; Your data holds
+  backup, export, and restore inside one card; More holds Family options
+  (New Family, joining, and the debug relay form, still visibly separate).
+  All existing toggles, actions, and labels are unchanged. Unit tests,
+  lint, both APKs, the full caregiver smoke, and the document-picker
+  recovery check pass. The harness now treats the tallest scrollable node
+  as the content area (falling back to the region above the navigation
+  bar), after a short sideways chip row was mistaken for it.

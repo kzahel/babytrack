@@ -429,6 +429,14 @@
     <string name="bottle_repeat">Same as last: %1$s %2$s</string>
     <string name="breast_side_title">Side</string>
     <string name="pump_amount_title">Amount</string>
+    <!-- Family settings list -->
+    <string name="section_sharing">Sharing</string>
+    <string name="section_data">Your data</string>
+    <string name="section_more">More</string>
+    <string name="child_options_supporting">Edit the profile or add another child</string>
+    <string name="access_supporting">Devices, invitations, and roles</string>
+    <string name="data_supporting">Save a backup, restore a file, or export CSV</string>
+    <string name="family_options_supporting">New Family, joining, and sharing setup</string>
     <!-- History day view -->
     <string name="history_day">Day</string>
     <string name="history_all_days">All days</string>

@@ -22,6 +22,20 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Backup
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.ChildCare
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Group
+import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.Icon
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
 import uniffi.babytrack_core_ffi.BackupInfoRow
 import uniffi.babytrack_core_ffi.ChildRow
 import uniffi.babytrack_core_ffi.FamilyRef
@@ -127,7 +141,6 @@ internal data class FamilyActions(
 
 @Composable
 internal fun ColumnScope.FamilyScreen(state: FamilyUiState, actions: FamilyActions) {
-    val route = TrackerDestination.FAMILY
     with(state) {
         val joinControls: @Composable () -> Unit = {
             if (!showJoinForm && recipientFamilies.isEmpty())
@@ -186,293 +199,500 @@ internal fun ColumnScope.FamilyScreen(state: FamilyUiState, actions: FamilyActio
                     }
                 }
         }
-        if (route == TrackerDestination.FAMILY) {
-            if (joinFirst) joinControls()
-            if (family == null && !joinFirst) Text(stringResource(R.string.first_run_intro))
-            if (family != null)
+        if (joinFirst) joinControls()
+        if (family == null && !joinFirst)
+            Text(stringResource(R.string.first_run_intro), style = MaterialTheme.typography.bodyLarge)
+
+        if (family != null && child != null)
+            SectionCard {
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    ChildAvatar(child.name, size = 48.dp)
+                    Column(Modifier.weight(1f)) {
+                        Text(child.name, style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            ageLabel,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
                 Text(
+                    stringResource(if (activeShared) R.string.shared_family else R.string.local_only),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                SettingsRow(
+                    Icons.Outlined.ChildCare,
                     stringResource(
-                        if (activeShared) R.string.shared_family else R.string.local_only
+                        if (showChildDetails) R.string.hide_child_options else R.string.child_options
                     ),
-                    style = MaterialTheme.typography.labelMedium,
+                    stringResource(R.string.child_options_supporting),
+                    actions.onToggleChildOptions,
+                    expanded = showChildDetails,
                 )
-            if (automaticSyncDelayed && !automaticSyncBlocked)
-                Text(stringResource(R.string.automatic_sync_delayed))
-            if (automaticSyncBlocked)
-                Text(
-                    stringResource(R.string.shared_upload_blocked),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            if (activeShared) {
-                shareStage?.let { Text(it) }
-                activeSharedSnapshot?.let { snapshot ->
+                if (showChildDetails) {
+                    SettingsRow(
+                        Icons.Outlined.Edit,
+                        stringResource(R.string.edit_child_profile),
+                        null,
+                        actions.onEditChildProfile,
+                    )
+                    if (children.isNotEmpty())
+                        SettingsRow(
+                            Icons.Outlined.PersonAdd,
+                            stringResource(R.string.add_another_child),
+                            null,
+                            actions.onAddAnotherChild,
+                        )
+                }
+            }
+        else if (family != null)
+            Text(
+                stringResource(if (activeShared) R.string.shared_family else R.string.local_only),
+                style = MaterialTheme.typography.labelLarge,
+            )
+        if (automaticSyncDelayed && !automaticSyncBlocked)
+            WarningCard(stringResource(R.string.automatic_sync_delayed))
+        if (automaticSyncBlocked) WarningCard(stringResource(R.string.shared_upload_blocked))
+        if (family != null)
+            restoredOrigin?.let { origin ->
+                Text(stringResource(R.string.restored_from, savedTime(origin.snapshotUtcMs)))
+                if (origin.knownGap) Text(stringResource(R.string.file_known_gap))
+            }
+        removedFamilies.forEach { source ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     Text(
-                        pluralStringResource(
-                            R.plurals.shared_device_count,
-                            snapshot.devices.size,
-                            snapshot.devices.size,
+                        stringResource(
+                            R.string.removed_family_card,
+                            source.familyId.key().take(8),
                         )
                     )
-                    if (snapshot.pendingDevices.isNotEmpty()) {
+                    OutlinedButton(onClick = { actions.onContinueInPrivateCopy(source) }) {
+                        Text(stringResource(R.string.continue_in_private_copy))
+                    }
+                }
+            }
+        }
+
+        if (family != null && children.size != 1) {
+            SectionHeader(stringResource(R.string.children))
+            if (children.isEmpty()) Text(stringResource(R.string.no_children))
+            else
+                SectionCard {
+                    children.forEach { item ->
+                        ChoiceListRow(
+                            item.name,
+                            item.id.key() == selectedChild,
+                            avatar = item.name,
+                        ) {
+                            actions.onSelectChild(item)
+                        }
+                    }
+                }
+        }
+        if (family != null && children.isEmpty())
+            Button(onClick = actions.onAddChild) { Text(stringResource(R.string.add_child)) }
+
+        if (family != null && (activeShared || (activeFamilyIsLocal && BuildConfig.DEBUG)))
+            SectionHeader(stringResource(R.string.section_sharing))
+        if (activeShared) {
+            SectionCard {
+                Column(
+                    Modifier.padding(vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    shareStage?.let { Text(it) }
+                    activeSharedSnapshot?.let { snapshot ->
                         Text(
                             pluralStringResource(
-                                R.plurals.shared_pending_device_count,
-                                snapshot.pendingDevices.size,
-                                snapshot.pendingDevices.size,
+                                R.plurals.shared_device_count,
+                                snapshot.devices.size,
+                                snapshot.devices.size,
                             )
                         )
-                    }
-                    if (snapshot.unsentCount > 0uL) {
-                        Text(
-                            stringResource(
-                                R.string.shared_pending_changes,
-                                snapshot.unsentCount.toLong(),
-                            )
-                        )
-                    }
-                    if (snapshot.inertCount > 0uL) {
-                        Text(
-                            stringResource(
-                                R.string.shared_unreadable_batches,
-                                snapshot.inertCount.toLong(),
-                            ),
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                }
-                OutlinedButton(onClick = actions.onToggleAccess) {
-                    Text(
-                        stringResource(
-                            if (showAccessControls) R.string.hide_family_access
-                            else R.string.show_family_access
-                        )
-                    )
-                }
-            }
-            if (activeShared && showAccessControls)
-                activeSharedSnapshot?.let { snapshot ->
-                    SharedHealth(
-                        snapshot,
-                        deviceLabels,
-                        onNameDevice = { target -> actions.onNameDevice(target, snapshot) },
-                    )
-                    if (!activeFamilyIsLocal) {
-                        Text(stringResource(R.string.shared_manual_sync))
-                        OutlinedButton(onClick = { actions.onSyncShared(snapshot) }) {
-                            Text(stringResource(R.string.sync_shared))
-                        }
-                    }
-                    if (
-                        family != null &&
-                            snapshot.devices.any {
-                                it.deviceId.contentEquals(family.deviceId) && it.role == 2.toUByte()
-                            }
-                    ) {
-                        snapshot.devices
-                            .filterNot { it.deviceId.contentEquals(family.deviceId) }
-                            .forEach { device ->
-                                val label =
-                                    deviceLabels[
-                                            deviceLabelKey(
-                                                snapshot.family.familyId,
-                                                device.deviceId,
-                                            )]
-                                        ?.takeIf { it.isNotBlank() }
-                                        ?: stringResource(
-                                            R.string.device_short_id,
-                                            device.deviceId.key().take(8),
-                                        )
-                                OutlinedButton(onClick = { actions.onRemoveDevice(device) }) {
-                                    Text(stringResource(R.string.remove_device, label))
-                                }
-                                if (BuildConfig.DEBUG) {
-                                    val nextRole =
-                                        if (device.role == 2.toUByte()) 1u.toUByte()
-                                        else 2u.toUByte()
-                                    OutlinedButton(
-                                        onClick = { actions.onPromoteDevice(device, nextRole) }
-                                    ) {
-                                        Text(
-                                            stringResource(
-                                                if (nextRole == 2.toUByte()) R.string.promote_device
-                                                else R.string.demote_device,
-                                                label,
-                                            )
-                                        )
-                                    }
-                                }
-                            }
                         if (snapshot.pendingDevices.isNotEmpty()) {
                             Text(
-                                stringResource(R.string.pending_devices),
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                            snapshot.pendingDevices.forEach { pending ->
-                                val label =
-                                    deviceLabels[
-                                            deviceLabelKey(
-                                                snapshot.family.familyId,
-                                                pending.deviceId,
-                                            )]
-                                        ?.takeIf { it.isNotBlank() }
-                                        ?: stringResource(
-                                            R.string.device_short_id,
-                                            pending.deviceId.key().take(8),
-                                        )
-                                OutlinedButton(
-                                    onClick = { actions.onRemovePendingDevice(pending) }
-                                ) {
-                                    Text(stringResource(R.string.remove_pending_device, label))
-                                }
-                            }
-                        }
-                        if (BuildConfig.DEBUG) {
-                            if (activeUnusedInvitationIds == null) {
-                                Text(stringResource(R.string.invitation_list_delayed))
-                            } else if (!activeUnusedInvitationIds.isNullOrEmpty()) {
-                                Text(
-                                    stringResource(R.string.unused_invitations),
-                                    style = MaterialTheme.typography.titleMedium,
+                                pluralStringResource(
+                                    R.plurals.shared_pending_device_count,
+                                    snapshot.pendingDevices.size,
+                                    snapshot.pendingDevices.size,
                                 )
-                                activeUnusedInvitationIds.orEmpty().forEach { invitationId ->
-                                    OutlinedButton(
-                                        onClick = { actions.onCancelInvitation(invitationId) }
-                                    ) {
-                                        Text(
-                                            stringResource(
-                                                R.string.cancel_invitation,
-                                                invitationId.key().take(8),
-                                            )
-                                        )
-                                    }
-                                }
-                            }
+                            )
                         }
-
-                        if (inviteOrigin.isNotBlank()) {
+                        if (snapshot.unsentCount > 0uL) {
                             Text(
-                                stringResource(R.string.invite_caregiver),
-                                style = MaterialTheme.typography.titleMedium,
+                                stringResource(
+                                    R.string.shared_pending_changes,
+                                    snapshot.unsentCount.toLong(),
+                                )
                             )
-                            Text(stringResource(R.string.invite_description))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FilterChip(
-                                    selected = !inviteAsManager,
-                                    onClick = actions.onInviteMember,
-                                    label = { Text(stringResource(R.string.invite_member)) },
-                                )
-                                FilterChip(
-                                    selected = inviteAsManager,
-                                    onClick = actions.onInviteManager,
-                                    label = { Text(stringResource(R.string.invite_manager)) },
-                                )
-                            }
-                            OutlinedButton(
-                                enabled = !inviteInProgress,
-                                onClick = { actions.onCreateInvite(snapshot) },
-                            ) {
-                                Text(stringResource(R.string.create_invite))
-                            }
-                            invitationFragment?.let { fragment ->
-                                OutlinedButton(
-                                    onClick = { actions.onShareAndroidInvitation(fragment) }
-                                ) {
-                                    Text(stringResource(R.string.share_android_invitation))
-                                }
-                                OutlinedButton(
-                                    onClick = { actions.onCopyAndroidInvitation(fragment) }
-                                ) {
-                                    Text(stringResource(R.string.copy_android_invitation))
-                                }
-                                if (inviteOrigin == PreviewRelay.origin)
-                                    OutlinedButton(
-                                        onClick = { actions.onShareBrowserInvitation(fragment) }
-                                    ) {
-                                        Text(stringResource(R.string.share_browser_invitation))
-                                    }
-                            }
+                        }
+                        if (snapshot.inertCount > 0uL) {
+                            Text(
+                                stringResource(
+                                    R.string.shared_unreadable_batches,
+                                    snapshot.inertCount.toLong(),
+                                ),
+                                color = MaterialTheme.colorScheme.error,
+                            )
                         }
                     }
                 }
-            if (activeShared && showAccessControls && family != null)
-                OutlinedButton(onClick = actions.onMakePrivateCopy) {
-                    Text(stringResource(R.string.make_private_copy))
-                }
-            if (families.size != 1) {
-                Text(stringResource(R.string.families), style = MaterialTheme.typography.titleLarge)
-                families.forEachIndexed { index, item ->
-                    FilterChip(
-                        selected = item.familyId.key() == selectedFamily,
-                        onClick = { actions.onSelectFamily(item) },
-                        label = {
-                            val firstChild = familyChildNames[item.familyId.key()]
-                            Text(
-                                if (firstChild == null)
-                                    stringResource(R.string.family_number, index + 1)
-                                else
-                                    stringResource(
-                                        R.string.family_with_child,
-                                        index + 1,
-                                        firstChild,
-                                    )
-                            )
-                        },
-                    )
-                }
+                SettingsRow(
+                    Icons.Outlined.Group,
+                    stringResource(
+                        if (showAccessControls) R.string.hide_family_access
+                        else R.string.show_family_access
+                    ),
+                    stringResource(R.string.access_supporting),
+                    actions.onToggleAccess,
+                    expanded = showAccessControls,
+                )
             }
-            removedFamilies.forEach { source ->
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            stringResource(
-                                R.string.removed_family_card,
-                                source.familyId.key().take(8),
-                            )
-                        )
-                        OutlinedButton(onClick = { actions.onContinueInPrivateCopy(source) }) {
-                            Text(stringResource(R.string.continue_in_private_copy))
-                        }
-                    }
-                }
-            }
-            if (family != null)
-                OutlinedButton(onClick = actions.onToggleFamilyOptions) {
-                    Text(
-                        stringResource(
-                            if (showFamilySetup) R.string.hide_family_setup
-                            else R.string.show_family_setup
-                        )
-                    )
-                }
-            if (family == null || showFamilySetup)
-                OutlinedButton(onClick = actions.onNewFamily) {
-                    Text(stringResource(R.string.new_family))
-                }
-
-            if (!joinFirst && (family == null || showFamilySetup || recipientFamilies.isNotEmpty()))
-                joinControls()
         }
-        if (route == TrackerDestination.FAMILY && family != null && activeFamilyIsLocal) {
-            if (!activeShared && BuildConfig.DEBUG)
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
+        if (activeShared && showAccessControls)
+            activeSharedSnapshot?.let { snapshot ->
+                SharedHealth(
+                    snapshot,
+                    deviceLabels,
+                    onNameDevice = { target -> actions.onNameDevice(target, snapshot) },
+                )
+                if (!activeFamilyIsLocal) {
+                    Text(stringResource(R.string.shared_manual_sync))
+                    OutlinedButton(onClick = { actions.onSyncShared(snapshot) }) {
+                        Text(stringResource(R.string.sync_shared))
+                    }
+                }
+                if (
+                    family != null &&
+                        snapshot.devices.any {
+                            it.deviceId.contentEquals(family.deviceId) && it.role == 2.toUByte()
+                        }
+                ) {
+                    snapshot.devices
+                        .filterNot { it.deviceId.contentEquals(family.deviceId) }
+                        .forEach { device ->
+                            val label =
+                                deviceLabels[
+                                        deviceLabelKey(
+                                            snapshot.family.familyId,
+                                            device.deviceId,
+                                        )]
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?: stringResource(
+                                        R.string.device_short_id,
+                                        device.deviceId.key().take(8),
+                                    )
+                            OutlinedButton(onClick = { actions.onRemoveDevice(device) }) {
+                                Text(stringResource(R.string.remove_device, label))
+                            }
+                            if (BuildConfig.DEBUG) {
+                                val nextRole =
+                                    if (device.role == 2.toUByte()) 1u.toUByte()
+                                    else 2u.toUByte()
+                                OutlinedButton(
+                                    onClick = { actions.onPromoteDevice(device, nextRole) }
+                                ) {
+                                    Text(
+                                        stringResource(
+                                            if (nextRole == 2.toUByte()) R.string.promote_device
+                                            else R.string.demote_device,
+                                            label,
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    if (snapshot.pendingDevices.isNotEmpty()) {
                         Text(
-                            stringResource(R.string.share_family),
+                            stringResource(R.string.pending_devices),
                             style = MaterialTheme.typography.titleMedium,
                         )
-                        Text(stringResource(R.string.preview_share_description))
-                        Button(enabled = !shareInProgress, onClick = actions.onShareFamilyAction) {
-                            Text(stringResource(R.string.share_family_action))
+                        snapshot.pendingDevices.forEach { pending ->
+                            val label =
+                                deviceLabels[
+                                        deviceLabelKey(
+                                            snapshot.family.familyId,
+                                            pending.deviceId,
+                                        )]
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?: stringResource(
+                                        R.string.device_short_id,
+                                        pending.deviceId.key().take(8),
+                                    )
+                            OutlinedButton(
+                                onClick = { actions.onRemovePendingDevice(pending) }
+                            ) {
+                                Text(stringResource(R.string.remove_pending_device, label))
+                            }
                         }
-                        shareStage?.let { Text(it) }
+                    }
+                    if (BuildConfig.DEBUG) {
+                        if (activeUnusedInvitationIds == null) {
+                            Text(stringResource(R.string.invitation_list_delayed))
+                        } else if (!activeUnusedInvitationIds.isNullOrEmpty()) {
+                            Text(
+                                stringResource(R.string.unused_invitations),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            activeUnusedInvitationIds.orEmpty().forEach { invitationId ->
+                                OutlinedButton(
+                                    onClick = { actions.onCancelInvitation(invitationId) }
+                                ) {
+                                    Text(
+                                        stringResource(
+                                            R.string.cancel_invitation,
+                                            invitationId.key().take(8),
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (inviteOrigin.isNotBlank()) {
+                        Text(
+                            stringResource(R.string.invite_caregiver),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(stringResource(R.string.invite_description))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = !inviteAsManager,
+                                onClick = actions.onInviteMember,
+                                label = { Text(stringResource(R.string.invite_member)) },
+                            )
+                            FilterChip(
+                                selected = inviteAsManager,
+                                onClick = actions.onInviteManager,
+                                label = { Text(stringResource(R.string.invite_manager)) },
+                            )
+                        }
+                        OutlinedButton(
+                            enabled = !inviteInProgress,
+                            onClick = { actions.onCreateInvite(snapshot) },
+                        ) {
+                            Text(stringResource(R.string.create_invite))
+                        }
+                        invitationFragment?.let { fragment ->
+                            OutlinedButton(
+                                onClick = { actions.onShareAndroidInvitation(fragment) }
+                            ) {
+                                Text(stringResource(R.string.share_android_invitation))
+                            }
+                            OutlinedButton(
+                                onClick = { actions.onCopyAndroidInvitation(fragment) }
+                            ) {
+                                Text(stringResource(R.string.copy_android_invitation))
+                            }
+                            if (inviteOrigin == PreviewRelay.origin)
+                                OutlinedButton(
+                                    onClick = { actions.onShareBrowserInvitation(fragment) }
+                                ) {
+                                    Text(stringResource(R.string.share_browser_invitation))
+                                }
+                        }
                     }
                 }
+            }
+        if (activeShared && showAccessControls && family != null)
+            OutlinedButton(onClick = actions.onMakePrivateCopy) {
+                Text(stringResource(R.string.make_private_copy))
+            }
+        if (family != null && activeFamilyIsLocal && !activeShared && BuildConfig.DEBUG)
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.share_family),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(stringResource(R.string.preview_share_description))
+                    Button(enabled = !shareInProgress, onClick = actions.onShareFamilyAction) {
+                        Text(stringResource(R.string.share_family_action))
+                    }
+                    shareStage?.let { Text(it) }
+                }
+            }
+
+        if (family != null) {
+            SectionHeader(stringResource(R.string.section_data))
+            SectionCard {
+                SettingsRow(
+                    Icons.Outlined.Backup,
+                    stringResource(
+                        if (showDataControls) R.string.hide_data_controls
+                        else R.string.show_data_controls
+                    ),
+                    stringResource(R.string.data_supporting),
+                    actions.onToggleData,
+                    expanded = showDataControls,
+                )
+                if (showDataControls)
+                    Column(
+                        Modifier.padding(start = 4.dp, end = 4.dp, bottom = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.backup_title),
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                        if (!activeShared)
+                            completed?.let { saved ->
+                                Text(stringResource(R.string.last_saved_at, savedTime(saved.atMs)))
+                                if (revision > saved.revision)
+                                    Text(stringResource(R.string.changes_after_save))
+                            }
+                        Text(
+                            stringResource(
+                                if (activeShared) R.string.shared_backup_description
+                                else if (protectBackup) R.string.protected_backup_description
+                                else R.string.backup_description
+                            )
+                        )
+                        FilterChip(
+                            selected = protectBackup,
+                            onClick = actions.onToggleBackupProtection,
+                            label = { Text(stringResource(R.string.protect_backup)) },
+                        )
+                        if (protectBackup)
+                            OutlinedTextField(
+                                value = backupPassword,
+                                onValueChange = { it -> actions.onBackupPasswordChange(it) },
+                                label = { Text(stringResource(R.string.backup_password)) },
+                                visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true,
+                            )
+                        Button(
+                            onClick = actions.onSaveBackup,
+                            enabled = !protectBackup || backupPassword.isNotEmpty(),
+                        ) {
+                            Text(stringResource(R.string.save_backup))
+                        }
+                        OutlinedButton(onClick = actions.onExportAnalysisCsv) {
+                            Text(stringResource(R.string.export_analysis_csv))
+                        }
+                        OutlinedButton(onClick = actions.onRestoreBackup) {
+                            Text(stringResource(R.string.restore_backup))
+                        }
+                        if (hasPendingRestore && pendingRestoreProtected) {
+                            OutlinedTextField(
+                                value = restorePassword,
+                                onValueChange = { it -> actions.onRestorePasswordChange(it) },
+                                label = { Text(stringResource(R.string.restore_password)) },
+                                visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true,
+                            )
+                            Button(
+                                enabled = restorePassword.isNotEmpty(),
+                                onClick = actions.onInspectProtected,
+                            ) {
+                                Text(stringResource(R.string.inspect_protected))
+                            }
+                        }
+                        restoreInfo?.let { info ->
+                            Text(
+                                stringResource(
+                                    R.string.file_saved_at,
+                                    savedTime(info.snapshotUtcMs),
+                                    info.recordCount.toLong(),
+                                )
+                            )
+                            if (info.knownGap) Text(stringResource(R.string.file_known_gap))
+                            Button(onClick = actions.onConfirmRestore) {
+                                Text(stringResource(R.string.confirm_restore))
+                            }
+                        }
+                    }
+            }
+        }
+        if (family == null) {
+            OutlinedButton(onClick = actions.onRestoreBackup) {
+                Text(stringResource(R.string.restore_backup))
+            }
+            if (hasPendingRestore && pendingRestoreProtected) {
+                OutlinedTextField(
+                    value = restorePassword,
+                    onValueChange = { it -> actions.onRestorePasswordChange(it) },
+                    label = { Text(stringResource(R.string.restore_password)) },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                )
+                Button(
+                    enabled = restorePassword.isNotEmpty(),
+                    onClick = actions.onInspectProtected,
+                ) {
+                    Text(stringResource(R.string.inspect_protected))
+                }
+            }
+            restoreInfo?.let { info ->
+                Text(
+                    stringResource(
+                        R.string.file_saved_at,
+                        savedTime(info.snapshotUtcMs),
+                        info.recordCount.toLong(),
+                    )
+                )
+                if (info.knownGap) Text(stringResource(R.string.file_known_gap))
+                Button(onClick = actions.onConfirmRestore) {
+                    Text(stringResource(R.string.confirm_restore))
+                }
+            }
+        }
+
+        if (families.size != 1) {
+            SectionHeader(stringResource(R.string.families))
+            SectionCard {
+                families.forEachIndexed { index, item ->
+                    val firstChild = familyChildNames[item.familyId.key()]
+                    ChoiceListRow(
+                        if (firstChild == null) stringResource(R.string.family_number, index + 1)
+                        else stringResource(R.string.family_with_child, index + 1, firstChild),
+                        item.familyId.key() == selectedFamily,
+                    ) {
+                        actions.onSelectFamily(item)
+                    }
+                }
+            }
+        }
+        if (family != null) {
+            SectionHeader(stringResource(R.string.section_more))
+            SectionCard {
+                SettingsRow(
+                    Icons.Outlined.Tune,
+                    stringResource(
+                        if (showFamilySetup) R.string.hide_family_setup else R.string.show_family_setup
+                    ),
+                    stringResource(R.string.family_options_supporting),
+                    actions.onToggleFamilyOptions,
+                    expanded = showFamilySetup,
+                )
+                if (showFamilySetup)
+                    SettingsRow(
+                        Icons.Outlined.Add,
+                        stringResource(R.string.new_family),
+                        null,
+                        actions.onNewFamily,
+                    )
+            }
+        } else
+            OutlinedButton(onClick = actions.onNewFamily) {
+                Text(stringResource(R.string.new_family))
+            }
+        if (!joinFirst && (family == null || showFamilySetup || recipientFamilies.isNotEmpty()))
+            joinControls()
+        if (family != null && activeFamilyIsLocal) {
             if (showFamilySetup && BuildConfig.DEBUG) {
                 if (!showShareForm)
                     OutlinedButton(onClick = actions.onOpenSharingControls) {
@@ -514,135 +734,33 @@ internal fun ColumnScope.FamilyScreen(state: FamilyUiState, actions: FamilyActio
                     }
             }
         }
-        if (family != null) {
-            if (route == TrackerDestination.FAMILY) {
-                restoredOrigin?.let { origin ->
-                    Text(stringResource(R.string.restored_from, savedTime(origin.snapshotUtcMs)))
-                    if (origin.knownGap) Text(stringResource(R.string.file_known_gap))
-                }
-                if (children.size != 1) {
-                    Text(
-                        stringResource(R.string.children),
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                    if (children.isEmpty()) Text(stringResource(R.string.no_children))
-                    children.forEach { item ->
-                        FilterChip(
-                            selected = item.id.key() == selectedChild,
-                            onClick = { actions.onSelectChild(item) },
-                            label = { Text(item.name) },
-                        )
-                    }
-                }
-            }
-            if (child != null && route == TrackerDestination.FAMILY) {
-                Text(ageLabel, style = MaterialTheme.typography.bodyMedium)
-                OutlinedButton(onClick = actions.onToggleChildOptions) {
-                    Text(
-                        stringResource(
-                            if (showChildDetails) R.string.hide_child_options
-                            else R.string.child_options
-                        )
-                    )
-                }
-                if (showChildDetails)
-                    OutlinedButton(onClick = actions.onEditChildProfile) {
-                        Text(stringResource(R.string.edit_child_profile))
-                    }
-            }
-            if (route == TrackerDestination.FAMILY && children.isNotEmpty() && showChildDetails)
-                OutlinedButton(onClick = actions.onAddAnotherChild) {
-                    Text(stringResource(R.string.add_another_child))
-                }
-            if (route == TrackerDestination.FAMILY && children.isEmpty())
-                Button(onClick = actions.onAddChild) { Text(stringResource(R.string.add_child)) }
+    }
+}
 
-            if (route == TrackerDestination.FAMILY) {
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = actions.onToggleData) {
-                    Text(
-                        stringResource(
-                            if (showDataControls) R.string.hide_data_controls
-                            else R.string.show_data_controls
-                        )
-                    )
-                }
-                if (showDataControls) {
-                    Text(
-                        stringResource(R.string.backup_title),
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                    if (!activeShared)
-                        completed?.let { saved ->
-                            Text(stringResource(R.string.last_saved_at, savedTime(saved.atMs)))
-                            if (revision > saved.revision)
-                                Text(stringResource(R.string.changes_after_save))
-                        }
-                    Text(
-                        stringResource(
-                            if (activeShared) R.string.shared_backup_description
-                            else if (protectBackup) R.string.protected_backup_description
-                            else R.string.backup_description
-                        )
-                    )
-                    FilterChip(
-                        selected = protectBackup,
-                        onClick = actions.onToggleBackupProtection,
-                        label = { Text(stringResource(R.string.protect_backup)) },
-                    )
-                    if (protectBackup)
-                        OutlinedTextField(
-                            value = backupPassword,
-                            onValueChange = { it -> actions.onBackupPasswordChange(it) },
-                            label = { Text(stringResource(R.string.backup_password)) },
-                            visualTransformation = PasswordVisualTransformation(),
-                            singleLine = true,
-                        )
-                    Button(
-                        onClick = actions.onSaveBackup,
-                        enabled = !protectBackup || backupPassword.isNotEmpty(),
-                    ) {
-                        Text(stringResource(R.string.save_backup))
-                    }
-                    OutlinedButton(onClick = actions.onExportAnalysisCsv) {
-                        Text(stringResource(R.string.export_analysis_csv))
-                    }
-                }
-            }
-        }
-        if (route == TrackerDestination.FAMILY && (family == null || showDataControls)) {
-            OutlinedButton(onClick = actions.onRestoreBackup) {
-                Text(stringResource(R.string.restore_backup))
-            }
-            if (hasPendingRestore && pendingRestoreProtected) {
-                OutlinedTextField(
-                    value = restorePassword,
-                    onValueChange = { it -> actions.onRestorePasswordChange(it) },
-                    label = { Text(stringResource(R.string.restore_password)) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                )
-                Button(
-                    enabled = restorePassword.isNotEmpty(),
-                    onClick = actions.onInspectProtected,
-                ) {
-                    Text(stringResource(R.string.inspect_protected))
-                }
-            }
-            restoreInfo?.let { info ->
-                Text(
-                    stringResource(
-                        R.string.file_saved_at,
-                        savedTime(info.snapshotUtcMs),
-                        info.recordCount.toLong(),
-                    )
-                )
-                if (info.knownGap) Text(stringResource(R.string.file_known_gap))
-                Button(onClick = actions.onConfirmRestore) {
-                    Text(stringResource(R.string.confirm_restore))
-                }
-            }
-        }
+/** A selectable list row, such as a child or Family, with a check on the current one. */
+@Composable
+private fun ChoiceListRow(
+    title: String,
+    selected: Boolean,
+    avatar: String? = null,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        if (avatar != null) ChildAvatar(avatar)
+        Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+        if (selected)
+            Icon(
+                Icons.Outlined.Check,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
     }
 }
 

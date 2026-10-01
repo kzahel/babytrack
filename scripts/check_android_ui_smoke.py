@@ -46,7 +46,7 @@ def main(quick: bool = False) -> None:
     find(target, "Feeding")
     find(target, "UITestChild")
     tap(target, "Family", actionable=True)
-    tap(target, "Family options")
+    tap(target, "Family options", scroll=True)
     find(target, "Sharing controls", scroll=True)
     tap(target, "Hide Family options", scroll=True)
     tap(target, "Child options", scroll=True)

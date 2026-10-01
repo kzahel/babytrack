@@ -44,9 +44,7 @@ import uniffi.babytrack_core_ffi.NativeLocalStore
 import uniffi.babytrack_core_ffi.NativeSharedStore
 import uniffi.babytrack_core_ffi.ActivityWhen
 import uniffi.babytrack_core_ffi.previewInvitation
-import java.text.DateFormat
 import java.time.LocalDate
-import java.util.Date
 
 @RunWith(AndroidJUnit4::class)
 class SharingRelayTest {
@@ -221,7 +219,7 @@ class SharingRelayTest {
         ActivityScenario.launch(MainActivity::class.java).use {
             val switch = context.getString(R.string.switch_target)
             composeRule.waitUntil(25_000) {
-                composeRule.onAllNodesWithText("Family 1 · First child")
+                composeRule.onAllNodesWithText("First child")
                     .fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onNodeWithContentDescription(switch).performClick()
@@ -343,17 +341,19 @@ class SharingRelayTest {
         ActivityScenario.launch(MainActivity::class.java).use {
             val feeds = context.resources.getQuantityString(R.plurals.today_feeds, 1, 1L, 90L)
             val diapers = context.resources.getQuantityString(R.plurals.today_diapers, 1, 1L, 1L, 1L)
-            val timeText = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-            val lastTime = timeText.format(Date(now))
-            val sleepTime = timeText.format(Date(now - 600_000L))
+            val lastTime = compactDateTime(context, now, now)
+            val sleepTime = compactDateTime(context, now - 600_000L, now)
+            val bottle = context.getString(R.string.bottle_with_entered, "90",
+                context.getString(R.string.unit_ml), context.getString(R.string.bottle_formula))
+            val diaper = context.getString(R.string.diaper, context.getString(R.string.both))
+            val lastFeed = context.getString(R.string.tile_detail_at, bottle, lastTime)
             composeRule.waitUntil(25_000) {
                 composeRule.onAllNodesWithText(feeds).fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onNodeWithText(feeds).performScrollTo().assertIsDisplayed()
             composeRule.onNodeWithText(diapers).performScrollTo().assertIsDisplayed()
-            composeRule.onNodeWithText(context.getString(R.string.last_feed, lastTime))
-                .performScrollTo().assertIsDisplayed()
-            composeRule.onNodeWithText(context.getString(R.string.last_diaper, lastTime))
+            composeRule.onNodeWithText(lastFeed).performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithText(context.getString(R.string.tile_detail_at, diaper, lastTime))
                 .performScrollTo().assertIsDisplayed()
             composeRule.onNodeWithText(context.getString(R.string.running_sleep_since,
                 sleepTime)).performScrollTo().assertIsDisplayed()
@@ -373,12 +373,10 @@ class SharingRelayTest {
             composeRule.onNodeWithText("Other summary child").performScrollTo().performClick()
             openTab(R.string.nav_today)
             composeRule.waitUntil(25_000) {
-                composeRule.onAllNodesWithText(context.resources.getQuantityString(
-                    R.plurals.today_feeds, 0, 0L, 0L))
+                composeRule.onAllNodesWithText(context.getString(R.string.today_empty))
                     .fetchSemanticsNodes().isNotEmpty()
             }
-            assertTrue(composeRule.onAllNodesWithText(context.getString(R.string.last_feed,
-                lastTime)).fetchSemanticsNodes().isEmpty())
+            assertTrue(composeRule.onAllNodesWithText(lastFeed).fetchSemanticsNodes().isEmpty())
         }
         NativeLocalStore.open(db.absolutePath).use { local ->
             assertTrue(local.timeline(family, child).any {

@@ -43,7 +43,8 @@ def main(quick: bool = False) -> None:
     # Let the IME finish opening so the tap exercises the visible save footer.
     time.sleep(1)
     tap(target, "Start tracking", scroll=True, actionable=True)
-    find(target, "Family 1 · UITestChild")
+    find(target, "Feeding")
+    find(target, "UITestChild")
     tap(target, "Family", actionable=True)
     tap(target, "Family options")
     find(target, "Sharing controls", scroll=True)
@@ -78,7 +79,7 @@ def main(quick: bool = False) -> None:
     find(target, "Diaper · Dirty", scroll=True)
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
-    find(target, "Family 1 · UITestChild")
+    find(target, "UITestChild")
     tap(target, "History", actionable=True)
     find(target, "Diaper · Dirty")
     tap(target, "Details and edits", scroll=True)
@@ -88,7 +89,7 @@ def main(quick: bool = False) -> None:
     find(target, "No entries yet.", scroll=True)
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
-    find(target, "Family 1 · UITestChild")
+    find(target, "UITestChild")
     tap(target, "History", actionable=True)
     find(target, "No entries yet.", scroll=True)
     if quick:

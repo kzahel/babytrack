@@ -7,7 +7,6 @@
     <string name="add_activity">Add activity</string>
     <string name="capture_for_child">For %1$s</string>
     <string name="switch_target">Switch Family or child</string>
-    <string name="quick_log">Quick log</string>
     <string name="recent_entries">Recent entries</string>
     <string name="show_entry_actions">Details and edits</string>
     <string name="hide_entry_actions">Hide details</string>
@@ -85,8 +84,6 @@
     <string name="timeline">Timeline</string>
     <string name="choose_history_day">Choose day</string>
     <string name="show_all_days">Show all days</string>
-    <string name="today_summary">Today</string>
-    <string name="today_sleep">Logged sleep: %1$d h %2$d min</string>
     <plurals name="today_feeds">
         <item quantity="one">%1$d feed · bottle %2$d mL</item>
         <item quantity="other">%1$d feeds · bottle %2$d mL</item>
@@ -95,9 +92,7 @@
         <item quantity="one">%1$d diaper · wet %2$d · dirty %3$d</item>
         <item quantity="other">%1$d diapers · wet %2$d · dirty %3$d</item>
     </plurals>
-    <string name="last_feed">Last feed: %1$s</string>
-    <string name="last_diaper">Last diaper: %1$s</string>
-    <string name="running_sleep_since">Sleep running since %1$s</string>
+    <string name="running_sleep_since">Since %1$s</string>
     <string name="no_entries">No entries yet.</string>
     <string name="no_matching_entries">No entries in this view.</string>
     <string name="timeline_all">All</string>
@@ -414,4 +409,21 @@
     <string name="duration_minutes">%1$d min</string>
     <string name="duration_hours">%1$d h</string>
     <string name="duration_hours_minutes">%1$d h %2$d min</string>
+    <!-- Today state tiles -->
+    <string name="tile_feed">Feeding</string>
+    <string name="tile_feed_none">No feeds logged yet</string>
+    <string name="tile_sleep">Sleep</string>
+    <string name="tile_sleeping">Sleeping</string>
+    <string name="tile_sleep_none">No sleep logged yet</string>
+    <!-- %1$s is a duration such as "1 h 20 min", %2$s when the sleep ended. -->
+    <string name="tile_sleep_ended">Slept %1$s · woke %2$s</string>
+    <string name="tile_past_sleep">Add past sleep</string>
+    <string name="tile_diaper">Diapers</string>
+    <string name="tile_diaper_none">No diapers logged yet</string>
+    <!-- %1$s is an entry summary, %2$s its time. -->
+    <string name="tile_detail_at">%1$s · %2$s</string>
+    <string name="today_so_far">So far today</string>
+    <!-- %1$s is a duration such as "1 h 20 min". -->
+    <string name="today_sleep_total">%1$s of sleep</string>
+    <string name="today_empty">Nothing logged today yet.</string>
 </resources>

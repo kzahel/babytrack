@@ -36,7 +36,7 @@ icons, or assets.
    Icons library; compact relative/clock time formatting driven by an
    explicit "now"; shared components (activity badge, entry row, section
    header, bottom action bar, choice tiles, single-row chip group).
-3. [ ] Today: child-first header, live state tiles for feed, sleep, and
+3. [x] Today: child-first header, live state tiles for feed, sleep, and
    diaper (last event, detail, elapsed sleep clock with Stop), a real empty
    state, recent entries as entry rows, and sync status as a quiet chip.
 4. [ ] Capture template: activity title and child at the top, a tappable
@@ -93,3 +93,17 @@ icons, or assets.
   accent and ink at 4.5:1 on its container in both themes, category
   coverage for every capture kind, and compact time/duration output. All
   Android unit tests and `lintDebug` pass (no errors).
+
+- Slice 3: Today shows the child's name and initial in the top bar (Family
+  number only when several Families exist), age with a local/shared status
+  chip, explicit warning cards for delayed or blocked sync, and Feeding,
+  Sleep, and Diapers tiles with the last entry, its compact time, elapsed
+  time, and direct actions. A running sleep shows a live stopwatch, its
+  start, and Stop. "So far today" uses the core day summary and an empty
+  day shows one line instead of zeros. Entry text moved to a shared
+  `entrySummary` used by Today and History. The gallery's five Today cases
+  were re-rendered in all four variants and inspected. Unit tests, lint,
+  both APKs, the quick caregiver UI smoke on a disposable read-only
+  emulator, and the updated Today-summary and header-switch instrumentation
+  cases pass. UI scripts now wait for the Feeding tile and the child name
+  instead of the former "Family 1 · name" title.

@@ -557,7 +557,7 @@ internal fun TrackerRoute(
                             families.indexOfFirst { it.familyId.key() == selectedFamily } + 1
                         val title =
                             if (child != null && familyNumber > 0) {
-                                stringResource(R.string.family_with_child, familyNumber, child.name)
+                                child.name
                             } else
                                 stringResource(
                                     when (route) {
@@ -644,6 +644,10 @@ internal fun TrackerRoute(
                                     title,
                                     child != null,
                                     family != null && child != null,
+                                    subtitle =
+                                        if (child != null && familyNumber > 0 && families.size > 1)
+                                            stringResource(R.string.family_number, familyNumber)
+                                        else null,
                                 ),
                             scrollState = scrollState,
                             snackbarHostState = snackbarHostState,
@@ -960,6 +964,8 @@ internal fun TrackerRoute(
                                                 daySummary = daySummary,
                                                 entries = entries,
                                                 entriesAreCurrent = loadedChildKey == selectedChild,
+                                                nowMs = System.currentTimeMillis(),
+                                                liveClock = true,
                                             ),
                                         actions =
                                             TodayActions(
@@ -1028,6 +1034,14 @@ internal fun TrackerRoute(
                                                     },
                                                 onOpenDiaper = action@{
                                                         captureKind = CaptureKind.DIAPER
+                                                        destination = TrackerDestination.CAPTURE
+                                                    },
+                                                onOpenBreast = action@{
+                                                        captureKind = CaptureKind.BREAST
+                                                        destination = TrackerDestination.CAPTURE
+                                                    },
+                                                onOpenSleep = action@{
+                                                        captureKind = CaptureKind.SLEEP
                                                         destination = TrackerDestination.CAPTURE
                                                     },
                                                 onAddActivity = action@{

@@ -49,7 +49,8 @@ def main() -> None:
     adb(target, "shell", "input", "text", "RecoveryChild")
     dismiss_keyboard(target)
     tap(target, "Start tracking", scroll=True)
-    find(target, "Family 1 · RecoveryChild")
+    find(target, "Feeding")
+    find(target, "RecoveryChild")
     tap(target, "Add activity", scroll=True, actionable=True)
     tap(target, "Add note", scroll=True, actionable=True)
     tap(target, "What happened?", scroll=True)
@@ -93,7 +94,7 @@ def main() -> None:
     tap(target, "Restore backup")
     tap(target, CORRUPT_FILENAME)
     find(target, "This backup file is damaged or unsupported. No Family was restored.")
-    if any(node.attrib.get("text", "").startswith("Family 1")
+    if any(node.attrib.get("text", "") == "RecoveryChild"
            for node in nodes(target).iter("node")):
         raise AssertionError("Damaged backup created a Family")
     stage("Recovery: open saved file")
@@ -103,7 +104,7 @@ def main() -> None:
     tap(target, "Restore as new Family", scroll=True)
     tap(target, "Family", actionable=True)
     find(target, "Restored from a file saved at ", scroll=True, contains=True)
-    find(target, "Family 1 · RecoveryChild")
+    find(target, "RecoveryChild")
     tap(target, "History", actionable=True)
     display = re.search(r"(\d+)x(\d+)", adb(target, "shell", "wm", "size"))
     if display is None:
@@ -119,7 +120,7 @@ def main() -> None:
         raise AssertionError(f"Restored timeline did not match file point: {seen!r}")
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
-    find(target, "Family 1 · RecoveryChild")
+    find(target, "RecoveryChild")
     tap(target, "History", actionable=True)
     find(target, "Note · RecoveryMarker", scroll=True)
 
@@ -148,7 +149,7 @@ def main() -> None:
     dismiss_keyboard(target)
     tap(target, "Check protected backup", scroll=True)
     find(target, "Wrong password or damaged backup file.", scroll=True)
-    if any(node.attrib.get("text", "").startswith("Family 1")
+    if any(node.attrib.get("text", "") == "RecoveryChild"
            for node in nodes(target).iter("node")):
         raise AssertionError("Wrong password created a Family")
     tap(target, "Password for protected backup", scroll=True)
@@ -159,7 +160,7 @@ def main() -> None:
     tap(target, "Check protected backup", scroll=True)
     find(target, "File saved at ", scroll=True, contains=True)
     tap(target, "Restore as new Family", scroll=True)
-    find(target, "Family 1 · RecoveryChild")
+    find(target, "RecoveryChild")
     tap(target, "History", actionable=True)
     find(target, "Note · RecoveryMarker", scroll=True)
     print("Android readable/protected backups, damaged-file denial, fresh-install restore, and restart: OK")

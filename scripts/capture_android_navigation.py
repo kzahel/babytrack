@@ -41,7 +41,8 @@ def main() -> None:
     adb(target, "shell", "input", "text", "CaptureChild")
     dismiss_keyboard(target)
     tap(target, "Start tracking", scroll=True)
-    find(target, "Family 1 · CaptureChild")
+    find(target, "Feeding")
+    find(target, "CaptureChild")
     original_scale = adb(target, "shell", "settings", "get", "system", "font_scale").strip()
     original_night = adb(target, "shell", "cmd", "uimode", "night").lower()
     try:

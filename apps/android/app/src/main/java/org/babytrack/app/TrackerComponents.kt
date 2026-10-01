@@ -33,6 +33,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 
 /** Shared presentation pieces. They render supplied state and call back; no store access. */
 
@@ -358,4 +361,21 @@ internal fun SectionCard(modifier: Modifier = Modifier, content: @Composable () 
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) { content() }
     }
+}
+
+/**
+ * The instant for elapsed labels. Fixtures pass live = false and keep the
+ * supplied instant; the running app advances it at [tickMs].
+ */
+@Composable
+internal fun rememberNow(initial: Long, live: Boolean, tickMs: Long): Long {
+    val now by
+        produceState(initial, live, tickMs) {
+            if (live)
+                while (true) {
+                    value = System.currentTimeMillis()
+                    delay(tickMs - value % tickMs)
+                }
+        }
+    return now
 }

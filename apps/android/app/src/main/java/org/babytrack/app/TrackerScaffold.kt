@@ -1,6 +1,13 @@
 package org.babytrack.app
 
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -19,6 +26,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -34,6 +42,8 @@ internal data class TrackerChromeState(
     val title: String,
     val hasChild: Boolean,
     val canNavigate: Boolean,
+    /** Shown under the child's name only when it distinguishes a Family. */
+    val subtitle: String? = null,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,13 +78,24 @@ internal fun TrackerScaffold(
                                 onClick = onSwitchTarget,
                                 modifier = Modifier.semantics { contentDescription = description },
                             ) {
-                                Text(
-                                    title,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    style = MaterialTheme.typography.titleLarge,
-                                )
+                                ChildAvatar(title)
+                                Column(Modifier.padding(start = 12.dp)) {
+                                    Text(
+                                        title,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        style = MaterialTheme.typography.titleLarge,
+                                    )
+                                    subtitle?.let {
+                                        Text(
+                                            it,
+                                            maxLines = 1,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = MaterialTheme.typography.labelMedium,
+                                        )
+                                    }
+                                }
                                 Icon(
                                     painterResource(R.drawable.ic_expand_more),
                                     contentDescription = null,
@@ -82,8 +103,13 @@ internal fun TrackerScaffold(
                             }
                         } else Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     },
+                    colors =
+                        TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background
+                        ),
                 )
             },
+            containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
                 if (canNavigate && route != TrackerDestination.CAPTURE) {
                     NavigationBar {
@@ -129,5 +155,20 @@ internal fun TrackerScaffold(
                 content = content,
             )
         }
+    }
+}
+
+/** A child's initial in a quiet circle; the name beside it is the accessible label. */
+@Composable
+internal fun ChildAvatar(name: String, size: Dp = 36.dp) {
+    Box(
+        Modifier.size(size).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            name.trim().firstOrNull()?.uppercase() ?: "",
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            style = MaterialTheme.typography.titleMedium,
+        )
     }
 }

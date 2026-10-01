@@ -131,6 +131,7 @@ internal object ScreenFixtures {
                 daySummary = null,
                 entries = emptyList(),
                 entriesAreCurrent = true,
+                nowMs = nowMs,
             )
             .copy(daySummary = summary, entries = typicalEntries)
 
@@ -404,9 +405,7 @@ internal fun FixtureScreen(fixture: ScreenFixture, scrollState: ScrollState) {
         return
     }
     val hasChild = fixture.family?.child != null || fixture.route != TrackerDestination.FAMILY
-    val title =
-        if (hasChild) stringResource(R.string.family_with_child, 1, "Rowan")
-        else stringResource(R.string.nav_family)
+    val title = if (hasChild) ScreenFixtures.child.name else stringResource(R.string.nav_family)
     TrackerScaffold(TrackerChromeState(fixture.route, title, hasChild, hasChild), scrollState) {
         fixture.today?.let { TodayScreen(it, TodayActions()) }
         fixture.history?.let { HistoryScreen(it, HistoryActions()) }

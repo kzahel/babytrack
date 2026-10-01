@@ -31,7 +31,7 @@ icons, or assets.
 
 1. [x] Record this plan and the owning-topic direction (activity identity
    colors, icon source, capture template, live nursing draft).
-2. [ ] Foundation: activity category tokens for light and dark with a
+2. [x] Foundation: activity category tokens for light and dark with a
    contrast regression; activity icons from the Apache-2.0 AndroidX Material
    Icons library; compact relative/clock time formatting driven by an
    explicit "now"; shared components (activity badge, entry row, section
@@ -80,3 +80,16 @@ icons, or assets.
   Huckleberry captures in `local-references/`. The Android app had no
   activity icons or category colors, absolute dates on every row, zero-value
   summaries on an empty day, inline Save buttons, and manual-minute nursing.
+
+- Slice 2: `ActivityStyle.kt` maps event kinds to five presentation
+  categories, outlined Material icons, and light/dark accent/container
+  pairs supplied by `BabytrackTheme`. `TimeDisplay.kt` formats clock,
+  yesterday, short-date, elapsed, duration, and stopwatch text from an
+  explicit instant and zone; `TrackerComponents.kt` adds the shared badge,
+  entry row, section header, choice tiles, chip row, segmented choice, time
+  row, bottom action bar, status chip, and settings row. The icon library
+  is `material-icons-extended` 1.7.5 from the existing Compose BOM, already
+  in the offline Gradle cache. New regressions check every category's
+  accent and ink at 4.5:1 on its container in both themes, category
+  coverage for every capture kind, and compact time/duration output. All
+  Android unit tests and `lintDebug` pass (no errors).

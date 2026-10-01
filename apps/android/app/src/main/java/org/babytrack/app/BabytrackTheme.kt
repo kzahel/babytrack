@@ -7,13 +7,13 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 // Calm neutral surfaces leave the strongest color for actions and status.
-// Activity colors are specified in the interface design topic and will be
-// applied when the Today and capture screens are split into components.
-private val LightColors = lightColorScheme(
+// Activity category colors live in ActivityStyle.kt and are provided below.
+internal val LightColors = lightColorScheme(
     primary = Color(0xFF176B75),
     onPrimary = Color.White,
     primaryContainer = Color(0xFFD3F0EE),
@@ -41,7 +41,7 @@ private val LightColors = lightColorScheme(
     outline = Color(0xFF647A7D),
 )
 
-private val DarkColors = darkColorScheme(
+internal val DarkColors = darkColorScheme(
     primary = Color(0xFFA5E7E5),
     onPrimary = Color(0xFF113238),
     primaryContainer = Color(0xFF24545B),
@@ -77,9 +77,13 @@ private val BabytrackShapes = Shapes(
 
 @Composable
 internal fun BabytrackTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
-        shapes = BabytrackShapes,
-        content = content,
-    )
+    CompositionLocalProvider(
+        LocalActivityPalette provides if (darkTheme) DarkActivityPalette else LightActivityPalette
+    ) {
+        MaterialTheme(
+            colorScheme = if (darkTheme) DarkColors else LightColors,
+            shapes = BabytrackShapes,
+            content = content,
+        )
+    }
 }

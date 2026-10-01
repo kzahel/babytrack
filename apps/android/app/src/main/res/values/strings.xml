@@ -391,4 +391,27 @@
     <string name="onboarding_name_too_long">Please use a shorter name or nickname.</string>
     <string name="onboarding_save_error">Couldn’t finish setup. Your details are saved here. Please try again.</string>
     <string name="loading">Loading…</string>
+    <!-- Compact time display. %1$s is a localized clock time. -->
+    <string name="yesterday_at">Yesterday, %1$s</string>
+    <!-- %1$s is a short localized date, %2$s a clock time. -->
+    <string name="date_at">%1$s, %2$s</string>
+    <string name="day_today">Today</string>
+    <string name="day_yesterday">Yesterday</string>
+    <string name="elapsed_now">Just now</string>
+    <plurals name="elapsed_minutes">
+        <item quantity="one">%d min ago</item>
+        <item quantity="other">%d min ago</item>
+    </plurals>
+    <plurals name="elapsed_hours">
+        <item quantity="one">%d h ago</item>
+        <item quantity="other">%d h ago</item>
+    </plurals>
+    <string name="elapsed_hours_minutes">%1$d h %2$d min ago</string>
+    <plurals name="elapsed_days">
+        <item quantity="one">%d day ago</item>
+        <item quantity="other">%d days ago</item>
+    </plurals>
+    <string name="duration_minutes">%1$d min</string>
+    <string name="duration_hours">%1$d h</string>
+    <string name="duration_hours_minutes">%1$d h %2$d min</string>
 </resources>

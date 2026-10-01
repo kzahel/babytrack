@@ -272,7 +272,6 @@ internal fun ColumnScope.TodayScreen(state: TodayUiState, actions: TodayActions)
                     EntryRow(
                         kind = entry.kind,
                         title = entrySummary(context, entry),
-                        detail = null,
                         time = compactDateTime(context, entry.startUtcMs, now),
                         onClick = actions.onViewTimeline,
                     )

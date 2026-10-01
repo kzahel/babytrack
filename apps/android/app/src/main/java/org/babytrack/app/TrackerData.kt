@@ -108,6 +108,9 @@ internal data class ScreenData(
     val activeSleepCount: Int,
     val daySummary: DaySummaryRow?,
     val daySummaryDay: LocalDate?,
+    /** The core's totals for the History day, when it differs from today. */
+    val historySummary: DaySummaryRow? = null,
+    val historySummaryDay: LocalDate? = null,
 )
 
 internal fun runningSleepCount(
@@ -143,6 +146,7 @@ internal fun loadTrackerData(
     selectedFamily: String?,
     selectedChild: String?,
     selectedRecipient: String?,
+    historyDay: LocalDate? = null,
 ): ScreenData {
     val local = store.families()
     val removedLocal = local.filter { sharing.isShared(it) && sharing.isRemoved(it) }
@@ -214,11 +218,24 @@ internal fun loadTrackerData(
             summaryDay.plusDays(1).atStartOfDay(summaryZone).toInstant().toEpochMilli(),
             System.currentTimeMillis(),
         )
+    fun summaryFor(day: LocalDate): DaySummaryRow? {
+        if (family == null || child == null) return null
+        val dayWindow =
+            DayWindowRow(
+                day.atStartOfDay(summaryZone).toInstant().toEpochMilli(),
+                day.plusDays(1).atStartOfDay(summaryZone).toInstant().toEpochMilli(),
+                System.currentTimeMillis(),
+            )
+        return if (shared) sharing.daySummary(family, child.id, dayWindow)
+        else store.daySummary(family, child.id, dayWindow)
+    }
     val daySummary =
         if (family != null && child != null) {
             if (shared) sharing.daySummary(family, child.id, window)
             else store.daySummary(family, child.id, window)
         } else null
+    val historySummary =
+        historyDay?.takeIf { it != summaryDay && !it.isAfter(summaryDay) }?.let(::summaryFor)
     return ScreenData(
         shown,
         (removedLocal + removedRecipients).distinctBy { it.familyId.key() },
@@ -239,5 +256,7 @@ internal fun loadTrackerData(
         runningSleepCount(store, sharing, activeLocal, recipients),
         daySummary,
         if (daySummary != null) summaryDay else null,
+        historySummary,
+        if (historySummary != null) historyDay else null,
     )
 }

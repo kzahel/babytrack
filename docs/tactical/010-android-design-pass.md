@@ -48,7 +48,7 @@ icons, or assets.
    is UI-local and target-scoped, survives process death, and saves one
    segment list through the existing Rust action, matching the web contract
    in the event model.
-6. [ ] History: Day/All modes, a week strip, the core day summary for the
+6. [x] History: Day/All modes, a week strip, the core day summary for the
    selected day, compact entry rows, a single scrolling filter row, and entry
    actions revealed from the row without a per-row "Details" link.
 7. [ ] Family as a settings list: child card, list rows with icons and
@@ -141,3 +141,20 @@ icons, or assets.
   Left, force-stops the app, resumes from Today, switches to Right, saves,
   and finds "Breast · Left 1 min → Right 1 min" in History. Ongoing
   notifications for nursing drafts are not part of this slice.
+
+- Slice 6: History opens on a Day view with a seven-day strip and a date
+  picker, the core's day summary for the chosen day (loaded through the
+  existing native/shared `daySummary` window, hidden when the day is
+  empty), a single scrolling filter row, and day cards of icon rows with
+  clock times; an All days view keeps day-grouped headings. Tapping a row
+  reveals its existing edit/delete actions, replacing the per-row "Details
+  and edits" link. The Day view lists any entry that overlaps the day, so an
+  overnight sleep appears on both days its time is counted; this was found
+  when the full smoke ran just after midnight. The UI harness expands rows
+  by position (with a scroll check so an open row is never collapsed) and
+  instrumentation uses an `entry-row` test tag. The disposable emulator
+  carried a 320 × 640 dp display override; the full caregiver smoke passes
+  there after compacting the summary cells and omitting the redundant
+  Today heading. Unit tests, lint, both APKs, the harness regressions, and
+  the sleep-move, Undo, diaper time-edit, and header-switch instrumentation
+  cases pass.

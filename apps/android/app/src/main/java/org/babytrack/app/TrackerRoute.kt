@@ -202,6 +202,7 @@ internal fun TrackerRoute(
 
                         var timelineFilter by remember { mutableStateOf(TimelineFilter.ALL) }
                         var selectedHistoryDay by rememberSaveable { mutableStateOf<String?>(null) }
+                        var historyAllDays by rememberSaveable { mutableStateOf(false) }
                         var expandedEntryKey by remember { mutableStateOf<String?>(null) }
 
                         val snackbarHostState = remember { SnackbarHostState() }
@@ -450,7 +451,13 @@ internal fun TrackerRoute(
                                     .onFailure { message = errorText }
                             }
                         }
-                        LaunchedEffect(version, selectedFamily, selectedChild, selectedRecipient) {
+                        LaunchedEffect(
+                            version,
+                            selectedFamily,
+                            selectedChild,
+                            selectedRecipient,
+                            selectedHistoryDay,
+                        ) {
                             runCatching {
                                     withContext(Dispatchers.IO) {
                                         loadTrackerData(
@@ -459,6 +466,7 @@ internal fun TrackerRoute(
                                             selectedFamily,
                                             selectedChild,
                                             selectedRecipient,
+                                            selectedHistoryDay?.let(LocalDate::parse),
                                         )
                                     }
                                 }
@@ -1141,9 +1149,37 @@ internal fun TrackerRoute(
                                                 entriesAreCurrent = loadedChildKey == selectedChild,
                                                 entries = entries,
                                                 expandedEntryKey = expandedEntryKey,
+                                                allDays = historyAllDays,
+                                                daySummary =
+                                                    if (loadedChildKey != selectedChild) null
+                                                    else if (selectedHistoryDay == null ||
+                                                        LocalDate.parse(selectedHistoryDay) ==
+                                                            daySummaryDay)
+                                                        daySummary.takeIf {
+                                                            daySummaryDay ==
+                                                                LocalDate.now(ZoneId.systemDefault())
+                                                        }
+                                                    else
+                                                        screenData?.historySummary?.takeIf {
+                                                            screenData?.historySummaryDay?.toString() ==
+                                                                selectedHistoryDay
+                                                        },
+                                                nowMs = System.currentTimeMillis(),
                                             ),
                                         actions =
                                             HistoryActions(
+                                                onSelectDay = action@{ iso ->
+                                                        selectedHistoryDay =
+                                                            iso.takeIf {
+                                                                LocalDate.parse(it) != LocalDate.now()
+                                                            }
+                                                        historyAllDays = false
+                                                        expandedEntryKey = null
+                                                    },
+                                                onShowDay = action@{
+                                                        historyAllDays = false
+                                                        expandedEntryKey = null
+                                                    },
                                                 onChooseHistoryDay = action@{
                                                         val day =
                                                             selectedHistoryDay?.let {
@@ -1159,6 +1195,7 @@ internal fun TrackerRoute(
                                                                                 date,
                                                                             )
                                                                             .toString()
+                                                                    historyAllDays = false
                                                                     expandedEntryKey = null
                                                                 },
                                                                 day.year,
@@ -1172,7 +1209,7 @@ internal fun TrackerRoute(
                                                             .show()
                                                     },
                                                 onShowAllDays = action@{
-                                                        selectedHistoryDay = null
+                                                        historyAllDays = true
                                                         expandedEntryKey = null
                                                     },
                                                 onTimelineFilterChange = action@{ filter ->

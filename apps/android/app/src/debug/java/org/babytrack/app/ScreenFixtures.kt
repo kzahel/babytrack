@@ -148,6 +148,8 @@ internal object ScreenFixtures {
                 entriesAreCurrent = true,
                 entries = emptyList(),
                 expandedEntryKey = null,
+                daySummary = summary,
+                nowMs = nowMs,
             )
             .copy(entries = typicalEntries)
 
@@ -300,15 +302,34 @@ internal object ScreenFixtures {
                 "History · empty",
                 history = history().copy(entries = emptyList()),
             ),
-            ScreenFixture("history-typical", "History · all activity types", history = history()),
+            ScreenFixture("history-typical", "History · today", history = history()),
+            ScreenFixture(
+                "history-all-days",
+                "History · all days",
+                history =
+                    history()
+                        .copy(
+                            allDays = true,
+                            entries =
+                                typicalEntries +
+                                    typicalEntries.take(3).mapIndexed { index, entry ->
+                                        entry.copy(
+                                            id = ByteArray(16) { (120 + index + it).toByte() },
+                                            startUtcMs = entry.startUtcMs - 24 * 60 * 60_000L,
+                                            endUtcMs = entry.endUtcMs?.minus(24 * 60 * 60_000L),
+                                        )
+                                    },
+                        ),
+            ),
             ScreenFixture(
                 "history-filtered",
                 "History · day and feed filter",
                 history =
                     history()
                         .copy(
-                            selectedHistoryDay = "2026-09-29",
+                            selectedHistoryDay = "2026-09-28",
                             timelineFilter = TimelineFilter.FEEDS,
+                            daySummary = null,
                         ),
             ),
             ScreenFixture(

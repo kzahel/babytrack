@@ -26,6 +26,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performClick
@@ -85,12 +86,10 @@ class SharingRelayTest {
     }
 
     private fun openFirstEntryActions() {
-        val text = InstrumentationRegistry.getInstrumentation().targetContext
-            .getString(R.string.show_entry_actions)
         composeRule.waitUntil(25_000) {
-            composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag("entry-row").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onAllNodesWithText(text).onFirst().performScrollTo().performClick()
+        composeRule.onAllNodesWithTag("entry-row").onFirst().performScrollTo().performClick()
     }
 
     @Test

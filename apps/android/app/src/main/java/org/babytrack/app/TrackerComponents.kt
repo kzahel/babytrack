@@ -78,14 +78,15 @@ internal fun ActivityBadge(kind: String, modifier: Modifier = Modifier, size: Dp
     }
 }
 
-/** One compact timeline row: icon, title, optional detail, and a trailing time. */
+/** One compact timeline row: icon, title, optional detail lines, and a trailing time. */
 @Composable
 internal fun EntryRow(
     kind: String,
     title: String,
-    detail: String?,
     time: String,
     modifier: Modifier = Modifier,
+    details: List<String> = emptyList(),
+    onClickLabel: String? = null,
     onClick: (() -> Unit)? = null,
 ) {
     Row(
@@ -93,7 +94,10 @@ internal fun EntryRow(
             .fillMaxWidth()
             .heightIn(min = 56.dp)
             .clip(MaterialTheme.shapes.small)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(
+                if (onClick != null) Modifier.clickable(onClickLabel = onClickLabel, onClick = onClick)
+                else Modifier
+            )
             .padding(horizontal = 4.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -101,12 +105,13 @@ internal fun EntryRow(
         ActivityBadge(kind)
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleSmall)
-            if (!detail.isNullOrBlank())
+            details.forEach {
                 Text(
-                    detail,
+                    it,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
         }
         Text(
             time,

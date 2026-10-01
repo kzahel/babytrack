@@ -83,7 +83,6 @@
     <string name="no_children">Add a child to start tracking.</string>
     <string name="timeline">Timeline</string>
     <string name="choose_history_day">Choose day</string>
-    <string name="show_all_days">Show all days</string>
     <plurals name="today_feeds">
         <item quantity="one">%1$d feed · bottle %2$d mL</item>
         <item quantity="other">%1$d feeds · bottle %2$d mL</item>
@@ -430,6 +429,21 @@
     <string name="bottle_repeat">Same as last: %1$s %2$s</string>
     <string name="breast_side_title">Side</string>
     <string name="pump_amount_title">Amount</string>
+    <!-- History day view -->
+    <string name="history_day">Day</string>
+    <string name="history_all_days">All days</string>
+    <plurals name="history_feeds_label">
+        <item quantity="one">feed</item>
+        <item quantity="other">feeds</item>
+    </plurals>
+    <!-- %1$d is a bottle total in millilitres. -->
+    <string name="history_bottle_total">%1$d mL bottle</string>
+    <string name="history_sleep_label">sleep</string>
+    <plurals name="history_diapers_label">
+        <item quantity="one">diaper</item>
+        <item quantity="other">diapers</item>
+    </plurals>
+    <string name="history_diaper_split">%1$d wet · %2$d dirty</string>
     <!-- Live timers (unsaved device drafts until Save) -->
     <string name="breast_mode_timer">Timer</string>
     <string name="breast_mode_manual">Enter minutes</string>

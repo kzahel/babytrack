@@ -115,7 +115,8 @@ flowchart TD
    whole minutes (at least one) so the saved entry remains correctable with
    the minute-based correction form; pauses are kept as gaps.
 4. **History.** Default to a Day view: a week strip and date picker select
-   the day, the core's day summary for that day appears above its entries,
+   the day, the core's day summary for that day appears above its entries
+   (which include any entry that overlaps the day, such as an overnight sleep),
    and an All view keeps the day-grouped list. Entry rows reveal
    edit/delete actions and the existing short Undo. Charts and averages
    remain outside this scope until the reports decision in the

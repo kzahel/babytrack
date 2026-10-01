@@ -200,28 +200,58 @@ def open_family(target: str) -> None:
 
 
 def open_entry_actions(target: str, entry_label: str) -> None:
-    """Expand the actions on the named History row, even after scrolling."""
+    """Expand the actions on the named History row, even after scrolling.
+
+    Revealed actions sit directly below their row, indented past its icon.
+    The row is tapped only when the space below it is visible, so an
+    already expanded row is never collapsed by mistake.
+    """
     stage(f"History correction: {entry_label}")
     find(target, entry_label, scroll=True)
-    for _ in range(4):
+    sizes = re.findall(r"(\d+)x(\d+)", adb(target, "shell", "wm", "size"))
+    width, height = map(int, sizes[-1])
+
+    def bounds(node: ET.Element) -> list[int]:
+        return list(map(int, re.findall(r"\d+", node.attrib["bounds"])))
+
+    def locate() -> tuple[list[int], list[int], ET.Element] | None:
         root = nodes(target)
         parents = {child: parent for parent in root.iter() for child in parent}
-        labels = [node for node in root.iter("node") if node.attrib.get("text") == entry_label]
-        if labels:
-            ancestor = labels[0]
-            while ancestor in parents:
-                ancestor = parents[ancestor]
-                buttons = [node for node in ancestor.iter("node")
-                           if node.attrib.get("text") in ("Details and edits", "Hide details")]
-                if len(buttons) == 1:
-                    if buttons[0].attrib["text"] == "Details and edits":
-                        x1, y1, x2, y2 = map(int, re.findall(r"\d+", buttons[0].attrib["bounds"]))
-                        adb(target, "shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
-                    return
-        # The label can be at the bottom of the viewport while its actions
-        # are just below it. Bring the rest of the row into view.
-        sizes = re.findall(r"(\d+)x(\d+)", adb(target, "shell", "wm", "size"))
-        width, height = map(int, sizes[-1])
-        adb(target, "shell", "input", "swipe", str(width // 2), str(height * 7 // 10),
-            str(width // 2), str(height * 5 // 10), "300")
-    raise AssertionError(f"No details action found for {entry_label!r}")
+        row = next((n for n in root.iter("node") if n.attrib.get("text") == entry_label), None)
+        while row is not None and row.attrib.get("clickable") != "true" and row in parents:
+            row = parents[row]
+        if row is None or row.attrib.get("clickable") != "true":
+            return None
+        areas = [bounds(n) for n in root.iter("node") if n.attrib.get("scrollable") == "true"]
+        area = max(areas, key=lambda b: (b[2] - b[0]) * (b[3] - b[1])) if areas else [0, 0, width, height]
+        return bounds(row), area, root
+
+    def expanded(row: list[int], area: list[int], root: ET.Element) -> bool:
+        x1, _, _, y2 = row
+        for node in root.iter("node"):
+            if node.attrib.get("clickable") == "true":
+                bx1, by1, _, _ = bounds(node)
+                # Only content inside the scroll area counts, not the navigation bar.
+                if y2 - 4 <= by1 <= y2 + 40 and by1 < area[3] - 8 and bx1 > x1 + 30:
+                    return True
+        return False
+
+    for _ in range(8):
+        found = locate()
+        if found is None:
+            raise AssertionError(f"History row {entry_label!r} is not visible")
+        row, area, root = found
+        if expanded(row, area, root):
+            return
+        if row[3] + 48 > area[3]:
+            # Too close to the bottom to see what is below; scroll if possible.
+            adb(target, "shell", "input", "swipe", str(width // 2), str(area[3] - 20),
+                str(width // 2), str(max(area[1] + 20, area[3] - 160)), "300")
+            time.sleep(0.4)
+            moved = locate()
+            if moved is not None and moved[0][3] != row[3]:
+                continue
+        x1, y1, x2, y2 = row
+        adb(target, "shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
+        time.sleep(0.5)
+    raise AssertionError(f"Could not open actions for {entry_label!r}")

@@ -55,7 +55,7 @@ def main() -> None:
             time.sleep(0.5)
             capture(target, f"{theme}-{scale}-today")
             tap_tab(target, "History")
-            find(target, "Timeline")
+            find(target, "All days")
             capture(target, f"{theme}-{scale}-history")
             tap_tab(target, "Family")
             find(target, "Family options")

@@ -66,7 +66,7 @@ def main(quick: bool = False) -> None:
     tap(target, "Wet now", scroll=True)
     tap(target, "History", actionable=True)
     find(target, "Diaper · Wet", scroll=True)
-    tap(target, "Details and edits", scroll=True)
+    open_entry_actions(target, "Diaper · Wet")
     tap(target, "Edit diaper type", scroll=True)
     tap(target, "Dirty")
     tap(target, "Save changes")
@@ -81,8 +81,8 @@ def main(quick: bool = False) -> None:
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     find(target, "UITestChild")
     tap(target, "History", actionable=True)
-    find(target, "Diaper · Dirty")
-    tap(target, "Details and edits", scroll=True)
+    find(target, "Diaper · Dirty", scroll=True)
+    open_entry_actions(target, "Diaper · Dirty")
     tap(target, "Delete entry", scroll=True)
     find(target, "Remove this entry from the Family timeline? Shared devices receive the change when they sync.")
     tap(target, "Delete")
@@ -348,6 +348,8 @@ def main(quick: bool = False) -> None:
     tap(target, "Save breast feed", actionable=True)
     open_history(target)
     find(target, "Breast · Left 1 min → Right 1 min", scroll=True)
+    open_entry_actions(target, "Breast · Left 1 min → Right 1 min")
+    find(target, "Edit breast feed", scroll=True)
     print("Android UI Family/child selection, timeline, logging, edits, and restart: OK")
 
 

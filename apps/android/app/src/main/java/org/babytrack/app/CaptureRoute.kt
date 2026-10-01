@@ -36,9 +36,12 @@ internal fun captureModel(
     finishCapture: () -> Unit,
     requestTimerNotification: () -> Unit,
     lastBottle: Pair<String, UByte>?,
+    lastBreastSide: UByte?,
+    timerStore: LiveTimerStore,
     nowMs: Long,
 ): CaptureModel {
     val context = LocalContext.current
+    val target = timerTarget(family.familyId.key(), child.id.key())
     return with(draft) {
         fun change(onSaved: (() -> Unit)? = null, action: () -> Unit) =
             performChange(onSaved, action)
@@ -91,6 +94,11 @@ internal fun captureModel(
                         diaperKind = diaperKind,
                         lastBottle = lastBottle,
                         nowMs = nowMs,
+                        liveClock = true,
+                        breastTimerMode = breastTimerMode,
+                        nursingSegments = nursingSegments,
+                        lastBreastSide = lastBreastSide,
+                        pumpTimerStartMs = pumpTimerStartMs,
                     ),
                 actions =
                     CaptureActions(
@@ -178,6 +186,28 @@ internal fun captureModel(
                                         )
                                 }
                             },
+                        onBreastModeChange = action@{ timer -> breastTimerMode = timer },
+                        onNursingTap = action@{ side ->
+                                nursingSegments =
+                                    tapNursingSide(nursingSegments, side, System.currentTimeMillis())
+                                timerStore.saveNursing(target, nursingSegments)
+                            },
+                        onDiscardNursing = action@{
+                                nursingSegments = emptyList()
+                                timerStore.saveNursing(target, emptyList())
+                            },
+                        onPumpTimerStart = action@{
+                                pumpTimerStartMs = System.currentTimeMillis()
+                                timerStore.savePumpStart(target, pumpTimerStartMs)
+                            },
+                        onPumpTimerStop = action@{
+                                val start = pumpTimerStartMs ?: return@action
+                                val end = System.currentTimeMillis()
+                                pumpMinutes = stopwatchMinutes(start, end).toString()
+                                logAtMs = end
+                                pumpTimerStartMs = null
+                                timerStore.savePumpStart(target, null)
+                            },
                         onBreastSideChange = action@{ side -> breastSide = side },
                         onBreastMinutesChange = action@{ it ->
                                 breastMinutes = it.filter(Char::isDigit).take(3)
@@ -191,6 +221,59 @@ internal fun captureModel(
                                 breastMinutes = ""
                             },
                         onSaveBreast = action@{
+                                if (breastTimerMode) {
+                                    val timed = nursingSegments
+                                    val planned =
+                                        plannedBreastSegments(timed, System.currentTimeMillis())
+                                    if (planned == null) {
+                                        message = context.getString(R.string.breast_timer_invalid)
+                                        return@action
+                                    }
+                                    val zone = TimeZone.getDefault()
+                                    val first = planned.first().startMs
+                                    val interval =
+                                        ActivityWhen(
+                                            first,
+                                            (zone.getOffset(first) / 60_000).toShort(),
+                                            System.currentTimeMillis(),
+                                        )
+                                    val segments =
+                                        planned.map {
+                                            BreastSegmentRow(
+                                                it.side,
+                                                it.startMs,
+                                                it.endMs,
+                                                (zone.getOffset(it.startMs) / 60_000).toShort(),
+                                                (zone.getOffset(it.endMs) / 60_000).toShort(),
+                                            )
+                                        }
+                                    scope.launch {
+                                        runCatching {
+                                                withContext(Dispatchers.IO) {
+                                                    actions
+                                                        .forTarget(activeShared)
+                                                        .logBreastFeedSegments(
+                                                            family,
+                                                            child.id,
+                                                            segments,
+                                                            interval,
+                                                        )
+                                                }
+                                            }
+                                            .onSuccess {
+                                                // Clear only the draft that was saved.
+                                                if (timerStore.nursing(target) == timed)
+                                                    timerStore.saveNursing(target, emptyList())
+                                                if (nursingSegments == timed)
+                                                    nursingSegments = emptyList()
+                                                version++
+                                                message = null
+                                                finishCapture()
+                                            }
+                                            .onFailure { message = errorText }
+                                    }
+                                    return@action
+                                }
                                 val minutes = breastMinutes.toLongOrNull() ?: return@action
                                 val draft = breastDraftSegments
                                 val plan = draft + (breastSide to minutes)

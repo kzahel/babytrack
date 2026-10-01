@@ -300,6 +300,19 @@ internal fun TrackerRoute(
                                     }
                                     .orEmpty()
                         }
+                        val timerStore = remember {
+                            LiveTimerStore(
+                                context.getSharedPreferences("live_timers", Context.MODE_PRIVATE)
+                            )
+                        }
+                        LaunchedEffect(loadedFamilyKey, loadedChildKey) {
+                            val target =
+                                if (loadedFamilyKey != null && loadedChildKey != null)
+                                    timerTarget(loadedFamilyKey, loadedChildKey)
+                                else null
+                            nursingSegments = target?.let(timerStore::nursing).orEmpty()
+                            pumpTimerStartMs = target?.let(timerStore::pumpStart)
+                        }
                         LaunchedEffect(selectedFamily, selectedChild) {
                             showTargetPicker = false
                             captureKind = null
@@ -681,6 +694,12 @@ internal fun TrackerRoute(
                                                 }
                                                 .maxByOrNull { it.startUtcMs }
                                                 ?.let { it.bottleEntered!! to it.bottleUnit!! },
+                                        lastBreastSide =
+                                            entries
+                                                .filter { it.kind == "feed.breast" }
+                                                .maxByOrNull { it.startUtcMs }
+                                                ?.let { it.breastSegments?.lastOrNull()?.side ?: it.breastSide },
+                                        timerStore = timerStore,
                                         nowMs = System.currentTimeMillis(),
                                     )
                             else null
@@ -1023,6 +1042,7 @@ internal fun TrackerRoute(
                                                 entriesAreCurrent = loadedChildKey == selectedChild,
                                                 nowMs = System.currentTimeMillis(),
                                                 liveClock = true,
+                                                nursingSegments = nursingSegments,
                                             ),
                                         actions =
                                             TodayActions(

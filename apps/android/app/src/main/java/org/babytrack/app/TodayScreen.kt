@@ -47,6 +47,8 @@ internal data class TodayUiState(
     val nowMs: Long,
     /** Whether elapsed labels keep advancing on screen. */
     val liveClock: Boolean = false,
+    /** An unsaved nursing timer for this child, if one is in progress. */
+    val nursingSegments: List<TimedSegment> = emptyList(),
 )
 
 internal data class TodayActions(
@@ -70,7 +72,13 @@ internal fun ColumnScope.TodayScreen(state: TodayUiState, actions: TodayActions)
         val current = if (entriesAreCurrent) entries else emptyList()
         val runningSleep =
             current.filter { it.kind == "sleep" && it.endUtcMs == null }.maxByOrNull { it.startUtcMs }
-        val now = rememberNow(nowMs, liveClock, if (runningSleep != null) 1_000L else 30_000L)
+        val nursingRunning = nursingSegments.running() != null
+        val now =
+            rememberNow(
+                nowMs,
+                liveClock,
+                if (runningSleep != null || nursingRunning) 1_000L else 30_000L,
+            )
         val lastFeed = current.filter { it.kind in feedKinds }.maxByOrNull { it.startUtcMs }
         val lastDiaper = current.filter { it.kind == "diaper" }.maxByOrNull { it.startUtcMs }
         val lastSleep =
@@ -94,7 +102,30 @@ internal fun ColumnScope.TodayScreen(state: TodayUiState, actions: TodayActions)
             WarningCard(stringResource(R.string.automatic_sync_delayed))
         if (automaticSyncBlocked) WarningCard(stringResource(R.string.shared_upload_blocked))
 
-        StateTile(
+        if (nursingSegments.isNotEmpty()) {
+            StateTile(
+                kind = "feed.breast",
+                title =
+                    stringResource(
+                        if (nursingRunning) R.string.tile_nursing_running
+                        else R.string.tile_nursing_paused
+                    ),
+                elapsed = null,
+                detail =
+                    stringResource(
+                        R.string.tile_nursing_sides,
+                        elapsedClock(sideElapsedMs(nursingSegments, 1u, now)),
+                        elapsedClock(sideElapsedMs(nursingSegments, 2u, now)),
+                    ),
+                clock = elapsedClock(totalElapsedMs(nursingSegments, now)),
+            ) {
+                TileButton(
+                    stringResource(R.string.tile_open_timer),
+                    primary = true,
+                    onClick = actions.onOpenBreast,
+                )
+            }
+        } else StateTile(
             kind = "feed.bottle",
             title = stringResource(R.string.tile_feed),
             elapsed = lastFeed?.let { elapsedLabel(context, it.startUtcMs, now) },

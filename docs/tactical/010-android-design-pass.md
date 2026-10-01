@@ -43,7 +43,7 @@ icons, or assets.
    time row, the form body, and a full-width bottom Save. Grouped icon grid
    for the activity chooser; icon tiles for diaper; large bottle amount with
    steppers and a repeat-last-amount choice; single-row choice groups.
-5. [ ] Live nursing and pumping timers: left/right timer buttons with per-side
+5. [x] Live nursing and pumping timers: left/right timer buttons with per-side
    elapsed time, pause, last-side hint, and manual entry fallback. The draft
    is UI-local and target-scoped, survives process death, and saves one
    segment list through the existing Rust action, matching the web contract
@@ -122,3 +122,22 @@ icons, or assets.
   and inspected (the time row was reflowed after a 150% text check). Unit
   tests, lint, both APKs, the full caregiver UI smoke, and the comma-decimal
   bottle, unsent-draft, and Today-summary instrumentation cases pass.
+
+- Slice 5: Breast feed opens in Timer mode with Enter minutes kept as the
+  manual alternative. Tapping a side starts it, tapping the other side
+  switches, and tapping the running side pauses; each side shows its own
+  elapsed time, the total runs as a large clock, and the side the last
+  saved feed ended on is marked. `LiveTimers.kt` keeps the draft in private
+  preferences keyed by Family and child, so it survives process death and
+  never follows a target switch. Save rounds each timed side to whole
+  minutes (at least one), keeps order and pauses, ends no later than now,
+  and writes one segment list through the existing Rust action; the
+  draft clears only if it is unchanged. Today shows a running or paused
+  nursing draft as its own tile with a live clock and Open timer. Pumping
+  has a stopwatch that fills minutes and the end time when stopped. Five
+  JVM regressions cover tap transitions, the segment limit, rounding and
+  ordering, invalid drafts, and per-target persistence. Unit tests, lint,
+  both APKs, and the full caregiver UI smoke pass; the smoke now times
+  Left, force-stops the app, resumes from Today, switches to Right, saves,
+  and finds "Breast · Left 1 min → Right 1 min" in History. Ongoing
+  notifications for nursing drafts are not part of this slice.

@@ -43,6 +43,10 @@ internal class CaptureDraftState {
     var doseUnit by mutableStateOf("")
     var logAtMs by mutableStateOf<Long?>(null)
     var diaperKind by mutableStateOf<UByte?>(null)
+    var breastTimerMode by mutableStateOf(true)
+    /** Mirrors [LiveTimerStore] for the loaded target. */
+    var nursingSegments by mutableStateOf<List<TimedSegment>>(emptyList())
+    var pumpTimerStartMs by mutableStateOf<Long?>(null)
 
     fun logTime(): ActivityWhen = activityWhen(logAtMs ?: System.currentTimeMillis())
 

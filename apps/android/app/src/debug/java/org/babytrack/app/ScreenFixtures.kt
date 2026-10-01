@@ -86,6 +86,11 @@ internal object ScreenFixtures {
             entry(70, "future.example", 450),
         )
     val runningSleep = entry(71, "sleep", 20).copy(sleepPlace = 1u)
+    val nursingTimer =
+        listOf(
+            TimedSegment(1u, nowMs - 9 * 60_000L, nowMs - 5 * 60_000L - 26_000L),
+            TimedSegment(2u, nowMs - 5 * 60_000L, null),
+        )
     val summary = DaySummaryRow(80uL * 60_000uL, 3uL, 120uL, 1uL, 1uL, 0uL)
 
     fun capture() =
@@ -232,6 +237,7 @@ internal object ScreenFixtures {
                 doseUnit = "unit",
                 diaperKind = 3u,
                 lastBottle = "120" to 1u.toUByte(),
+                breastTimerMode = false,
             )
     val cases: List<ScreenFixture> =
         listOf(
@@ -250,6 +256,34 @@ internal object ScreenFixtures {
                 "today-timer",
                 "Today · sleep running",
                 today = today().copy(entries = listOf(runningSleep) + typicalEntries),
+            ),
+            ScreenFixture(
+                "today-nursing",
+                "Today · nursing timer running",
+                today = today().copy(nursingSegments = nursingTimer),
+            ),
+            ScreenFixture(
+                "capture-breast-timer",
+                "Breast feed · timer running",
+                capture =
+                    capture()
+                        .copy(
+                            captureKind = CaptureKind.BREAST,
+                            nursingSegments = nursingTimer,
+                            lastBreastSide = 2u,
+                        ),
+            ),
+            ScreenFixture(
+                "capture-breast-idle",
+                "Breast feed · timer ready",
+                capture = capture().copy(captureKind = CaptureKind.BREAST, lastBreastSide = 2u),
+            ),
+            ScreenFixture(
+                "capture-pump-timer",
+                "Pumping · stopwatch running",
+                capture =
+                    capture()
+                        .copy(captureKind = CaptureKind.PUMP, pumpTimerStartMs = nowMs - 7 * 60_000L - 12_000L),
             ),
             ScreenFixture(
                 "today-sync-pending",

@@ -430,4 +430,26 @@
     <string name="bottle_repeat">Same as last: %1$s %2$s</string>
     <string name="breast_side_title">Side</string>
     <string name="pump_amount_title">Amount</string>
+    <!-- Live timers (unsaved device drafts until Save) -->
+    <string name="breast_mode_timer">Timer</string>
+    <string name="breast_mode_manual">Enter minutes</string>
+    <string name="timer_choose_side">Tap a side to start</string>
+    <string name="timer_running">Timing · tap the other side to switch</string>
+    <string name="timer_paused">Paused · tap a side to resume</string>
+    <string name="timer_tap_start">Tap to start</string>
+    <string name="timer_tap_pause">Tap to pause</string>
+    <string name="timer_tap_switch">Tap to switch</string>
+    <!-- %1$s is Left or Right. -->
+    <string name="breast_last_side">Last feed ended on %1$s</string>
+    <string name="breast_last_side_short">Last side</string>
+    <string name="timer_discard">Discard timer</string>
+    <string name="breast_timer_invalid">Time at least one side, up to 4 hours in total, then save.</string>
+    <string name="pump_timer_start">Start pumping timer</string>
+    <string name="pump_timer_stop">Stop timer</string>
+    <string name="pump_timer_running">Pumping</string>
+    <string name="tile_nursing_running">Breast feed in progress</string>
+    <string name="tile_nursing_paused">Breast feed paused</string>
+    <string name="tile_open_timer">Open timer</string>
+    <!-- %1$s and %2$s are stopwatch times for the left and right sides. -->
+    <string name="tile_nursing_sides">Left %1$s · Right %2$s</string>
 </resources>

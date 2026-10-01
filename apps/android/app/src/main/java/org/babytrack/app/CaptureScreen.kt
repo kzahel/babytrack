@@ -16,6 +16,10 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Air
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.JoinFull
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material3.AssistChip
@@ -73,6 +77,12 @@ internal data class CaptureUiState(
     /** The most recent saved bottle, as entered, for one-tap repeat. */
     val lastBottle: Pair<String, UByte>? = null,
     val nowMs: Long = 0L,
+    val liveClock: Boolean = false,
+    val breastTimerMode: Boolean = true,
+    val nursingSegments: List<TimedSegment> = emptyList(),
+    /** The side the most recent saved breast feed ended on. */
+    val lastBreastSide: UByte? = null,
+    val pumpTimerStartMs: Long? = null,
 )
 
 internal data class CaptureActions(
@@ -86,6 +96,11 @@ internal data class CaptureActions(
     val onAmountChange: (String) -> Unit = { _ -> },
     val onRepeatBottle: (String, UByte) -> Unit = { _, _ -> },
     val onSaveBottle: () -> Unit = {},
+    val onBreastModeChange: (Boolean) -> Unit = { _ -> },
+    val onNursingTap: (UByte) -> Unit = { _ -> },
+    val onDiscardNursing: () -> Unit = {},
+    val onPumpTimerStart: () -> Unit = {},
+    val onPumpTimerStop: () -> Unit = {},
     val onBreastSideChange: (UByte) -> Unit = { _ -> },
     val onBreastMinutesChange: (String) -> Unit = { _ -> },
     val onRemoveBreastSegment: () -> Unit = {},
@@ -171,7 +186,7 @@ internal fun ColumnScope.CaptureScreen(state: CaptureUiState, actions: CaptureAc
             ActivityChooser(actions.onCaptureKindChange)
             return
         }
-        TimeRow(
+        if (!(captureKind == CaptureKind.BREAST && breastTimerMode)) TimeRow(
             value =
                 if (logAtMs == null) stringResource(R.string.log_time_now_short)
                 else compactDateTime(LocalContext.current, logAtMs!!, nowMs),
@@ -214,7 +229,7 @@ internal fun RowScope.CaptureSaveActions(state: CaptureUiState, actions: Capture
             CaptureKind.BREAST ->
                 PrimaryAction(
                     stringResource(R.string.save_breast),
-                    enabled = breastCanSave(state),
+                    enabled = if (breastTimerMode) nursingSegments.isNotEmpty() else breastCanSave(state),
                     onClick = actions.onSaveBreast,
                 )
             CaptureKind.PUMP ->
@@ -412,7 +427,135 @@ private fun BottleForm(state: CaptureUiState, actions: CaptureActions) {
 }
 
 @Composable
-private fun BreastForm(state: CaptureUiState, actions: CaptureActions) {
+private fun ColumnScope.BreastForm(state: CaptureUiState, actions: CaptureActions) {
+    SegmentedChoice(
+        listOf(
+            true to stringResource(R.string.breast_mode_timer),
+            false to stringResource(R.string.breast_mode_manual),
+        ),
+        state.breastTimerMode,
+        actions.onBreastModeChange,
+    )
+    if (state.breastTimerMode) NursingTimer(state, actions) else ManualBreastForm(state, actions)
+}
+
+@Composable
+private fun ColumnScope.NursingTimer(state: CaptureUiState, actions: CaptureActions) {
+    val context = LocalContext.current
+    with(state) {
+        val running = nursingSegments.running()
+        val now = rememberNow(nowMs, liveClock && running != null, 1_000L)
+        Column(
+            Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                elapsedClock(totalElapsedMs(nursingSegments, now)),
+                style = MaterialTheme.typography.displayLarge,
+            )
+            Text(
+                stringResource(
+                    when {
+                        running != null -> R.string.timer_running
+                        nursingSegments.isNotEmpty() -> R.string.timer_paused
+                        else -> R.string.timer_choose_side
+                    }
+                ),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            listOf(1u.toUByte() to R.string.breast_left, 2u.toUByte() to R.string.breast_right).forEach {
+                (side, label) ->
+                SideTimerButton(
+                    label = stringResource(label),
+                    elapsed = elapsedClock(sideElapsedMs(nursingSegments, side, now)),
+                    running = running?.side == side,
+                    otherRunning = running != null && running.side != side,
+                    lastSide = nursingSegments.isEmpty() && lastBreastSide == side,
+                    enabled = running?.side == side || nursingSegments.size < maxBreastSegments,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    actions.onNursingTap(side)
+                }
+            }
+        }
+        if (nursingSegments.isEmpty() && lastBreastSide != null)
+            Text(
+                stringResource(
+                    R.string.breast_last_side,
+                    context.getString(
+                        if (lastBreastSide == 1u.toUByte()) R.string.breast_left else R.string.breast_right
+                    ),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            )
+        if (nursingSegments.isNotEmpty())
+            TextButton(
+                onClick = actions.onDiscardNursing,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            ) {
+                Text(stringResource(R.string.timer_discard))
+            }
+    }
+}
+
+@Composable
+private fun SideTimerButton(
+    label: String,
+    elapsed: String,
+    running: Boolean,
+    otherRunning: Boolean,
+    lastSide: Boolean,
+    enabled: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    val colors = categoryColors("feed.breast")
+    val state =
+        stringResource(
+            when {
+                running -> R.string.timer_tap_pause
+                otherRunning -> R.string.timer_tap_switch
+                else -> R.string.timer_tap_start
+            }
+        )
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = MaterialTheme.shapes.large,
+        color = if (running) MaterialTheme.colorScheme.primary else colors.container,
+        contentColor =
+            if (running) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+        modifier = modifier.heightIn(min = 148.dp),
+    ) {
+        Column(
+            Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+        ) {
+            Icon(
+                if (running) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                contentDescription = null,
+                modifier = Modifier.size(32.dp),
+            )
+            Text(label, style = MaterialTheme.typography.titleLarge)
+            Text(elapsed, style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (lastSide) stringResource(R.string.breast_last_side_short) else state,
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ManualBreastForm(state: CaptureUiState, actions: CaptureActions) {
     val context = LocalContext.current
     with(state) {
         FieldLabel(R.string.breast_side_title)
@@ -466,6 +609,47 @@ private fun BreastForm(state: CaptureUiState, actions: CaptureActions) {
 @Composable
 private fun PumpForm(state: CaptureUiState, actions: CaptureActions) {
     with(state) {
+        val start = pumpTimerStartMs
+        if (start != null) {
+            val now = rememberNow(nowMs, liveClock, 1_000L)
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = categoryColors("pump").container,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(elapsedClock(now - start), style = MaterialTheme.typography.displayMedium)
+                    Text(
+                        stringResource(R.string.pump_timer_running),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    androidx.compose.material3.Button(
+                        onClick = actions.onPumpTimerStop,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) {
+                        Icon(Icons.Outlined.Stop, contentDescription = null)
+                        Text(
+                            stringResource(R.string.pump_timer_stop),
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                }
+            }
+        } else
+            OutlinedButton(
+                onClick = actions.onPumpTimerStart,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                Icon(Icons.Outlined.Timer, contentDescription = null)
+                Text(
+                    stringResource(R.string.pump_timer_start),
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
         OutlinedTextField(
             value = pumpMinutes,
             onValueChange = { it -> actions.onPumpMinutesChange(it) },

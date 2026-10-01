@@ -10,7 +10,7 @@ import time
 from android_ui import (
     APK, PACKAGE, adb, dismiss_keyboard, find, nodes, open_capture,
     open_entry_actions, open_family, open_history,
-    scroll_up, serial, tap, tap_tab, run_scenario,
+    scroll_up, serial, stage, tap, tap_tab, run_scenario,
 )
 
 
@@ -140,6 +140,7 @@ def main(quick: bool = False) -> None:
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     open_capture(target, "Breast feed")
+    tap(target, "Enter minutes", scroll=True)
     tap(target, "Minutes on selected side", scroll=True)
     adb(target, "shell", "input", "text", "5")
     dismiss_keyboard(target)
@@ -333,6 +334,20 @@ def main(quick: bool = False) -> None:
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     open_history(target)
     find(target, "Note · SelectedChildMarker", scroll=True)
+    stage("Live nursing timer across a force-stop")
+    open_capture(target, "Breast feed")
+    tap(target, "Timer", scroll=True)
+    tap(target, "Left", scroll=True, actionable=True)
+    time.sleep(2)
+    adb(target, "shell", "am", "force-stop", PACKAGE)
+    adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    find(target, "Breast feed in progress", scroll=True)
+    tap(target, "Open timer", scroll=True)
+    tap(target, "Right", scroll=True, actionable=True)
+    time.sleep(2)
+    tap(target, "Save breast feed", actionable=True)
+    open_history(target)
+    find(target, "Breast · Left 1 min → Right 1 min", scroll=True)
     print("Android UI Family/child selection, timeline, logging, edits, and restart: OK")
 
 

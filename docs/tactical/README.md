@@ -44,6 +44,6 @@ tactical with its current status.
   dispatch, harness diagnostics, wasm modules, portable core behavior, and
   client SQLite organization, with a validated commit per slice.
 - [010: Android design and daily-use UX pass](010-android-design-pass.md)
-  — active; activity identity, Today tiles, a shared capture template, live
-  nursing/pumping timers, History day view, and a settings-style Family
-  screen. Physical-phone gates stay with 005.
+  — complete with local verification; activity identity, Today tiles, a
+  shared capture template, live nursing/pumping timers, History day view,
+  and a settings-style Family screen. Physical-phone gates stay with 005.

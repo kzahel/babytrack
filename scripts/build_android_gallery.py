@@ -68,6 +68,8 @@ def build_gallery(output: Path) -> None:
         "family-join-pending": "pending", "family-shared-pending": "pending",
         "today-blocked": "attention", "family-removed": "attention",
         "capture-bottle-invalid": "attention", "today-timer": "running",
+        "today-nursing": "running", "capture-breast-timer": "running",
+        "capture-pump-timer": "running",
         "history-entry-actions": "editing", "history-filtered": "editing",
         "family-options": "editing", "child-create": "editing", "child-edit": "editing",
         "capture-note-long-name": "edge",

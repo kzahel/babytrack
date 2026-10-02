@@ -1,6 +1,6 @@
 # 010: Android design and daily-use UX pass
 
-Status: active, 2026-10-01. Requested after reviewing the Nara and
+Status: complete with local verification, 2026-10-02. Opened 2026-10-01. Requested after reviewing the Nara and
 Huckleberry research against the Android fixture gallery: the current
 screens are text and identical outlined buttons, and the daily surfaces
 need a design pass to become palatable before phone validation.
@@ -54,7 +54,7 @@ icons, or assets.
 7. [x] Family as a settings list: child card, list rows with icons and
    supporting text for children, sharing/access, data and backups, and
    Family options. Developer relay setup stays visibly separate.
-8. [ ] Validate and reconcile: unit, lint, both APKs, the fixture gallery
+8. [x] Validate and reconcile: unit, lint, both APKs, the fixture gallery
    (dark/light/150%), command-driven UI smoke and recovery checks, and the
    real-relay suite on a disposable emulator; update owning topics, 005, and
    indexes.
@@ -171,3 +171,37 @@ icons, or assets.
   recovery check pass. The harness now treats the tallest scrollable node
   as the content area (falling back to the region above the navigation
   bar), after a short sideways chip row was mistaken for it.
+
+- Slice 8 follow-ups found during final verification: a pending join now
+  appears directly under the child card instead of at the end of Family;
+  Today's age and status chip wrap on narrow screens with large text (seen
+  in an emulator capture at 320 dp and 1.5×); and the UI harness waits for
+  the navigation bar after a cold start instead of tapping while "Loading…"
+  is shown. Timer gallery cases are classified as running in the catalog.
+
+## Final local verification
+
+Measured on 2026-10-02 against the final working tree, on a disposable
+read-only `babytrack-dev` emulator (its stored 320 × 640 dp display
+override was left in place, so these UI checks ran on a very small screen)
+and a second read-only `babytrack-sharing-a` emulator.
+
+| Check | Observed result |
+|---|---|
+| Android unit tests (17, including 9 new) and `lintDebug` | Pass; no lint errors |
+| Debug and instrumentation APK builds | Pass |
+| Fixture gallery | 40 cases, 160 variants; representative dark/light/150% and compact renders inspected; offline catalog check passes at 1440 and 390 px |
+| Full and quick caregiver UI smoke | Pass, including the nursing timer across a force-stop |
+| Document-picker recovery | Pass: readable/protected backups, damaged-file denial, fresh-install restore, restart |
+| Real-relay instrumentation | Clean-install invitation case and all 28 suite cases pass |
+| Two-emulator relay flow | Pass: join, encrypted edits, removal copy, later epoch join |
+| Navigation capture | Light/100% and dark/150% routes captured to `local-references/android-redesign-qa/` and inspected |
+| Harness regressions, workspace boundaries, diff check | Pass |
+
+Not run: the opt-in hosted preview two-emulator check (it writes to the
+hosted disposable preview service), Rust/web checks (no Rust, wire, or web
+changes), and remote CI. No physical-phone, TalkBack, RTL, or caregiver
+usability gate is closed; those remain in [005](005-m1-android.md).
+Follow-ups outside this scope: multi-day charts (needs the reports scope
+decision), a notification for an in-progress nursing draft, and grammar
+review for the new duration/elapsed strings in other languages.

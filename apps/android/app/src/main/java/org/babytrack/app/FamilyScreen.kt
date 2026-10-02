@@ -256,6 +256,8 @@ internal fun ColumnScope.FamilyScreen(state: FamilyUiState, actions: FamilyActio
                 stringResource(if (activeShared) R.string.shared_family else R.string.local_only),
                 style = MaterialTheme.typography.labelLarge,
             )
+        // A join in progress is an enrollment task: keep it near the top.
+        if (!joinFirst && recipientFamilies.isNotEmpty()) joinControls()
         if (automaticSyncDelayed && !automaticSyncBlocked)
             WarningCard(stringResource(R.string.automatic_sync_delayed))
         if (automaticSyncBlocked) WarningCard(stringResource(R.string.shared_upload_blocked))
@@ -690,7 +692,7 @@ internal fun ColumnScope.FamilyScreen(state: FamilyUiState, actions: FamilyActio
             OutlinedButton(onClick = actions.onNewFamily) {
                 Text(stringResource(R.string.new_family))
             }
-        if (!joinFirst && (family == null || showFamilySetup || recipientFamilies.isNotEmpty()))
+        if (!joinFirst && recipientFamilies.isEmpty() && (family == null || showFamilySetup))
             joinControls()
         if (family != null && activeFamilyIsLocal) {
             if (showFamilySetup && BuildConfig.DEBUG) {

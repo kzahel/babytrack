@@ -1,8 +1,7 @@
 # Interface design and localization
 
-Status: M1 direction, with the Android color foundation implemented and the
-activity identity and screen templates below being delivered in
-[010](../tactical/010-android-design-pass.md). This
+Status: M1 direction. The Android color foundation, activity identity, and
+screen templates below are implemented ([010](../tactical/010-android-design-pass.md)). This
 topic owns the visual language and localization rules for product screens.
 The [Android navigation topic](android-navigation.md) owns routes and screen
 behavior; [005](../tactical/005-m1-android.md) owns delivery evidence. The

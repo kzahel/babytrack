@@ -1,6 +1,8 @@
 # Android navigation and screen structure
 
-Status: M1 route shell implemented; presentation refinement continues. This topic owns the Android screen
+Status: M1 route shell and the [010](../tactical/010-android-design-pass.md)
+presentation pass implemented; phone validation continues. This topic owns
+the Android screen
 map and navigation behavior. [005](../tactical/005-m1-android.md) owns the
 delivery steps and test evidence. The [event model](event-model.md) and
 [Family sharing contract](family-sharing-and-trust.md) own data and access

@@ -176,8 +176,14 @@ def dismiss_keyboard(target: str) -> None:
 
 
 def tap_tab(target: str, label: str) -> None:
-    root = nodes(target)
-    matches = [node for node in root.iter("node") if node.attrib.get("text") == label]
+    # After a cold start the tracker may still be loading; wait for the bar.
+    deadline = time.monotonic() + 20
+    while True:
+        root = nodes(target)
+        matches = [node for node in root.iter("node") if node.attrib.get("text") == label]
+        if matches or time.monotonic() > deadline:
+            break
+        time.sleep(0.4)
     if not matches:
         raise AssertionError(f"Navigation destination {label!r} is absent")
     x1, y1, x2, y2 = map(int, re.findall(r"\d+", matches[-1].attrib["bounds"]))

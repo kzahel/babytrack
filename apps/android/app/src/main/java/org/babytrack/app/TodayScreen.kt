@@ -3,6 +3,8 @@ package org.babytrack.app
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -65,6 +67,7 @@ internal data class TodayActions(
 
 private val feedKinds = setOf("feed.breast", "feed.bottle", "feed.solids")
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ColumnScope.TodayScreen(state: TodayUiState, actions: TodayActions) {
     val context = LocalContext.current
@@ -86,12 +89,17 @@ internal fun ColumnScope.TodayScreen(state: TodayUiState, actions: TodayActions)
                 .filter { it.kind == "sleep" && it.endUtcMs != null }
                 .maxByOrNull { it.endUtcMs!! }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // Wraps the chip under a long age label on narrow screens or large text.
+        FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             Text(
                 ageLabel,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.align(Alignment.CenterVertically).padding(end = 8.dp),
             )
             StatusChip(
                 stringResource(if (activeShared) R.string.shared_family_short else R.string.local_only),

@@ -188,17 +188,23 @@ internal fun captureModel(
                             },
                         onBreastModeChange = action@{ timer -> breastTimerMode = timer },
                         onNursingTap = action@{ side ->
+                                val wasEmpty = nursingSegments.isEmpty()
                                 nursingSegments =
                                     tapNursingSide(nursingSegments, side, System.currentTimeMillis())
                                 timerStore.saveNursing(target, nursingSegments)
+                                version++
+                                if (wasEmpty) requestTimerNotification()
                             },
                         onDiscardNursing = action@{
                                 nursingSegments = emptyList()
                                 timerStore.saveNursing(target, emptyList())
+                                version++
                             },
                         onPumpTimerStart = action@{
                                 pumpTimerStartMs = System.currentTimeMillis()
                                 timerStore.savePumpStart(target, pumpTimerStartMs)
+                                version++
+                                requestTimerNotification()
                             },
                         onPumpTimerStop = action@{
                                 val start = pumpTimerStartMs ?: return@action
@@ -207,6 +213,7 @@ internal fun captureModel(
                                 logAtMs = end
                                 pumpTimerStartMs = null
                                 timerStore.savePumpStart(target, null)
+                                version++
                             },
                         onBreastSideChange = action@{ side -> breastSide = side },
                         onBreastMinutesChange = action@{ it ->

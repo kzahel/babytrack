@@ -100,7 +100,7 @@ flowchart TD
    projection as History and open its capture form; the Sleep tile starts or
    stops the timer directly. Keep further quick actions limited to the
    highest-frequency events, with an obvious Add activity action for the
-   rest. A running timer remains visible here and in the existing
+   rest. A running sleep remains visible here and in the existing
    notification/widget; the screen's elapsed clock reads the saved start and
    does not maintain a second timer or alter its saved target.
 3. **Capture.** Open a dedicated form for each supported activity.
@@ -116,6 +116,13 @@ flowchart TD
    the draft only after the write succeeds. Android rounds each timed side to
    whole minutes (at least one) so the saved entry remains correctable with
    the minute-based correction form; pauses are kept as gaps.
+   Running nursing and pumping drafts also appear in quiet notifications;
+   paused nursing keeps a static duration until Save or discard. Each
+   notification has its own Family/child/type identity, and its tap carries
+   the draft's session start. Cold and warm taps wait for the exact current
+   core Family/child projection and matching persisted draft before opening
+   capture; stale or unavailable targets show a no-longer-available message
+   without opening another child's form or changing data.
 4. **History.** Default to a Day view: a week strip and date picker select
    the day, the core's day summary for that day appears above its entries
    (which include any entry that overlaps the day, such as an overnight sleep),
@@ -152,6 +159,32 @@ Every navigation action carries the exact Family and child IDs already
 chosen by the user. A stale timer, widget, deep link, or edit must be checked
 against current core state before it writes. The Family destination never
 promises a remote access change before the relay confirms it.
+
+## Local timer notifications
+
+Android uses a low-importance, silent feeding-timer channel and the system
+notification chronometer. Nursing's live clock shows summed active segment
+time, excluding pauses; paused duration is plain static text. Notifications
+are private, with a generic public version that omits child and activity
+details. There is no foreground service, wake lock, polling clock, or push
+dependency. Sleep retains its existing count notification and basic widget.
+
+Notification permission is requested at the first timer start that needs it,
+never during setup or repeatedly on side taps after denial. Denial leaves
+drafts and logging usable. Grant, app foreground return, and reboot refresh
+notifications from local drafts and current core targets; scheduled sync
+also refreshes visibility after shared state changes. Drafts for an unavailable
+target remain stored, without a notification or silent target migration.
+
+Dismissal hides only that notification session, across refresh and reboot,
+and never pauses, discards, or saves its draft. A later session may notify
+again. User force-stop is distinct from ordinary process death: drafts survive
+and visibility is reconstructed after user reopening; notification availability
+while force-stopped is not promised. This remains device-local nursing/pumping
+timing, with Save through the existing Rust actions. Background Stop/Save and
+side-switch controls are deferred; pumping Stop currently transfers duration
+to its form rather than persisting a completed draft. Delivery evidence lives
+in [011](../tactical/011-android-timer-notifications.md).
 
 ## Delivery and validation direction
 

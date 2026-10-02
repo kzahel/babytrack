@@ -203,5 +203,6 @@ hosted disposable preview service), Rust/web checks (no Rust, wire, or web
 changes), and remote CI. No physical-phone, TalkBack, RTL, or caregiver
 usability gate is closed; those remain in [005](005-m1-android.md).
 Follow-ups outside this scope: multi-day charts (needs the reports scope
-decision), a notification for an in-progress nursing draft, and grammar
-review for the new duration/elapsed strings in other languages.
+decision), a notification for an in-progress nursing draft (subsequently
+delivered in [011](011-android-timer-notifications.md)), and grammar review
+for the new duration/elapsed strings in other languages.

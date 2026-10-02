@@ -539,8 +539,12 @@ delivered, and removed access cannot obtain new Family data.
   of saved running sleep timers and opens the tracker when tapped. It updates
   after tracker changes, scheduled sync, boot refresh, and launcher widget
   refresh; the emulator test checks its running and stopped renderings.
-  An actual device reboot, widget placement on a launcher, and physical-phone
-  checks remain.
+  Nursing and pumping local drafts now have quiet notifications with
+  session-bound capture navigation; paused nursing shows a static duration.
+  [011](011-android-timer-notifications.md) owns their implementation and
+  validation evidence. Notification controls that change or save drafts remain
+  deferred. Actual phone reboot, widget placement on a launcher, and
+  physical-phone checks remain.
 
 Gate: caregivers can move a saved point to another phone and understand
 what it contains; daily logging and recovery require no relay account.

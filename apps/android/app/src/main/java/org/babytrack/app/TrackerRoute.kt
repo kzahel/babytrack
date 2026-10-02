@@ -3,7 +3,6 @@ package org.babytrack.app
 import android.Manifest
 import android.app.DatePickerDialog
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -72,6 +71,8 @@ internal fun TrackerRoute(
     recordSave: (BackupFileRow) -> Boolean,
     lastRelayOrigin: (FamilyRef) -> String?,
     recordRelayOrigin: (FamilyRef, String) -> Boolean,
+    incomingTimer: TimerNotificationTarget? = null,
+    onTimerConsumed: () -> Unit = {},
 ) {
     val trackingActions =
         remember(store, sharing) { TrackingActionRouter(NativeTrackingActions(store), sharing) }
@@ -112,6 +113,10 @@ internal fun TrackerRoute(
                             ) {
                                 if (it) version++
                             }
+                        val requestTimerNotification = {
+                            if (Build.VERSION.SDK_INT >= 33 && shouldRequestTimerNotifications(context))
+                                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
                         var screenData by remember { mutableStateOf<ScreenData?>(null) }
                         val families = screenData?.families ?: emptyList()
                         val removedFamilies = screenData?.removedFamilies ?: emptyList()
@@ -301,11 +306,7 @@ internal fun TrackerRoute(
                                     }
                                     .orEmpty()
                         }
-                        val timerStore = remember {
-                            LiveTimerStore(
-                                context.getSharedPreferences("live_timers", Context.MODE_PRIVATE)
-                            )
-                        }
+                        val timerStore = remember { liveTimerStore(context) }
                         LaunchedEffect(loadedFamilyKey, loadedChildKey) {
                             val target =
                                 if (loadedFamilyKey != null && loadedChildKey != null)
@@ -314,11 +315,15 @@ internal fun TrackerRoute(
                             nursingSegments = target?.let(timerStore::nursing).orEmpty()
                             pumpTimerStartMs = target?.let(timerStore::pumpStart)
                         }
+                        var previousTarget by remember { mutableStateOf(selectedFamily to selectedChild) }
                         LaunchedEffect(selectedFamily, selectedChild) {
                             showTargetPicker = false
-                            captureKind = null
-                            if (destination == TrackerDestination.CAPTURE)
-                                destination = TrackerDestination.TODAY
+                            if (previousTarget != (selectedFamily to selectedChild)) {
+                                captureKind = null
+                                if (destination == TrackerDestination.CAPTURE)
+                                    destination = TrackerDestination.TODAY
+                                previousTarget = selectedFamily to selectedChild
+                            }
                             expandedEntryKey = null
                             recentlyDeleted = null
                             showChildDetails = false
@@ -371,6 +376,33 @@ internal fun TrackerRoute(
                             diaperKind = null
                             timelineFilter = TimelineFilter.ALL
                             selectedHistoryDay = null
+                        }
+                        // Wait for the requested target's core projection before opening capture.
+                        // This runs after target-reset effects so a cold or warm tap is not erased.
+                        LaunchedEffect(incomingTimer, screenData, selectedFamily, selectedChild) {
+                            val requested = incomingTimer ?: return@LaunchedEffect
+                            if (screenData == null) return@LaunchedEffect
+                            if (!timerStore.matches(requested) ||
+                                families.none { it.familyId.key() == requested.familyKey } ||
+                                (loadedFamilyKey == requested.familyKey &&
+                                    children.none { it.id.key() == requested.childKey })) {
+                                message = context.getString(R.string.timer_notification_expired)
+                                onTimerConsumed()
+                                return@LaunchedEffect
+                            }
+                            if (loadedFamilyKey != requested.familyKey ||
+                                loadedChildKey != requested.childKey ||
+                                selectedFamily != requested.familyKey || selectedChild != requested.childKey) {
+                                selectedFamily = requested.familyKey
+                                selectedChild = requested.childKey
+                                return@LaunchedEffect
+                            }
+                            nursingSegments = timerStore.nursing(requested.target)
+                            pumpTimerStartMs = timerStore.pumpStart(requested.target)
+                            breastTimerMode = true
+                            captureKind = if (requested.kind == LiveTimerKind.NURSING) CaptureKind.BREAST else CaptureKind.PUMP
+                            destination = TrackerDestination.CAPTURE
+                            onTimerConsumed()
                         }
                         LaunchedEffect(foreground, selectedRecipient) {
                             if (foreground)
@@ -452,6 +484,7 @@ internal fun TrackerRoute(
                             }
                         }
                         LaunchedEffect(
+                            foreground,
                             version,
                             selectedFamily,
                             selectedChild,
@@ -467,7 +500,10 @@ internal fun TrackerRoute(
                                             selectedChild,
                                             selectedRecipient,
                                             selectedHistoryDay?.let(LocalDate::parse),
-                                        )
+                                        ).also {
+                                            runCatching { refreshLiveTimerNotifications(context, store, sharing) }
+                                                .onFailure { Log.w("BabytrackTimer", "Could not refresh feeding notifications", it) }
+                                        }
                                     }
                                 }
                                 .onSuccess { data ->
@@ -682,17 +718,7 @@ internal fun TrackerRoute(
                                             scope.launch { captureScrollState.scrollTo(0) }
                                         },
                                         finishCapture = ::finishCapture,
-                                        requestTimerNotification = {
-                                            if (
-                                                Build.VERSION.SDK_INT >= 33 &&
-                                                    context.checkSelfPermission(
-                                                        Manifest.permission.POST_NOTIFICATIONS
-                                                    ) != PackageManager.PERMISSION_GRANTED
-                                            )
-                                                notificationPermission.launch(
-                                                    Manifest.permission.POST_NOTIFICATIONS
-                                                )
-                                        },
+                                        requestTimerNotification = requestTimerNotification,
                                         lastBottle =
                                             entries
                                                 .filter {
@@ -1075,19 +1101,7 @@ internal fun TrackerRoute(
                                                 onStartSleep = action@{
                                                         change(
                                                             onSaved = {
-                                                                if (
-                                                                    Build.VERSION.SDK_INT >= 33 &&
-                                                                        context.checkSelfPermission(
-                                                                            Manifest.permission
-                                                                                .POST_NOTIFICATIONS
-                                                                        ) !=
-                                                                            PackageManager
-                                                                                .PERMISSION_GRANTED
-                                                                )
-                                                                    notificationPermission.launch(
-                                                                        Manifest.permission
-                                                                            .POST_NOTIFICATIONS
-                                                                    )
+                                                                requestTimerNotification()
                                                             }
                                                         ) {
                                                             trackingActions

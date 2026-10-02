@@ -156,6 +156,14 @@
     <string name="start_sleep">Start sleep timer</string>
     <string name="stop_sleep">Stop sleep</string>
     <string name="sleep_running">Sleep · running</string>
+    <string name="feeding_notification_channel">Feeding timers</string>
+    <string name="nursing_notification_title">Breastfeeding · %1$s</string>
+    <string name="pump_notification_title">Pumping · %1$s</string>
+    <string name="nursing_notification_running">%1$s · tap to open timer</string>
+    <string name="nursing_notification_paused">Paused · %1$s · tap to continue</string>
+    <string name="pump_notification_running">Tap to open timer</string>
+    <string name="timer_notification_private">Timer in progress</string>
+    <string name="timer_notification_expired">This timer is no longer available.</string>
     <string name="sleep_notification_channel">Sleep timers</string>
     <string name="sleep_notification_title">Sleep timer running</string>
     <string name="sleep_notification_one">Tap to view and stop the timer</string>

@@ -68,6 +68,38 @@ internal fun stopwatchMinutes(startMs: Long, endMs: Long): Long =
 
 /** Private app preferences keyed by Family and child; never canonical records. */
 internal class LiveTimerStore(private val prefs: SharedPreferences) {
+    fun targets(): Set<String> = prefs.all.keys.mapNotNull { key ->
+        when {
+            key.startsWith("nursing:") -> key.removePrefix("nursing:")
+            key.startsWith("pump:") -> key.removePrefix("pump:")
+            else -> null
+        }
+    }.toSet()
+
+    fun session(target: String, kind: LiveTimerKind): TimerNotificationTarget? {
+        val keys = target.split(':')
+        if (keys.size != 2 || keys.any { !it.matches(Regex("[0-9a-f]{32}")) }) return null
+        val start = when (kind) {
+            LiveTimerKind.NURSING -> nursing(target).firstOrNull()?.startMs
+            LiveTimerKind.PUMP -> pumpStart(target)
+        } ?: return null
+        return TimerNotificationTarget(keys[0], keys[1], kind, start)
+    }
+
+    fun matches(session: TimerNotificationTarget): Boolean =
+        session(session.target, session.kind) == session
+
+    fun dismiss(session: TimerNotificationTarget) {
+        if (matches(session)) prefs.edit().putLong(dismissalKey(session), session.startMs).apply()
+    }
+
+    fun isDismissed(session: TimerNotificationTarget): Boolean =
+        prefs.contains(dismissalKey(session)) &&
+            prefs.getLong(dismissalKey(session), 0L) == session.startMs
+
+    private fun dismissalKey(session: TimerNotificationTarget): String =
+        "dismissed:${session.kind.name}:${session.target}"
+
     fun nursing(target: String): List<TimedSegment> =
         runCatching {
                 val array = JSONArray(prefs.getString("nursing:$target", "[]"))
@@ -84,7 +116,10 @@ internal class LiveTimerStore(private val prefs: SharedPreferences) {
 
     fun saveNursing(target: String, segments: List<TimedSegment>) {
         val editor = prefs.edit()
-        if (segments.isEmpty()) editor.remove("nursing:$target")
+        if (segments.isEmpty()) {
+            editor.remove("nursing:$target")
+            editor.remove("dismissed:${LiveTimerKind.NURSING.name}:$target")
+        }
         else
             editor.putString(
                 "nursing:$target",
@@ -106,7 +141,10 @@ internal class LiveTimerStore(private val prefs: SharedPreferences) {
 
     fun savePumpStart(target: String, startMs: Long?) {
         val editor = prefs.edit()
-        if (startMs == null) editor.remove("pump:$target") else editor.putLong("pump:$target", startMs)
+        if (startMs == null) {
+            editor.remove("pump:$target")
+            editor.remove("dismissed:${LiveTimerKind.PUMP.name}:$target")
+        } else editor.putLong("pump:$target", startMs)
         editor.apply()
     }
 }

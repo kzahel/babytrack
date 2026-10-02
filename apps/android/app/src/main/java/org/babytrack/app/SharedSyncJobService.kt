@@ -46,6 +46,8 @@ class SharedSyncJobService : JobService() {
                                 runningSleepCount(local, sharing, local.families(), sharing.recipientFamilies()),
                             )
                         }.onFailure { Log.w("BabytrackTimer", "Could not refresh sleep notification", it) }
+                        runCatching { refreshLiveTimerNotifications(this, local, sharing) }
+                            .onFailure { Log.w("BabytrackTimer", "Could not refresh feeding notifications", it) }
                     }
                 }
             } catch (_: Exception) {

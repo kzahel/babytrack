@@ -180,6 +180,9 @@ Presentation files:
   dialog/date-picker adapter.
 - `EntryDialogs.kt`, `TrackerEditModels.kt`: correction dialog presentation
   and immutable draft values; writes remain in the controller.
+- `LiveTimers.kt`, `LiveTimerNotifications.kt`: device-local nursing/pumping
+  drafts, quiet notification clocks, dismissal, and exact-session tap targets;
+  sleep keeps its existing notification/widget.
 - `src/debug/.../ScreenFixtures.kt`: stable fictional display states.
 - `src/debug/.../ScreenPreviews.kt`: Android Studio previews of those states.
 - `src/test/.../ScreenGalleryTest.kt`: pinned Roborazzi/Robolectric Native

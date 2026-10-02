@@ -47,3 +47,7 @@ tactical with its current status.
   — complete with local verification; activity identity, Today tiles, a
   shared capture template, live nursing/pumping timers, History day view,
   and a settings-style Family screen. Physical-phone gates stay with 005.
+- [011: Android local timer notifications](011-android-timer-notifications.md)
+  — complete with local verification; quiet nursing/pumping notifications,
+  session-bound navigation, dismissal, permission, and offline lifecycle
+  recovery. Phone gates stay with 005.

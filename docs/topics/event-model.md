@@ -91,9 +91,9 @@ switch but must never overlap. The core checks ordered intervals, side
 values, offsets, and at most four hours of summed active feeding time.
 Each segment keeps its start and end UTC offsets, including across a
 daylight-saving transition. Local files and encrypted shared sync preserve
-the segment sequence. Android currently enters completed side durations;
-the web preview also times taps and keeps its unsaved draft in browser storage
-through reload. Neither client yet publishes an in-progress breast feed to
+the segment sequence. Android supports live local timing and completed side
+durations; the web preview times taps and keeps its unsaved draft in browser
+storage through reload. Neither client yet publishes an in-progress breast feed to
 other devices.
 Android can optionally mark a running or completed sleep as crib, pram,
 contact, car, or other. The shared core stores the published place code on

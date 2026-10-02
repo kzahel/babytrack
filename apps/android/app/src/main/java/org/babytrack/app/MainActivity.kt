@@ -15,12 +15,16 @@ import androidx.compose.runtime.setValue
 
 class MainActivity : ComponentActivity() {
     private var incomingInvitation by mutableStateOf<String?>(null)
+    private var incomingTimer by mutableStateOf<TimerNotificationTarget?>(null)
     private var invitationConsumed = false
+    private var timerConsumed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         invitationConsumed = savedInstanceState?.getBoolean("invitation_consumed") ?: false
         incomingInvitation = if (invitationConsumed) null else invitationFrom(intent)
+        timerConsumed = savedInstanceState?.getBoolean("timer_consumed") ?: false
+        incomingTimer = if (timerConsumed) null else timerNotificationTarget(intent)
         runCatching { SharedSyncJobService.schedule(this) }
             .onFailure { Log.w("BabytrackSync", "Could not schedule periodic shared sync", it) }
         val app = application as BabytrackApplication
@@ -44,6 +48,11 @@ class MainActivity : ComponentActivity() {
                     onInvitationConsumed = {
                         invitationConsumed = true
                         incomingInvitation = null
+                    },
+                    incomingTimer = incomingTimer,
+                    onTimerConsumed = {
+                        timerConsumed = true
+                        incomingTimer = null
                     },
                     readFile = { uri ->
                         contentResolver.openInputStream(uri)?.use {
@@ -91,10 +100,13 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         invitationConsumed = false
         incomingInvitation = invitationFrom(intent)
+        timerConsumed = false
+        incomingTimer = timerNotificationTarget(intent)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("invitation_consumed", invitationConsumed)
+        outState.putBoolean("timer_consumed", timerConsumed)
         super.onSaveInstanceState(outState)
     }
 }

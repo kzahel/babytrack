@@ -31,6 +31,7 @@ internal fun refreshSleepTimers(context: Context, databasePath: String) {
                 context,
                 runningSleepCount(local, sharing, local.families(), sharing.recipientFamilies()),
             )
+            refreshLiveTimerNotifications(context, local, sharing)
         }
     }
 }

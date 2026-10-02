@@ -1564,6 +1564,11 @@ class SharingRelayTest {
     fun keystoreWrappedPromotionAndInvitationSurviveRestart() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
+        if (android.os.Build.VERSION.SDK_INT >= 33)
+            instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        val timerDrafts = liveTimerStore(context)
+        val notifications = context.getSystemService(NotificationManager::class.java)
+        lateinit var notificationSession: TimerNotificationTarget
         val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")
             ?: error("relayPublicKey instrumentation argument required")
         val origin = "http://localhost:8787"
@@ -1638,6 +1643,18 @@ class SharingRelayTest {
             assertEquals(1uL, synced.childCount)
             val existing = sharing.snapshot(first.family).children.single()
             assertEquals("Relay test child", existing.name)
+            val timerTarget = timerTarget(first.family.familyId.key(), existing.id.key())
+            timerDrafts.savePumpStart(timerTarget, System.currentTimeMillis() - 60_000L)
+            notificationSession = timerDrafts.session(timerTarget, LiveTimerKind.PUMP)!!
+            NativeLocalStore.open(recipient.absolutePath).use { local ->
+                refreshLiveTimerNotifications(context, local, sharing)
+            }
+            composeRule.waitUntil(10_000) {
+                notifications.activeNotifications.any { it.tag == LiveTimerNotifications.tag(notificationSession) }
+            }
+            assertEquals(context.getString(R.string.pump_notification_title, existing.name),
+                notifications.activeNotifications.single { it.tag == LiveTimerNotifications.tag(notificationSession) }
+                    .notification.extras.getString("android.title"))
             assertEquals(2, sharing.snapshot(first.family).devices.size)
             assertTrue(sharing.snapshot(first.family).devices.any {
                 it.deviceId.contentEquals(first.family.deviceId) && it.role == 1u.toUByte()
@@ -1734,6 +1751,14 @@ class SharingRelayTest {
             }
             assertArrayEquals(copy.familyId, sharing.advanceRecipient(first.family).privateCopy!!.familyId)
             assertTrue(runCatching { sharing.syncAndUpload(first.family, origin) }.isFailure)
+            NativeLocalStore.open(recipient.absolutePath).use { local ->
+                refreshLiveTimerNotifications(context, local, sharing)
+            }
+            composeRule.waitUntil(10_000) {
+                notifications.activeNotifications.none { it.tag == LiveTimerNotifications.tag(notificationSession) }
+            }
+            assertTrue("Removal must retain the original target's local draft", timerDrafts.matches(notificationSession))
+            timerDrafts.savePumpStart(notificationSession.target, null)
         }
     }
 }

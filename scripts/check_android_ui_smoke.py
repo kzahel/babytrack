@@ -335,22 +335,42 @@ def main(quick: bool = False) -> None:
     open_history(target)
     find(target, "Note · SelectedChildMarker", scroll=True)
     stage("Live nursing timer across a force-stop")
+    if int(adb(target, "shell", "getprop", "ro.build.version.sdk").strip()) >= 33:
+        adb(target, "shell", "pm", "grant", PACKAGE, "android.permission.POST_NOTIFICATIONS")
     open_capture(target, "Breast feed")
     tap(target, "Timer", scroll=True)
     tap(target, "Left", scroll=True, actionable=True)
     time.sleep(2)
+    wait_for_nursing_notification(target, True)
     adb(target, "shell", "am", "force-stop", PACKAGE)
     adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
     find(target, "Breast feed in progress", scroll=True)
+    wait_for_nursing_notification(target, True)
     tap(target, "Open timer", scroll=True)
     tap(target, "Right", scroll=True, actionable=True)
     time.sleep(2)
     tap(target, "Save breast feed", actionable=True)
+    wait_for_nursing_notification(target, False)
     open_history(target)
     find(target, "Breast · Left 1 min → Right 1 min", scroll=True)
     open_entry_actions(target, "Breast · Left 1 min → Right 1 min")
     find(target, "Edit breast feed", scroll=True)
     print("Android UI Family/child selection, timeline, logging, edits, and restart: OK")
+
+
+def wait_for_nursing_notification(target: str, expected: bool) -> None:
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        dump = adb(target, "shell", "dumpsys", "notification", "--noredact")
+        if "Notification List:" not in dump:
+            raise RuntimeError("Notification dump is missing the active list")
+        active = re.split(r"\n  \S", dump.split("Notification List:", 1)[1], maxsplit=1)[0]
+        present = any(PACKAGE in line and "tag=live-timer:NURSING:" in line
+                      for line in active.splitlines() if "NotificationRecord(" in line)
+        if present == expected:
+            return
+        time.sleep(0.1)
+    raise RuntimeError(f"Nursing notification presence did not become {expected}")
 
 
 if __name__ == "__main__":

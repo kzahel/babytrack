@@ -251,8 +251,9 @@ are symbolic until M0 gives them executable actions and assertions.
 - **Accessibility.** VoiceOver, TalkBack, Dynamic Type, and a dark theme
   suitable for night use.
 - **Dogfooding (M1 to M4).** Developer builds on physical devices: our own
-  phones and a few friends', installed directly as APKs or from Xcode. No
-  store involvement. Pass criterion: log a feed or diaper in two taps or
+  phones and a few friends', installed directly as APKs or from Xcode. The
+  early internal draft exception is tracked in [012](tactical/012-internal-release-preparation.md).
+  Pass criterion: log a feed or diaper in two taps or
   fewer from the lock screen, one-handed.
 - **M1 two-caregiver gate.** On two Android phones, create one Family,
   invite a second device without simultaneous app use, load the same child
@@ -330,8 +331,11 @@ publishing jobs run only from protected tags or environments.
 
 M-1 is design work only. The separate 002 scaffolding plan describes build
 preparation without product/protocol behavior; its scaffold is complete.
-M1 to M4 use developer builds on physical devices only. Nothing
-touches an app store until M5.
+M1 to M4 primarily use developer builds on physical devices. On 2026-10-03,
+the owner authorized an early exception for unpublished iOS/Android app
+records and internal-release preparation; [012](tactical/012-internal-release-preparation.md)
+owns that bounded work. This does not authorize public publication or close
+the physical-phone, iOS implementation, or M5 security/release gates.
 
 0. **M-1, design closure.** Resolve the local-to-shared lifecycle, role
    authorization, protocol, recovery, event-model, and product-scope
@@ -394,8 +398,9 @@ inventory, voice, and paid extras come after launch.
 ## Open decisions
 
 - Hosting: a small Hetzner VPS or Fly.io. Deferred to M5.
-- Final name. `babytrack` is the code name for local development and is
-  used for crate, package, and bundle IDs. The final name must be chosen in
-  M5 before the first App Store Connect, Play Console, or F-Droid submission,
-  because the bundle ID and application ID are permanent from then on. The
-  display name can change at any time.
+- Final public name remains open. The early internal draft uses the existing
+  `org.babytrack.app` identity; the code name remains in crate/package names.
+  Treat a registered store identity as long-lived. A later public rename
+  must decide whether to retain it or create a separate app, with the
+  resulting install/update migration. Display names can be changed; the
+  early draft exception does not settle public branding.

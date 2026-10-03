@@ -68,7 +68,9 @@ them true, and keep the tactical index status current.
 - Vendor services (push, device integrity, watch link, and any later key
   backup) are reached only through app-owned interfaces. Google Play
   services and Firebase may appear only in their implementation modules.
-- No app store, publishing, or general hosted-service work before M5. M2 may
+- No public app-store publishing or general hosted-service work before M5.
+  The user-authorized early internal draft preparation is bounded by
+  [012](docs/tactical/012-internal-release-preparation.md). M2 may
   run the explicitly authorized disposable-data early preview described in
   the MVP plan; keep machine-specific deployment files in private infra.
 - Keep medical advice and clinical content out of the MVP.

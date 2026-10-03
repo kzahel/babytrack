@@ -15,8 +15,18 @@ android {
         minSdk = 26
         targetSdk = 35
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = providers.gradleProperty("releaseVersionCode").orElse("1").get().let {
+            requireNotNull(it.toIntOrNull()?.takeIf { code -> code in 1..2100000000 }) {
+                "releaseVersionCode must be an integer from 1 to 2100000000"
+            }
+        }
+        versionName = providers.gradleProperty("releaseVersionName").orElse("0.1.0").get().also {
+            require(it.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+([.-][A-Za-z0-9.-]+)?"))) {
+                "releaseVersionName must be a version such as 0.1.0 or 0.1.0-internal.1"
+            }
+        }
+        // Match scripts/build_android_core.sh; dependency-only ABIs cannot run the app.
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
     buildFeatures {

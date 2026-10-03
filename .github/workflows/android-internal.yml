@@ -1,0 +1,123 @@
+name: Android internal upload bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: Unused Google Play version code (increase for each upload)
+        required: true
+        type: string
+      version_name:
+        description: Display version
+        required: true
+        default: '0.1.0'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-internal
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify signing guards with disposable credentials
+        run: python3 scripts/test_android_bundle_signing.py
+      - uses: android-actions/setup-android@v4.0.4
+      - name: Install Android build tools and Rust targets
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973"
+          rustup target add aarch64-linux-android x86_64-linux-android
+          cargo install --locked cargo-ndk --version 4.1.2
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+      - name: Test and build unsigned release bundle
+        env:
+          RELEASE_CODE: ${{ inputs.version_code }}
+          RELEASE_NAME: ${{ inputs.version_name }}
+        run: |
+          apps/android/gradlew :app:testDebugUnitTest :app:lintRelease :app:bundleRelease \
+            "-PreleaseVersionCode=$RELEASE_CODE" "-PreleaseVersionName=$RELEASE_NAME" --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-unsigned
+          path: apps/android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 2
+
+  sign:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: android-internal
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-unsigned
+          path: ${{ runner.temp }}/unsigned
+      - name: Sign and verify with the upload key
+        env:
+          BABYTRACK_UPLOAD_KEYSTORE_BASE64: ${{ secrets.BABYTRACK_UPLOAD_KEYSTORE_BASE64 }}
+          BABYTRACK_UPLOAD_STORE_PASSWORD: ${{ secrets.BABYTRACK_UPLOAD_PASSWORD }}
+          BABYTRACK_UPLOAD_KEY_PASSWORD: ${{ secrets.BABYTRACK_UPLOAD_PASSWORD }}
+          BABYTRACK_UPLOAD_KEYSTORE: ${{ runner.temp }}/babytrack-upload.p12
+        run: |
+          umask 077
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+          raw = os.environ['BABYTRACK_UPLOAD_KEYSTORE_BASE64']
+          if not raw:
+              raise SystemExit('Missing upload key in android-internal environment')
+          Path(os.environ['BABYTRACK_UPLOAD_KEYSTORE']).write_bytes(base64.b64decode(raw, validate=True))
+          PY
+          bash scripts/sign_android_bundle.sh "$RUNNER_TEMP/unsigned/app-release.aab" \
+            "$RUNNER_TEMP/signed/babytrack.aab"
+      - name: Remove upload keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/babytrack-upload.p12"
+      - name: Record source and version
+        env:
+          RELEASE_CODE: ${{ inputs.version_code }}
+          RELEASE_NAME: ${{ inputs.version_name }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          receipt = {key: os.environ[key] for key in
+                     ('GITHUB_SHA', 'GITHUB_RUN_ID', 'RELEASE_CODE', 'RELEASE_NAME')}
+          Path(os.environ['RUNNER_TEMP'], 'signed', 'build.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        id: bundle
+        with:
+          name: babytrack-play-${{ inputs.version_code }}
+          path: ${{ runner.temp }}/signed/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Link upload artifact
+        env:
+          ARTIFACT_URL: ${{ steps.bundle.outputs.artifact-url }}
+        run: |
+          echo "[Download the upload-signed AAB, public certificate, checksum, and build receipt]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Upload babytrack.aab to the Play internal draft. This workflow does not publish or upload to a store." >> "$GITHUB_STEP_SUMMARY"

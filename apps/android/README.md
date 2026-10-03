@@ -52,6 +52,34 @@ cleartext HTTP; the release manifest does not. The bounded M0 security gate pass
 open. This is a development flow; see [005](../../docs/tactical/005-m1-android.md)
 for current evidence and remaining gates.
 
+## Internal release preparation
+
+Build an unsigned release bundle with:
+
+```sh
+apps/android/gradlew :app:bundleRelease --offline --no-daemon \
+  -PreleaseVersionCode=1 -PreleaseVersionName=0.1.0
+```
+
+The output is `app/build/outputs/bundle/release/app-release.aab`. Android
+packages only `arm64-v8a` and `x86_64`, matching the Rust core build; native
+dependencies must not advertise additional architectures without that core.
+This Gradle output is unsigned. To produce an upload-signed AAB, run
+`bash scripts/sign_android_bundle.sh INPUT.aab OUTPUT.aab` from the repo root
+with `BABYTRACK_UPLOAD_KEYSTORE`, `BABYTRACK_UPLOAD_STORE_PASSWORD`, and
+`BABYTRACK_UPLOAD_KEY_PASSWORD` in the environment; the alias defaults to
+`upload` (`BABYTRACK_UPLOAD_ALIAS` overrides it). Keep credentials outside
+the repository. The script also writes public `.pem` and `.sha256` sidecars.
+
+The manual **Android internal upload bundle** Actions workflow builds,
+tests, and signs using the restricted `android-internal` environment. It
+creates a downloadable artifact without a store upload or rollout. Choose
+an unused increasing version code for every Play upload. See the
+[signing topic](../../docs/topics/mobile-release-signing.md) for credentials,
+platform responsibilities, and limits, and
+[012](../../docs/tactical/012-internal-release-preparation.md) for store setup
+and remaining work.
+
 ## Automated checks
 
 The app supports API 26. Android binding generation uses

@@ -31,6 +31,11 @@ cleanup independently of the Kotlin JVM smoke bindings. Its build script and
 configuration are Gradle task inputs; API 26 unit coverage and `lintDebug`
 guard minimum-API compatibility.
 
+Android packages only `arm64-v8a` and `x86_64`, matching
+`scripts/build_android_core.sh`. Additional native dependency architectures
+are filtered out because they lack the app's Rust core. Add an architecture
+to both the core build and Android packaging before advertising support.
+
 | Path | Responsibility | Introduced |
 |---|---|---|
 | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` | Workspace, reproducible dependency/toolchain choices | Scaffolding |

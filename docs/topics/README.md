@@ -11,6 +11,9 @@ over a concern from the plan, the plan keeps a short summary and links here.
 
 ## Active topics
 
+- [Mobile release signing](mobile-release-signing.md) — read before changing
+  upload keys, CI release artifacts, Play App Signing, or Apple signing.
+
 - [Product feature comparison](product-feature-comparison.md) — read when
   prioritizing caregiver features or first-use improvements against the
   observed Nara and Huckleberry flows; proposals here do not change MVP scope.

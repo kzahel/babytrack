@@ -51,3 +51,7 @@ tactical with its current status.
   — complete with local verification; quiet nursing/pumping notifications,
   session-bound navigation, dismissal, permission, and offline lifecycle
   recovery. Phone gates stay with 005.
+- [012: Internal release preparation](012-internal-release-preparation.md)
+  — active, owner-authorized early store draft setup; Android release bundle
+  packaging, store records, signing, and upload prerequisites. No public
+  release or milestone completion is implied.

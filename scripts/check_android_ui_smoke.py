@@ -370,7 +370,7 @@ def check_breast_duration_edit(target: str) -> None:
     open_history(target)
     open_entry_actions(target, "Breast · Left · 2 min")
     tap(target, "Edit breast feed", scroll=True)
-    tap(target, "Minutes on selected side")
+    tap(target, "Minutes on selected side", scroll=True)
     adb(target, "shell", "input", "keyevent", "123")
     adb(target, "shell", "input", "keyevent", "67")
     adb(target, "shell", "input", "text", "3")

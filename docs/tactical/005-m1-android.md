@@ -685,7 +685,11 @@ On its 320×640 viewport, the History helper mistook the Family navigation
 button for a revealed entry action because it bounded content by the tab's
 text instead of its full touch target. The helper now excludes navigation
 touch targets; a compact-layout regression checks opening and repeated use
-without collapsing an already expanded entry. Hosted revalidation is pending.
+without collapsing an already expanded entry. The local compact emulator
+passed diaper correction, restart, and deletion. At 1.5× text, the minutes
+field in the breastfeeding editor required scrolling; the UI script now
+does that, and the resumed 2-to-3-minute save and restart passed. Four harness
+regressions pass. Hosted revalidation is pending.
 
 The Android CI job runs unit tests and lint and builds APKs. Its emulator job
 runs the full real-relay instrumentation suite, a short command-driven UI

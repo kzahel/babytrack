@@ -20,6 +20,13 @@ candidate refresh, dynamic enrollment, recipient/initial exchange, rotation,
 and rebase recovery. Scenario assertions retain the shared fixture bytes.
 The support module owns fixture loading, relay setup/proxy, and cleanup.
 Each scenario starts with isolated IndexedDB and owns its relay processes.
+Published-chain relays use the loopback-only `fixture_relay` example, with
+the clock pinned to the final receipt in that vector. This keeps invitation
+expiry checks meaningful without making historical vectors expire as wall
+time passes. Dynamic enrollment and product UI flows use the normal server
+and real clock. The fixed-clock router is gated by `test-harness`; the
+production server has no clock override. Lost-response injections assert
+their own error so a rejected commit cannot masquerade as a lost success.
 
 Progress identifies the running scenario. Failure artifacts under
 `target/browser-diagnostics/` contain the original failure, relay logs, and

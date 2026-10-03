@@ -13,8 +13,9 @@ const relayBin = process.argv[3];
 const nativeExchangeBin = process.argv[4];
 const seedRecipientBin = process.argv[5];
 const holderBin = process.argv[6];
-if (!generatedDir || !relayBin || !nativeExchangeBin || !seedRecipientBin || !holderBin) {
-  throw new Error('pass wasm-bindgen output, relay, exchange, seeder, and holder binaries');
+const fixtureRelayBin = process.argv[7];
+if (!generatedDir || !relayBin || !nativeExchangeBin || !seedRecipientBin || !holderBin || !fixtureRelayBin) {
+  throw new Error('pass wasm-bindgen output, relay, exchange, seeder, holder, and fixture relay binaries');
 }
 const fixtures = JSON.parse(fs.readFileSync(path.join(browserRoot, '../vectors/negative-batch-v1.json')));
 const full = JSON.parse(fs.readFileSync(path.join(browserRoot, '../vectors/full-wire-v1.json')));
@@ -199,7 +200,8 @@ async function createRelay(recipient = false, transitions = 6, holder = false) {
     fragment = seeded.stdout.trim();
   }
   const logFd = fs.openSync(logPath, 'a');
-  const child = spawn(path.resolve(relayBin), [path.join(temporary, 'relay.db'), seedPath,
+  const binary = recipient ? fixtureRelayBin : relayBin;
+  const child = spawn(path.resolve(binary), [path.join(temporary, 'relay.db'), seedPath,
     `127.0.0.1:${port}`], { stdio: ['ignore', logFd, logFd] });
   const base = `http://127.0.0.1:${port}`;
   try {

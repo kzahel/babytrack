@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,6 +12,47 @@ import android_ui
 
 
 class HarnessDiagnosticsTest(unittest.TestCase):
+    def test_compact_navigation_is_not_an_expanded_entry_action(self):
+        # CI's 320x640 viewport puts the Family touch target 36 px below
+        # the row, while its text label is another 48 px further down.
+        collapsed = ET.fromstring('''<hierarchy><node bounds="[0,0][320,640]">
+          <node clickable="true" bounds="[28,420][292,476]">
+            <node text="Diaper · Wet" bounds="[84,438][163,458]" />
+          </node>
+          <node clickable="true" bounds="[0,512][102,592]">
+            <node text="Today" bounds="[33,560][69,576]" />
+          </node>
+          <node clickable="true" bounds="[219,512][320,592]">
+            <node text="Family" bounds="[250,560][289,576]" />
+          </node>
+        </node></hierarchy>''')
+        expanded = ET.fromstring(ET.tostring(collapsed))
+        # Once opened/scrolled, a real entry action is visible below the row.
+        expanded.find('.//node[@clickable="true"]').set('bounds', '[28,300][292,356]')
+        ET.SubElement(expanded[0], 'node', clickable='true', text='Edit diaper type',
+                      bounds='[72,360][220,408]')
+        current = collapsed
+        taps = []
+
+        def adb(_target, *args):
+            nonlocal current
+            if args == ('shell', 'wm', 'size'):
+                return 'Physical size: 320x640'
+            if args[:3] == ('shell', 'input', 'tap'):
+                taps.append(args)
+                current = expanded
+            return ''
+
+        with patch.object(android_ui, 'find'), \
+                patch.object(android_ui, 'nodes', side_effect=lambda _: current), \
+                patch.object(android_ui, 'adb', side_effect=adb), \
+                patch.object(android_ui.time, 'sleep'), patch.object(android_ui, 'stage'):
+            android_ui.open_entry_actions('emulator-5554', 'Diaper · Wet')
+            self.assertEqual(len(taps), 1)
+            # Calling it again must leave the already-open row expanded.
+            android_ui.open_entry_actions('emulator-5554', 'Diaper · Wet')
+            self.assertEqual(len(taps), 1)
+
     def test_a_blocked_subprocess_times_out(self):
         with self.assertRaises(subprocess.TimeoutExpired):
             android_ui.command(sys.executable, "-c", "import time; time.sleep(10)", timeout=0.1)

@@ -141,6 +141,12 @@ smoke scenarios live in `tests/browser/browser-smoke/`, with fixture and relay
 support plus a small selectable runner. Every scenario owns a fresh browser
 context and its disposable relay processes. Their usage and artifact locations
 are documented in the Android and browser READMEs.
+Historical browser vectors run against a loopback-only fixture relay with
+time pinned to the vector's final receipt, through the `test-harness` router.
+Dynamic enrollment and product UI tests retain the normal server clock;
+production exposes no fixed-clock configuration. Android History helpers
+exclude the full bottom navigation touch targets when locating entry actions,
+including compact screens where button labels sit below their hit areas.
 
 ## Validation and alternatives
 

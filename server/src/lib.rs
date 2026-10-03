@@ -31,3 +31,13 @@ pub fn test_router(
 ) -> Result<axum::Router, String> {
     http::router(db_path, relay_seed).map_err(|error| format!("{error:?}"))
 }
+
+/// Fixed fixture time for disposable HTTP tests; absent from production builds.
+#[cfg(feature = "test-harness")]
+pub fn test_router_at(
+    db_path: impl AsRef<std::path::Path>,
+    relay_seed: [u8; 32],
+    now_ms: i64,
+) -> Result<axum::Router, String> {
+    http::fixture_router(db_path, relay_seed, now_ms).map_err(|error| format!("{error:?}"))
+}

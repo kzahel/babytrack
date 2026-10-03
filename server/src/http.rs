@@ -23,6 +23,14 @@ trait Clock: Send + Sync {
     fn now_ms(&self) -> Result<i64, StatusCode>;
 }
 struct SystemClock;
+#[cfg(any(test, feature = "test-harness"))]
+struct FixedClock(i64);
+#[cfg(any(test, feature = "test-harness"))]
+impl Clock for FixedClock {
+    fn now_ms(&self) -> Result<i64, StatusCode> {
+        Ok(self.0)
+    }
+}
 impl Clock for SystemClock {
     fn now_ms(&self) -> Result<i64, StatusCode> {
         let now = std::time::SystemTime::now()
@@ -44,6 +52,15 @@ pub(crate) fn router(
     relay_seed: [u8; 32],
 ) -> Result<Router, crate::store::Error> {
     router_with_clock(db_path, relay_seed, Arc::new(SystemClock))
+}
+
+#[cfg(feature = "test-harness")]
+pub(crate) fn fixture_router(
+    db_path: impl AsRef<Path>,
+    relay_seed: [u8; 32],
+    now_ms: i64,
+) -> Result<Router, crate::store::Error> {
+    router_with_clock(db_path, relay_seed, Arc::new(FixedClock(now_ms)))
 }
 
 fn router_with_clock(
@@ -558,12 +575,6 @@ mod tests {
     use babytrack_wire::cbor::Value;
     use serde_json::Value as Json;
     use tower::ServiceExt;
-    struct FixedClock(i64);
-    impl Clock for FixedClock {
-        fn now_ms(&self) -> Result<i64, StatusCode> {
-            Ok(self.0)
-        }
-    }
     fn hex(value: &str) -> Vec<u8> {
         (0..value.len())
             .step_by(2)

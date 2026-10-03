@@ -47,7 +47,10 @@ module.exports = async function ({ page, context, url, relay }) {
         await relayPostControl(path, candidate);
         throw new Error('simulated lost claim response');
       });
-    } catch { lost = true; }
+    } catch (error) {
+      if (error.message !== 'simulated lost claim response') throw error;
+      lost = true;
+    }
     const pending = await store.savedClaim();
     store.close();
     return { lost, pending: !!pending && !pending.committedResponse };
@@ -163,7 +166,10 @@ module.exports = async function ({ page, context, url, relay }) {
         await relayPostControl(path, candidate);
         throw new Error('simulated lost proof response');
       });
-    } catch { lost = true; }
+    } catch (error) {
+      if (error.message !== 'simulated lost proof response') throw error;
+      lost = true;
+    }
     const pending = await store.savedProof();
     store.close();
     return { lost, pending: !!pending && !pending.committedResponse };

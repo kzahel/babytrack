@@ -133,7 +133,7 @@ every byte of `BATCHBYTE01` and opens the result. Run them with
 `cargo test -p babytrack-core`. Many remaining vector and product flows
 are not executable yet; compilation does not establish protocol correctness.
 
-The Android build needs SDK platform/build tools 35, NDK 27,
+The Android build needs SDK platform 36, build tools 35, NDK 27,
 `cargo-ndk` 4.1.2, and Rust's `aarch64-linux-android` and
 `x86_64-linux-android` targets. Gradle builds the Rust core from source
 and generates Kotlin UniFFI bindings. The debug APK is at

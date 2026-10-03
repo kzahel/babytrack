@@ -233,8 +233,16 @@ def open_entry_actions(target: str, entry_label: str) -> None:
         # back to the region above the navigation bar.
         areas = [bounds(n) for n in root.iter("node") if n.attrib.get("scrollable") == "true"]
         tall = [b for b in areas if b[3] - b[1] > height // 3]
-        tabs = [bounds(n)[1] for n in root.iter("node")
-                if n.attrib.get("text") in ("Today", "History", "Family")]
+        tabs = []
+        for node in root.iter("node"):
+            if node.attrib.get("text") not in ("Today", "History", "Family"):
+                continue
+            # The label sits well below the top of its touch target. Using
+            # its text bounds can mistake that target for an entry action.
+            while node.attrib.get("clickable") != "true" and node in parents:
+                node = parents[node]
+            if node.attrib.get("clickable") == "true":
+                tabs.append(bounds(node)[1])
         bottom = min([y for y in tabs if y > height // 2], default=height)
         area = max(tall, key=lambda b: b[3] - b[1]) if tall else [0, 0, width, bottom]
         return bounds(row), area, root

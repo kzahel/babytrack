@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const scenarios = ['journal', 'authority', 'invitation', 'candidate-races', 'dynamic-enrollment', 'recipient-exchange', 'initial-exchange', 'rotation', 'rebase-recovery'];
-const extra = process.argv.slice(7);
+const extra = process.argv.slice(8);
 if (process.argv.includes('--list')) { console.log(scenarios.join('\n')); process.exit(0); }
 let selected = scenarios;
 if (extra.length) {

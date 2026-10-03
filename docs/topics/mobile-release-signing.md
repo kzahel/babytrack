@@ -6,6 +6,11 @@ Status: early internal preparation; no public distribution. The
 
 ## Android
 
+Compile and target API 36 for new Play submissions under the
+[August 2026 target requirement](https://support.google.com/googleplay/android-developer/answer/11926878?hl=en).
+The minimum supported device API remains 26. SDK target compatibility is a
+separate concern from native ABI and signing verification.
+
 Use Google Play App Signing with a Google-generated app-signing key. Keep a
 separate project-specific upload key in a PKCS#12 keystore. CI signs the AAB
 with the upload key; Play signs the installable APKs with its app-signing key.

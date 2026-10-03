@@ -8,12 +8,12 @@ plugins {
 
 android {
     namespace = "org.babytrack.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "org.babytrack.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = providers.gradleProperty("releaseVersionCode").orElse("1").get().let {
             requireNotNull(it.toIntOrNull()?.takeIf { code -> code in 1..2100000000 }) {

@@ -37,6 +37,10 @@ close the physical-phone and M5 release/security gates.
 
 ## Evidence and limits
 
+The first hosted run at `afd14f5` was canceled before upload when the
+current Play target requirement was checked. Compile/target SDK and CI
+platform installation were updated to API 36; minimum device API remains 26.
+
 The unsigned `:app:bundleRelease` build and its release lint passed before
 and after the packaging fix. Initial inspection found dependency-only ABIs
 without the Rust core; the Gradle ABI filter now matches the two Rust

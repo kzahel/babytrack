@@ -95,9 +95,14 @@ configuration and secret names were verified through the API.
 - The independent [scaffold run 37144741102](https://github.com/kzahel/babytrack/actions/runs/37144741102)
   passed Rust, native bindings on both platforms, and Android debug build,
   but browser invitation smoke failed with `Relay control commit failed: 409`.
-  The Android relay emulator job was still running at upload time. Full
-  scaffold CI is not green; investigate the browser failure separately.
+  Its Android relay emulator job later failed in the compact History test
+  helper. These test-infrastructure failures were corrected after release:
+  [005](005-m1-android.md#ci-and-review-handoff) owns Android evidence and
+  [006](006-m2-web.md#october-3-ci-fixture-clock-correction) owns the fixture
+  clock correction. All jobs in [run 37147297839](https://github.com/kzahel/babytrack/actions/runs/37147297839)
+  passed at `3476d7b`. The installed Play artifact remains version 1 above;
+  these follow-up changes affect tests and documentation.
 
 The bounded Android delivery is complete. iOS remains deferred to M3;
-physical-phone behavior, the separate browser failure, and broader M5
-security/public-release gates remain open.
+physical-phone behavior and broader M5 security/public-release gates remain
+open.

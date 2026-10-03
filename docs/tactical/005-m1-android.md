@@ -689,7 +689,10 @@ without collapsing an already expanded entry. The local compact emulator
 passed diaper correction, restart, and deletion. At 1.5× text, the minutes
 field in the breastfeeding editor required scrolling; the UI script now
 does that, and the resumed 2-to-3-minute save and restart passed. Four harness
-regressions pass. Hosted revalidation is pending.
+regressions pass. Hosted [run 37147297839](https://github.com/kzahel/babytrack/actions/runs/37147297839)
+passed at `3476d7b`: the separate invitation test, all 43 instrumentation
+tests, quick caregiver flow including the 2-to-3-minute edit and restart,
+readable/protected backup recovery, navigation captures, and Required checks.
 
 The Android CI job runs unit tests and lint and builds APKs. Its emulator job
 runs the full real-relay instrumentation suite, a short command-driven UI

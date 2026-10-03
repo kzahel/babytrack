@@ -53,5 +53,5 @@ tactical with its current status.
   recovery. Phone gates stay with 005.
 - [012: Internal release preparation](012-internal-release-preparation.md)
   — Android internal release delivered from passing build/sign CI and
-  available to the selected internal tester; iOS deferred. Separate browser
-  smoke failure and broader platform/security gates remain open.
+  available to the selected internal tester; iOS deferred. Follow-up full CI
+  is green; broader platform/security gates remain open.

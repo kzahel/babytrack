@@ -226,15 +226,28 @@ pub fn edit_breast(
     {
         return Err("breast feed target unavailable");
     }
-    let Some(Value::Array(start)) = target.field(1).map(|field| &field.value) else {
-        return Err("breast feed start unavailable");
-    };
-    let [Value::Integer(ms), Value::Integer(offset)] = start.as_slice() else {
-        return Err("breast feed start unavailable");
-    };
-    let ms = i64::try_from(*ms).map_err(|_| "breast feed start unavailable")?;
-    let offset = i16::try_from(*offset).map_err(|_| "breast feed start unavailable")?;
-    let fields = breast::fields(segments, ms, offset, saved_at_ms)?;
+    let first = segments.first().ok_or("breast segment count invalid")?;
+    check_time(first.start_utc_ms)?;
+    check_time(saved_at_ms)?;
+    let mut fields = breast::fields(
+        segments,
+        first.start_utc_ms,
+        first.start_offset_minutes,
+        saved_at_ms,
+    )?;
+    // Correct the complete interval together, including late-started timers.
+    // Always write start, even when unchanged, so concurrent new edits choose
+    // the same writer for both endpoints and the atomic segment list.
+    fields.insert(
+        0,
+        (
+            1,
+            Value::Array(vec![
+                Value::Integer(first.start_utc_ms.into()),
+                Value::Integer(first.start_offset_minutes.into()),
+            ]),
+        ),
+    );
     Ok(NewOperation {
         family_id: id.family,
         operation_id: id.operation,

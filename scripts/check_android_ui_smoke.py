@@ -92,8 +92,9 @@ def main(quick: bool = False) -> None:
     find(target, "UITestChild")
     tap(target, "History", actionable=True)
     find(target, "No entries yet.", scroll=True)
+    check_breast_duration_edit(target)
     if quick:
-        print("Android UI quick Family, diaper, edit, delete, and restart: OK")
+        print("Android UI quick Family, diaper, breast edit/retry, delete, and restart: OK")
         return
     open_capture(target, "Note")
     tap(target, "What happened?", scroll=True)
@@ -356,6 +357,30 @@ def main(quick: bool = False) -> None:
     open_entry_actions(target, "Breast · Left 1 min → Right 1 min")
     find(target, "Edit breast feed", scroll=True)
     print("Android UI Family/child selection, timeline, logging, edits, and restart: OK")
+
+
+def check_breast_duration_edit(target: str) -> None:
+    stage("Breast estimated duration correction and restart")
+    open_capture(target, "Breast feed")
+    tap(target, "Enter minutes", scroll=True)
+    tap(target, "Minutes on selected side", scroll=True)
+    adb(target, "shell", "input", "text", "2")
+    dismiss_keyboard(target)
+    tap(target, "Save breast feed", scroll=True)
+    open_history(target)
+    open_entry_actions(target, "Breast · Left · 2 min")
+    tap(target, "Edit breast feed", scroll=True)
+    tap(target, "Minutes on selected side")
+    adb(target, "shell", "input", "keyevent", "123")
+    adb(target, "shell", "input", "keyevent", "67")
+    adb(target, "shell", "input", "text", "3")
+    dismiss_keyboard(target)
+    tap(target, "Save changes")
+    find(target, "Breast · Left · 3 min", scroll=True)
+    adb(target, "shell", "am", "force-stop", PACKAGE)
+    adb(target, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    open_history(target)
+    find(target, "Breast · Left · 3 min", scroll=True)
 
 
 def wait_for_nursing_notification(target: str, expected: bool) -> None:

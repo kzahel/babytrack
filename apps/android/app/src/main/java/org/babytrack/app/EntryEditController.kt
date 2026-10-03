@@ -266,9 +266,39 @@ internal fun EntryEditController(
                     actions =
                         EditBreastActions(
                             onDismiss = action@{ pendingBreastEdit = null },
+                            onKeepFinishTimeChange = { keep ->
+                                pendingBreastEdit = target.keepingFinish(keep)
+                            },
+                            onChooseStartTime = {
+                                val current = java.util.Calendar.getInstance().apply {
+                                    timeInMillis = target.plannedStartMs() ?: target.startUtcMs
+                                }
+                                DatePickerDialog(
+                                    context,
+                                    { _, year, month, day ->
+                                        TimePickerDialog(
+                                            context,
+                                            { _, hour, minute ->
+                                                if (pendingBreastEdit === target) {
+                                                    val selected = LocalDateTime.of(year, month + 1, day, hour, minute)
+                                                        .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                                                    pendingBreastEdit = target.startingAt(selected)
+                                                }
+                                            },
+                                            current.get(java.util.Calendar.HOUR_OF_DAY),
+                                            current.get(java.util.Calendar.MINUTE),
+                                            android.text.format.DateFormat.is24HourFormat(context),
+                                        ).show()
+                                    },
+                                    current.get(java.util.Calendar.YEAR),
+                                    current.get(java.util.Calendar.MONTH),
+                                    current.get(java.util.Calendar.DAY_OF_MONTH),
+                                ).show()
+                            },
                             onSegmentSideChange = action@{ side, index ->
                                     pendingBreastEdit =
                                         target.copy(
+                                            error = null,
                                             segments =
                                                 target.segments.mapIndexed { i, value ->
                                                     if (i == index) side to value.second else value
@@ -278,6 +308,7 @@ internal fun EntryEditController(
                             onSegmentMinutesChange = action@{ minutes, index ->
                                     pendingBreastEdit =
                                         target.copy(
+                                            error = null,
                                             segments =
                                                 target.segments.mapIndexed { i, value ->
                                                     if (i == index)
@@ -290,6 +321,7 @@ internal fun EntryEditController(
                             onRemoveLastSegment = action@{
                                     pendingBreastEdit =
                                         target.copy(
+                                            error = null,
                                             segments = target.segments.dropLast(1),
                                             gapsMs = target.gapsMs.dropLast(1),
                                         )
@@ -301,17 +333,19 @@ internal fun EntryEditController(
                                         else 1u.toUByte()
                                     pendingBreastEdit =
                                         target.copy(
+                                            error = null,
                                             segments = target.segments + (nextSide to "5"),
                                             gapsMs = target.gapsMs + 0L,
                                         )
                                 },
                             onSaveChanges = action@{
+                                    if (pendingBreastEdit !== target || target.saving) return@action
                                     val durations = target.segments.map { it.second.toLongOrNull() }
                                     val savedAtMs = System.currentTimeMillis()
-                                    var cursor = target.startUtcMs
+                                    var cursor = target.plannedStartMs() ?: return@action
                                     val zone = TimeZone.getDefault()
                                     val segments =
-                                        target.segments.mapIndexed { index, (side, minutes) ->
+                                        target.segments.mapIndexed { index, (side, _) ->
                                             cursor += target.gapsMs[index]
                                             val next =
                                                 cursor +
@@ -321,24 +355,41 @@ internal fun EntryEditController(
                                                     side,
                                                     cursor,
                                                     next,
-                                                    if (index == 0) target.startOffsetMinutes
+                                                    if (index == 0 && cursor == target.startUtcMs) target.startOffsetMinutes
                                                     else
                                                         (zone.getOffset(cursor) / 60_000).toShort(),
                                                     (zone.getOffset(next) / 60_000).toShort(),
                                                 )
                                                 .also { cursor = next }
                                         }
-                                    pendingBreastEdit = null
-                                    change {
-                                        actions
-                                            .forTarget(target.shared)
-                                            .editBreastFeedSegments(
-                                                target.family,
-                                                target.childId,
-                                                target.activityId,
-                                                segments,
-                                                savedAtMs,
-                                            )
+                                    if (segments.last().endUtcMs > savedAtMs) {
+                                        pendingBreastEdit = target.copy(
+                                            error = context.getString(R.string.breast_edit_future)
+                                        )
+                                        return@action
+                                    }
+                                    val savingTarget = target.copy(saving = true, error = null)
+                                    pendingBreastEdit = savingTarget
+                                    scope.launch {
+                                        runCatching {
+                                            withContext(Dispatchers.IO) {
+                                                actions.forTarget(target.shared).editBreastFeedSegments(
+                                                    target.family,
+                                                    target.childId,
+                                                    target.activityId,
+                                                    segments,
+                                                    savedAtMs,
+                                                )
+                                            }
+                                        }.onSuccess {
+                                            version++
+                                            message = null
+                                            if (pendingBreastEdit === savingTarget) pendingBreastEdit = null
+                                        }.onFailure {
+                                            if (pendingBreastEdit === savingTarget) {
+                                                pendingBreastEdit = target.copy(error = errorText)
+                                            }
+                                        }
                                     }
                                 },
                             onCancel = action@{ pendingBreastEdit = null },

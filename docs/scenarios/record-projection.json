@@ -51,8 +51,11 @@
       "expect": [
         "the pause remains a gap between ordered nonoverlapping segments",
         "left and right totals exclude the pause",
-        "the correction keeps the activity ID, child, Family, and original start",
-        "restart and replay preserve the corrected segment list"
+        "the correction keeps the activity ID, child, and Family; Android defaults to keeping the finish time and adjusts the start to fit estimated durations",
+        "restart and replay preserve the corrected segment list",
+        "choosing an earlier start moves the whole feed without changing durations or pauses",
+        "the start, end, and segments are written together and survive encrypted sync",
+        "an invalid future finish leaves the Android editor and draft available for correction"
       ]
     }
   ]

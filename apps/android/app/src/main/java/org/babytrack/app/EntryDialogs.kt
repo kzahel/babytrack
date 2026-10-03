@@ -10,12 +10,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -221,6 +223,8 @@ internal fun EditBottleDialog(target: PendingBottleEdit, actions: EditBottleActi
 
 internal data class EditBreastActions(
     val onDismiss: () -> Unit = {},
+    val onChooseStartTime: () -> Unit = {},
+    val onKeepFinishTimeChange: (Boolean) -> Unit = {},
     val onSegmentSideChange: (UByte, Int) -> Unit = { _, _ -> },
     val onSegmentMinutesChange: (String, Int) -> Unit = { _, _ -> },
     val onRemoveLastSegment: () -> Unit = {},
@@ -231,17 +235,39 @@ internal data class EditBreastActions(
 
 @Composable
 internal fun EditBreastDialog(target: PendingBreastEdit, actions: EditBreastActions) {
-    val context = LocalContext.current
-    val durations = target.segments.map { it.second.toLongOrNull() }
-    val valid =
-        durations.all { it != null && it in 1L..240L } &&
-            durations.filterNotNull().sum() <= 240L &&
-            target.segments.isNotEmpty()
+    val focus = LocalFocusManager.current
+    val scroll = rememberScrollState()
+    val valid = target.spanMs() != null
+    val format = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
     AlertDialog(
-        onDismissRequest = actions.onDismiss,
-        title = { Text(stringResource(R.string.edit_breast)) },
+        onDismissRequest = { if (!target.saving) actions.onDismiss() },
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.edit_breast))
+                target.error?.let {
+                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+            Column(Modifier.verticalScroll(scroll)) {
+                OutlinedButton(enabled = valid && !target.saving, onClick = actions.onChooseStartTime) {
+                    Text(stringResource(R.string.breast_edit_start, format.format(Date(target.plannedStartMs() ?: target.startUtcMs))))
+                }
+                target.plannedFinishMs()?.let {
+                    Text(stringResource(R.string.breast_edit_finish, format.format(Date(it))))
+                }
+                Text(stringResource(R.string.breast_edit_anchor))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(true to R.string.breast_keep_finish, false to R.string.breast_keep_start).forEach { (keepFinish, label) ->
+                        FilterChip(
+                            selected = target.keepFinishTime == keepFinish,
+                            enabled = valid && !target.saving,
+                            onClick = { actions.onKeepFinishTimeChange(keepFinish) },
+                            label = { Text(stringResource(label)) },
+                        )
+                    }
+                }
                 target.segments.forEachIndexed { index, segment ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(
@@ -251,6 +277,7 @@ internal fun EditBreastDialog(target: PendingBreastEdit, actions: EditBreastActi
                             .forEach { (side, label) ->
                                 FilterChip(
                                     selected = segment.first == side,
+                                    enabled = !target.saving,
                                     onClick = { actions.onSegmentSideChange(side, index) },
                                     label = { Text(stringResource(label)) },
                                 )
@@ -258,6 +285,7 @@ internal fun EditBreastDialog(target: PendingBreastEdit, actions: EditBreastActi
                     }
                     OutlinedTextField(
                         value = segment.second,
+                        enabled = !target.saving,
                         onValueChange = { it -> actions.onSegmentMinutesChange(it, index) },
                         label = { Text(stringResource(R.string.breast_minutes)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -265,24 +293,29 @@ internal fun EditBreastDialog(target: PendingBreastEdit, actions: EditBreastActi
                     )
                 }
                 if (target.segments.size > 1) {
-                    OutlinedButton(onClick = actions.onRemoveLastSegment) {
+                    OutlinedButton(enabled = !target.saving, onClick = actions.onRemoveLastSegment) {
                         Text(stringResource(R.string.remove_last_segment))
                     }
                 }
                 if (target.segments.size < 8) {
-                    OutlinedButton(onClick = actions.onAddBreastSegment) {
+                    OutlinedButton(enabled = !target.saving, onClick = actions.onAddBreastSegment) {
                         Text(stringResource(R.string.add_breast_segment))
                     }
                 }
             }
         },
         confirmButton = {
-            Button(enabled = valid, onClick = actions.onSaveChanges) {
+            Button(enabled = valid && !target.saving, onClick = {
+                focus.clearFocus()
+                actions.onSaveChanges()
+            }) {
                 Text(stringResource(R.string.save_changes))
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = actions.onCancel) { Text(stringResource(R.string.cancel)) }
+            OutlinedButton(enabled = !target.saving, onClick = actions.onCancel) {
+                Text(stringResource(R.string.cancel))
+            }
         },
     )
 }

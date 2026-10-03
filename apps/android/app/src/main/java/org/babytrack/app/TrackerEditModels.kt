@@ -51,7 +51,40 @@ internal data class PendingBreastEdit(
     val segments: List<Pair<UByte, String>>,
     // Keep pauses from a feed recorded on another client when correcting durations.
     val gapsMs: List<Long>,
-)
+    val finishUtcMs: Long,
+    val keepFinishTime: Boolean = true,
+    val saving: Boolean = false,
+    val error: String? = null,
+) {
+    // Form arithmetic only; the shared core validates and writes the interval.
+    fun spanMs(): Long? {
+        val minutes = segments.map { it.second.toLongOrNull() }
+        if (minutes.any { it == null || it !in 1L..240L } ||
+            minutes.filterNotNull().sum() > 240L || segments.isEmpty()) return null
+        return minutes.filterNotNull().sum() * 60_000L + gapsMs.sum()
+    }
+
+    fun plannedStartMs(): Long? = spanMs()?.let { if (keepFinishTime) finishUtcMs - it else startUtcMs }
+    fun plannedFinishMs(): Long? = spanMs()?.let { if (keepFinishTime) finishUtcMs else startUtcMs + it }
+
+    fun keepingFinish(keep: Boolean): PendingBreastEdit = copy(
+        startUtcMs = plannedStartMs() ?: startUtcMs,
+        startOffsetMinutes = plannedStartMs()?.let {
+            if (it == startUtcMs) startOffsetMinutes
+            else (java.util.TimeZone.getDefault().getOffset(it) / 60_000).toShort()
+        } ?: startOffsetMinutes,
+        finishUtcMs = plannedFinishMs() ?: finishUtcMs,
+        keepFinishTime = keep,
+        error = null,
+    )
+
+    fun startingAt(start: Long): PendingBreastEdit = copy(
+        startUtcMs = start,
+        startOffsetMinutes = (java.util.TimeZone.getDefault().getOffset(start) / 60_000).toShort(),
+        finishUtcMs = start + (spanMs() ?: (finishUtcMs - startUtcMs)),
+        error = null,
+    )
+}
 
 internal data class PendingDiaperEdit(
     val family: FamilyRef,

@@ -94,6 +94,7 @@ fn native_and_browser_construct_and_display_the_same_records() {
     let target = projection.record(&feed).unwrap().clone();
     let mut corrected = segments.clone();
     corrected[0].side = 2;
+    corrected[0].start_utc_ms -= 60_000;
     let native =
         local_api::edit_breast_feed_segments_operation(family, child, &target, &corrected, NOW)
             .unwrap();
@@ -300,4 +301,94 @@ fn native_adapters_preserve_portable_measurement_and_interval_bytes() {
         60
     );
     assert_eq!(index, 12);
+}
+
+#[test]
+fn corrected_breast_start_matches_published_fields_and_preserves_other_fields() {
+    use babytrack_core::cbor::{self, Value};
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../tests/vectors/breast-segments-v1.json")).unwrap();
+    let original = &fixture["cases"][0];
+    let correction = &fixture["corrections"][0];
+    let segments: Vec<BreastSegment> =
+        serde_json::from_value(original["segments"].clone()).unwrap();
+    let corrected: Vec<BreastSegment> =
+        serde_json::from_value(correction["segments"].clone()).unwrap();
+    let family = family();
+    let (child, child_op) = local_api::child_operation(family, "Child", 1000).unwrap();
+    let (id, mut create) = local_api::breast_feed_segments_operation(
+        family,
+        child,
+        &segments,
+        ActivityTime {
+            start_utc_ms: original["start_utc_ms"].as_i64().unwrap(),
+            offset_minutes: 0,
+            saved_at_ms: original["saved_at_ms"].as_i64().unwrap(),
+        },
+    )
+    .unwrap();
+    create.fields.as_mut().unwrap().extend([
+        (4, Value::Text("Keep this note".into())),
+        (500, Value::Bool(true)),
+    ]);
+    create
+        .fields
+        .as_mut()
+        .unwrap()
+        .sort_by_key(|(field, _)| *field);
+    let mut projection = LocalProjection::new(family.family_id);
+    let child_bytes = Operation::encode_new(&child_op).unwrap();
+    projection
+        .append(
+            &Operation::decode_bound(&child_bytes, &family.family_id, &family.device_id).unwrap(),
+            1,
+        )
+        .unwrap();
+    let bytes = Operation::encode_new(&create).unwrap();
+    projection
+        .append(
+            &Operation::decode_bound(&bytes, &family.family_id, &family.device_id).unwrap(),
+            2,
+        )
+        .unwrap();
+    let target = projection.record(&id).unwrap().clone();
+    let op =
+        local_api::edit_breast_feed_segments_operation(family, child, &target, &corrected, NOW)
+            .unwrap();
+    let browser = web_actions::edit_breast(
+        identity(&op),
+        child,
+        &target,
+        &serde_json::to_string(&corrected).unwrap(),
+    )
+    .unwrap();
+    let operation = assert_bytes(op, browser);
+    projection.append(&operation, 3).unwrap();
+    let record = projection.record(&id).unwrap();
+    for field in [1, 2, 100] {
+        let bytes = cbor::encode(&record.field(field).unwrap().value).unwrap();
+        let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+        assert_eq!(
+            hex,
+            correction[format!("field_{field}_cbor_hex")]
+                .as_str()
+                .unwrap()
+        );
+    }
+    assert_eq!(
+        record.field(4).unwrap().value,
+        Value::Text("Keep this note".into())
+    );
+    assert_eq!(record.field(500).unwrap().value, Value::Bool(true));
+    let mut invalid = corrected.clone();
+    invalid[0].start_utc_ms = -1;
+    assert!(
+        local_api::edit_breast_feed_segments_operation(family, child, &target, &invalid, NOW)
+            .is_err()
+    );
+    invalid[0].start_utc_ms = invalid[0].end_utc_ms;
+    assert!(
+        local_api::edit_breast_feed_segments_operation(family, child, &target, &invalid, NOW)
+            .is_err()
+    );
 }

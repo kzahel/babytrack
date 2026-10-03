@@ -49,7 +49,7 @@ adb install -r apps/android/app/build/outputs/apk/debug/app-debug.apk
 adb install -r apps/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 # Exercise invitation joining with no existing Family independently of suite order.
 # The full suite below starts with another clean installation state.
-test_class="${BABYTRACK_ANDROID_TEST_CLASS:-org.babytrack.app.SharingRelayTest,org.babytrack.app.TimerNotificationsTest}"
+test_class="${BABYTRACK_ANDROID_TEST_CLASS:-org.babytrack.app.SharingRelayTest,org.babytrack.app.TimerNotificationsTest,org.babytrack.app.BreastEditTest}"
 if [[ "$test_class" == org.babytrack.app.SharingRelayTest || "$test_class" == org.babytrack.app.SharingRelayTest,* ]]; then
   adb shell pm clear org.babytrack.app >/dev/null
   adb shell am instrument -w -e class \

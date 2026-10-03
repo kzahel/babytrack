@@ -26,5 +26,33 @@
       "expect_pause_ms": 20000,
       "field_100_cbor_hex": "828301821907d00082197d000083028219cb2000821a00017ae800"
     }
+  ],
+  "corrections": [
+    {
+      "id": "BREASTEDITSTART01",
+      "original_case": "BREASTPAUSE01",
+      "saved_at_ms": 100001,
+      "segments": [
+        {
+          "side": 1,
+          "start_utc_ms": 1000,
+          "end_utc_ms": 32000,
+          "start_offset_minutes": 0,
+          "end_offset_minutes": 0
+        },
+        {
+          "side": 2,
+          "start_utc_ms": 52000,
+          "end_utc_ms": 97000,
+          "start_offset_minutes": 0,
+          "end_offset_minutes": 0
+        }
+      ],
+      "expect_start_utc_ms": 1000,
+      "expect_end_utc_ms": 97000,
+      "field_1_cbor_hex": "821903e800",
+      "field_2_cbor_hex": "821a00017ae800",
+      "field_100_cbor_hex": "828301821903e80082197d000083028219cb2000821a00017ae800"
+    }
   ]
 }

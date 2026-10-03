@@ -43,6 +43,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.babytrack_core_ffi.NativeLocalStore
 import uniffi.babytrack_core_ffi.NativeSharedStore
+import uniffi.babytrack_core_ffi.BreastSegmentRow
 import uniffi.babytrack_core_ffi.ActivityWhen
 import uniffi.babytrack_core_ffi.previewInvitation
 import java.time.LocalDate
@@ -1397,6 +1398,87 @@ class SharingRelayTest {
         ShareCoordinator(context, recipientDb.absolutePath).use { sharing ->
             assertTrue(sharing.advanceRecipient(recipient).ready)
             assertEquals("Async child", sharing.snapshot(recipient).children.single().name)
+        }
+    }
+
+    @Test
+    fun correctedBreastStartSyncsAndSurvivesReopen() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val publicKey = InstrumentationRegistry.getArguments().getString("relayPublicKey")!!
+        val origin = "http://localhost:8787"
+        val managerDb = context.filesDir.resolve("feed-manager-${System.nanoTime()}.db")
+        val recipientDb = context.filesDir.resolve("feed-recipient-${System.nanoTime()}.db")
+        val now = System.currentTimeMillis()
+        val (family, child, activity) = NativeLocalStore.open(managerDb.absolutePath).use { local ->
+            val family = local.createFamily(now)
+            val child = local.addChild(family, "Feed correction child", now)
+            val activity = local.logBreastFeedSegments(family, child,
+                listOf(BreastSegmentRow(1u, now - 120_000L, now, 0, 0)),
+                ActivityWhen(now - 120_000L, 0, now))
+            Triple(family, child, activity)
+        }
+        val fragment = ShareCoordinator(context, managerDb.absolutePath).use {
+            it.promote(family, origin, publicKey)
+            it.invite(family, origin, 1u)
+        }
+        val recipient = ShareCoordinator(context, recipientDb.absolutePath).use { it.claim(fragment).family }
+        ShareCoordinator(context, managerDb.absolutePath).use { it.advanceManager(family, origin) }
+        ShareCoordinator(context, recipientDb.absolutePath).use { it.advanceRecipient(recipient) }
+        ShareCoordinator(context, managerDb.absolutePath).use { it.advanceManager(family, origin) }
+        val corrected = listOf(BreastSegmentRow(1u, now - 180_000L, now, 0, 0))
+        ShareCoordinator(context, recipientDb.absolutePath).use {
+            assertTrue(it.advanceRecipient(recipient).ready)
+            it.editBreastFeedSegments(recipient, child, activity, corrected, System.currentTimeMillis())
+        }
+        // Reopen before uploading the offline correction.
+        ShareCoordinator(context, recipientDb.absolutePath).use {
+            assertEquals(now - 180_000L, it.snapshot(recipient).activities.single().startUtcMs)
+            assertTrue(it.syncAndUpload(recipient, origin).ready)
+        }
+        ShareCoordinator(context, managerDb.absolutePath).use {
+            assertTrue(it.syncAndUpload(family, origin).ready)
+            val row = it.snapshot(family).activities.single()
+            assertArrayEquals(activity, row.id)
+            assertEquals(now - 180_000L, row.startUtcMs)
+            assertEquals(now, row.endUtcMs)
+            assertEquals(corrected, row.breastSegments)
+        }
+    }
+
+    @Test
+    fun justFinishedBreastFeedCanBeLengthenedFromHistory() {
+        wakeEmulatorScreen()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = context.filesDir.resolve("families.db")
+        val now = System.currentTimeMillis()
+        val (family, child, activity) = NativeLocalStore.open(db.absolutePath).use { local ->
+            val family = local.createFamily(now)
+            val child = local.addChild(family, "Late timer child", now)
+            val activity = local.logBreastFeedSegments(family, child,
+                listOf(BreastSegmentRow(1u, now - 120_000L, now, 0, 0)),
+                ActivityWhen(now - 120_000L, 0, now))
+            Triple(family, child, activity)
+        }
+        context.getSharedPreferences("tracker_selection", android.content.Context.MODE_PRIVATE).edit()
+            .putString("family", family.familyId.hex()).putString("child", child.hex()).commit()
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            openTab(R.string.nav_history)
+            openFirstEntryActions()
+            composeRule.onNodeWithText(context.getString(R.string.edit_breast)).performScrollTo().performClick()
+            composeRule.onNodeWithText(context.getString(R.string.breast_minutes)).performTextReplacement("3")
+            composeRule.onNodeWithText(context.getString(R.string.save_changes)).performClick()
+            composeRule.waitUntil(10_000) {
+                NativeLocalStore.open(db.absolutePath).use { local ->
+                    val row = local.timeline(family, child).single()
+                    row.startUtcMs == now - 180_000L && row.endUtcMs == now
+                }
+            }
+            scenario.recreate()
+            openTab(R.string.nav_history)
+            composeRule.onNodeWithText("Breast · Left · 3 min").performScrollTo().assertIsDisplayed()
+        }
+        NativeLocalStore.open(db.absolutePath).use { local ->
+            assertArrayEquals(activity, local.timeline(family, child).single().id)
         }
     }
 

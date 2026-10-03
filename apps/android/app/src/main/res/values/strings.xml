@@ -482,4 +482,10 @@
     <string name="tile_open_timer">Open timer</string>
     <!-- %1$s and %2$s are stopwatch times for the left and right sides. -->
     <string name="tile_nursing_sides">Left %1$s · Right %2$s</string>
+    <string name="breast_edit_future">This feed would end in the future. Choose an earlier start or shorten the duration.</string>
+    <string name="breast_edit_start">Start: %1$s</string>
+    <string name="breast_edit_finish">Finish: %1$s</string>
+    <string name="breast_edit_anchor">When changing minutes</string>
+    <string name="breast_keep_finish">Keep finish time</string>
+    <string name="breast_keep_start">Keep start time</string>
 </resources>

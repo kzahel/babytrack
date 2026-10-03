@@ -1354,6 +1354,7 @@ internal fun TrackerRoute(
                                                                             savedSegments[index - 1]
                                                                                 .endUtcMs
                                                                 },
+                                                                finishUtcMs = savedSegments.last().endUtcMs,
                                                             )
                                                     },
                                                 onEditDiaper = action@{ entry ->

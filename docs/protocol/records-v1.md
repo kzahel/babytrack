@@ -86,8 +86,15 @@ The first segment starts at field 1; field 2 equals the last segment end.
 Each segment has side `1` or `2`, a nonempty interval, and valid offsets.
 The next start may equal or follow the previous end, but must not precede it.
 A positive gap is paused time and is excluded from the four-hour maximum,
-which sums the segment durations. Editing replaces the complete segment list
-and derived field 2 on the same activity, retaining field 1.
+which sums the segment durations. A completed-feed correction writes fields
+1, 2, and 100 together on the same activity, deriving field 1 from the first
+segment start and field 2 from the last segment end. This permits correcting
+a late-started timer while keeping its finish. Writers include all three
+fields even when an endpoint is unchanged; concurrent corrections from these
+writers therefore select one complete interval under the existing field
+merge rule. Other fields remain untouched. This uses existing v1 field
+encodings; readers already accept these ordinary field-set operations.
+Historical corrections that retained field 1 remain readable.
 
 An unknown `record_type` and its entire field map remain opaque and
 round-trip unchanged. A known type with an unknown field retains the field's

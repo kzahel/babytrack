@@ -1617,7 +1617,7 @@ fn breast_segment_correction_preserves_start_and_restores() {
     let id = app
         .log_breast_feed_segments(family, child, original, time)
         .unwrap();
-    let corrected = vec![
+    let mut corrected = vec![
         BreastSegment {
             side: 2,
             start_utc_ms: start,
@@ -1633,6 +1633,13 @@ fn breast_segment_correction_preserves_start_and_restores() {
             end_offset_minutes: 120,
         },
     ];
+    // Lengthening a just-finished feed must not silently write a future end.
+    let unchanged = app.timeline(family, child).unwrap();
+    assert!(
+        app.edit_breast_feed_segments(family, child, id, corrected.clone(), time.saved_at_ms)
+            .is_err()
+    );
+    assert_eq!(app.timeline(family, child).unwrap(), unchanged);
     let mut broken = corrected.clone();
     broken[1].start_utc_ms -= 1;
     assert!(
@@ -1648,6 +1655,24 @@ fn breast_segment_correction_preserves_start_and_restores() {
     let before = app.timeline(family, child).unwrap();
     let row = before.iter().find(|row| row.id == id).unwrap();
     assert_eq!(row.start_utc_ms, start);
+    assert_eq!(row.end_utc_ms, Some(start + 16 * 60_000));
+    assert_eq!(row.breast_segments.as_deref(), Some(corrected.as_slice()));
+    // A timer started late can gain estimated feeding time before its start,
+    // while retaining the actual finish and the same record.
+    corrected[0].start_utc_ms -= 3 * 60_000;
+    corrected[0].start_offset_minutes = 60;
+    app.edit_breast_feed_segments(
+        family,
+        child,
+        id,
+        corrected.clone(),
+        start + 20 * 60_000 + 1,
+    )
+    .unwrap();
+    let before = app.timeline(family, child).unwrap();
+    let row = before.iter().find(|row| row.id == id).unwrap();
+    assert_eq!(row.start_utc_ms, start - 3 * 60_000);
+    assert_eq!(row.offset_minutes, 60);
     assert_eq!(row.end_utc_ms, Some(start + 16 * 60_000));
     assert_eq!(row.breast_segments.as_deref(), Some(corrected.as_slice()));
     let backup = app.backup(family, start + 21 * 60_000).unwrap();

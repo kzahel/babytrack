@@ -37,6 +37,17 @@ local.append_operation(local.edit_breast_operation(
 const correctedFeed = JSON.parse(local.snapshot_json()).activities.find((row) => row.kind === 'feed.breast');
 assert.equal(correctedFeed.id, localFeed.id);
 assert.deepEqual(correctedFeed.breastSegments, correctedSegments);
+const moved = JSON.parse(fs.readFileSync(path.join(__dirname, '../../tests/vectors/breast-segments-v1.json'))).corrections[0];
+local.append_operation(local.edit_breast_operation(
+  hex(localChild), hex(localFeed.id), JSON.stringify(moved.segments), BigInt(moved.saved_at_ms + 1),
+), 5n);
+const movedFeed = JSON.parse(local.snapshot_json()).activities.find((row) => row.kind === 'feed.breast');
+assert.equal(movedFeed.id, localFeed.id);
+assert.equal(movedFeed.startMs, moved.expect_start_utc_ms);
+assert.deepEqual(movedFeed.breastSegments, moved.segments);
+for (const field of [1, 2, 100]) {
+  assert.equal(Buffer.from(local.field_cbor(hex(localFeed.id), BigInt(field))).toString('hex'), moved[`field_${field}_cbor_hex`]);
+}
 local.free();
 const envelope = (id) => hex(vectors.cases.find((entry) => entry.id === id).input.envelope_cbor_hex);
 const minorCase = vectors.cases.find((entry) => entry.id === 'CROSSMINORBYTE01');

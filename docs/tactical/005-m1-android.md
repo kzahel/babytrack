@@ -127,8 +127,9 @@ The oversized-bottle rejection showed that message while retaining its input
 at 1.5× text size.
 Completed whole-minute breast feeds now offer side and duration correction
 for up to eight contiguous segments. The shared Rust core validates the
-replacement as one atomic update and keeps the original start and activity
-identity. A local restart/file-restore regression and a two-device relay
+replacement as one atomic update and keeps the activity identity. Start-time
+correction and estimated durations are now covered by the
+[breast-edit follow-up](#breast-duration-edit-regression-2026-10-03). A local restart/file-restore regression and a two-device relay
 assertion cover the corrected projection; the Android headed UI smoke opens
 and saves the correction dialog.
 The full headed emulator UI smoke then passed creation, filtering, logging,
@@ -622,6 +623,59 @@ Local evidence, working tree based on `104008f`:
   dark/light and normal/1.5× text; their offline catalog tests pass at desktop
   and mobile widths. The ADB helper now swipes within the actual scrollable
   content so fixed footers cannot consume its search gesture.
+
+## Breast-duration edit regression (2026-10-03)
+
+Phone use reported a breast-duration correction that appeared not to save.
+The original editor fixed the start, so increasing a recently finished feed's
+duration could produce a future end. It also closed before the write,
+discarding the draft on failure. The first fix exposed that error and retained
+input, but the caregiver follow-up established that estimated durations and
+late timer starts need a usable correction path.
+
+- [x] Default duration corrections to **Keep finish time**, moving the start
+  earlier or later. Offer **Keep start time** as an explicit alternative.
+- [x] Show both endpoints and add a start date/time picker that moves the
+  interval without changing side durations or saved pauses.
+- [x] Update the shared Rust correction to write start, end, and segments
+  together on the same activity; preserve notes and unknown fields.
+- [x] Keep input and visible errors on invalid input or storage failure;
+  disable controls while saving and close only on success.
+- [x] Add correction bytes to the existing cross-language fixture and consume
+  them in native Rust and Node wasm checks. Reconcile the event model,
+  protocol's correction contract, and projection scenario.
+- [x] Add Android draft and production-editor checks for estimated durations,
+  endpoint selection, date/time picking, pause retention, write failures,
+  and native persistence; include them in every-push test runs. Update the
+  short UI path to exercise a 2-to-3-minute estimate and restart.
+- [x] Add actual History-route and encrypted-relay correction regressions.
+- [ ] Confirm the reported phone case on an updated build. These checks do
+  not complete the physical-phone gate or cover every activity's editor.
+- [ ] Extend duration/value-change and failed-save/retry coverage to the
+  remaining activity editors; a side-only or API-only test is not evidence
+  that the corresponding form handles corrections and failures.
+
+The [event model](../topics/event-model.md) owns estimated-duration behavior;
+[records v1](../protocol/records-v1.md) owns the three-field correction.
+Existing field encodings and relay access rules are unchanged. UI endpoint
+choices are visible and the resulting interval is previewed before saving.
+
+Local validation of the expanded correction passes:
+
+- All 11 targeted API 35 emulator checks: nine production-editor tests,
+  History-to-save-to-reopen, and corrected-start delivery through the real
+  encrypted relay after reopening the sender's offline store. The failed-save
+  test waits for the visible dialog/keyboard layout, rather than only its
+  backing state. Errors remain above the scrollable fields.
+- All 28 Android unit tests, lint, and debug/instrumentation APK builds offline.
+- The full Rust workspace tests, workspace Clippy with warnings denied,
+  formatting, dependency-boundary check, and three ADB-harness tests.
+- Node wasm smoke, including `BREASTEDITSTART01` field bytes; native Rust
+  checks those same bytes, unknown-field/note retention, and restart/restore.
+
+The command-driven short UI path now checks a 2-to-3-minute correction; the
+production History instrumentation test verifies that interaction and reopen
+in this local run. No new hosted CI or physical-phone result is claimed.
 
 ## CI and review handoff
 

@@ -102,14 +102,26 @@ event, including while its timer runs; stopping or correcting its duration
 retains the place field.
 The timeline and analysis CSV show a recorded place, while older sleep
 entries without it remain valid.
-Correcting a completed breast feed replaces its segment list and derived end
-instant in one set operation while retaining its activity ID, original start,
-and unrelated or unknown fields. The core applies the same interval, side,
-offset, and four-hour checks as creation. Android offers whole-minute side
-and duration correction for entries whose existing segments are whole
-minutes and keeps any original pause gaps when doing so. Web edits timed
-segments to whole-second precision and can change pause lengths. Other
-clients' finer-grained entries remain readable and deletable.
+Correcting a completed breast feed replaces its segment list and derived
+start/end instants together in one set operation, retaining its activity ID
+and unrelated or unknown fields. The first segment supplies the corrected
+start; the last supplies the end. The core applies the same interval, side,
+offset, and four-hour checks as creation, and rejects a future finish.
+Android offers whole-minute side and duration correction for entries whose
+existing segments are whole minutes and keeps their pause gaps. It defaults
+to **Keep finish time**: increasing an estimated duration moves the start
+earlier, so a caregiver who started the timer late can correct a just-finished
+feed without waiting. **Keep start time** instead moves the finish when
+minutes change. Both endpoints are shown before saving. Choosing a start
+through the date/time picker moves the whole feed while keeping its durations
+and pauses; subsequent minute edits follow the selected endpoint choice.
+Changing the endpoint choice preserves the currently displayed interval.
+These controls change recorded estimates, not the operation's authoring time.
+The Android editor retains input and shows errors inline, disables further
+submissions while saving, and closes only after a successful write.
+Web edits timed segments to whole-second precision and can change pause
+lengths; its current editor keeps the start fixed. Other clients' finer-grained
+entries remain readable and deletable on Android.
 The Android timeline can delete one activity. The shared core checks its
 Family and child target and records a tombstone operation; the entry leaves
 the current timeline locally and on devices that later sync. Deletion does
@@ -221,7 +233,7 @@ the completed interval at Save.
   including their recorded offsets; the core rejects an open sleep timer,
   reversed interval, future end, or wrong Family/child target. Android picks
   the new start in the viewing device's time zone and derives the matching
-  end. Breast-feed segments are not moved by this control.
+  end. Breast feeds use their own start and duration controls described above.
 - Lists and timelines show each event at the local time it was logged, with
   a marker when that offset differs from the viewing device's current one.
 - A day is a calendar day in the viewing device's current time zone. Events

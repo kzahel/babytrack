@@ -130,7 +130,10 @@ flowchart TD
    edit/delete actions and the existing short Undo. Charts and averages
    remain outside this scope until the reports decision in the
    [comparison topic](product-feature-comparison.md#proposed-priority-order).
-   Preserve unknown-event placeholders.
+   Preserve unknown-event placeholders. The breast-feed editor shows start and
+   finish times, offers a start date/time picker, and defaults minute changes
+   to keeping the finish fixed. Caregivers can instead keep the start fixed;
+   the [event model](event-model.md) owns interval and validation rules.
 5. **Family.** Present a settings-style list. Put device access and join progress beside backup, restore,
    analysis export, and child management. Show current local/shared status
    in plain language. Keep any developer relay configuration visibly

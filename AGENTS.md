@@ -69,7 +69,7 @@ them true, and keep the tactical index status current.
   backup) are reached only through app-owned interfaces. Google Play
   services and Firebase may appear only in their implementation modules.
 - No public app-store publishing or general hosted-service work before M5.
-  The user-authorized early internal draft preparation is bounded by
+  The user-authorized early internal Android release work is bounded by
   [012](docs/tactical/012-internal-release-preparation.md). M2 may
   run the explicitly authorized disposable-data early preview described in
   the MVP plan; keep machine-specific deployment files in private infra.

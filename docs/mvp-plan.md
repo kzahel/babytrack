@@ -332,8 +332,9 @@ publishing jobs run only from protected tags or environments.
 M-1 is design work only. The separate 002 scaffolding plan describes build
 preparation without product/protocol behavior; its scaffold is complete.
 M1 to M4 primarily use developer builds on physical devices. On 2026-10-03,
-the owner authorized an early exception for unpublished iOS/Android app
-records and internal-release preparation; [012](tactical/012-internal-release-preparation.md)
+the owner authorized an early exception for iOS/Android app records,
+internal-release preparation, and the first CI-built Android internal test
+release to the owner-selected tester list; [012](tactical/012-internal-release-preparation.md)
 owns that bounded work. This does not authorize public publication or close
 the physical-phone, iOS implementation, or M5 security/release gates.
 

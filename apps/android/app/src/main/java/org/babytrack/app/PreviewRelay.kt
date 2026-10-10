@@ -4,4 +4,6 @@ package org.babytrack.app
 internal object PreviewRelay {
     const val origin = "https://babytrack.graehlarts.com"
     const val publicKey = "fc233b01cec411ab265e28b102314e8d282327c73a86c5fa0bb4a9139e7af1ab"
+    /** The hosted Lantern web app that uses this relay; browser invitations open it. */
+    const val webOrigin = "https://lantern.kzahel.com"
 }

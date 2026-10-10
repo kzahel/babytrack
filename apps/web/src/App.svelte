@@ -332,6 +332,7 @@
             {#key family}<BackupPanel {family} shared={sharedSelected} {backupCursor} {backupGap} restore={restoreBackup} />{/key}
           </div>
           <div class="panel join-panel"><h2>{c.joinFamily}</h2><p class="muted">{c.invitationHint}</p>{@render joinPanel()}</div>
+          {#if import.meta.env.VITE_BUILD_ID}<p class="muted build-id">{c.buildInfo(import.meta.env.VITE_BUILD_ID)}</p>{/if}
         </section>
       {/if}
     </main>

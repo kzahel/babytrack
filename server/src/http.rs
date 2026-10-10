@@ -110,12 +110,16 @@ fn router_with_clock(
         .with_state(store))
 }
 
+/// Serve the relay. `allowed_origins` lists web origins that may call it
+/// cross-origin; an empty list keeps it same-origin only.
 pub async fn serve(
     db_path: impl AsRef<Path>,
     relay_seed: [u8; 32],
     listener: tokio::net::TcpListener,
+    allowed_origins: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let app = router(db_path, relay_seed).map_err(|error| format!("relay store: {error:?}"))?;
+    let app = crate::cors::allow_origins(app, allowed_origins);
     axum::serve(listener, app).await?;
     Ok(())
 }

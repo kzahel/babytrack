@@ -4,7 +4,9 @@
 
 mod authority;
 mod batch_authority;
+mod cors;
 mod http;
+pub use cors::parse_allowed_origins;
 mod public_ledger;
 pub use http::serve;
 mod read_auth;

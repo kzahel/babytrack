@@ -913,7 +913,7 @@ internal fun TrackerRoute(
                                                     shareInvitation(
                                                         context,
                                                         browserInvitationLink(
-                                                            inviteOrigin,
+                                                            PreviewRelay.webOrigin,
                                                             fragment,
                                                         ),
                                                     )

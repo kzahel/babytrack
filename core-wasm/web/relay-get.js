@@ -1,5 +1,6 @@
-// Browser-owned byte transport for the Rust signed public pull. Use the page
-// origin so relay reads stay subject to the browser's normal origin boundary.
+// Browser-owned byte transport for the Rust signed public pull. Reads go to
+// the build's relay origin (the page's own by default) without cookies.
+import { relayUrl } from './relay-origin.js';
 const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
 
 export async function relayGet(path, signedRead) {
@@ -9,7 +10,8 @@ export async function relayGet(path, signedRead) {
   if (signedRead.length < 1 || signedRead.length > 2048) {
     throw new Error('Invalid signed relay read');
   }
-  const response = await fetch(path, {
+  const response = await fetch(relayUrl(path), {
+    credentials: 'omit',
     method: 'GET',
     headers: { Authorization: `Babytrack-Read ${hex(signedRead)}` },
     redirect: 'error',

@@ -53,13 +53,18 @@ async function run() {
   fs.writeFileSync(seed, Buffer.alloc(32, 0x6e));
   const webPort = await freePort();
   const relayPort = await freePort();
+  // Cross-origin mode hosts the web app apart from the relay, as on Cloudflare
+  // Pages: invitations name the relay and the relay allows the web origin.
+  // Another localhost port is a separate origin the core accepts over HTTP.
+  const crossOrigin = process.env.BABYTRACK_WEB_CROSS_ORIGIN === '1';
   const origin = `http://localhost:${webPort}`;
-  const relayOrigin = `http://127.0.0.1:${relayPort}`;
+  const relayOrigin = crossOrigin ? `http://localhost:${relayPort}` : `http://127.0.0.1:${relayPort}`;
+  const inviteOrigin = crossOrigin ? relayOrigin : origin;
   const webLog = fs.openSync(path.join(temporary, 'web.log'), 'w');
   const relayLogFd = fs.openSync(relayLog, 'w');
   const web = spawn('npm', ['run', 'dev', '--', '--host', 'localhost', '--port', String(webPort), '--strictPort'], {
     cwd: path.join(root, 'apps/web'),
-    env: { ...process.env, BABYTRACK_RELAY_URL: relayOrigin },
+    env: { ...process.env, BABYTRACK_RELAY_URL: relayOrigin, VITE_RELAY_ORIGIN: crossOrigin ? relayOrigin : '' },
     stdio: ['ignore', webLog, webLog],
   });
   let relay;
@@ -72,12 +77,14 @@ async function run() {
   };
   try {
     await ready(origin);
-    const setup = spawnSync(holderBin, ['setup', manager, relayDb, origin], { encoding: 'utf8' });
+    const setup = spawnSync(holderBin, ['setup', manager, relayDb, inviteOrigin], { encoding: 'utf8' });
     assert.equal(setup.status, 0, `Native holder setup: ${setup.stderr}`);
     const fragment = setup.stdout.trim();
     const startRelay = async () => {
-      relay = spawn(relayBin, [relayDb, seed, `127.0.0.1:${relayPort}`],
-        { stdio: ['ignore', relayLogFd, relayLogFd] });
+      relay = spawn(relayBin, [relayDb, seed, `127.0.0.1:${relayPort}`], {
+        env: { ...process.env, BABYTRACK_ALLOWED_ORIGINS: crossOrigin ? origin : '' },
+        stdio: ['ignore', relayLogFd, relayLogFd],
+      });
       await ready(relayOrigin);
     };
     await startRelay();
@@ -152,7 +159,7 @@ async function run() {
     await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();
     await page.getByRole('button', { name: 'Family access' }).click();
     await page.getByText(/^Kitchen phone · Other device/).waitFor();
-    const canceled = spawnSync(holderBin, ['later_issue', manager, relayOrigin, origin],
+    const canceled = spawnSync(holderBin, ['later_issue', manager, relayOrigin, inviteOrigin],
       { encoding: 'utf8' });
     assert.equal(canceled.status, 0, `Native canceled issue: ${canceled.stderr}`);
     const cancel = spawnSync(holderBin, ['cancel', manager, relayOrigin, canceled.stdout.trim()],
@@ -171,7 +178,7 @@ async function run() {
     await canceledPage.reload();
     assert.equal(await canceledPage.getByText('This invitation was canceled.', { exact: false }).count(), 0);
     await canceledContext.close();
-    const later = spawnSync(holderBin, ['later_issue', manager, relayOrigin, origin],
+    const later = spawnSync(holderBin, ['later_issue', manager, relayOrigin, inviteOrigin],
       { encoding: 'utf8' });
     assert.equal(later.status, 0, `Native later issue: ${later.stderr}`);
     const second = await browser.newContext({ viewport: { width: 1024, height: 800 } });
@@ -183,7 +190,7 @@ async function run() {
     await secondPage.route('**/v1/families/*/control', (route) => {
       if (route.request().method() !== 'POST' || racedClaim) return route.continue();
       racedClaim = true;
-      const advanced = spawnSync(holderBin, ['later_issue', manager, relayOrigin, origin],
+      const advanced = spawnSync(holderBin, ['later_issue', manager, relayOrigin, inviteOrigin],
         { encoding: 'utf8' });
       assert.equal(advanced.status, 0, `Native unrelated control: ${advanced.stderr}`);
       return route.continue();
@@ -199,7 +206,7 @@ async function run() {
     await secondPage.route('**/v1/families/*/control', (route) => {
       if (route.request().method() !== 'POST' || racedProof) return route.continue();
       racedProof = true;
-      const advanced = spawnSync(holderBin, ['later_issue', manager, relayOrigin, origin],
+      const advanced = spawnSync(holderBin, ['later_issue', manager, relayOrigin, inviteOrigin],
         { encoding: 'utf8' });
       assert.equal(advanced.status, 0, `Native control before proof: ${advanced.stderr}`);
       return route.continue();
@@ -269,7 +276,7 @@ async function run() {
     await page.waitForFunction((oldFamily) =>
       localStorage.getItem('babytrack-family') !== oldFamily, sharedFamily);
     await page.getByText('RemovedPendingMarker').waitFor();
-    const rotatedIssue = spawnSync(holderBin, ['later_issue', manager, relayOrigin, origin],
+    const rotatedIssue = spawnSync(holderBin, ['later_issue', manager, relayOrigin, inviteOrigin],
       { encoding: 'utf8' });
     assert.equal(rotatedIssue.status, 0, `Native rotated issue: ${rotatedIssue.stderr}`);
     const third = await browser.newContext({ viewport: { width: 390, height: 844 } });
@@ -314,7 +321,7 @@ async function run() {
     await second.close();
     assert.deepEqual(failures, []);
     passed = true;
-    console.log('Web joins, offline note and sleep, rotated keys, removal copies, shared backup restore, offline edit, and reload passed');
+    console.log(crossOrigin ? 'Cross-origin web client: ' : '', 'Web joins, offline note and sleep, rotated keys, removal copies, shared backup restore, offline edit, and reload passed');
   } finally {
     if (!passed) {
       console.error('Relay log:', fs.readFileSync(relayLog, 'utf8'));

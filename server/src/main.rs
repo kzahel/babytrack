@@ -35,8 +35,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect();
+    // Web origins hosted apart from the relay, e.g. https://lantern.kzahel.com.
+    let allowed = babytrack_server::parse_allowed_origins(
+        &env::var("BABYTRACK_ALLOWED_ORIGINS").unwrap_or_default(),
+    )?;
     let listener = tokio::net::TcpListener::bind(bind).await?;
     eprintln!("Relay public key: {public_hex}");
     eprintln!("Listening on {bind}");
-    babytrack_server::serve(db, seed, listener).await
+    if !allowed.is_empty() {
+        eprintln!("Cross-origin web clients: {}", allowed.join(", "));
+    }
+    babytrack_server::serve(db, seed, listener, allowed).await
 }

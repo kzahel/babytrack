@@ -1,3 +1,4 @@
+import { expectedRelayOrigin } from './relay-origin.js';
 // An invitation can read public controls before it has a device credential.
 // Persist the exact pages and replay them through the Rust verifier on load.
 const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -28,7 +29,7 @@ export class InvitationStore {
   static async open(wasm, fragment, name = 'babytrack-invitations') {
     const probe = new wasm.WasmInvitation(fragment);
     try {
-      if (probe.relay_origin() !== location.origin) {
+      if (probe.relay_origin() !== expectedRelayOrigin()) {
         throw new Error('Invitation relay origin differs from this app');
       }
     } finally { probe.free(); }

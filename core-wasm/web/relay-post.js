@@ -1,3 +1,4 @@
+import { relayUrl } from './relay-origin.js';
 // Browser transport for an already staged, signed encrypted batch. The
 // caller confirms acceptance through the signed public pull before clearing
 // its durable outbox.
@@ -8,7 +9,8 @@ export async function relayPost(path, envelope) {
   if (envelope.length < 1 || envelope.length > 258 * 1024) {
     throw new Error('Invalid encrypted batch length');
   }
-  const response = await fetch(path, {
+  const response = await fetch(relayUrl(path), {
+    credentials: 'omit',
     method: 'POST',
     headers: { 'Content-Type': 'application/cbor' },
     body: envelope,
@@ -26,7 +28,8 @@ export async function relayPostControl(path, candidate) {
   if (candidate.length < 1 || candidate.length > 1024 * 1024) {
     throw new Error('Invalid control candidate length');
   }
-  const response = await fetch(path, {
+  const response = await fetch(relayUrl(path), {
+    credentials: 'omit',
     method: 'POST',
     headers: { 'Content-Type': 'application/cbor' },
     body: candidate,

@@ -25,14 +25,17 @@ post-M0 coverage queue. The [M1 Android tactical](docs/tactical/005-m1-android.m
 owns the remaining caregiver UX and physical-phone validation. No physical
 phone result or public release is claimed.
 
-The responsive web preview uses the Rust wasm core and IndexedDB for local
-Family/child creation, diaper, bottle, note, and timed left/right breast
-feeding with pause and same-entry correction. A browser profile can now join
+The responsive web preview uses the Rust wasm core and IndexedDB and now
+matches Android's daily tracking: every activity type, each Android
+correction with delete and Undo, Today tiles, the History day view with core
+totals, child profiles, readable and password-protected backups, and the
+analysis CSV ([013](docs/tactical/013-web-android-parity.md)). A browser profile can now join
 an Android-managed Family through an invitation, receive encrypted history,
 and log or edit while offline for later relay upload. First, later, and
 rotated-epoch joins pass a real-relay UI smoke. The bounded native-managed web
-trust review passed. Creating shared Families and invitations in web remains
-M2 work and needs its own boundary recheck. Verified removal with a pending
+trust review passed. A shared browser Family lists verified devices and can
+make a private copy; creating shared Families, invitations, and other manager
+actions in web remain M2 work and need their own boundary recheck. Verified removal with a pending
 browser edit creates one independent local copy and leaves the old Family as
 an archive. Readable browser exports
 restore current state into a new local Family.

@@ -102,8 +102,14 @@ the shared core for both platforms, not reimplemented in JavaScript.
    in the native SQLite store and are compiled out of wasm; a browser
    manager needs that state machine restructured for IndexedDB and an
    independent review, not a UI port.
-7. [ ] Reconcile: full validation, owning topics, the 006 status, the
+7. [x] Reconcile: full validation, owning topics, the 006 status, the
    comparison topic, and the tactical index.
+   Done at the slice 6 partial: formatting, workspace Clippy and tests,
+   wasm check and smoke, fixture boundary, native and browser smokes, both
+   web UI suites, workspace boundaries, cargo-deny, and Android unit tests,
+   lint, and both APK builds pass locally. The real-relay Android emulator
+   suite was not rerun for these web-only and portable-core changes; CI
+   runs it. README, the tactical index, 006, and the web topic are current.
 
 ## Gates and completion
 

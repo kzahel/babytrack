@@ -56,5 +56,7 @@ tactical with its current status.
   available to the selected internal tester; iOS deferred. Follow-up full CI
   is green; broader platform/security gates remain open.
 - [013: Web parity with Android](013-web-android-parity.md) — active;
-  bring every Android tracking, correction, review, recovery, and sharing
-  flow to the web through the shared core before the visual redesign.
+  tracking, corrections, Today/History, backups, CSV, and the member view
+  of sharing are delivered through one Rust action boundary with browser
+  tests. Browser manager actions remain open behind a core storage
+  restructuring and an independent review.

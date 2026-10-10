@@ -112,9 +112,39 @@ export async function exportFamily(family) {
   finally { projection.free(); }
 }
 
-export async function restoreFamily(file) {
-  if (file.size > 64 * 1024 * 1024) throw new Error('Choose a backup under 64 MB');
-  const readable = new Uint8Array(await file.arrayBuffer());
+// The browser's memory estimate for the fixed Argon2id profile. Browsers
+// without navigator.deviceMemory are assumed to have 1 GiB; the core still
+// refuses rather than weakening the profile when an estimate is too low.
+const backupMemory = () => BigInt(Math.round((navigator.deviceMemory || 1) * 1024 ** 3));
+
+export async function protectBackup(readable, password) {
+  await open();
+  return wasm.protect_backup(readable, password, backupMemory());
+}
+
+export const isProtectedBackup = (bytes) =>
+  bytes.length >= 5 && String.fromCharCode(...bytes.slice(0, 5)) === 'BTBK1';
+
+export async function openProtectedBackup(bytes, password) {
+  await open();
+  return wasm.open_protected_backup(bytes, password, backupMemory());
+}
+
+export async function inspectBackup(readable) {
+  await open();
+  return JSON.parse(wasm.inspect_backup(readable));
+}
+
+// The local journal position, so the UI can tell whether a saved file is current.
+export async function localRevision(family) {
+  if (await isShared(family)) return null;
+  const projection = await store.load(family);
+  try { return Number(projection.last_append_index()); }
+  finally { projection.free(); }
+}
+
+export async function restoreFamily(readable) {
+  if (readable.length > 64 * 1024 * 1024) throw new Error('Choose a backup under 64 MB');
   await open();
   const ids = wasm.new_local_ids();
   const family = hex(ids.slice(0, 16));

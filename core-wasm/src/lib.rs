@@ -42,7 +42,7 @@ pub use initial::WasmInitialFamily;
 pub use invitation::WasmInvitation;
 pub use local::WasmLocalFamily;
 pub use removal::WasmRemovalProbe;
-pub use restore::WasmReadableRestore;
+pub use restore::{WasmReadableRestore, inspect_backup, open_protected_backup, protect_backup};
 
 #[wasm_bindgen]
 pub fn operation_clock(

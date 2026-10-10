@@ -239,11 +239,12 @@ async function run() {
     const backupReady = page.waitForEvent('download', { timeout: 10000 }).catch(async (error) => {
       throw new Error(`${error.message}\nBackup screen: ${await page.locator('main').innerText()}`);
     });
-    await page.getByRole('button', { name: 'Export readable backup' }).click();
+    await page.getByRole('button', { name: 'Save backup' }).click();
     const backup = fs.readFileSync(await (await backupReady).path());
     await page.getByLabel('Restore file into a new Family').setInputFiles({
       name: 'shared.jsonl', mimeType: 'application/x-ndjson', buffer: backup,
     });
+    await page.getByRole('button', { name: 'Restore as new Family' }).click();
     await page.waitForFunction((oldFamily) =>
       localStorage.getItem('babytrack-family') !== oldFamily, sharedFamily);
     await page.getByText('RemovedPendingMarker').waitFor();

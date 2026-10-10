@@ -31,8 +31,13 @@ Each browser profile is a separate device credential. IndexedDB stores local
 operations and, after enrollment, verified authority, keys, and exact pending
 wire bytes. UI Family selection in localStorage contains no secret. Clearing
 site data loses that installation's credentials; another browser profile
-needs another invitation. A readable file backup restores saved current
-state into a new local Family; it never reinstates original shared access.
+needs another invitation. A readable or password-protected file backup
+restores saved current state into a new local Family after a preview of its
+save time and record count; it never reinstates original shared access.
+Protected files use the shared core's Argon2id contract in wasm. The browser
+passes `navigator.deviceMemory` as its memory estimate, or assumes 1 GiB
+where the browser does not report one; the profile is never weakened, and an
+allocation failure is reported as an export failure.
 
 The current preview creates local Families and children, edits a child's
 name, birthday, and growth sex, and logs every Android activity type from an

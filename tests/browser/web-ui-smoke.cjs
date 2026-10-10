@@ -286,19 +286,41 @@ async function checkDayView(page) {
     try {
       [download] = await Promise.all([
         page.waitForEvent('download', { timeout: 8000 }),
-        page.getByRole('button', { name: 'Export readable backup' }).click({ timeout: 8000 }),
+        page.getByRole('button', { name: 'Save backup' }).click({ timeout: 8000 }),
       ]);
     } catch (cause) {
       throw new Error(`Backup export: ${cause.message}; screen: ${await page.locator('main').innerText()}`);
     }
     const backup = fs.readFileSync(await download.path());
     assert.match(backup.toString('utf8'), /"kind":"babytrack-backup"/);
+    await page.getByText(/^Last completed file save:/).waitFor();
+    const [csv] = await Promise.all([page.waitForEvent('download'),
+      page.getByRole('button', { name: 'Export analysis CSV' }).click()]);
+    assert.equal(csv.suggestedFilename(), 'babytrack-analysis.csv');
+    const rows = fs.readFileSync(await csv.path(), 'utf8');
+    assert.ok(rows.startsWith('family_id,child_id,child_name,') && rows.includes(',"feed.bottle",'), rows.slice(0, 200));
+    await page.getByRole('button', { name: 'Protect with password' }).click();
+    await page.getByLabel('Backup password').fill('correct horse');
+    const [locked] = await Promise.all([page.waitForEvent('download', { timeout: 60_000 }),
+      page.getByRole('button', { name: 'Save backup' }).click()]);
+    assert.equal(locked.suggestedFilename(), 'babytrack-backup.btbk');
+    const protectedBackup = fs.readFileSync(await locked.path());
+    assert.equal(protectedBackup.subarray(0, 5).toString(), 'BTBK1');
+    assert.equal(protectedBackup.includes(Buffer.from('babytrack-backup')), false, 'protected file is readable');
     const freshContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const freshPage = await freshContext.newPage();
     await freshPage.goto(origin);
-    await freshPage.getByLabel('Choose a backup file').setInputFiles({
-      name: 'family.jsonl', mimeType: 'application/x-ndjson', buffer: backup,
+    await freshPage.getByLabel('Restore file into a new Family').setInputFiles({
+      name: 'family.btbk', mimeType: 'application/octet-stream', buffer: protectedBackup,
     });
+    await freshPage.getByLabel('Password for protected backup').fill('wrong horse');
+    await freshPage.getByRole('button', { name: 'Check protected backup' }).click();
+    await freshPage.getByText('Wrong password or damaged backup file.').waitFor({ timeout: 60_000 });
+    assert.equal(await freshPage.getByRole('button', { name: 'Create a Family' }).count(), 1, 'wrong password made a Family');
+    await freshPage.getByLabel('Password for protected backup').fill('correct horse');
+    await freshPage.getByRole('button', { name: 'Check protected backup' }).click();
+    await freshPage.getByText(/^File saved at .* records$/).waitFor({ timeout: 60_000 });
+    await freshPage.getByRole('button', { name: 'Restore as new Family' }).click();
     await historyTab(freshPage);
     await freshPage.getByText('Bottle · 90 mL').first().waitFor();
     await freshPage.reload();
@@ -309,6 +331,7 @@ async function checkDayView(page) {
     await page.getByLabel('Restore file into a new Family').setInputFiles({
       name: 'family.jsonl', mimeType: 'application/x-ndjson', buffer: backup,
     });
+    await page.getByRole('button', { name: 'Restore as new Family' }).click();
     await page.waitForFunction((oldFamily) =>
       localStorage.getItem('babytrack-family') !== oldFamily, firstFamily);
     await page.reload();

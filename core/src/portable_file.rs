@@ -6,14 +6,11 @@ use std::{
     fmt,
 };
 
-#[cfg(not(target_arch = "wasm32"))]
 use argon2::{Algorithm, Argon2, Params, Version};
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use sha2::{Digest, Sha256};
-#[cfg(not(target_arch = "wasm32"))]
 use unicode_normalization::UnicodeNormalization;
-#[cfg(not(target_arch = "wasm32"))]
 use zeroize::Zeroizing;
 
 use crate::{
@@ -37,7 +34,6 @@ pub enum Error {
     Store(sqlite_store::Error),
     #[cfg(not(target_arch = "wasm32"))]
     Ready(shared_ready::Error),
-    #[cfg(not(target_arch = "wasm32"))]
     Random(getrandom::Error),
     ProtectedFailure,
     Invalid(&'static str),
@@ -706,7 +702,6 @@ pub fn private_copy_after_removal(
 /// Encrypt a valid readable file under the fixed v1 Argon2id profile. The
 /// caller supplies a fresh platform memory estimate so a low-memory device
 /// reports failure instead of silently weakening the profile.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn protect_readable(
     readable: &[u8],
     password: &str,
@@ -737,7 +732,6 @@ pub fn protect_readable(
 }
 
 /// Password, tamper, truncation, and invalid plaintext share one failure.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn open_protected(
     protected: &[u8],
     password: &str,
@@ -821,7 +815,6 @@ pub fn restore_protected(
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn check_kdf_memory(available_memory_bytes: u64) -> Result<(), Error> {
     if available_memory_bytes < 128 * 1024 * 1024 {
         return Err(Error::ProtectedFailure);
@@ -829,7 +822,6 @@ fn check_kdf_memory(available_memory_bytes: u64) -> Result<(), Error> {
     Ok(())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn derive_backup_key(
     password: &str,
     salt: &[u8; 16],

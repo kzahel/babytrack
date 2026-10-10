@@ -75,8 +75,17 @@ the shared core for both platforms, not reimplemented in JavaScript.
    filters, core day totals for the chosen day, intervals on every day they
    touch, and day headings in All mode. The smoke checks the tiles, summary
    lines, a filter, and an empty earlier day.
-5. [ ] Data parity: password-protected backup save and restore through the
+5. [x] Data parity: password-protected backup save and restore through the
    shared Argon2id file contract, and the analysis CSV export.
+   Done: the core's protect/open functions and the analysis CSV now build
+   for wasm (their pure-Rust dependencies moved out of the native-only
+   table; `Cargo.lock` is unchanged). Data and backups saves readable or
+   password-protected files, exports the CSV, shows the last local save and
+   unsaved changes, and restores through a preview of the file's save time,
+   record count, and known gap. The browser smoke round-trips a protected
+   file into a fresh profile, rejects a wrong password without creating a
+   Family, and checks the CSV; the shared flow restores via the preview.
+   Switching Family no longer resets a tab chosen while the Family loads.
 6. [ ] Sharing parity: promote a local browser Family to the relay, issue
    member or manager invitations, list devices with roles, promote/demote,
    remove a device with key rotation, cancel unused invitations, and act as

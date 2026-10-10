@@ -11,6 +11,7 @@
   import EntryEditor from './components/EntryEditor.svelte';
   import Today from './components/Today.svelte';
   import History from './components/History.svelte';
+  import BackupPanel from './components/BackupPanel.svelte';
 
   let error = '';
   let notice = '';
@@ -87,31 +88,15 @@
   }
   async function selectFamily(value) {
     screen = ''; editing = null;
-    await run(async () => { await tracker.selectFamily(value); tab = 'today'; });
+    // onSelect already opened Today; a later tab choice must survive the load.
+    await run(() => tracker.selectFamily(value));
   }
   const makeRemovedCopy = () => run(() => tracker.makeRemovedCopy());
   async function openPrivateCopy() {
     if (privateCopy) await selectFamily(privateCopy);
   }
-  async function downloadBackup() {
-    await run(async () => {
-      const targetFamily = family;
-      const readable = await api.exportFamily(targetFamily);
-      const url = URL.createObjectURL(new Blob([readable], { type: 'application/x-ndjson' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `babytrack-${targetFamily.slice(0, 8)}.jsonl`;
-      document.body.append(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-    });
-  }
-  async function restoreBackup(file) {
-    if (!file) return;
-    await run(async () => {
-      if (await tracker.restoreBackup(file)) { screen = ''; tab = 'today'; }
-    });
+  async function restoreBackup(readable) {
+    if (await tracker.restoreBackup(readable)) { screen = ''; tab = 'today'; }
   }
   function selectChild(value) {
     actionSequence++;
@@ -232,11 +217,7 @@
             {:else}<button class="text-action" onclick={poll}>{c.pendingJoinResume}</button>{/if}{/if}
         </section>
         <section class="panel"><h2>{c.restoreBackup}</h2><p class="muted">{c.restoreDescription}</p>
-          <label>{c.restoreFile}<input type="file" accept=".jsonl,.json" onchange={(event) => {
-            const file = event.currentTarget.files?.[0];
-            event.currentTarget.value = '';
-            restoreBackup(file);
-          }} /></label>
+          <BackupPanel restore={restoreBackup} />
         </section>
       {:else if screen === 'child'}
         <section class="form-view">
@@ -323,14 +304,8 @@
             </select></label>
             <button class="secondary" onclick={makeFamily}>＋ {c.createFamily}</button>
           </div>
-          <div class="panel"><h2>{c.backup}</h2><p class="muted">{c.backupDescription}</p>
-            {#if sharedSelected}<p class="muted">{c.backupPoint(backupCursor)} {backupGap ? c.backupIncomplete : c.backupComplete}</p>{/if}
-            <button class="secondary" onclick={downloadBackup}>{c.exportBackup}</button>
-            <label>{c.restoreBackup}<input type="file" accept=".jsonl,.json" onchange={(event) => {
-              const file = event.currentTarget.files?.[0];
-              event.currentTarget.value = '';
-              restoreBackup(file);
-            }} /></label>
+          <div class="panel"><h2>{c.dataAndBackups}</h2>
+            {#key family}<BackupPanel {family} shared={sharedSelected} {backupCursor} {backupGap} restore={restoreBackup} />{/key}
           </div>
           <div class="panel join-panel"><h2>{c.joinFamily}</h2><p class="muted">{c.invitationHint}</p>
             <form onsubmit={(event) => { event.preventDefault(); startJoin(); }}>

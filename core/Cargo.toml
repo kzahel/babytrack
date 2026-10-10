@@ -10,19 +10,19 @@ publish.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
+argon2 = { version = "=0.5.3", default-features = false, features = ["alloc", "zeroize"] }
 babytrack-wire.workspace = true
+getrandom = "=0.4.3"
 hpke = { version = "0.14", default-features = false, features = ["alloc", "chacha", "x25519"] }
 sha2 = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-argon2 = { version = "=0.5.3", default-features = false, features = ["alloc", "zeroize"] }
-getrandom = "=0.4.3"
-rand_chacha = "0.10"
-rusqlite = { version = "=0.32.1", features = ["bundled"] }
 unicode-normalization = "0.1"
 zeroize = "1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rand_chacha = "0.10"
+rusqlite = { version = "=0.32.1", features = ["bundled"] }
 
 [dev-dependencies]
 tempfile = "3"

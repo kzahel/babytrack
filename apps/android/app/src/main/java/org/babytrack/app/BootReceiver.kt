@@ -29,7 +29,7 @@ internal fun refreshSleepTimers(context: Context, databasePath: String) {
         ShareCoordinator(context, databasePath).use { sharing ->
             SleepTimerNotifications.update(
                 context,
-                runningSleepCount(local, sharing, local.families(), sharing.recipientFamilies()),
+                runningSleeps(local, sharing, local.families(), sharing.recipientFamilies()),
             )
             refreshLiveTimerNotifications(context, local, sharing)
         }

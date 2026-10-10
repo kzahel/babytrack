@@ -526,7 +526,7 @@ internal fun TrackerRoute(
                                     runCatching {
                                             SleepTimerNotifications.update(
                                                 context,
-                                                data.activeSleepCount,
+                                                data.activeSleeps,
                                             )
                                         }
                                         .onFailure {

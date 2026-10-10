@@ -95,6 +95,11 @@ export async function writeShared(wasm, family, action, values, localAction) {
       } else if (action === 'breast-edit') {
         operation = ready.edit_breast_operation(...prefix, bytes(values.child),
           bytes(values.activity), JSON.stringify(values.segments), now);
+      } else if (action === 'sleep-start') {
+        operation = ready.start_sleep_operation(...prefix, bytes(values.child), now, offset);
+      } else if (action === 'sleep-stop') {
+        operation = ready.stop_sleep_operation(...prefix, bytes(values.child),
+          bytes(values.activity), now, offset);
       } else throw new Error('Unknown shared action');
       try { await store.queueInitial(family, operation, clock); }
       catch (error) {

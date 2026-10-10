@@ -546,6 +546,15 @@ delivered, and removed access cannot obtain new Family data.
   validation evidence. Notification controls that change or save drafts remain
   deferred. Actual phone reboot, widget placement on a launcher, and
   physical-phone checks remain.
+  After the October 10 cross-device check below, the sleep notification uses
+  an app moon small icon instead of a platform alarm drawable. The generic
+  robot beside it came from the app having no launcher icon, which Android 17
+  shows in the shade; a placeholder adaptive icon now exists. App info showed
+  it on the Pixel, while the shade kept its cached robot until restart. A single running
+  sleep names its child, shows its start time, and runs a system chronometer
+  from the saved start; the lock-screen version names neither. Several
+  running sleeps show their count. The real-relay notification case checks
+  the title, chronometer, start time, and private version.
 
 Gate: caregivers can move a saved point to another phone and understand
 what it contains; daily logging and recovery require no relay account.
@@ -676,6 +685,30 @@ Local validation of the expanded correction passes:
 The command-driven short UI path now checks a 2-to-3-minute correction; the
 production History instrumentation test verifies that interaction and reopen
 in this local run. No new hosted CI or physical-phone result is claimed.
+
+## Physical Pixel and iPhone web check (2026-10-10)
+
+The owner asked for a basic cross-device sync check between the attached
+Pixel 7a and an iPhone SE. There is no iOS app, so the iPhone used the hosted
+web preview (September 29 release) in Safari through the machine-control iOS
+runner. The Pixel's existing debug installation was backed up and updated in
+place to `6565e63`; its existing Family was not used. A new disposable Family
+on the Pixel was promoted to the preview relay, and its browser invitation
+was opened on the iPhone. Join reached ready about one minute after the
+explicit Join tap, with no Pixel interaction beyond its foreground polling.
+
+| Direction | Entry | Observed |
+|---|---|---|
+| Pixel → iPhone | wet diaper | present at the first check, within 21 s |
+| iPhone → Pixel | 85 mL bottle | 8 s |
+| iPhone → Pixel | left breast feed, saved after 3 min | 34 s, within the 30 s foreground poll |
+| Pixel → iPhone | running sleep | arrived, shown as a raw `sleep` row |
+
+The Pixel's sleep notification then showed only fixed text, the default
+robot app icon, and no elapsed time; it cleared on stop.
+Nursing drafts stay local until saved, as designed. The web findings are in
+[006](006-m2-web.md#physical-iphone-check-2026-10-10). This is a
+one-Android-phone check through a browser, not the two-phone gate.
 
 ## CI and review handoff
 

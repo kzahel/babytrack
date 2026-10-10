@@ -114,8 +114,13 @@ async function run() {
     await page.getByLabel('Note').fill('WebOnlyPrivateMarker');
     await page.getByRole('button', { name: 'Save' }).click();
     await page.getByText('WebOnlyPrivateMarker').waitFor();
+    await page.getByRole('button', { name: /^Sleep/ }).click();
+    await page.getByText('Sleep · running').waitFor();
+    await page.getByRole('button', { name: 'Stop sleep' }).click();
+    await page.getByText('Sleep · 0 min').waitFor();
     await page.reload();
     await page.getByText('WebOnlyPrivateMarker').waitFor();
+    await page.getByText('Sleep · 0 min').waitFor();
     await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();
     await page.getByText('Saved here · waiting to sync').waitFor();
     await startRelay();
@@ -284,7 +289,7 @@ async function run() {
     await second.close();
     assert.deepEqual(failures, []);
     passed = true;
-    console.log('Web joins, rotated keys, removal copies, shared backup restore, offline edit, and reload passed');
+    console.log('Web joins, offline note and sleep, rotated keys, removal copies, shared backup restore, offline edit, and reload passed');
   } finally {
     if (!passed) {
       console.error('Relay log:', fs.readFileSync(relayLog, 'utf8'));

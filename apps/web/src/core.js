@@ -171,6 +171,31 @@ export async function logBreastFeed(family, child, segments) {
   return null;
 }
 
+export async function startSleep(family, child) {
+  const now = BigInt(Date.now());
+  const offset = -new Date().getTimezoneOffset();
+  const prepare = (projection) => projection.start_sleep_operation(bytes(child), now, offset);
+  if (await isShared(family)) {
+    return writeShared(wasm, family, 'sleep-start', { child },
+      { deliveryId: crypto.randomUUID(), prepare });
+  }
+  await append(family, prepare);
+  return null;
+}
+
+export async function stopSleep(family, child, activity) {
+  const now = BigInt(Date.now());
+  const offset = -new Date().getTimezoneOffset();
+  const prepare = (projection) => projection.stop_sleep_operation(
+    bytes(child), bytes(activity), now, offset);
+  if (await isShared(family)) {
+    return writeShared(wasm, family, 'sleep-stop', { child, activity },
+      { deliveryId: crypto.randomUUID(), prepare });
+  }
+  await append(family, prepare);
+  return null;
+}
+
 export async function editBreastFeed(family, child, activity, segments) {
   const now = BigInt(Date.now());
   const prepare = (projection) => projection.edit_breast_operation(

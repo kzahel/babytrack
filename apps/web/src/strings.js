@@ -67,6 +67,11 @@ export const copy = {
   restoreDescription: 'Lost this browser’s saved data? A readable backup restores its saved records into a new local Family.',
   restoreFile: 'Choose a backup file',
   pendingJoinResume: 'Resume joining',
+  sleep: 'Sleep', startSleep: 'Start sleep timer', stopSleep: 'Stop sleep', sleepRunning: 'Sleep · running',
+  sleepingSince: (time) => `Sleeping since ${time}`,
+  sleepEntry: (duration) => `Sleep · ${duration}`,
+  feedCount: (count) => counted(count, 'feed', 'feeds'),
+  diaperCount: (count) => counted(count, 'diaper', 'diapers'),
   sideNumber: (number) => `Side ${new Intl.NumberFormat().format(number)}`,
   breastEntry: (left, right) => `Breastfeed · left ${left} · right ${right}`,
   familyNumber: (number) => `Family ${new Intl.NumberFormat().format(number)}`,
@@ -75,6 +80,19 @@ export const copy = {
     month: { one: 'month', other: 'months' }, year: { one: 'year', other: 'years' },
   },
 };
+
+function counted(count, one, other) {
+  const form = new Intl.PluralRules().select(count) === 'one' ? one : other;
+  return `${new Intl.NumberFormat().format(count)} ${form}`;
+}
+
+export function sleepDuration(ms) {
+  const minutes = Math.max(0, Math.floor(ms / 60000));
+  const unit = (value, name) => new Intl.NumberFormat(undefined,
+    { style: 'unit', unit: name, unitDisplay: 'short' }).format(value);
+  if (minutes < 60) return unit(minutes, 'minute');
+  return `${unit(Math.floor(minutes / 60), 'hour')} ${unit(minutes % 60, 'minute')}`;
+}
 
 export function ageLabel(birthDay) {
   if (birthDay == null) return copy.birthUnknown;

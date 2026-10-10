@@ -164,6 +164,43 @@ impl WasmLocalFamily {
         .map_err(debug_error)
     }
 
+    pub fn start_sleep_operation(
+        &self,
+        child_id: &[u8],
+        now_ms: i64,
+        offset_minutes: i16,
+    ) -> Result<Vec<u8>, JsError> {
+        web_actions::start_sleep(
+            self.identity(random_v7(now_ms)?, now_ms)?,
+            fixed(child_id, "child ID")?,
+            now_ms,
+            offset_minutes,
+        )
+        .map_err(debug_error)
+    }
+
+    pub fn stop_sleep_operation(
+        &self,
+        child_id: &[u8],
+        activity_id: &[u8],
+        now_ms: i64,
+        offset_minutes: i16,
+    ) -> Result<Vec<u8>, JsError> {
+        let activity_id = fixed(activity_id, "activity ID")?;
+        let target = self
+            .projection
+            .record(&activity_id)
+            .ok_or_else(|| JsError::new("sleep target unavailable"))?;
+        web_actions::stop_sleep(
+            self.identity(activity_id, now_ms)?,
+            fixed(child_id, "child ID")?,
+            target,
+            now_ms,
+            offset_minutes,
+        )
+        .map_err(debug_error)
+    }
+
     pub fn snapshot_json(&self) -> String {
         web_actions::local_snapshot(&self.projection)
     }

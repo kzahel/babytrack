@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { copy as c, ageLabel } from './strings.js';
+  import { copy as c, ageLabel, sleepDuration } from './strings.js';
   import * as api from './core.js';
   import { createTrackerController } from './tracker-controller.js';
   import { readDraft, persistDraft, tapSide, completedSegments, sideTotals,
@@ -24,6 +24,7 @@
   let editRows = [];
   let invitationInput = '';
   let actionSequence = 0;
+  let sleepBusy = false;
   const terminalJoinStages = [c.inviteClaimed, c.inviteCanceled, c.inviteExpired, c.inviteInvalidated];
 
   $: sharedSelected = $tracker.familyRows.find((row) => row.family === $tracker.family)?.source === 'shared';
@@ -31,6 +32,7 @@
   $: familyLabel = c.familyNumber(familyRows.findIndex((row) => row.family === family) + 1);
   $: entries = data.activities.filter((row) => row.childId === child);
   $: todayEntries = entries.filter((row) => new Date(row.startMs).toDateString() === new Date().toDateString());
+  $: runningSleep = entries.find((row) => row.kind === 'sleep' && row.endMs == null);
 
   const tracker = createTrackerController({ api, copy: c, preferences: localStorage,
     onSelect: () => { screen = ''; editTarget = null; tab = 'today'; },
@@ -128,6 +130,19 @@
       tab = 'today';
     });
   }
+  // A saved running sleep is shared state; the busy flag blocks a duplicate start or stop.
+  async function toggleSleep(running) {
+    if (sleepBusy) return;
+    sleepBusy = true;
+    try {
+      await run(async () => {
+        const target = tracker.target();
+        const outcome = running ? await api.stopSleep(target.family, target.child, running.id)
+          : await api.startSleep(target.family, target.child);
+        await afterSave(outcome, target);
+      });
+    } finally { sleepBusy = false; }
+  }
   function begin(type) { activityType = type; screen = 'capture'; error = ''; }
   function openBreast() { breastDraft = readDraft(family, child); screen = 'breast'; error = ''; }
   function timerError(cause) { return ({
@@ -199,6 +214,7 @@
       return c.breastEntry(durationLabel(totals[1]), durationLabel(totals[2]));
     }
     if (row.kind === 'note') return row.note || c.note;
+    if (row.kind === 'sleep') return row.endMs == null ? c.sleepRunning : c.sleepEntry(sleepDuration(row.endMs - row.startMs));
     return row.kind;
   }
 </script>
@@ -287,12 +303,12 @@
           </div>
           <div class="breast-controls">
             <button class:running={breastDraft?.active?.side === 1} aria-pressed={breastDraft?.active?.side === 1} onclick={() => tapBreast(1)}>
-              <span class="breast-control-symbol">{breastDraft?.active?.side === 1 ? 'Ⅱ' : '▶'}</span>
+              <span class="breast-control-symbol" aria-hidden="true">{breastDraft?.active?.side === 1 ? 'Ⅱ' : '▶'}</span>
               <strong>{c.leftBreast}</strong>
               <small>{breastDraft?.active?.side === 1 ? c.tapToPause : c.tapToStart}</small>
             </button>
             <button class:running={breastDraft?.active?.side === 2} aria-pressed={breastDraft?.active?.side === 2} onclick={() => tapBreast(2)}>
-              <span class="breast-control-symbol">{breastDraft?.active?.side === 2 ? 'Ⅱ' : '▶'}</span>
+              <span class="breast-control-symbol" aria-hidden="true">{breastDraft?.active?.side === 2 ? 'Ⅱ' : '▶'}</span>
               <strong>{c.rightBreast}</strong>
               <small>{breastDraft?.active?.side === 2 ? c.tapToPause : c.tapToStart}</small>
             </button>
@@ -342,7 +358,7 @@
                 <option value="3">{c.both}</option><option value="4">{c.dry}</option>
               </select></label>
             {:else if activityType === 'bottle'}
-              <label>{c.amount}<input type="number" min="1" max="1000000" step="1" required bind:value={bottleMl} /></label>
+              <label>{c.amount}<input type="number" inputmode="numeric" min="1" max="1000000" step="1" required bind:value={bottleMl} /></label>
               <label>{c.content}<select bind:value={bottleContent}>
                 <option value="1">{c.milk}</option><option value="2">{c.formula}</option>
                 <option value="3">{c.mixed}</option><option value="4">{c.otherMilk}</option>
@@ -363,16 +379,21 @@
           <h1>{selectedChild ? selectedChild.name : c.today}</h1>
           <p class="muted">{selectedChild ? ageLabel(selectedChild.birthDay) : c.chooseChild}</p>
           {#if selectedChild}
-            <div class="summary panel"><span>{c.todaySummary}</span><strong>{todayEntries.filter((row) => row.kind.startsWith('feed.')).length} {c.feeds} · {todayEntries.filter((row) => row.kind === 'diaper').length} {c.diapers}</strong></div>
+            <div class="summary panel"><span>{c.todaySummary}</span><strong>{c.feedCount(todayEntries.filter((row) => row.kind.startsWith('feed.')).length)} · {c.diaperCount(todayEntries.filter((row) => row.kind === 'diaper').length)}</strong></div>
             {#if breastDraft && !removedInfo}
               <button class="timer-resume panel" onclick={openBreast}><span>{c.breastFeed} · {breastDraft.active ? c.feedingNow : c.feedingPaused}</span><strong>{durationLabel(sideTotals(breastDraft, nowMs)[1] + sideTotals(breastDraft, nowMs)[2])} →</strong></button>
             {/if}
+            {#if runningSleep && !removedInfo}
+              <div class="timer-resume panel sleep-running"><span>{c.sleepingSince(formatTime(runningSleep.startMs))}</span><strong>{durationLabel(nowMs - runningSleep.startMs)}</strong>
+                <button class="secondary" disabled={sleepBusy} onclick={() => toggleSleep(runningSleep)}>{c.stopSleep}</button></div>
+            {/if}
             {#if !removedInfo}<h2>{c.addActivity}</h2>
             <div class="quick-grid">
-              <button onclick={openBreast}><span class="icon feed">◓</span><strong>{c.breastFeed}</strong><small>{c.feeds}</small></button>
-              <button onclick={() => begin('bottle')}><span class="icon feed">◔</span><strong>{c.bottle}</strong><small>{c.feeds}</small></button>
-              <button onclick={() => begin('diaper')}><span class="icon care">◇</span><strong>{c.diaper}</strong><small>{c.diapers}</small></button>
-              <button onclick={() => begin('note')}><span class="icon note">✎</span><strong>{c.note}</strong><small>{c.addActivity}</small></button>
+              <button onclick={openBreast}><span class="icon feed" aria-hidden="true">◓</span><strong>{c.breastFeed}</strong><small>{c.feeds}</small></button>
+              <button onclick={() => begin('bottle')}><span class="icon feed" aria-hidden="true">◔</span><strong>{c.bottle}</strong><small>{c.feeds}</small></button>
+              <button onclick={() => begin('diaper')}><span class="icon care" aria-hidden="true">◇</span><strong>{c.diaper}</strong><small>{c.diapers}</small></button>
+              {#if !runningSleep}<button disabled={sleepBusy} onclick={() => toggleSleep(null)}><span class="icon sleep" aria-hidden="true">☾</span><strong>{c.sleep}</strong><small>{c.startSleep}</small></button>{/if}
+              <button onclick={() => begin('note')}><span class="icon note" aria-hidden="true">✎</span><strong>{c.note}</strong><small>{c.addActivity}</small></button>
             </div>{/if}
             <div class="section-heading"><h2>{c.recent}</h2><button class="text-action" onclick={() => tab = 'history'}>{c.allEntries} →</button></div>
             {#if entries.length === 0}<p class="muted">{c.emptyHistory}</p>{/if}

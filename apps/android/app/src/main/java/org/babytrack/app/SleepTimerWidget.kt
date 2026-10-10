@@ -19,9 +19,9 @@ class SleepTimerWidget : AppWidgetProvider() {
                 val database = context.filesDir.resolve("families.db").absolutePath
                 NativeLocalStore.open(database).use { local ->
                     ShareCoordinator(context, database).use { sharing ->
-                        update(context, runningSleepCount(
+                        update(context, runningSleeps(
                             local, sharing, local.families(), sharing.recipientFamilies(),
-                        ))
+                        ).count)
                     }
                 }
             } catch (failure: Exception) {

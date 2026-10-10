@@ -3,6 +3,7 @@ package org.babytrack.app
 import android.view.accessibility.AccessibilityNodeInfo
 import android.content.Intent
 import android.Manifest
+import android.app.Notification
 import android.app.NotificationManager
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -493,43 +494,51 @@ class SharingRelayTest {
                 val family = local.createFamily(now)
                 val child = local.addChild(family, "Timer child", now)
                 val activity = local.startSleep(family, child, ActivityWhen(now, 0, now))
-                val running = runningSleepCount(local, sharing, listOf(family), emptyList())
-                assertEquals(1, running)
+                val running = runningSleeps(local, sharing, listOf(family), emptyList())
+                assertEquals(RunningSleeps(1, now, "Timer child"), running)
                 assertEquals(
                     context.getString(R.string.sleep_widget_one),
-                    SleepTimerWidget.views(context, running).apply(context, FrameLayout(context))
+                    SleepTimerWidget.views(context, running.count).apply(context, FrameLayout(context))
                         .findViewById<TextView>(R.id.widget_status).text.toString(),
                 )
                 SleepTimerNotifications.update(context, running)
-                assertTrue("Running timer notification should appear", waitForSleepNotification(manager, context, true))
-                SleepTimerNotifications.update(context, 0)
-                assertTrue("Cleared notification should disappear", waitForSleepNotification(manager, context, false))
+                assertTrue("Running timer notification should appear", waitForSleepNotification(manager, true))
+                val posted = manager.activeNotifications.first { it.id == SleepTimerNotifications.notificationId }.notification
+                assertEquals(
+                    context.getString(R.string.sleep_notification_child, "Timer child"),
+                    posted.extras.getString(Notification.EXTRA_TITLE),
+                )
+                assertTrue("Running sleep should show elapsed time", posted.extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER))
+                assertEquals(now, posted.`when`)
+                assertEquals(
+                    context.getString(R.string.timer_notification_private),
+                    posted.publicVersion.extras.getString(Notification.EXTRA_TITLE),
+                )
+                SleepTimerNotifications.update(context, RunningSleeps(0))
+                assertTrue("Cleared notification should disappear", waitForSleepNotification(manager, false))
                 refreshSleepTimers(context, path.absolutePath)
-                assertTrue("Saved timer should restore its notification", waitForSleepNotification(manager, context, true))
+                assertTrue("Saved timer should restore its notification", waitForSleepNotification(manager, true))
                 local.stopSleep(family, child, activity, now + 60_000, 0, now + 60_000)
-                val stopped = runningSleepCount(local, sharing, listOf(family), emptyList())
-                assertEquals(0, stopped)
+                val stopped = runningSleeps(local, sharing, listOf(family), emptyList())
+                assertEquals(RunningSleeps(0), stopped)
                 assertEquals(
                     context.getString(R.string.sleep_widget_none),
-                    SleepTimerWidget.views(context, stopped).apply(context, FrameLayout(context))
+                    SleepTimerWidget.views(context, stopped.count).apply(context, FrameLayout(context))
                         .findViewById<TextView>(R.id.widget_status).text.toString(),
                 )
                 SleepTimerNotifications.update(context, stopped)
-                assertTrue("Stopped timer notification should clear", waitForSleepNotification(manager, context, false))
+                assertTrue("Stopped timer notification should clear", waitForSleepNotification(manager, false))
             }
         }
     }
 
     private fun waitForSleepNotification(
         manager: NotificationManager,
-        context: android.content.Context,
         expected: Boolean,
     ): Boolean {
         val deadline = System.currentTimeMillis() + 10_000
         do {
-            val present = manager.activeNotifications.any {
-                it.notification.extras.getString("android.title") == context.getString(R.string.sleep_notification_title)
-            }
+            val present = manager.activeNotifications.any { it.id == SleepTimerNotifications.notificationId }
             if (present == expected) return true
             Thread.sleep(50)
         } while (System.currentTimeMillis() < deadline)

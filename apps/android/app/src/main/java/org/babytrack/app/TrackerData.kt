@@ -105,7 +105,7 @@ internal data class ScreenData(
     val readyRecipientKeys: Set<String>,
     val joinedSnapshot: SharedSnapshotRow?,
     val unusedInvitationIds: List<ByteArray>?,
-    val activeSleepCount: Int,
+    val activeSleeps: RunningSleeps,
     val daySummary: DaySummaryRow?,
     val daySummaryDay: LocalDate?,
     /** The core's totals for the History day, when it differs from today. */
@@ -113,31 +113,44 @@ internal data class ScreenData(
     val historySummaryDay: LocalDate? = null,
 )
 
-internal fun runningSleepCount(
+/** Saved running sleeps across Families; a single timer also names its child. */
+internal data class RunningSleeps(
+    val count: Int,
+    val earliestStartMs: Long? = null,
+    val childName: String? = null,
+)
+
+internal fun runningSleeps(
     store: NativeLocalStore,
     sharing: ShareCoordinator,
     families: List<FamilyRef>,
     recipients: List<FamilyRef>,
-): Int {
-    val running = HashSet<String>()
-    fun add(family: FamilyRef, activities: List<ActivityRow>) {
+): RunningSleeps {
+    val running = HashMap<String, Pair<Long, String?>>()
+    fun add(family: FamilyRef, children: List<ChildRow>, activities: List<ActivityRow>) {
         for (entry in activities) {
             if (entry.kind == "sleep" && entry.endUtcMs == null) {
-                running.add(family.familyId.key() + entry.id.key())
+                val child = children.find { it.id.contentEquals(entry.childId) }?.name
+                running[family.familyId.key() + entry.id.key()] = entry.startUtcMs to child
             }
         }
     }
     for (family in families) {
         if (sharing.isShared(family)) {
-            runCatching { sharing.snapshot(family).activities }.getOrNull()?.let { add(family, it) }
+            runCatching { sharing.snapshot(family) }.getOrNull()?.let { add(family, it.children, it.activities) }
         } else {
-            for (child in store.children(family)) add(family, store.timeline(family, child.id))
+            val children = store.children(family)
+            for (child in children) add(family, children, store.timeline(family, child.id))
         }
     }
     for (family in recipients) {
-        runCatching { sharing.snapshot(family).activities }.getOrNull()?.let { add(family, it) }
+        runCatching { sharing.snapshot(family) }.getOrNull()?.let { add(family, it.children, it.activities) }
     }
-    return running.size
+    return RunningSleeps(
+        running.size,
+        running.values.minOfOrNull { it.first },
+        running.values.singleOrNull()?.second,
+    )
 }
 
 internal fun loadTrackerData(
@@ -253,7 +266,7 @@ internal fun loadTrackerData(
         readyJoined.mapTo(mutableSetOf()) { it.first.familyId.key() },
         joinedSnapshot,
         unusedInvitationIds,
-        runningSleepCount(store, sharing, activeLocal, recipients),
+        runningSleeps(store, sharing, activeLocal, recipients),
         daySummary,
         if (daySummary != null) summaryDay else null,
         historySummary,

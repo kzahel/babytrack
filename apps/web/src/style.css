@@ -24,7 +24,11 @@
 .edit-segment{display:flex;flex-direction:column;gap:1rem;margin:0}
 .edit-segment h2{margin:0}
 .edit-segment .text-action{align-self:flex-start}
-.primary:disabled{opacity:.5;cursor:not-allowed}
-@media(max-width:760px){.breast-controls button{min-height:150px}.entry time{margin-left:auto}.entry-edit{margin-left:auto}}
-@media(prefers-color-scheme:dark){.breast-totals span{color:#afc5c4}.breast-controls button{background:#4c302c;color:#ffd7c7;border-color:#764336}.breast-controls button.running{background:#ffc0a8;color:#4c251a;border-color:#ffc0a8}.segment-list div{border-color:#30444b}.timer-resume{color:#a5e7e5}.entry-edit{background:#24545b;color:#a5e7e5}}
+.primary:disabled,.secondary:disabled,.quick-grid button:disabled{opacity:.5;cursor:not-allowed}
+.sleep{background:#e6e8f8;color:#3f4a8a}
+.sleep-running strong{margin-left:auto}
+.sleep-running .secondary{min-height:44px;padding:.5rem 1rem}
+/* Mobile Safari floats its toolbar over the page bottom; keep pinned actions above it. */
+@media(max-width:760px){.breast-controls button{min-height:150px}.entry time{margin-left:auto}.entry-edit{margin-left:auto}.form-view{min-height:calc(100dvh - 120px - 5.5rem)}}
+@media(prefers-color-scheme:dark){.sleep{background:#2d3360;color:#d4d9ff}.breast-totals span{color:#afc5c4}.breast-controls button{background:#4c302c;color:#ffd7c7;border-color:#764336}.breast-controls button.running{background:#ffc0a8;color:#4c251a;border-color:#ffc0a8}.segment-list div{border-color:#30444b}.timer-resume{color:#a5e7e5}.entry-edit{background:#24545b;color:#a5e7e5}}
 .join-panel{max-width:650px}.join-panel h2{margin-top:0}.join-panel form{display:flex;align-items:end;gap:.8rem}.join-panel label{display:flex;flex:1;min-width:0;flex-direction:column;gap:.5rem;font-size:.9rem;font-weight:700}.join-panel input{width:100%;min-height:48px;padding:.75rem;border:1px solid #becfce;border-radius:11px;background:#fff;color:#18272c}.join-panel p[role=status]{color:#176b75;font-weight:700}@media(max-width:520px){.join-panel form{align-items:stretch;flex-direction:column}.join-panel form button{align-self:stretch}}@media(prefers-color-scheme:dark){.join-panel input{background:#192a30;color:#f6f7f4;border-color:#456067}.join-panel p[role=status]{color:#a5e7e5}}

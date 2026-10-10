@@ -623,4 +623,60 @@ impl WasmInitialFamily {
         )
         .map_err(debug_error)
     }
+
+    pub fn start_sleep_operation(
+        &self,
+        device_id: &[u8],
+        last_wall_ms: i64,
+        last_counter: u32,
+        child_id: &[u8],
+        now_ms: i64,
+        offset_minutes: i16,
+    ) -> Result<Vec<u8>, JsError> {
+        web_actions::start_sleep(
+            self.shared_identity(
+                device_id,
+                random_v7(now_ms)?,
+                last_wall_ms,
+                last_counter,
+                now_ms,
+            )?,
+            fixed(child_id, "child ID")?,
+            now_ms,
+            offset_minutes,
+        )
+        .map_err(debug_error)
+    }
+
+    #[allow(clippy::too_many_arguments)] // Flat wasm boundary for browser form values.
+    pub fn stop_sleep_operation(
+        &self,
+        device_id: &[u8],
+        last_wall_ms: i64,
+        last_counter: u32,
+        child_id: &[u8],
+        activity_id: &[u8],
+        now_ms: i64,
+        offset_minutes: i16,
+    ) -> Result<Vec<u8>, JsError> {
+        let record_id = fixed(activity_id, "activity ID")?;
+        let ready = self
+            .ready
+            .as_ref()
+            .ok_or_else(|| JsError::new("Family not ready"))?;
+        let target = ready
+            .overlay
+            .as_ref()
+            .unwrap_or(&ready.projection)
+            .record(&record_id)
+            .ok_or_else(|| JsError::new("sleep target unavailable"))?;
+        web_actions::stop_sleep(
+            self.shared_identity(device_id, record_id, last_wall_ms, last_counter, now_ms)?,
+            fixed(child_id, "child ID")?,
+            target,
+            now_ms,
+            offset_minutes,
+        )
+        .map_err(debug_error)
+    }
 }

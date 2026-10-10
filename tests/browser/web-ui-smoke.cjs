@@ -21,6 +21,9 @@ if (!origin) throw new Error('pass the preview origin');
     await page.getByRole('button', { name: 'Save' }).click();
     await page.getByText('Diaper · Wet').waitFor();
     await page.getByRole('button', { name: 'Bottle' }).click();
+    assert.equal(await page.getByLabel('Amount (mL)').getAttribute('inputmode'), 'numeric');
+    const save = await page.getByRole('button', { name: 'Save' }).boundingBox();
+    assert.ok(save.y + save.height <= 844 - 80, `Save sits under a mobile browser toolbar at ${save.y}`);
     await page.getByLabel('Amount (mL)').fill('90');
     await page.getByRole('button', { name: 'Save' }).click();
     await page.getByText('Bottle · 90 mL').waitFor();
@@ -47,6 +50,19 @@ if (!origin) throw new Error('pass the preview origin');
     await page.getByLabel('Feeding time (minutes:seconds)').first().fill('0:20');
     await page.getByRole('button', { name: 'Save changes' }).click();
     await page.getByText('Breastfeed · left 1:05 · right 0:15').waitFor();
+    await page.getByRole('navigation', { name: 'Primary navigation' }).last()
+      .getByRole('button', { name: 'Today' }).click();
+    await page.getByRole('button', { name: /^Sleep/ }).click();
+    await page.getByText('Sleep · running').waitFor();
+    assert.equal(await page.getByRole('button', { name: /^Sleep/ }).count(), 0, 'running sleep offered a second start');
+    await page.clock.fastForward(65 * 60_000);
+    assert.equal(await page.locator('.sleep-running strong').textContent(), '65:00');
+    await page.reload();
+    await page.getByText(/^Sleeping since/).waitFor();
+    await page.getByRole('button', { name: 'Stop sleep' }).click();
+    await page.getByText('Sleep · 1 hr 5 min').waitFor();
+    assert.equal(await page.locator('.sleep-running').count(), 0, 'stopped sleep still shown as running');
+    assert.equal(await page.locator('.summary strong').textContent(), '2 feeds · 1 diaper');
     const firstFamily = await page.evaluate(() => localStorage.getItem('babytrack-family'));
     await page.reload();
     await page.getByText('Diaper · Wet').waitFor();
@@ -90,6 +106,7 @@ if (!origin) throw new Error('pass the preview origin');
     await freshPage.getByText('Bottle · 90 mL').waitFor();
     await freshPage.reload();
     await freshPage.getByText('Breastfeed · left 1:05 · right 0:15').waitFor();
+    await freshPage.getByText('Sleep · 1 hr 5 min').waitFor();
     await freshContext.close();
     await page.getByLabel('Restore file into a new Family').setInputFiles({
       name: 'family.jsonl', mimeType: 'application/x-ndjson', buffer: backup,
@@ -109,6 +126,6 @@ if (!origin) throw new Error('pass the preview origin');
       restoredFamily, 'corrupt file changed the active Family');
     assert.deepEqual(failures, []);
     await context.close();
-    console.log('Responsive web local tracking, backup restore, reload, and Family isolation passed');
+    console.log('Responsive web local tracking, sleep timer, backup restore, reload, and Family isolation passed');
   } finally { await browser.close(); }
 })().catch((error) => { console.error(error); process.exitCode = 1; });

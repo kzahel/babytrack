@@ -512,32 +512,33 @@ fn main() {
                 after,
             )
             .unwrap();
-            assert_eq!(page.entries.len(), 1, "expected one browser batch");
-            let entry = &page.entries[0];
-            assert_eq!(entry.kind, 2, "expected encrypted batch");
-            let Value::Map(envelope) = cbor::decode(&entry.committed_bytes).unwrap() else {
-                panic!("batch envelope not map")
-            };
-            let header = Header::decode(&cbor::encode(&envelope[0].1).unwrap()).unwrap();
-            let result_path = format!(
-                "/v1/families/{}/batch-results/{}",
-                hex(&family.family_id),
-                hex(&header.batch_id)
-            );
-            let auth = manager.sign_get(&result_path).unwrap();
-            let result =
-                BatchResult::decode(&relay_get(origin, &result_path, &auth.bytes)).unwrap();
-            PublicHistorySession::resume(&local, family)
-                .unwrap()
-                .accept_batch(
-                    &mut local,
-                    &entry.committed_bytes,
-                    result
-                        .receipt_bytes
-                        .as_ref()
-                        .expect("accepted browser batch"),
-                )
-                .unwrap();
+            assert!(!page.entries.is_empty(), "expected browser batches");
+            for entry in &page.entries {
+                assert_eq!(entry.kind, 2, "expected encrypted batch");
+                let Value::Map(envelope) = cbor::decode(&entry.committed_bytes).unwrap() else {
+                    panic!("batch envelope not map")
+                };
+                let header = Header::decode(&cbor::encode(&envelope[0].1).unwrap()).unwrap();
+                let result_path = format!(
+                    "/v1/families/{}/batch-results/{}",
+                    hex(&family.family_id),
+                    hex(&header.batch_id)
+                );
+                let auth = manager.sign_get(&result_path).unwrap();
+                let result =
+                    BatchResult::decode(&relay_get(origin, &result_path, &auth.bytes)).unwrap();
+                PublicHistorySession::resume(&local, family)
+                    .unwrap()
+                    .accept_batch(
+                        &mut local,
+                        &entry.committed_bytes,
+                        result
+                            .receipt_bytes
+                            .as_ref()
+                            .expect("accepted browser batch"),
+                    )
+                    .unwrap();
+            }
             let ready = manager.ready_session(&local).unwrap();
             if mode == "read_note" {
                 let note = ready
@@ -550,6 +551,20 @@ fn main() {
                 assert_eq!(
                     note.field(4).map(|field| &field.value),
                     Some(&Value::Text("WebOnlyPrivateMarker".to_owned()))
+                );
+                let sleep = ready
+                    .projection()
+                    .records()
+                    .find(|record| {
+                        record.record_type == "sleep" && record.child_id == Some(v7(0xa1))
+                    })
+                    .expect("browser sleep absent");
+                assert!(
+                    matches!(
+                        sleep.field(2).map(|field| &field.value),
+                        Some(Value::Array(_))
+                    ),
+                    "browser sleep was not stopped"
                 );
                 println!("browser note read");
             } else {

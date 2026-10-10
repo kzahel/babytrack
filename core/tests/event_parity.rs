@@ -153,6 +153,64 @@ fn native_and_browser_construct_and_display_the_same_records() {
 }
 
 #[test]
+fn native_and_browser_start_and_stop_the_same_sleep() {
+    let family = family();
+    let (child, native) = local_api::child_operation(family, "Baby", NOW).unwrap();
+    let browser = web_actions::child(identity(&native), "Baby", None, None).unwrap();
+    let mut projection = LocalProjection::new(family.family_id);
+    projection
+        .append(&assert_bytes(native, browser), 1)
+        .unwrap();
+    let when = ActivityTime {
+        start_utc_ms: NOW,
+        offset_minutes: 120,
+        saved_at_ms: NOW,
+    };
+    let (sleep, native) = local_api::running_sleep_operation(family, child, when).unwrap();
+    let browser = web_actions::start_sleep(identity(&native), child, NOW, 120).unwrap();
+    projection
+        .append(&assert_bytes(native, browser), 2)
+        .unwrap();
+    let running: serde_json::Value =
+        serde_json::from_str(&web_actions::local_snapshot(&projection)).unwrap();
+    let row = &running["activities"][0];
+    assert_eq!(row["kind"], "sleep");
+    assert_eq!(row["startMs"], NOW);
+    assert!(row["endMs"].is_null());
+
+    let target = projection.record(&sleep).unwrap().clone();
+    let end = NOW - 1;
+    assert!(web_actions::stop_sleep(identity_for(&target), child, &target, end, 60).is_err());
+    let end = NOW;
+    let native = local_api::stop_sleep_operation(family, child, &target, end, 60, NOW).unwrap();
+    assert!(web_actions::stop_sleep(identity(&native), [0x33; 16], &target, end, 60).is_err());
+    let browser = web_actions::stop_sleep(identity(&native), child, &target, end, 60).unwrap();
+    projection
+        .append(&assert_bytes(native, browser), 3)
+        .unwrap();
+    let stopped: serde_json::Value =
+        serde_json::from_str(&web_actions::local_snapshot(&projection)).unwrap();
+    assert_eq!(stopped["activities"][0]["endMs"], end);
+    let target = projection.record(&sleep).unwrap().clone();
+    assert!(web_actions::stop_sleep(identity_for(&target), child, &target, end, 60).is_err());
+}
+
+fn identity_for(target: &babytrack_core::projection::Record) -> Identity {
+    let device = family().device_id;
+    Identity {
+        family: family().family_id,
+        device,
+        operation: [0x44; 16],
+        record: target.id,
+        stamp: Hlc {
+            wall_ms: NOW,
+            counter: 0,
+            device_id: device,
+        },
+    }
+}
+
+#[test]
 fn adapters_agree_on_trimmed_limits_and_invalid_fields() {
     let family = family();
     for name in [

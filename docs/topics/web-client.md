@@ -41,6 +41,13 @@ reloads in localStorage. Saving writes one atomic segment list through the
 Rust core and clears the draft only after a durable append. History can edit
 sides, active durations, and pauses on that same event ID. IndexedDB replays
 saved operations through the Rust wasm projection after reload.
+Sleep uses the same shared Rust start and stop operations as Android: Today
+offers a sleep start when none is running for the selected child, shows a
+running sleep, including one started on another device, with its start time
+and elapsed clock, and stops that same event. A started sleep is a saved
+record, not a browser draft, so it syncs like any other entry. The Today
+summary counts with locale plural rules. Bottom-pinned form actions keep
+clearance above the floating toolbar of mobile Safari.
 
 The web app accepts a same-origin invitation in the URL fragment or a pasted
 link. Opening a URL only saves the fragment and shows the history-access
@@ -62,7 +69,7 @@ because that status does not identify the claimant. Terminal status bytes are
 retained and reverified after reload until the person dismisses the attempt.
 Only a verified admission grant and ready replay make the Family selectable.
 The joined browser can read history, add children and the current capture
-types, and edit breast feeds. Writes enter the durable encrypted outbox before
+types, start and stop sleep, and edit breast feeds. Writes enter the durable encrypted outbox before
 upload, remain visible offline, and retry through the relay. The Family screen
 distinguishes local and shared storage and gives a manual sync action.
 After a signed removal, the browser checks sparse controls against its saved

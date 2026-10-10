@@ -110,6 +110,43 @@ pub fn note(
     Ok(Operation::encode_new(&operation)?)
 }
 
+pub fn start_sleep(
+    id: Identity,
+    child_id: [u8; 16],
+    start_ms: i64,
+    offset: i16,
+) -> Result<Vec<u8>, Error> {
+    check_activity_time(start_ms, id.stamp.wall_ms)?;
+    let time = crate::event_actions::ActivityTime {
+        start_utc_ms: start_ms,
+        offset_minutes: offset,
+        saved_at_ms: id.stamp.wall_ms,
+    };
+    let (_, operation) = crate::event_actions::running_sleep_operation(id, child_id, time)
+        .map_err(Error::Invalid)?;
+    Ok(Operation::encode_new(&operation)?)
+}
+
+pub fn stop_sleep(
+    id: Identity,
+    child_id: [u8; 16],
+    target: &Record,
+    end_ms: i64,
+    offset: i16,
+) -> Result<Vec<u8>, Error> {
+    let saved_at_ms = id.stamp.wall_ms;
+    let operation = crate::event_actions::stop_sleep_operation(
+        id,
+        child_id,
+        target,
+        end_ms,
+        offset,
+        saved_at_ms,
+    )
+    .map_err(Error::Invalid)?;
+    Ok(Operation::encode_new(&operation)?)
+}
+
 fn segments_json(input: &str) -> Result<Vec<Segment>, Error> {
     if input.len() > 4096 {
         return Err(Error::Invalid("breast segments JSON too long"));
@@ -196,6 +233,9 @@ fn snapshot_records<'a>(records: impl Iterator<Item = &'a Record>) -> String {
                                 "breastSegments".to_owned(),
                                 json!(activity.breast_segments),
                             );
+                        }
+                        "sleep" => {
+                            fields.insert("endMs".to_owned(), json!(activity.end_utc_ms));
                         }
                         _ => {}
                     }

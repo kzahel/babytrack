@@ -321,12 +321,12 @@
           {/if}
         </section>
       {:else if tab === 'history'}
-        <section><div class="eyebrow">{selectedChild?.name || c.family}</div><h1>{c.history}</h1>
+        <section><h1 class="screen-title">{c.history}</h1>
           {#key `${family}:${child}`}<History {entries} {nowMs} editable={!removedInfo} {loadSummary} edit={editEntry}
             stopSleep={(entry) => toggleSleep(entry)} remove={removeEntry} />{/key}
         </section>
       {:else}
-        <section><div class="eyebrow">{sharedSelected ? c.shared : c.localOnly}</div><h1>{c.family}</h1>
+        <section><h1 class="screen-title">{c.family}</h1>
           <div class="panel"><h2>{c.children}</h2>
             {#each data.children as row}<div class="child-row"><span class="avatar">{row.name.slice(0, 1).toUpperCase()}</span><div><strong>{row.name}</strong><small>{ageLabel(row.birthDay)}</small></div>
               {#if row.id !== child}<button class="text-action" onclick={() => selectChild(row.id)}>{c.select}</button>{/if}

@@ -177,8 +177,8 @@ async function correctEveryKind(page) {
 // Day view: core totals for the chosen day, filters, and the week strip.
 async function checkDayView(page) {
   await page.locator('.bottom-nav').getByRole('button', { name: 'History' }).click();
-  await page.locator('.day-totals').waitFor();
-  assert.match(await page.locator('.day-totals').innerText(), /feeds/);
+  await page.locator('.day-totals-row').waitFor();
+  assert.match(await page.locator('.day-totals-row').innerText(), /feeds/);
   await page.getByRole('button', { name: 'Sleep', exact: true }).click();
   const rows = await page.locator('.entry-main strong').allInnerTexts();
   assert.ok(rows.length && rows.every((text) => text.startsWith('Sleep')), `sleep filter showed ${rows}`);

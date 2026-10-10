@@ -73,3 +73,8 @@ input[type=file] { border-style: dashed; padding: var(--space-3); }
 .entry-edit { border: 0; border-radius: var(--radius-pill); background: var(--surface-muted); color: var(--ink);
   min-height: 40px; padding: var(--space-2) var(--space-4); font-weight: 650; }
 .section-heading { display: flex; justify-content: space-between; align-items: center; gap: var(--space-4); }
+.entry-list { background: var(--surface); border-radius: var(--radius-card); padding: 0 var(--space-4); }
+.entry-list .entry:last-child { border-bottom: 0; }
+.screen-title { margin-top: var(--space-2); }
+input[type=file]::file-selector-button { border: 0; border-radius: var(--radius-pill); background: var(--surface-muted);
+  color: var(--ink); font: inherit; font-weight: 650; padding: var(--space-2) var(--space-4); margin-right: var(--space-3); cursor: pointer; }

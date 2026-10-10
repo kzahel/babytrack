@@ -60,6 +60,6 @@ tactical with its current status.
   of sharing are delivered through one Rust action boundary with browser
   tests. Browser manager actions remain open behind a core storage
   restructuring and an independent review.
-- [014: Lantern restyle](014-lantern-restyle.md) — active; the owner
-  approved the Lantern name and a flat, quiet design. Restyle the web on
-  modular tokens first, then port to Android.
+- [014: Lantern restyle](014-lantern-restyle.md) — active; the web is
+  restyled to the approved Lantern design on modular tokens, including the
+  new welcome and Today. The Android port follows.

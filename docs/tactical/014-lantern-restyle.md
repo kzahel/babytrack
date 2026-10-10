@@ -32,8 +32,11 @@ place), store listing changes, renaming internal identifiers (`babytrack`,
 4. [x] Web Today: the now card opening the running timer's detail, since-last
    surfaces, six icon quick actions, the day ribbon with core totals, and
    recent entries. Ribbon layout is a tested presentation function.
-5. [ ] Web remaining screens: capture forms, timers, History, entry editors,
+5. [x] Web remaining screens: capture forms, timers, History, entry editors,
    Family, child profile, backups, and sharing in the same components.
+   Web slices 2-5 were checked with phone screenshots in light and dark and
+   a desktop screenshot against the mockups; the browser smoke and the
+   real-relay flow pass on the restyled UI.
 6. [ ] Android port: theme tokens and the welcome, Today, and shared
    components, then the remaining screens, with fixture-gallery renders.
 7. [ ] Reconcile: full validation, gallery and browser screenshots against

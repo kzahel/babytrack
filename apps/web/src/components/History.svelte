@@ -74,20 +74,22 @@
   {/each}
 </div>
 {#if mode === 'day' && summary && (summary.feedCount || summary.sleepMs || summary.diaperCount)}
-  <div class="day-totals panel">
-    <div><strong>{new Intl.NumberFormat().format(summary.feedCount)}</strong><span>{c.feedUnit(summary.feedCount)}</span>
-      {#if summary.bottleMl}<small>{c.bottleMlDetail(summary.bottleMl)}</small>{/if}</div>
-    <div><strong>{durationLabel(summary.sleepMs)}</strong><span>{c.sleepUnit}</span></div>
-    <div><strong>{new Intl.NumberFormat().format(summary.diaperCount)}</strong><span>{c.diaperUnit(summary.diaperCount)}</span>
-      <small>{c.wetDirty(summary.wetDiaperCount, summary.dirtyDiaperCount)}</small></div>
+  <div class="day-totals-row panel">
+    <div><strong>{c.feedTotal(summary.feedCount)}</strong><span>{summary.bottleMl ? c.bottleTotal(summary.bottleMl) : c.feeds}</span></div>
+    <div><strong>{durationLabel(summary.sleepMs)}</strong><span>{c.sleepTotal}</span></div>
+    <div><strong>{c.diaperTotal(summary.diaperCount)}</strong><span>{c.wetDirtyTotal(summary.wetDiaperCount, summary.dirtyDiaperCount)}</span></div>
   </div>
 {/if}
 {#if entries.length === 0}<div class="panel empty">{c.emptyHistory}</div>
 {:else if shown.length === 0}<div class="panel empty">{c.emptyView}</div>{/if}
 {#each groups as [key, rows] (key)}
   {#if mode === 'all'}<h2>{dayHeading(key, nowMs)}</h2>{/if}
-  {#each rows as row (row.id)}
-    <EntryRow {row} {editable} expanded={expanded === row.id} toggle={() => expanded = expanded === row.id ? '' : row.id}
-      {edit} {stopSleep} remove={async (entry) => { await remove(entry); expanded = ''; }} />
-  {/each}
+  {#if rows.length}
+    <div class="entry-list">
+      {#each rows as row (row.id)}
+        <EntryRow {row} {editable} expanded={expanded === row.id} toggle={() => expanded = expanded === row.id ? '' : row.id}
+          {edit} {stopSleep} remove={async (entry) => { await remove(entry); expanded = ''; }} />
+      {/each}
+    </div>
+  {/if}
 {/each}

@@ -8,7 +8,7 @@ export function createTrackerController({ api, copy: c, preferences, onSelect = 
   onRemoval = () => {}, onRememberInvitation = () => {} }) {
   let state = { loading: true, familyRows: [], family: '', child: '', data: emptyData(),
     pendingFragment: '', joinStage: '', syncStage: '', removedInfo: null,
-    privateCopy: '', backupGap: false, backupCursor: 0 };
+    privateCopy: '', backupGap: false, backupCursor: 0, devices: [], deviceId: '' };
   const store = writable(state);
   let generation = 0;
   let refreshSequence = 0;
@@ -22,7 +22,7 @@ export function createTrackerController({ api, copy: c, preferences, onSelect = 
   const shared = (family) => state.familyRows.some((row) => row.family === family && row.source === 'shared');
   const statusPatch = (status) => ({ removedInfo: status?.removal || null,
     privateCopy: status?.privateCopy || '', backupGap: !!(status?.knownIncomplete || status?.removal?.knownGap),
-    backupCursor: status?.cursor || 0,
+    backupCursor: status?.cursor || 0, devices: status?.devices || [], deviceId: status?.deviceId || '',
     syncStage: !status ? '' : status.removal ? (status.privateCopy ? c.removedCopied : c.removedArchive) :
       status.pending || status.queued ? c.savedPending : status.knownIncomplete ? c.syncMore : c.syncReady });
 

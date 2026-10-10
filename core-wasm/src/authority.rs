@@ -115,6 +115,27 @@ impl WasmPublicFamily {
         self.chain.last_global_cursor()
     }
 
+    /// Devices with verified access and their roles (1 member, 2 manager).
+    pub fn active_devices_json(&self) -> Result<String, JsError> {
+        let devices = self.chain.active_devices().map_err(debug_error)?;
+        Ok(format!(
+            "[{}]",
+            devices
+                .iter()
+                .map(|device| format!(
+                    "{{\"deviceId\":\"{}\",\"role\":{}}}",
+                    device
+                        .device_id
+                        .iter()
+                        .map(|byte| format!("{byte:02x}"))
+                        .collect::<String>(),
+                    device.role
+                ))
+                .collect::<Vec<_>>()
+                .join(",")
+        ))
+    }
+
     pub fn head_hash(&self) -> Vec<u8> {
         self.chain.head_hash().to_vec()
     }

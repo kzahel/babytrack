@@ -259,9 +259,12 @@ export async function sharedStatus(wasm, family) {
     const queued = await store.queuedInitial(family);
     const history = await store.historyStatus(family);
     const verifier = await store.load(family);
+    const credential = await store.initialCredential(family).catch(() => null);
     try { return { cursor: Number(verifier.last_cursor()), pending: !!pending, queued: queued.length,
       familyId: hex(verifier.family_id()), removal, privateCopy,
-      knownIncomplete: history.knownIncomplete }; }
+      knownIncomplete: history.knownIncomplete,
+      devices: JSON.parse(verifier.active_devices_json()),
+      deviceId: credential ? hex(credential.deviceId) : '' }; }
     finally { verifier.free(); }
   } finally { store.close(); }
 }

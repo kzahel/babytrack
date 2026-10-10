@@ -12,6 +12,7 @@
   import Today from './components/Today.svelte';
   import History from './components/History.svelte';
   import BackupPanel from './components/BackupPanel.svelte';
+  import SharingPanel from './components/SharingPanel.svelte';
 
   let error = '';
   let notice = '';
@@ -49,7 +50,7 @@
     onRemoval: () => { screen = ''; editing = null; },
     onRememberInvitation: () => history.replaceState(null, '', location.pathname + location.search) });
   $: ({ loading, familyRows, family, child, data, pendingFragment, joinStage,
-    syncStage, removedInfo, privateCopy, backupGap, backupCursor } = $tracker);
+    syncStage, removedInfo, privateCopy, backupGap, backupCursor, devices, deviceId } = $tracker);
   // Reread the browser-local nursing draft whenever a route closes.
   $: breastDraft = screen === '' && $tracker.family && $tracker.child ? readDraft($tracker.family, $tracker.child) : breastDraft;
 
@@ -94,6 +95,12 @@
   const makeRemovedCopy = () => run(() => tracker.makeRemovedCopy());
   async function openPrivateCopy() {
     if (privateCopy) await selectFamily(privateCopy);
+  }
+  // An independent local Family from the current shared state; access is unchanged.
+  async function makeSharedCopy() {
+    await run(async () => {
+      if (await tracker.restoreBackup(await api.exportFamily(family))) { tab = 'today'; notice = c.privateCopyReady; }
+    });
   }
   async function restoreBackup(readable) {
     if (await tracker.restoreBackup(readable)) { screen = ''; tab = 'today'; }
@@ -298,7 +305,8 @@
             {#if !removedInfo}<button class="secondary" onclick={() => editProfile(null)}>＋ {data.children.length ? c.addAnotherChild : c.addChild}</button>{/if}
           </div>
           <div class="panel"><h2>{sharedSelected ? c.shared : c.localOnly}</h2><p class="muted">{sharedSelected ? c.sharedDescription : c.localDescription}</p>
-            {#if sharedSelected}<p role="status">{syncStage || (removedInfo ? c.removedArchive : c.syncReady)}</p>{#if !removedInfo}<button class="secondary" onclick={poll}>{c.syncNow}</button>{/if}{/if}
+            {#if sharedSelected}<p role="status">{syncStage || (removedInfo ? c.removedArchive : c.syncReady)}</p>{#if !removedInfo}<button class="secondary" onclick={poll}>{c.syncNow}</button>
+              {#key family}<SharingPanel {family} {devices} {deviceId} makeCopy={makeSharedCopy} />{/key}{/if}{/if}
             <label class="family-switch">{c.switchFamily}<select value={family} onchange={(event) => selectFamily(event.currentTarget.value)}>
               {#each familyRows as row, index}<option value={row.family}>{c.familyNumber(index + 1)}</option>{/each}
             </select></label>

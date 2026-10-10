@@ -131,6 +131,26 @@ async function run() {
     const marker = Buffer.from('WebOnlyPrivateMarker');
     assert.equal(fs.readFileSync(relayDb).includes(marker), false, 'plaintext reached relay DB');
     assert.equal(fs.readFileSync(relayLog).includes(marker), false, 'plaintext reached relay log');
+    await page.getByText('2 devices have access').waitFor();
+    await page.getByRole('button', { name: 'Family access' }).click();
+    await page.getByText(/^This device · Member · ID [0-9a-f]{32}$/).waitFor();
+    await page.getByText(/^Other device · Manager · ID [0-9a-f]{32}$/).waitFor();
+    await page.locator('.device-row').filter({ hasText: 'Other device' }).getByRole('button', { name: 'Name device' }).click();
+    await page.getByLabel('Device name').fill('Kitchen phone');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.getByText(/^Kitchen phone · Other device · Manager/).waitFor();
+    await page.getByRole('button', { name: 'Make a private Family copy' }).click();
+    await page.getByText('Private copy ready.', { exact: false }).waitFor();
+    await page.waitForFunction((id) => localStorage.getItem('babytrack-family') !== id, sharedFamily);
+    await page.locator('.bottom-nav').getByRole('button', { name: 'History' }).click();
+    await page.getByRole('button', { name: 'All days' }).click();
+    await page.getByText('WebOnlyPrivateMarker').first().waitFor();
+    await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();
+    assert.equal(await page.getByRole('button', { name: 'Sync now' }).count(), 0, 'private copy is still shared');
+    await page.getByLabel('Switch Family').selectOption(sharedFamily);
+    await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();
+    await page.getByRole('button', { name: 'Family access' }).click();
+    await page.getByText(/^Kitchen phone · Other device/).waitFor();
     const canceled = spawnSync(holderBin, ['later_issue', manager, relayOrigin, origin],
       { encoding: 'utf8' });
     assert.equal(canceled.status, 0, `Native canceled issue: ${canceled.stderr}`);

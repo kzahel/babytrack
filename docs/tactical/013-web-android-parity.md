@@ -93,6 +93,15 @@ the shared core for both platforms, not reimplemented in JavaScript.
    browser-origin authority path; run the independent review in the
    [security review runbook](../security-review-runbook.md) before real
    Family data relies on it.
+   Partial: a shared Family's Family screen now shows the verified device
+   count and list with roles, this browser marked, local device names, and
+   Make a private Family copy, which matches what a release Android member
+   sees. The real-relay flow checks each. Open: every manager action. The
+   core's share, issue, challenge, admission, removal, role-change, cancel,
+   and rotation builders (about 4,000 lines) persist prepare/confirm state
+   in the native SQLite store and are compiled out of wasm; a browser
+   manager needs that state machine restructured for IndexedDB and an
+   independent review, not a UI port.
 7. [ ] Reconcile: full validation, owning topics, the 006 status, the
    comparison topic, and the tactical index.
 

@@ -84,3 +84,7 @@
 .day-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem;text-align:center}
 .day-totals div{display:flex;flex-direction:column;gap:.15rem}.day-totals strong{font-size:1.25rem}.day-totals span,.day-totals small{color:#597075;font-size:.8rem}
 @media(prefers-color-scheme:dark){.tile.feed{background:#4c302c;color:#ffd7c7}.tile.sleep{background:#2d3360;color:#d4d9ff}.tile.care{background:#1f3d33;color:#cdeedd}.recent-row{border-color:#30444b}.recent-row span,.day-totals span,.day-totals small{color:#afc5c4}.week-strip button,.day-picker input{background:#192a30;color:#f6f7f4;border-color:#456067}.week-strip button[aria-pressed=true]{background:#a5e7e5;color:#10333b;border-color:#a5e7e5}}
+.device-row{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1rem;padding:.6rem 0;border-bottom:1px solid #e2ebe7;overflow-wrap:anywhere}
+.device-row>span{flex:1 1 16rem}.device-name{display:flex;align-items:end;gap:.5rem;flex-basis:100%}.device-name label{flex:1;display:flex;flex-direction:column;gap:.35rem;font-weight:700;font-size:.9rem}
+.device-name input{border:1px solid #becfce;border-radius:10px;padding:.55rem;min-height:44px}
+@media(prefers-color-scheme:dark){.device-row{border-color:#30444b}.device-name input{background:#192a30;color:#f6f7f4;border-color:#456067}}

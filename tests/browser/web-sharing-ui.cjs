@@ -123,10 +123,10 @@ async function run() {
     await page.getByText('WebOnlyPrivateMarker').waitFor();
     await page.getByText('Sleep · 0 min').waitFor();
     await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();
-    await page.getByText('Saved here · waiting to sync').waitFor();
+    await page.locator('main').getByText('Saved here · waiting to sync').waitFor();
     await startRelay();
     await page.getByRole('button', { name: 'Sync now' }).click();
-    await page.getByText('Up to date').waitFor();
+    await page.locator('main').getByText('Up to date').waitFor();
     assert.equal(holder('read_note'), 'browser note read');
     const marker = Buffer.from('WebOnlyPrivateMarker');
     assert.equal(fs.readFileSync(relayDb).includes(marker), false, 'plaintext reached relay DB');
@@ -238,7 +238,7 @@ async function run() {
     await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();
     const syncFirst = page.getByRole('button', { name: 'Sync now' });
     if (await syncFirst.count()) await syncFirst.click({ timeout: 2000 }).catch(() => {});
-    await page.getByText('Access ended · private copy saved on this browser').waitFor();
+    await page.locator('main').getByText('Access ended · private copy saved on this browser').waitFor();
     await staleTab.getByRole('button', { name: 'Save note' }).click();
     await staleTab.getByText('This action was saved in your independent local Family').waitFor();
     await staleTab.getByText('StaleTabUnsentMarker').waitFor();
@@ -303,7 +303,7 @@ async function run() {
     await secondPage.locator('.side-nav').getByRole('button', { name: 'Family' }).click();
     const syncSecond = secondPage.getByRole('button', { name: 'Sync now' });
     if (await syncSecond.count()) await syncSecond.click({ timeout: 2000 }).catch(() => {});
-    await secondPage.getByText('Access ended · local archive available').waitFor();
+    await secondPage.locator('main').getByText('Access ended · local archive available').waitFor();
     await secondPage.locator('.side-nav').getByRole('button', { name: 'Today' }).click();
     await secondPage.getByRole('button', { name: 'Make an independent copy' }).click();
     await secondPage.getByRole('button', { name: 'Open private copy' }).waitFor({ timeout: 5000 })

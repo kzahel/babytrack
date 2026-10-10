@@ -26,7 +26,6 @@ main { width: min(100%, 760px); padding: var(--space-2) var(--space-6) 7rem; }
 @media (max-width: 760px) {
   .side-nav { display: none; }
   .topbar { padding: var(--space-3) var(--space-4); }
-  .brand-mobile { display: flex; font-size: 1.125rem; }
   .target select { max-width: 140px; }
   main { padding: var(--space-2) var(--space-4) 7rem; }
   .bottom-nav { position: fixed; inset: auto 0 0; z-index: 2; display: grid; grid-template-columns: repeat(3, 1fr);

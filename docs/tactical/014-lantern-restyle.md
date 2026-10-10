@@ -26,7 +26,7 @@ place), store listing changes, renaming internal identifiers (`babytrack`,
 2. [x] Web foundation: `styles/tokens.css` for light and dark, modular base,
    component, and screen styles replacing the single stylesheet, an icon
    component, and the Lantern name in web copy.
-3. [ ] Web shell and welcome: header with child switcher, age, date, and
+3. [x] Web shell and welcome: header with child switcher, age, date, and
    sync status; bottom and side navigation; the approved welcome and first
    child step.
 4. [ ] Web Today: the now card opening the running timer's detail, since-last

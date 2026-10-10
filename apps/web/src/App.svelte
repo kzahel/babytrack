@@ -14,6 +14,9 @@
   import History from './components/History.svelte';
   import BackupPanel from './components/BackupPanel.svelte';
   import SharingPanel from './components/SharingPanel.svelte';
+  import Welcome from './components/Welcome.svelte';
+  import FirstChild from './components/FirstChild.svelte';
+  import AppHeader from './components/AppHeader.svelte';
 
   let error = '';
   let notice = '';
@@ -103,6 +106,12 @@
       if (await tracker.restoreBackup(await api.exportFamily(family))) { tab = 'today'; notice = c.privateCopyReady; }
     });
   }
+  // First run: the Family is created only once a child is named.
+  async function startTracking(name, birthDay) {
+    let created = false;
+    await run(async () => { created = await tracker.makeFamily(); });
+    if (created) await saveProfile([{ type: 'child', name, birthDay, sex: 3 }]);
+  }
   async function restoreBackup(readable) {
     if (await tracker.restoreBackup(readable)) { screen = ''; tab = 'today'; }
   }
@@ -173,6 +182,17 @@
   function formatDay(value) { return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(value); }
 </script>
 
+{#snippet joinPanel()}
+  <form class="join-form" onsubmit={(event) => { event.preventDefault(); startJoin(); }}>
+    <label>{c.invitationLink}<input type="text" inputmode="url" required bind:value={invitationInput} /></label>
+    <button class="secondary" type="submit">{c.join}</button>
+  </form>
+  {#if pendingFragment}<p class="join-stage" role="status">{joinStage || c.joining}</p>
+    {#if joinStage === c.confirmJoin}<p class="muted">{c.joinHistoryWarning}</p><button class="primary" onclick={confirmJoin}>{c.joinThisFamily}</button><button class="text-action" onclick={dismissJoin}>{c.dismissInvitation}</button>
+    {:else if terminalJoinStages.includes(joinStage)}<button class="text-action" onclick={dismissJoin}>{c.dismissInvitation}</button>
+    {:else}<button class="text-action" onclick={poll}>{c.pendingJoinResume}</button>{/if}{/if}
+{/snippet}
+
 <svelte:head>
   <title>{c.app} · {c.preview}</title>
 </svelte:head>
@@ -189,17 +209,10 @@
   </aside>
 
   <div class="main-column">
-    <header class="topbar">
-      <div class="brand-mobile"><span class="mark"><Icon name="mark" size={20} /></span>{c.app}</div>
-      {#if family && !screen}
-        <div class="target">
-          <span>{familyLabel}</span>
-          <select aria-label={c.chooseChild} value={child} onchange={(event) => selectChild(event.currentTarget.value)}>
-            {#each data.children as row}<option value={row.id}>{row.name}</option>{/each}
-          </select>
-        </div>
-      {/if}
-    </header>
+    {#if family && !screen}<header class="topbar">
+      <AppHeader child={selectedChild} children={data.children} familyLabel={familyRows.length > 1 ? familyLabel : ''}
+        shared={sharedSelected} {syncStage} {selectChild} />
+    </header>{/if}
 
     <main>
       {#if error}<div class="error" role="alert">{error}</div>{/if}
@@ -208,25 +221,21 @@
       {#if loading}
         <p class="muted">{c.loading}</p>
       {:else if !family}
-        <section class="welcome panel">
-          <div class="eyebrow">{c.preview}</div>
-          <h1>{c.welcomeTitle}</h1>
-          <p>{c.noAccount} {c.welcomeDetail}</p>
-          <button class="primary" onclick={makeFamily}>{c.createFamily}</button>
-        </section>
-        <section class="panel join-panel"><h2>{c.joinFamily}</h2><p class="muted">{c.invitationHint}</p>
-          <form onsubmit={(event) => { event.preventDefault(); startJoin(); }}>
-            <label>{c.invitationLink}<input type="text" inputmode="url" required bind:value={invitationInput} /></label>
-            <button class="secondary" type="submit">{c.join}</button>
-          </form>
-          {#if pendingFragment}<p role="status">{joinStage || c.joining}</p>
-            {#if joinStage === c.confirmJoin}<p class="muted">{c.joinHistoryWarning}</p><button class="primary" onclick={confirmJoin}>{c.joinThisFamily}</button><button class="text-action" onclick={dismissJoin}>{c.dismissInvitation}</button>
-            {:else if terminalJoinStages.includes(joinStage)}<button class="text-action" onclick={dismissJoin}>{c.dismissInvitation}</button>
-            {:else}<button class="text-action" onclick={poll}>{c.pendingJoinResume}</button>{/if}{/if}
-        </section>
-        <section class="panel"><h2>{c.restoreBackup}</h2><p class="muted">{c.restoreDescription}</p>
-          <BackupPanel restore={restoreBackup} />
-        </section>
+        {#if screen === 'onboard'}
+          <FirstChild start={startTracking} back={() => screen = ''} />
+        {:else if screen === 'join' || pendingFragment}
+          <section class="form-view"><button class="back" onclick={() => screen = ''}>← {c.back}</button>
+            <h1>{c.joinFamily}</h1><p class="muted">{c.invitationHint}</p>{@render joinPanel()}</section>
+        {:else if screen === 'restore'}
+          <section class="form-view"><button class="back" onclick={() => screen = ''}>← {c.back}</button>
+            <h1>{c.restoreBackup}</h1><p class="muted">{c.restoreDescription}</p><BackupPanel restore={restoreBackup} /></section>
+        {:else if screen === 'privacy'}
+          <section class="form-view"><button class="back" onclick={() => screen = ''}>← {c.back}</button>
+            <h1>{c.privacyTitle}</h1><p>{c.privacyBody}</p></section>
+        {:else}
+          <Welcome addChild={() => screen = 'onboard'} join={() => screen = 'join'}
+            restore={() => screen = 'restore'} privacy={() => screen = 'privacy'} />
+        {/if}
       {:else if screen === 'child'}
         <section class="form-view">
           <button class="back" onclick={() => { screen = ''; profileChild = null; }}>← {c.cancel}</button>
@@ -277,9 +286,6 @@
             {#if privateCopy}<button class="primary" onclick={openPrivateCopy}>{c.openPrivateCopy}</button>
             {:else}<button class="secondary" onclick={makeRemovedCopy}>{c.makePrivateCopy}</button>{/if}
           </div>{/if}
-          <div class="eyebrow">{formatDay(Date.now())}</div>
-          <h1>{selectedChild ? selectedChild.name : c.today}</h1>
-          <p class="muted">{selectedChild ? ageLabel(selectedChild.birthDay) : c.chooseChild}</p>
           {#if selectedChild}
             {#if !removedInfo}
               <Today {entries} summary={todaySummary} {breastDraft} {nowMs} busy={sleepBusy} open={begin}
@@ -316,16 +322,7 @@
           <div class="panel"><h2>{c.dataAndBackups}</h2>
             {#key family}<BackupPanel {family} shared={sharedSelected} {backupCursor} {backupGap} restore={restoreBackup} />{/key}
           </div>
-          <div class="panel join-panel"><h2>{c.joinFamily}</h2><p class="muted">{c.invitationHint}</p>
-            <form onsubmit={(event) => { event.preventDefault(); startJoin(); }}>
-              <label>{c.invitationLink}<input type="text" inputmode="url" required bind:value={invitationInput} /></label>
-              <button class="secondary" type="submit">{c.join}</button>
-            </form>
-            {#if pendingFragment}<p role="status">{joinStage || c.joining}</p>
-              {#if joinStage === c.confirmJoin}<p class="muted">{c.joinHistoryWarning}</p><button class="primary" onclick={confirmJoin}>{c.joinThisFamily}</button><button class="text-action" onclick={dismissJoin}>{c.dismissInvitation}</button>
-              {:else if terminalJoinStages.includes(joinStage)}<button class="text-action" onclick={dismissJoin}>{c.dismissInvitation}</button>
-              {:else}<button class="text-action" onclick={poll}>{c.pendingJoinResume}</button>{/if}{/if}
-          </div>
+          <div class="panel join-panel"><h2>{c.joinFamily}</h2><p class="muted">{c.invitationHint}</p>{@render joinPanel()}</div>
         </section>
       {/if}
     </main>

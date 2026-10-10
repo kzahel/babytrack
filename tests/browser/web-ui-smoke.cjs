@@ -199,10 +199,12 @@ async function checkDayView(page) {
     const failures = [];
     page.on('pageerror', (error) => failures.push(error.message));
     await page.goto(origin);
-    await page.getByRole('button', { name: 'Create a Family' }).click();
-    await page.getByLabel('Child name').fill('Sam');
-    await page.getByLabel('Birthday').fill('2026-06-01');
-    await page.getByRole('button', { name: 'Add a child' }).click();
+    await page.getByRole('button', { name: 'Add your child' }).click();
+    await page.getByLabel('Name or nickname').fill('Sam');
+    await page.getByRole('button', { name: /^Birthday/ }).click();
+    await page.getByLabel('Birth date (optional)').fill('2026-06-01');
+    await page.getByRole('button', { name: 'Start tracking' }).click();
+    await page.getByRole('heading', { name: 'Sam' }).waitFor();
     await page.getByRole('button', { name: 'Log diaper' }).click();
     await page.getByRole('button', { name: 'Wet' }).click();
     await page.getByRole('button', { name: 'Save diaper' }).click();
@@ -310,13 +312,14 @@ async function checkDayView(page) {
     const freshContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const freshPage = await freshContext.newPage();
     await freshPage.goto(origin);
+    await freshPage.getByRole('button', { name: 'Restore a backup' }).click();
     await freshPage.getByLabel('Restore file into a new Family').setInputFiles({
       name: 'family.btbk', mimeType: 'application/octet-stream', buffer: protectedBackup,
     });
     await freshPage.getByLabel('Password for protected backup').fill('wrong horse');
     await freshPage.getByRole('button', { name: 'Check protected backup' }).click();
     await freshPage.getByText('Wrong password or damaged backup file.').waitFor({ timeout: 60_000 });
-    assert.equal(await freshPage.getByRole('button', { name: 'Create a Family' }).count(), 1, 'wrong password made a Family');
+    assert.ok(!await freshPage.evaluate(() => localStorage.getItem('babytrack-family')), 'wrong password made a Family');
     await freshPage.getByLabel('Password for protected backup').fill('correct horse');
     await freshPage.getByRole('button', { name: 'Check protected backup' }).click();
     await freshPage.getByText(/^File saved at .* records$/).waitFor({ timeout: 60_000 });

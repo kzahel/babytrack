@@ -129,6 +129,13 @@ gates remain with their milestone owners. Local runs do not imply remote CI.
 
 ## Final local verification
 
+CI follow-up, 2026-10-10: [run 38030837651](https://github.com/kzahel/babytrack/actions/runs/38030837651)
+failed in document-picker recovery when `uiautomator dump` exited 137.
+Hierarchy reads now retry that killed process at most twice, clearing stale
+XML before every attempt. Seven harness regressions pass, including recovery
+from one killed dump, persistent failure, and immediate failure for other
+exit codes. The retry applies only to the read-only dump.
+
 Final product code is at `6b4800f`; the bounded join assertion retry is at
 `e17067a`. The six implementation slices and the integration follow-up are
 committed individually. The commands below exercise those product inputs.

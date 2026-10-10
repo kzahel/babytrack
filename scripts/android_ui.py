@@ -90,11 +90,19 @@ def run_scenario(name: str, action) -> None:
 
 def nodes(target: str) -> ET.Element:
     # uiautomator can return exit zero before the first frame is idle, without
-    # creating a dump. Never parse a stale file or cat's error as screen XML.
+    # creating a dump, or be killed (137) during a screen transition. Retry
+    # only the read-only dump. Never parse a stale file or cat's error as XML.
     last_dump = ""
     for attempt in range(3):
         adb(target, "shell", "rm", "-f", "/sdcard/babytrack-ui.xml")
-        last_dump = adb(target, "shell", "uiautomator", "dump", "/sdcard/babytrack-ui.xml", timeout=20)
+        try:
+            last_dump = adb(target, "shell", "uiautomator", "dump", "/sdcard/babytrack-ui.xml", timeout=20)
+        except subprocess.CalledProcessError as cause:
+            if cause.returncode != 137 or attempt == 2:
+                raise
+            stage(f"Android UI dump was killed; retry {attempt + 1}/2")
+            time.sleep(0.3)
+            continue
         if "dumped to:" in last_dump:
             return ET.fromstring(adb(target, "exec-out", "cat", "/sdcard/babytrack-ui.xml"))
         if attempt < 2:

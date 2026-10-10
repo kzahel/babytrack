@@ -136,9 +136,12 @@ The Android command-driven UI helpers live in `scripts/android_ui.py`.
 Caregiver smoke, recovery, and navigation capture entry points import that
 support module; importing helpers never runs a smoke flow.
 Its subprocesses are bounded; scenario wrappers emit progress and preserve
-available failure artifacts without masking the original failure. Browser
-smoke scenarios live in `tests/browser/browser-smoke/`, with fixture and relay
-support plus a small selectable runner. Every scenario owns a fresh browser
+available failure artifacts without masking the original failure. Android
+UI hierarchy reads retry a killed `uiautomator dump` (exit 137) at most twice,
+deleting the previous XML before each attempt. Other dump errors and an
+exhausted retry budget still fail the scenario; input actions are not retried.
+Browser smoke scenarios live in `tests/browser/browser-smoke/`, with fixture
+and relay support plus a small selectable runner. Every scenario owns a fresh browser
 context and its disposable relay processes. Their usage and artifact locations
 are documented in the Android and browser READMEs.
 Historical browser vectors run against a loopback-only fixture relay with

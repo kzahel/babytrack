@@ -12,6 +12,55 @@ import android_ui
 
 
 class HarnessDiagnosticsTest(unittest.TestCase):
+    def test_killed_dump_retries_without_reading_stale_xml(self):
+        calls = []
+        failures = 0
+
+        def adb(_target, *args, **kwargs):
+            nonlocal failures
+            calls.append(args)
+            if args[:3] == ('shell', 'uiautomator', 'dump'):
+                if failures == 0:
+                    failures += 1
+                    raise subprocess.CalledProcessError(137, args)
+                return 'UI hierarchy dumped to: /sdcard/babytrack-ui.xml'
+            if args[:2] == ('exec-out', 'cat'):
+                return '<hierarchy><node text="fresh screen" /></hierarchy>'
+            return ''
+
+        with patch.object(android_ui, 'adb', side_effect=adb), \
+                patch.object(android_ui.time, 'sleep'), patch.object(android_ui, 'stage'):
+            root = android_ui.nodes('emulator-5554')
+        self.assertEqual(root[0].attrib['text'], 'fresh screen')
+        self.assertEqual([args[:3] for args in calls], [
+            ('shell', 'rm', '-f'), ('shell', 'uiautomator', 'dump'),
+            ('shell', 'rm', '-f'), ('shell', 'uiautomator', 'dump'),
+            ('exec-out', 'cat', '/sdcard/babytrack-ui.xml'),
+        ])
+
+    def test_persistent_killed_dump_fails_after_three_attempts(self):
+        failure = subprocess.CalledProcessError(137, 'uiautomator dump')
+
+        def adb(_target, *args, **kwargs):
+            if args[:3] == ('shell', 'uiautomator', 'dump'):
+                raise failure
+            return ''
+
+        with patch.object(android_ui, 'adb', side_effect=adb) as mocked, \
+                patch.object(android_ui.time, 'sleep'), patch.object(android_ui, 'stage'):
+            with self.assertRaises(subprocess.CalledProcessError) as raised:
+                android_ui.nodes('emulator-5554')
+        self.assertIs(raised.exception, failure)
+        self.assertEqual(mocked.call_count, 6)
+
+    def test_other_dump_errors_fail_immediately(self):
+        failure = subprocess.CalledProcessError(1, 'uiautomator dump')
+        with patch.object(android_ui, 'adb', side_effect=['', failure]) as mocked:
+            with self.assertRaises(subprocess.CalledProcessError) as raised:
+                android_ui.nodes('emulator-5554')
+        self.assertIs(raised.exception, failure)
+        self.assertEqual(mocked.call_count, 2)
+
     def test_compact_navigation_is_not_an_expanded_entry_action(self):
         # CI's 320x640 viewport puts the Family touch target 36 px below
         # the row, while its text label is another 48 px further down.

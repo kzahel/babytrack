@@ -64,9 +64,17 @@ the shared core for both platforms, not reimplemented in JavaScript.
    plus confirmed delete with a timed Undo that restores the same entry.
    The browser smoke makes each correction, checks a future-ending breast
    edit is refused, and deletes and restores an entry.
-4. [ ] Today and History parity: activity state tiles with last events and
+4. [x] Today and History parity: activity state tiles with last events and
    the running sleep, the core day summary, History day view with a week
    strip and date choice, day totals, All mode, and type filters.
+   Done: Today shows Android's feeding (or nursing timer), sleep (running
+   clock and Stop, or last sleep with Start and Add past sleep), and diaper
+   (Wet now, Log diaper) tiles, Add activity, So far today lines from the
+   core day summary, and three recent entries that open History. History
+   has Day and All days, a seven-day strip with a date picker, Android's
+   filters, core day totals for the chosen day, intervals on every day they
+   touch, and day headings in All mode. The smoke checks the tiles, summary
+   lines, a filter, and an empty earlier day.
 5. [ ] Data parity: password-protected backup save and restore through the
    shared Argon2id file contract, and the analysis CSV export.
 6. [ ] Sharing parity: promote a local browser Family to the relay, issue

@@ -18,7 +18,8 @@ redirect a different selection. Fragment removal follows durable remembering;
 verification and storage remain in the core adapters.
 
 The web app follows the Android Today, History, Family, and focused capture
-routes. Narrow screens use bottom navigation; tablet and desktop widths use a
+routes, including Today's activity tiles and the History day view; day
+totals come from the core summary for the viewer's local-day window. Narrow screens use bottom navigation; tablet and desktop widths use a
 side rail and a wider content column. Child, Family, local/shared, and pending
 status retain their meaning across platforms. The visual palette and
 localization rules follow [interface design](interface-design-and-localization.md),

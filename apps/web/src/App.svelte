@@ -3,13 +3,14 @@
   import { copy as c, ageLabel } from './strings.js';
   import * as api from './core.js';
   import { createTrackerController } from './tracker-controller.js';
-  import { readDraft, sideTotals, durationLabel } from './breast-timer.js';
-  import { chooser, entrySummary, kindLabels, symbol, category } from './presentation.js';
+  import { readDraft } from './breast-timer.js';
+  import { chooser, dayWindow, entrySummary, kindLabels, symbol, category } from './presentation.js';
   import Capture from './components/Capture.svelte';
   import BreastFeed from './components/BreastFeed.svelte';
   import ChildProfile from './components/ChildProfile.svelte';
   import EntryEditor from './components/EntryEditor.svelte';
-  import EntryRow from './components/EntryRow.svelte';
+  import Today from './components/Today.svelte';
+  import History from './components/History.svelte';
 
   let error = '';
   let notice = '';
@@ -20,7 +21,6 @@
   let breastDraft = null;
   let nowMs = Date.now();
   let editing = null;
-  let expandedEntry = '';
   let undo = null;
   let invitationInput = '';
   let actionSequence = 0;
@@ -31,8 +31,17 @@
   $: selectedChild = data.children.find((row) => row.id === child);
   $: familyLabel = c.familyNumber(familyRows.findIndex((row) => row.family === family) + 1);
   $: entries = data.activities.filter((row) => row.childId === child);
-  $: todayEntries = entries.filter((row) => new Date(row.startMs).toDateString() === new Date().toDateString());
-  $: runningSleep = entries.find((row) => row.kind === 'sleep' && row.endMs == null);
+  // The core's totals for today; refreshed on new data and each minute.
+  let todaySummary = null;
+  let summarySequence = 0;
+  $: refreshToday(family, child, data, Math.floor(nowMs / 60_000));
+  function refreshToday(targetFamily, targetChild) {
+    const request = ++summarySequence;
+    if (!targetFamily || !targetChild) { todaySummary = null; return; }
+    loadSummary(dayWindow(Date.now())).then((value) => { if (request === summarySequence) todaySummary = value; },
+      () => { if (request === summarySequence) todaySummary = null; });
+  }
+  const loadSummary = (range) => api.daySummary(family, child, range);
 
   const tracker = createTrackerController({ api, copy: c, preferences: localStorage,
     onSelect: () => { screen = ''; editing = null; tab = 'today'; },
@@ -144,8 +153,10 @@
       if (saved && screen === 'capture') { screen = ''; tab = 'today'; }
     } finally { sleepBusy = false; }
   }
+  const wetNow = () => saveActions([{ type: 'diaper', child, kind: 1, startMs: Date.now(), offset: api.offsetAt(Date.now()) }]);
   function begin(kind) {
     error = '';
+    if (!kind) { screen = 'chooser'; return; }
     if (kind === 'feed.breast') { screen = 'breast'; return; }
     captureKind = kind;
     screen = 'capture';
@@ -156,7 +167,6 @@
     if (!window.confirm(c.deleteConfirm)) return;
     const target = tracker.target();
     if (await saveActions([{ type: 'delete', child: row.childId, target: row.id }])) {
-      expandedEntry = '';
       undo = { ...target, child: row.childId, id: row.id };
       setTimeout(() => { if (undo?.id === row.id) undo = null; }, 10_000);
     }
@@ -262,7 +272,7 @@
           <div class="eyebrow">{selectedChild?.name} · {formatDay(editing.row.startMs)}</div>
           <h1>{entrySummary(editing.row)}</h1>
           {#key editing}<EntryEditor row={editing.row} action={editing.action} child={editing.row.childId}
-            save={saveEntry} done={() => { screen = ''; editing = null; expandedEntry = ''; }} />{/key}
+            save={saveEntry} done={() => { screen = ''; editing = null; }} />{/key}
         </section>
       {:else if screen === 'capture'}
         <section class="form-view">
@@ -282,41 +292,21 @@
           <h1>{selectedChild ? selectedChild.name : c.today}</h1>
           <p class="muted">{selectedChild ? ageLabel(selectedChild.birthDay) : c.chooseChild}</p>
           {#if selectedChild}
-            <div class="summary panel"><span>{c.todaySummary}</span><strong>{c.feedCount(todayEntries.filter((row) => row.kind.startsWith('feed.')).length)} · {c.diaperCount(todayEntries.filter((row) => row.kind === 'diaper').length)}</strong></div>
-            {#if breastDraft && !removedInfo}
-              <button class="timer-resume panel" onclick={() => begin('feed.breast')}><span>{c.breastFeed} · {breastDraft.active ? c.feedingNow : c.feedingPaused}</span><strong>{durationLabel(sideTotals(breastDraft, nowMs)[1] + sideTotals(breastDraft, nowMs)[2])} →</strong></button>
+            {#if !removedInfo}
+              <Today {entries} summary={todaySummary} {breastDraft} {nowMs} busy={sleepBusy} open={begin}
+                startSleep={() => toggleSleep(null)} stopSleep={(entry) => toggleSleep(entry)} {wetNow}
+                viewHistory={() => tab = 'history'} />
+            {:else}
+              {#each entries.slice(0, 3) as row (row.id)}<p>{entrySummary(row)}</p>{/each}
             {/if}
-            {#if runningSleep && !removedInfo}
-              <div class="timer-resume panel sleep-running"><span>{c.sleepingSince(formatTime(runningSleep.startMs))}</span><strong>{durationLabel(nowMs - runningSleep.startMs)}</strong>
-                <button class="secondary" disabled={sleepBusy} onclick={() => toggleSleep(runningSleep)}>{c.stopSleep}</button></div>
-            {/if}
-            {#if !removedInfo}<h2>{c.addActivity}</h2>
-            <div class="quick-grid">
-              <button onclick={() => begin('feed.breast')}><span class="icon feed" aria-hidden="true">◓</span><strong>{c.breastFeed}</strong><small>{c.feeds}</small></button>
-              <button onclick={() => begin('feed.bottle')}><span class="icon feed" aria-hidden="true">◔</span><strong>{c.bottle}</strong><small>{c.feeds}</small></button>
-              <button onclick={() => begin('diaper')}><span class="icon care" aria-hidden="true">◇</span><strong>{c.diaper}</strong><small>{c.diapers}</small></button>
-              {#if !runningSleep}<button disabled={sleepBusy} onclick={() => toggleSleep(null)}><span class="icon sleep" aria-hidden="true">☾</span><strong>{c.sleep}</strong><small>{c.startSleep}</small></button>{/if}
-              <button onclick={() => screen = 'chooser'}><span class="icon note" aria-hidden="true">＋</span><strong>{c.moreActivities}</strong><small>{c.addActivity}</small></button>
-            </div>{/if}
-            <div class="section-heading"><h2>{c.recent}</h2><button class="text-action" onclick={() => tab = 'history'}>{c.allEntries} →</button></div>
-            {#if entries.length === 0}<p class="muted">{c.emptyHistory}</p>{/if}
-            {#each entries.slice(0, 4) as row (row.id)}
-              <EntryRow {row} editable={!removedInfo} expanded={expandedEntry === row.id}
-                toggle={() => expandedEntry = expandedEntry === row.id ? '' : row.id}
-                edit={editEntry} stopSleep={(entry) => toggleSleep(entry)} remove={removeEntry} />
-            {/each}
           {:else}
             <div class="panel empty"><p>{c.addChildPrompt}</p>{#if !removedInfo}<button class="primary" onclick={() => editProfile(null)}>{c.addChild}</button>{/if}</div>
           {/if}
         </section>
       {:else if tab === 'history'}
         <section><div class="eyebrow">{selectedChild?.name || c.family}</div><h1>{c.history}</h1>
-          {#if entries.length === 0}<div class="panel empty">{c.emptyHistory}</div>{/if}
-          {#each entries as row (row.id)}
-            <EntryRow {row} editable={!removedInfo} expanded={expandedEntry === row.id}
-              toggle={() => expandedEntry = expandedEntry === row.id ? '' : row.id}
-              edit={editEntry} stopSleep={(entry) => toggleSleep(entry)} remove={removeEntry} />
-          {/each}
+          {#key `${family}:${child}`}<History {entries} {nowMs} editable={!removedInfo} {loadSummary} edit={editEntry}
+            stopSleep={(entry) => toggleSleep(entry)} remove={removeEntry} />{/key}
         </section>
       {:else}
         <section><div class="eyebrow">{sharedSelected ? c.shared : c.localOnly}</div><h1>{c.family}</h1>

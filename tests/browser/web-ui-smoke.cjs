@@ -5,8 +5,12 @@ const { chromium } = require('playwright');
 const origin = process.argv[2];
 if (!origin) throw new Error('pass the preview origin');
 
-const historyTab = (page) => page.locator('.bottom-nav:visible, .side-nav:visible')
-  .getByRole('button', { name: 'History' }).first().click();
+// History opens on today's Day view; entry checks use All days so a run
+// near local midnight still finds entries saved a little earlier.
+async function historyTab(page) {
+  await page.locator('.bottom-nav:visible, .side-nav:visible').getByRole('button', { name: 'History' }).first().click();
+  await page.getByRole('button', { name: 'All days' }).click();
+}
 const today = (page) => page.getByRole('navigation', { name: 'Primary navigation' }).last()
   .getByRole('button', { name: 'Today' }).click();
 
@@ -14,7 +18,7 @@ const today = (page) => page.getByRole('navigation', { name: 'Primary navigation
 async function captureEveryKind(page) {
   const open = async (kind) => {
     await today(page);
-    await page.getByRole('button', { name: /^＋|More/ }).click();
+    await page.getByRole('button', { name: /Add activity/ }).click();
     await page.getByRole('button', { name: new RegExp(`^${kind}$`) }).click();
   };
   const saved = async (button, text) => {
@@ -70,7 +74,7 @@ async function captureEveryKind(page) {
   await saved('Save medication', 'Medication · Vitamin D · 1 drop');
   await open('Note');
   await page.getByRole('button', { name: 'Change time' }).click();
-  const earlier = new Date(Date.now() - 2 * 3_600_000);
+  const earlier = new Date(await page.evaluate(() => Date.now() - 5 * 60_000));
   const local = new Date(earlier.getTime() - earlier.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
   await page.getByLabel('When', { exact: true }).last().fill(local);
   await page.getByLabel('What happened?').fill('Rolled over');
@@ -87,7 +91,7 @@ async function captureEveryKind(page) {
   await page.getByLabel('Child name').fill('Sammy');
   await page.getByRole('button', { name: 'Female' }).click();
   await page.getByRole('button', { name: 'Save changes' }).click();
-  await page.locator('.child-row strong').getByText('Sammy').waitFor();
+  await page.locator('.child-row strong').getByText('Sammy').first().waitFor();
   await page.getByRole('button', { name: 'Edit Sammy' }).click();
   assert.equal(await page.getByRole('button', { name: 'Female' }).getAttribute('aria-pressed'), 'true');
   assert.equal(await page.getByLabel('Birthday').inputValue(), '2026-06-01');
@@ -149,23 +153,41 @@ async function correctEveryKind(page) {
     await page.getByLabel('Note').fill('After lunch');
   }, 'Note: After lunch');
   await correct('Note · Rolled over', 'Edit time', async () => {
-    await page.getByLabel('When').fill('2026-01-01T08:00');
+    const at = new Date(new Date(await page.getByLabel('When').inputValue()).getTime() - 3_600_000);
+    await page.getByLabel('When').fill(new Date(at.getTime() - at.getTimezoneOffset() * 60_000).toISOString().slice(0, 16));
   }, 'Note · Rolled over');
   await correct('Breast · Right 5 min', 'Edit breast feed', async () => {
     await page.getByRole('button', { name: 'Keep start time' }).click();
     await page.getByLabel('Feeding time (minutes:seconds)').last().fill('9:00');
     await page.getByRole('button', { name: 'Save changes' }).click();
-    await page.getByText('The edited feeding cannot end in the future.').waitFor();
+    await page.getByText('The edited feeding cannot end in the future.').first().waitFor();
     await page.getByRole('button', { name: 'Keep finish time' }).click();
   }, 'Breast · Right 5 min → Left 9 min');
   await historyTab(page);
   await page.locator('.entry-main').filter({ hasText: 'Medication · Iron' }).click();
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Delete entry' }).click();
-  await page.getByText('Entry deleted').waitFor();
+  await page.getByText('Entry deleted').first().waitFor();
   assert.equal(await page.getByText('Medication · Iron').count(), 0, 'deleted entry still listed');
   await page.getByRole('button', { name: 'Undo' }).click();
-  await page.getByText('Medication · Iron · 1 drop').waitFor();
+  await page.getByText('Medication · Iron · 1 drop').first().waitFor();
+  await today(page);
+}
+
+// Day view: core totals for the chosen day, filters, and the week strip.
+async function checkDayView(page) {
+  await page.locator('.bottom-nav').getByRole('button', { name: 'History' }).click();
+  await page.locator('.day-totals').waitFor();
+  assert.match(await page.locator('.day-totals').innerText(), /feeds/);
+  await page.getByRole('button', { name: 'Sleep', exact: true }).click();
+  const rows = await page.locator('.entry-main strong').allInnerTexts();
+  assert.ok(rows.length && rows.every((text) => text.startsWith('Sleep')), `sleep filter showed ${rows}`);
+  await page.locator('.week-strip button').first().click();
+  await page.getByText('No entries in this view.').waitFor();
+  await page.locator('.week-strip button').last().click();
+  await page.getByRole('button', { name: 'All', exact: true }).click();
+  await page.getByRole('button', { name: 'All days' }).click();
+  await page.getByRole('heading', { name: 'Today' }).waitFor();
   await today(page);
 }
 
@@ -181,25 +203,25 @@ async function correctEveryKind(page) {
     await page.getByLabel('Child name').fill('Sam');
     await page.getByLabel('Birthday').fill('2026-06-01');
     await page.getByRole('button', { name: 'Add a child' }).click();
-    await page.getByRole('button', { name: /^Diaper/ }).click();
+    await page.getByRole('button', { name: 'Log diaper' }).click();
     await page.getByRole('button', { name: 'Wet' }).click();
     await page.getByRole('button', { name: 'Save diaper' }).click();
-    await page.getByText('Diaper · Wet').waitFor();
-    await page.getByRole('button', { name: /^Bottle/ }).click();
+    await page.getByText('Diaper · Wet').first().waitFor();
+    await page.getByRole('button', { name: 'Bottle', exact: true }).click();
     assert.equal(await page.getByLabel('Bottle amount (mL)').getAttribute('inputmode'), 'numeric');
     const save = await page.getByRole('button', { name: 'Save bottle' }).boundingBox();
     assert.ok(save.y + save.height <= 844 - 80, `Save sits under a mobile browser toolbar at ${save.y}`);
     await page.getByLabel('Bottle amount (mL)').fill('90');
     await page.getByRole('button', { name: 'Save bottle' }).click();
-    await page.getByText('Bottle · 90 mL').waitFor();
+    await page.getByText('Bottle · 90 mL').first().waitFor();
     const timerStart = new Date(Date.now() + 1000);
     await page.clock.install({ time: timerStart });
     await page.clock.pauseAt(new Date(timerStart.getTime() + 1000));
-    await page.getByRole('button', { name: /^Breastfeed/ }).click();
+    await page.getByRole('button', { name: 'Breast feed', exact: true }).click();
     await page.getByRole('button', { name: /Left breast/ }).click();
     await page.clock.fastForward(30_000);
     await page.reload();
-    await page.locator('.timer-resume').click();
+    await page.getByRole('button', { name: 'Open timer' }).click();
     await page.getByRole('button', { name: /Right breast/ }).click();
     await page.clock.fastForward(15_000);
     await page.getByRole('button', { name: /Right breast/ }).click();
@@ -209,34 +231,38 @@ async function correctEveryKind(page) {
     await page.clock.fastForward(45_000);
     await page.getByRole('button', { name: /Left breast/ }).click();
     await page.getByRole('button', { name: 'Save feeding' }).click();
-    await page.getByText('Breast · Left 0:30 → Right 0:15 → Left 0:45').waitFor();
-    assert.equal(await page.locator('.timer-resume').count(), 0, 'saved feeding retained its draft');
+    await page.getByText('Breast · Left 0:30 → Right 0:15 → Left 0:45').first().waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Open timer' }).count(), 0, 'saved feeding retained its draft');
+    await historyTab(page);
     await page.locator('.entry-main').filter({ hasText: 'Breast · Left 0:30' }).click();
     await page.getByRole('button', { name: 'Edit breast feed' }).click();
     await page.getByLabel('Feeding time (minutes:seconds)').first().fill('0:20');
     await page.getByRole('button', { name: 'Save changes' }).click();
-    await page.getByText('Breast · Left 0:20 → Right 0:15 → Left 0:45').waitFor();
+    await page.getByText('Breast · Left 0:20 → Right 0:15 → Left 0:45').first().waitFor();
     await page.getByRole('navigation', { name: 'Primary navigation' }).last()
       .getByRole('button', { name: 'Today' }).click();
-    await page.locator('.quick-grid').getByRole('button', { name: /^Sleep/ }).click();
-    await page.getByText('Sleep · running').waitFor();
-    assert.equal(await page.locator('.quick-grid').getByRole('button', { name: /^Sleep/ }).count(), 0, 'running sleep offered a second start');
+    await page.getByRole('button', { name: 'Start sleep timer' }).click();
+    await page.getByText('Sleep · running').first().waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Start sleep timer' }).count(), 0, 'running sleep offered a second start');
     await page.clock.fastForward(65 * 60_000);
-    assert.equal(await page.locator('.sleep-running strong').textContent(), '65:00');
+    assert.equal(await page.locator('.tile.sleep .tile-clock').textContent(), '1:05:00');
     await page.reload();
-    await page.getByText(/^Sleeping since/).waitFor();
+    await page.getByRole('heading', { name: 'Sleeping' }).waitFor();
     await page.getByRole('button', { name: 'Stop sleep' }).click();
-    await page.getByText('Sleep · 1 h 5 min').waitFor();
-    assert.equal(await page.locator('.sleep-running').count(), 0, 'stopped sleep still shown as running');
-    assert.equal(await page.locator('.summary strong').textContent(), '2 feeds · 1 diaper');
+    await page.getByText('Sleep · 1 h 5 min').first().waitFor();
+    assert.equal(await page.locator('.tile.sleep .tile-clock').count(), 0, 'stopped sleep still shown as running');
+    await page.getByText('Slept 1 h 5 min').first().waitFor();
+    assert.match(await page.locator('.summary').innerText(),
+      /2 feeds · bottle 90 mL\n+1 h 5 min of sleep\n+1 diaper · wet 1 · dirty 0/);
     await captureEveryKind(page);
     await correctEveryKind(page);
+    await checkDayView(page);
     const firstFamily = await page.evaluate(() => localStorage.getItem('babytrack-family'));
     await page.reload();
     await historyTab(page);
-    await page.getByText('Diaper · Wet').waitFor();
-    await page.getByText('Bottle · 90 mL').waitFor();
-    await page.getByText('Breast · Left 0:20 → Right 0:15 → Left 0:45').waitFor();
+    await page.getByText('Diaper · Wet').first().waitFor();
+    await page.getByText('Bottle · 90 mL').first().waitFor();
+    await page.getByText('Breast · Left 0:20 → Right 0:15 → Left 0:45').first().waitFor();
     await page.getByRole('navigation', { name: 'Primary navigation' }).last()
       .getByRole('button', { name: 'Family' }).click();
     await page.getByRole('button', { name: 'Create a Family' }).click();
@@ -254,7 +280,7 @@ async function correctEveryKind(page) {
       .getByRole('button', { name: 'Family' }).click();
     await page.getByLabel('Switch Family').selectOption(firstFamily);
     await historyTab(page);
-    await page.getByText('Bottle · 90 mL').waitFor();
+    await page.getByText('Bottle · 90 mL').first().waitFor();
     await page.locator('.side-nav').getByRole('button', { name: 'Family' }).click();
     let download;
     try {
@@ -274,11 +300,11 @@ async function correctEveryKind(page) {
       name: 'family.jsonl', mimeType: 'application/x-ndjson', buffer: backup,
     });
     await historyTab(freshPage);
-    await freshPage.getByText('Bottle · 90 mL').waitFor();
+    await freshPage.getByText('Bottle · 90 mL').first().waitFor();
     await freshPage.reload();
     await historyTab(freshPage);
-    await freshPage.getByText('Breast · Left 0:20 → Right 0:15 → Left 0:45').waitFor();
-    await freshPage.getByText('Sleep · 1 h 5 min').waitFor();
+    await freshPage.getByText('Breast · Left 0:20 → Right 0:15 → Left 0:45').first().waitFor();
+    await freshPage.getByText('Sleep · 1 h 5 min').first().waitFor();
     await freshContext.close();
     await page.getByLabel('Restore file into a new Family').setInputFiles({
       name: 'family.jsonl', mimeType: 'application/x-ndjson', buffer: backup,
@@ -287,8 +313,8 @@ async function correctEveryKind(page) {
       localStorage.getItem('babytrack-family') !== oldFamily, firstFamily);
     await page.reload();
     await historyTab(page);
-    await page.getByText('Bottle · 90 mL').waitFor();
-    await page.getByText('Breast · Left 0:20 → Right 0:15 → Left 0:45').waitFor();
+    await page.getByText('Bottle · 90 mL').first().waitFor();
+    await page.getByText('Breast · Left 0:20 → Right 0:15 → Left 0:45').first().waitFor();
     const restoredFamily = await page.evaluate(() => localStorage.getItem('babytrack-family'));
     await page.locator('.side-nav').getByRole('button', { name: 'Family' }).click();
     await page.getByLabel('Restore file into a new Family').setInputFiles({

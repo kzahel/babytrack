@@ -110,12 +110,12 @@ async function run() {
     await page.locator('.child-row strong').getByText('DynamicHolderChild').waitFor();
     await page.locator('.bottom-nav').getByRole('button', { name: 'Today' }).click();
     await new Promise((resolve) => { relay.once('exit', resolve); relay.kill(); });
-    await page.getByRole('button', { name: /^More/ }).click();
+    await page.getByRole('button', { name: /Add activity/ }).click();
     await page.getByRole('button', { name: 'Note', exact: true }).click();
     await page.getByLabel('What happened?').fill('WebOnlyPrivateMarker');
     await page.getByRole('button', { name: 'Save note' }).click();
     await page.getByText('WebOnlyPrivateMarker').waitFor();
-    await page.locator('.quick-grid').getByRole('button', { name: /^Sleep/ }).click();
+    await page.getByRole('button', { name: 'Start sleep timer' }).click();
     await page.getByText('Sleep · running').waitFor();
     await page.getByRole('button', { name: 'Stop sleep' }).click();
     await page.getByText('Sleep · 0 min').waitFor();
@@ -198,7 +198,7 @@ async function run() {
     const secondDevice = await deviceId(secondPage);
     await page.route('**/v1/**', (route) => route.abort());
     await page.locator('.bottom-nav').getByRole('button', { name: 'Today' }).click();
-    await page.getByRole('button', { name: /^More/ }).click();
+    await page.getByRole('button', { name: /Add activity/ }).click();
     await page.getByRole('button', { name: 'Note', exact: true }).click();
     await page.getByLabel('What happened?').fill('RemovedPendingMarker');
     await page.getByRole('button', { name: 'Save note' }).click();
@@ -207,7 +207,7 @@ async function run() {
     await staleTab.route('**/v1/**', (route) => route.abort());
     await staleTab.goto(origin);
     await staleTab.getByText('RemovedPendingMarker').waitFor();
-    await staleTab.getByRole('button', { name: /^More/ }).click();
+    await staleTab.getByRole('button', { name: /Add activity/ }).click();
     await staleTab.getByRole('button', { name: 'Note', exact: true }).click();
     await staleTab.getByLabel('What happened?').fill('StaleTabUnsentMarker');
     const firstDevice = await deviceId(page);

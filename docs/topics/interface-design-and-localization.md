@@ -1,8 +1,11 @@
 # Interface design and localization
 
-Status: M1 direction. The Android color foundation, activity identity, and
-screen templates below are implemented ([010](../tactical/010-android-design-pass.md)). This
-topic owns the visual language and localization rules for product screens.
+Status: the owner approved the Lantern visual direction on 2026-10-10
+(mockups in [docs/design/lantern](../design/lantern/)). The restyle lands on
+the web first and then Android ([014](../tactical/014-lantern-restyle.md)); the
+earlier Android foundation from [010](../tactical/010-android-design-pass.md)
+remains until that port. This topic owns the visual language and
+localization rules for product screens.
 The [Android navigation topic](android-navigation.md) owns routes and screen
 behavior; [005](../tactical/005-m1-android.md) owns delivery evidence. The
 [event model](event-model.md) owns stored units, time, and day semantics.
@@ -20,32 +23,46 @@ private details and are gitignored.
 
 ## Visual system
 
-The first Android theme token slice is in `BabytrackTheme.kt`; the widget
-uses matching surfaces. Use Material 3 components and these roles rather
-than literal colors in individual screens.
+The product name is **Lantern** (store listing: "Lantern Baby Tracker");
+`babytrack` remains the internal code name. The approved style is flat and
+quiet: no glows, gradients, drop shadows, or outlined cards. Surfaces are
+separated by tone, not borders. Teal is the brand role; warm amber is
+reserved for something happening now, such as a running sleep or nursing
+timer. Screens use these semantic tokens, never literal colors; the web
+defines them in `apps/web/src/styles/tokens.css` and Android will mirror
+them in its theme.
 
-| Role | Light | Dark | Use |
+| Token | Light | Dark | Use |
 | --- | --- | --- | --- |
-| Canvas | `#F8F7F3` | `#111C22` | Calm background behind cards and navigation |
-| Surface | `#FFFFFF` | `#192A30` | Cards, forms, detail panels |
-| Ink | `#18272C` | `#F6F7F4` | Primary text |
-| Primary | `#176B75` | `#A5E7E5` | Main Save, start/stop, selected navigation |
-| Primary container | `#D3F0EE` | `#24545B` | Quiet selected state and status panel |
-| Secondary | `#41636A` | `#AFCED0` | Selected chips and secondary actions |
-| Warm accent | `#9E4B30` | `#FFC0A8` | Feed-related illustration/accent |
+| `canvas` | `#F7F5F0` | `#121513` | Background behind surfaces and navigation |
+| `surface` | `#FFFFFF` | `#1B201E` | Cards, lists, forms |
+| `surface-muted` | `#ECEBE5` | `#24282A` | Neutral button and quiet panel |
+| `line` | `#E7E3DA` | `#2B322F` | Row dividers only |
+| `ink` | `#1D2A2E` | `#F1ECE2` | Primary text |
+| `muted` | `#66767A` | `#A3A99F` | Metadata and hints |
+| `brand` / `on-brand` | `#176B75` / `#FFFFFF` | `#8FD3CB` / `#0F2A2A` | Save, primary actions, selected navigation |
+| `brand-soft` | `#E9F3F1` | `#1F2B29` | Quiet selected state |
+| `now` / `now-soft` / `now-ink` | `#E8952F` / `#FFF2DF` / `#7A4410` | `#F2A64A` / `#2E2414` / `#FFD9A6` | Running timers and the current-activity card |
+| `danger` | `#A2352A` | `#FFB4A8` | Destructive actions and errors |
 
-The Material surface-container roles use neutral green-gray tones, so cards,
-chips, and bottom navigation do not fall back to the library's default
-purple and pink colors.
+Night mode uses warm near-black rather than blue-black. Spacing follows a
+4-point scale (4, 8, 12, 16, 20, 24, 32). Radii are 12 (controls), 16
+(fields), and 20 (cards and action buttons); pills are fully rounded.
+Type uses a 34/28/20/17/15/13/12 scale with tabular figures for clocks.
 
 ### Activity identity
 
-Each activity group has one category token pair: an accent and a tonal
-container, in light and dark. Feeds (bottle, breast, pumping, solids) use a
-warm apricot, sleep a dusk blue, diapers a sage green, health records
-(growth, temperature, medication) a muted violet, and notes a neutral sand.
-The accent colors an icon inside a small rounded container; a home tile may
-use the tonal container as its surface. Do not flood whole screens or Save
+Each activity group has an accent, a tonal container, and an on-container
+ink, in light and dark: feeds (bottle, breast, pumping, solids) apricot
+`#E0794F`/`#FBE3D6`/`#6E2F14` (dark `#F09A74`/`#3A2A22`/`#FFD6C2`), sleep
+dusk `#5A63B8`/`#E3E5F6`/`#2C3270` (dark `#9AA3F0`/`#272A45`/`#D6DAFF`),
+diapers sage `#3F9A76`/`#DCEFE4`/`#1C4C37` (dark `#7CC9A6`/`#1F3329`/
+`#C6ECD8`), health violet `#8A5CB0`/`#ECE3F4`/`#45285E` (dark `#C9A3E6`/
+`#2F2538`/`#EAD8F7`), and notes sand `#8A7A5A`/`#EFE9DC`/`#4A4130` (dark
+`#D8C79E`/`#2C2820`/`#EFE4C8`). A quick-action button uses the tonal
+container as its whole background, with a line icon and label in the
+on-container ink and no inset icon chip. Lists and the day ribbon use the
+accent for small markers. Do not flood whole screens or Save
 buttons with category color: Save, Start, and Stop keep the primary role so
 the main action looks the same everywhere. Category colors are not
 selection, success, or error colors.
@@ -83,9 +100,11 @@ that obscures whether a write or sync is complete.
 
 ### Screen composition
 
-- **Welcome and first child:** an accountless/privacy headline and a fixed
-  bottom **Add your child** action. Omit marketing subtitles, benefit cards,
-  and instructions that repeat the controls.
+- **Welcome and first child:** the Lantern mark and wordmark, a one-line
+  tagline, and three short benefit lines (no account, data stays on the
+  phone, optional encrypted sharing), as approved on 2026-10-10. A fixed
+  bottom **Add your child** action, an outlined **Join a Family**, and text
+  links for restore and privacy. No illustration or intro carousel.
   Join and Restore remain directly reachable. Content scrolls independently
   of the footer at smaller sizes and larger text. The first child form uses
   a name or nickname, a birth date labeled optional, and a
@@ -95,14 +114,17 @@ that obscures whether a write or sync is complete.
   at larger text sizes. Saving disables edits and Back until the local write
   resolves. The owning route and recovery
   behavior are in [Android navigation](android-navigation.md).
-- **Today:** the selected child's name and age first, with sharing/sync
-  status as a quiet chip that becomes an explicit warning only when work is
-  delayed or blocked. Three state tiles — Feed, Sleep, Diaper — show the
-  last event's elapsed time and detail; the sleep tile becomes a live
-  elapsed clock with Stop while a timer runs. A short row of secondary
-  actions (quick wet diaper, all activities) follows. An empty day shows one
-  short prompt instead of zero totals. Recent entries use the shared entry
-  row and link to History.
+- **Today:** a header with the child's initial, name and switcher, age and
+  date, and a quiet sync status. When a timer runs, one flat **now** card
+  (amber-soft) shows what is running and its clock; the whole card is a
+  button that opens the timer's detail, where it is stopped, switched, or
+  edited. Three **since last** surfaces show the last feed, awake or asleep
+  time, and last diaper as one large number and one detail line. Six large
+  quick actions follow in two columns: Bottle, Breast, Wet, Dirty, Sleep,
+  and More; Wet and Dirty log at once, Sleep starts a timer or opens the
+  running one, and the others open their forms. A **day ribbon** from
+  midnight to now marks sleep, feeds, and diapers above the core's day
+  totals, then the three newest entries. An empty day shows one prompt.
 - **Capture:** one template for every activity: the activity icon and name
   with the child in the top bar, a tappable time row ("Now" or the chosen
   time), the fields in a simple column, and one full-width Save in a bottom

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#d9dedb;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;gap:28px;padding:40px 28px 28px;align-items:flex-start}
+  .wrap{position:relative}.label{position:absolute;top:-26px;left:8px;font:600 13px Inter,system-ui;color:#33444a}
+  .phone{width:390px;height:844px;border-radius:44px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 18px 50px #0003;position:relative}
+  /* Palette: teal brand, warm lantern amber for anything happening now. */
+  .light{--bg:#f7f5f0;--card:#fff;--line:#e7e3da;--ink:#1d2a2e;--muted:#66767a;--brand:#176b75;--brand-ink:#fff;--soft:#e9f3f1;
+    --amber:#e8952f;--amber-soft:#fff2df;--amber-ink:#7a4410;--feed:#e0794f;--sleep:#5a63b8;--diaper:#3f9a76;background:var(--bg);color:var(--ink)}
+  .dark{--bg:#121513;--card:#1b201e;--line:#2b322f;--ink:#f1ece2;--muted:#a3a99f;--brand:#8fd3cb;--brand-ink:#0f2a2a;--soft:#1f2b29;
+    --amber:#f2a64a;--amber-soft:#2e2414;--amber-ink:#ffd9a6;--feed:#f09a74;--sleep:#9aa3f0;--diaper:#7cc9a6;background:var(--bg);color:var(--ink)}
+  .status{height:40px;flex:none}
+  .top{display:flex;align-items:center;gap:12px;padding:6px 20px 14px}
+  .avatar{width:42px;height:42px;border-radius:50%;background:var(--soft);display:grid;place-items:center;font-weight:800;color:var(--brand)}
+  .who b{font-size:20px;letter-spacing:-.02em}.who b::after{content:" ▾";font-size:13px;color:var(--muted)}
+  .who small{display:block;color:var(--muted);font-size:13px}
+  .sync{margin-left:auto;font-size:12px;font-weight:650;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .sync i{width:8px;height:8px;border-radius:50%;background:var(--diaper)}
+  .scroll{flex:1;overflow:hidden;padding:0 16px;display:flex;flex-direction:column;gap:12px}
+  /* Now: the one live thing, glowing like a lantern. */
+  .now{border:0;width:100%;text-align:left;font:inherit;color:inherit;border-radius:20px;padding:14px 18px;background:var(--amber-soft);display:flex;align-items:center;gap:14px}
+  .now .go{font-size:26px;color:var(--amber-ink);opacity:.7}
+  .now .what{flex:1}.now .what small{color:var(--amber-ink);font-weight:650;font-size:13px}
+  .now .what b{display:block;font-size:28px;font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--ink);margin-top:1px}
+  .stop{border:0;border-radius:14px;padding:12px 18px;font:700 15px Inter,system-ui;background:var(--amber);color:#2b1704}
+  /* Since last: three glanceable cards; tap the card for details, the chip to log. */
+  .since{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .card{background:var(--card);border:0;border-radius:18px;padding:12px 12px 11px;display:flex;flex-direction:column;gap:2px;min-width:0}
+  .card .k{font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px;color:var(--muted)}
+  .card .k i{width:9px;height:9px;border-radius:3px}
+  .card .t{font-size:24px;font-weight:800;letter-spacing:-.03em;margin-top:4px;white-space:nowrap}
+  .card .t small{font-size:13px;font-weight:650;color:var(--muted);margin-left:2px}
+  .card .d{font-size:12px;color:var(--muted);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card .d b{color:var(--ink);font-weight:650}
+  /* One-tap logging for the frequent things; everything else sits behind More. */
+  .quick{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .q{border:0;border-radius:20px;min-height:76px;padding:14px 16px;display:flex;align-items:center;gap:13px;
+    font:750 18px Inter,system-ui;letter-spacing:-.01em;text-align:left;color:inherit}
+  .q svg{width:30px;height:30px;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+  .q span{display:flex;flex-direction:column;gap:2px}
+  .q small{font-size:12.5px;font-weight:600;opacity:.72}
+  .light .q.f{background:#fbe3d6;color:#6e2f14}.light .q.d{background:#dcefe4;color:#1c4c37}
+  .light .q.s{background:#e3e5f6;color:#2c3270}.light .q.m{background:#ecebe5;color:#3a4447}
+  .dark .q.f{background:#3a2a22;color:#ffd6c2}.dark .q.d{background:#1f3329;color:#c6ecd8}
+  .dark .q.s{background:#272a45;color:#d6daff}.dark .q.m{background:#24282a;color:#d9dcd4}
+  /* The day at a glance: midnight to now, one ribbon. */
+  .day{background:var(--card);border:0;border-radius:18px;padding:14px 14px 12px}
+  .day h3{margin:0 0 10px;font-size:14px;display:flex;justify-content:space-between}.day h3 span{color:var(--muted);font-weight:600}
+  .ribbon{position:relative;height:44px;border-radius:10px;background:color-mix(in srgb,var(--line) 55%,transparent);overflow:hidden}
+  .ribbon .sl{position:absolute;top:6px;bottom:6px;border-radius:6px;background:color-mix(in srgb,var(--sleep) 55%,transparent)}
+  .ribbon .fd{position:absolute;top:4px;width:4px;height:14px;border-radius:2px;background:var(--feed)}
+  .ribbon .dp{position:absolute;bottom:5px;width:7px;height:7px;border-radius:50%;background:var(--diaper)}
+  .ribbon .nowline{position:absolute;top:0;bottom:0;width:2px;background:var(--amber)}
+  .ribbon .future{position:absolute;top:0;bottom:0;right:0;background:repeating-linear-gradient(135deg,transparent 0 6px,color-mix(in srgb,var(--line) 70%,transparent) 6px 8px)}
+  .ticks{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:5px}
+  .totals{display:grid;grid-template-columns:repeat(3,1fr);margin-top:12px;text-align:left;gap:8px}
+  .totals b{display:block;font-size:17px;letter-spacing:-.02em}.totals span{font-size:12px;color:var(--muted)}
+  .recent{background:var(--card);border:0;border-radius:18px;padding:4px 14px}
+  .row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .row:last-child{border-bottom:0}.row i{width:9px;height:9px;border-radius:3px;flex:none}.row time{margin-left:auto;color:var(--muted);font-size:13px}
+  .nav{flex:none;display:flex;justify-content:space-around;padding:10px 0 4px;border-top:1px solid var(--line);background:var(--bg)}
+  .nav span{font-size:12px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:3px}
+  .nav span::before{content:"";width:22px;height:4px;border-radius:2px;background:transparent}
+  .nav .on{color:var(--brand)}.nav .on::before{background:var(--brand)}
+  .home{width:134px;height:5px;border-radius:3px;background:var(--muted);opacity:.5;margin:6px auto 8px}
+</style></head><body>
+
+<template id="screen">
+  <div class="status"></div>
+  <div class="top">
+    <div class="avatar">R</div>
+    <div class="who"><b>Rowan</b><small>3 months · Thu, Oct 10</small></div>
+    <div class="sync"><i></i>Shared · synced</div>
+  </div>
+  <div class="scroll">
+    <slot-now></slot-now>
+    <div class="since">
+      <div class="card"><div class="k"><i style="background:var(--feed)"></i>Last feed</div><div class="t">2h 15m</div><div class="d">120 mL bottle</div></div>
+      <div class="card"><slot-sleep></slot-sleep></div>
+      <div class="card"><div class="k"><i style="background:var(--diaper)"></i>Last diaper</div><div class="t">1h 05m</div><div class="d">Wet · 4 today</div></div>
+    </div>
+    <div class="quick">
+      <button class="q f"><svg viewBox="0 0 24 24"><path d="M10 2.5h4M10.5 2.5v2.8L8.4 8.2v11.6a1.7 1.7 0 0 0 1.7 1.7h3.8a1.7 1.7 0 0 0 1.7-1.7V8.2l-2.1-2.9V2.5"/><path d="M8.4 12h3M8.4 15.5h3"/></svg><span>Bottle<small>Same 120 mL</small></span></button>
+      <button class="q f"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.4-7.5-10.1A4.2 4.2 0 0 1 12 8a4.2 4.2 0 0 1 7.5 2.4c0 5.7-7.5 10.1-7.5 10.1z"/></svg><span>Breast<small>Start Right</small></span></button>
+      <button class="q d"><svg viewBox="0 0 24 24"><path d="M12 3.2s5.8 6.3 5.8 10.6a5.8 5.8 0 0 1-11.6 0C6.2 9.5 12 3.2 12 3.2z"/><path d="M9.3 14.5a2.8 2.8 0 0 0 2.4 2.6"/></svg><span>Wet<small>Log now</small></span></button>
+      <button class="q d"><svg viewBox="0 0 24 24"><path d="M3.5 7.5h17v2.6a8.5 8.5 0 0 1-17 0z"/><path d="M8 7.5l1.5 4M16 7.5l-1.5 4"/><circle cx="12" cy="13.6" r="1.4" fill="currentColor" stroke="none"/></svg><span>Dirty<small>Log now</small></span></button>
+      <slot-sleepbtn></slot-sleepbtn>
+      <button class="q m"><svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg><span>More<small>Pump, solids…</small></span></button>
+    </div>
+    <div class="day">
+      <h3>Today <span>since midnight</span></h3>
+      <div class="ribbon">
+        <div class="sl" style="left:0;width:24%"></div><div class="sl" style="left:39%;width:8%"></div><div class="sl" style="left:56%;width:6%"></div>
+        <div class="fd" style="left:9%"></div><div class="fd" style="left:26%"></div><div class="fd" style="left:35%"></div><div class="fd" style="left:48%"></div><div class="fd" style="left:54%"></div>
+        <div class="dp" style="left:26.5%"></div><div class="dp" style="left:36%"></div><div class="dp" style="left:49%"></div><div class="dp" style="left:57%"></div>
+        <div class="nowline" style="left:64%"></div><div class="future" style="left:64.2%"></div>
+      </div>
+      <div class="ticks"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>12a</span></div>
+      <div class="totals">
+        <div><b>5 feeds</b><span>540 mL bottle</span></div>
+        <div><b>9h 20m</b><span>sleep</span></div>
+        <div><b>4 diapers</b><span>3 wet · 1 dirty</span></div>
+      </div>
+    </div>
+    <div class="recent">
+      <div class="row"><i style="background:var(--feed)"></i>Bottle · 120 mL · Formula<time>1:35 PM</time></div>
+      <div class="row"><i style="background:var(--diaper)"></i>Diaper · Wet<time>12:55 PM</time></div>
+      <div class="row"><i style="background:var(--sleep)"></i>Sleep · 1 h 20 min<time>11:30 AM</time></div>
+    </div>
+  </div>
+  <div class="nav"><span class="on">Today</span><span>History</span><span>Family</span></div>
+  <div class="home"></div>
+</template>
+
+<div class="wrap"><div class="label">Home · awake (light)</div><div class="phone light" data-state="awake"></div></div>
+<div class="wrap"><div class="label">Home · sleeping (night)</div><div class="phone dark" data-state="sleeping"></div></div>
+<div class="wrap"><div class="label">Home · nursing (light)</div><div class="phone light" data-state="nursing"></div></div>
+
+<script>
+  const parts = {
+    awake: {
+      now: '',
+      sleep: '<div class="k"><i style="background:var(--sleep)"></i>Awake</div><div class="t">1h 10m</div><div class="d">Napped 1 h 20</div>',
+      sleepbtn: '<button class="q s"><svg viewBox="0 0 24 24"><path d="M19.5 14.6A7.8 7.8 0 1 1 9.4 4.5a6.3 6.3 0 0 0 10.1 10.1z"/></svg><span>Sleep<small>Start timer</small></span></button>',
+    },
+    sleeping: {
+      now: '<button class="now"><span class="what"><small>Sleeping since 1:40 PM</small><b>20:14</b></span><span class="go">›</span></button>',
+      sleep: '<div class="k"><i style="background:var(--sleep)"></i>Asleep</div><div class="t">20m</div><div class="d">Since 1:40 PM</div>',
+      sleepbtn: '<button class="q s"><svg viewBox="0 0 24 24"><path d="M19.5 14.6A7.8 7.8 0 1 1 9.4 4.5a6.3 6.3 0 0 0 10.1 10.1z"/></svg><span>Sleep<small>Open timer</small></span></button>',
+    },
+    nursing: {
+      now: '<button class="now"><span class="what"><small>Breastfeeding · Right side</small><b>6:42</b></span><span class="go">›</span></button>',
+      sleep: '<div class="k"><i style="background:var(--sleep)"></i>Awake</div><div class="t">1h 10m</div><div class="d">Napped 1 h 20</div>',
+      sleepbtn: '<button class="q s"><svg viewBox="0 0 24 24"><path d="M19.5 14.6A7.8 7.8 0 1 1 9.4 4.5a6.3 6.3 0 0 0 10.1 10.1z"/></svg><span>Sleep<small>Start timer</small></span></button>',
+    },
+  };
+  const template = document.getElementById('screen').innerHTML;
+  for (const phone of document.querySelectorAll('[data-state]')) {
+    const p = parts[phone.dataset.state];
+    phone.innerHTML = template.replace('<slot-now></slot-now>', p.now).replace('<slot-sleep></slot-sleep>', p.sleep)
+      .replace('<slot-sleepbtn></slot-sleepbtn>', p.sleepbtn);
+  }
+</script>
+</body></html>

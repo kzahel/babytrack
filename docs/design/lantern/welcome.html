@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  *{box-sizing:border-box}body{margin:0;background:#d9dedb;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;gap:28px;padding:28px;align-items:flex-start}
+  .phone{width:390px;height:844px;border-radius:44px;overflow:hidden;position:relative;display:flex;flex-direction:column;box-shadow:0 18px 50px #0003}
+  .label{position:absolute;top:-24px;left:8px;font:600 13px Inter,system-ui;color:#33444a}
+  .wrap{position:relative}
+  /* Light */
+  .light{background:#f7f5f0;color:#1d2a2e}
+  .dark{background:#121513;color:#f1ece2}
+  .status{height:44px}
+  .hero{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 32px;text-align:center}
+  .mark{width:88px;height:88px;border-radius:26px;background:#176b75;display:grid;place-items:center}
+  .dark .mark{background:#1d7f8a}
+  .mark svg{width:58px;height:58px}
+  h1{margin:22px 0 6px;font-size:34px;letter-spacing:-.03em;font-weight:800}
+  .tag{margin:0;font-size:17px;line-height:1.4;color:#4c6368;max-width:16em}
+  .dark .tag{color:#b5c9c8}
+  .points{list-style:none;margin:38px 0 0;padding:0;display:flex;flex-direction:column;gap:16px;text-align:left;width:100%;max-width:300px}
+  .points li{display:flex;gap:14px;align-items:flex-start;font-size:15px;line-height:1.35}
+  .points b{display:block;font-weight:700}
+  .points span{color:#5b7276}.dark .points span{color:#a9bfbe}
+  .ico{flex:none;width:36px;height:36px;display:grid;place-items:center}
+  
+  .ico svg{width:20px;height:20px;stroke:#176b75;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .dark .ico svg{stroke:#a5e7e5}
+  .actions{padding:0 22px 26px;display:flex;flex-direction:column;gap:10px}
+  .btn{height:56px;border-radius:28px;font:700 17px Inter,system-ui;border:0;width:100%}
+  .primary{background:#176b75;color:#fff}.dark .primary{background:#a5e7e5;color:#0f2e33}
+  .secondary{background:transparent;border:1.5px solid #9fc4c1;color:#165a62}.dark .secondary{border-color:#3f6a6e;color:#d7efec}
+  .links{display:flex;justify-content:space-between;padding:6px 8px 0;font-size:14px;font-weight:650;color:#176b75}
+  .dark .links{color:#a5e7e5}
+  .home{width:134px;height:5px;border-radius:3px;background:#0005;margin:6px auto 8px}.dark .home{background:#fff6}
+  /* Child step */
+  .step{padding:8px 24px 0;flex:1;display:flex;flex-direction:column}
+  .back{font-size:24px;color:#176b75;height:44px;display:flex;align-items:center}
+  .progress{display:flex;gap:6px;margin:6px 0 26px}.progress i{height:4px;flex:1;border-radius:2px;background:#cfe1de}.progress i.on{background:#176b75}
+  .step h2{font-size:30px;letter-spacing:-.03em;margin:0 0 8px;line-height:1.15}
+  .step p{margin:0 0 26px;color:#5b7276;font-size:16px;line-height:1.45}
+  .field{border:1.5px solid #176b75;border-radius:16px;padding:14px 16px;font-size:20px;background:#fff}
+  .field small{display:block;font-size:12px;font-weight:700;color:#176b75;margin-bottom:2px}
+  .opt{margin-top:18px;border:1.5px dashed #b9d0cd;border-radius:16px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;color:#33484c;font-size:16px}
+  .opt em{font-style:normal;color:#176b75;font-weight:700}
+  .reassure{margin-top:auto;margin-bottom:14px;display:flex;gap:10px;align-items:center;font-size:13.5px;color:#5b7276}
+  .reassure svg{width:18px;height:18px;stroke:#176b75;fill:none;stroke-width:2}
+</style></head><body>
+
+<svg width="0" height="0" style="position:absolute"><defs>
+  <symbol id="ring" viewBox="0 0 108 108"><circle cx="54" cy="54" r="20" fill="none" stroke="#a5e7e5" stroke-width="7"/><circle cx="54" cy="54" r="6" fill="#a5e7e5"/></symbol>
+  <symbol id="user-off" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/><path d="M3 3l18 18"/></symbol>
+  <symbol id="phone" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4"/></symbol>
+  <symbol id="lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+</defs></svg>
+
+<template id="welcome">
+  <div class="status"></div>
+  <div class="hero">
+    <div class="mark"><svg viewBox="27 27 54 54"><circle cx="54" cy="54" r="20" fill="none" stroke="#a5e7e5" stroke-width="7"/><circle cx="54" cy="54" r="6" fill="#a5e7e5"/></svg></div>
+    <h1>Lantern</h1>
+    <p class="tag">Feeds, sleep, and diapers — calm, quick, and private.</p>
+    <ul class="points">
+      <li><div class="ico"><svg><use href="#user-off"/></svg></div><div><b>No account needed</b><span>Start logging in under a minute.</span></div></li>
+      <li><div class="ico"><svg><use href="#phone"/></svg></div><div><b>Your data stays on your phone</b><span>Works offline, always.</span></div></li>
+      <li><div class="ico"><svg><use href="#lock"/></svg></div><div><b>Share with a caregiver</b><span>End-to-end encrypted, when you choose.</span></div></li>
+    </ul>
+  </div>
+  <div class="actions">
+    <button class="btn primary">Add your child</button>
+    <button class="btn secondary">Join a Family</button>
+    <div class="links"><span>Restore a backup</span><span>Privacy</span></div>
+  </div>
+  <div class="home"></div>
+</template>
+
+<div class="wrap"><div class="label">Welcome · light</div><div class="phone light" data-t="welcome"></div></div>
+<div class="wrap"><div class="label">Welcome · dark</div><div class="phone dark" data-t="welcome"></div></div>
+<div class="wrap"><div class="label">Step 2 · child</div><div class="phone light">
+  <div class="status"></div>
+  <div class="step">
+    <div class="back">←</div>
+    <div class="progress"><i class="on"></i><i class="on"></i></div>
+    <h2>What's your baby's name?</h2>
+    <p>A nickname is fine. You can change it anytime.</p>
+    <div class="field"><small>Name or nickname</small>Robin</div>
+    <div class="opt"><span>Birth date</span><em>Add (optional)</em></div>
+    <div class="reassure"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Saved only on this phone until you choose to share.</div>
+  </div>
+  <div class="actions"><button class="btn primary">Start tracking</button></div>
+  <div class="home"></div>
+</div></div>
+<script>document.querySelectorAll('[data-t]').forEach((el) => el.append(document.getElementById(el.dataset.t).content.cloneNode(true)));</script>
+</body></html>

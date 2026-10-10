@@ -70,7 +70,7 @@ async function run() {
     await page.getByText(androidNote).waitFor();
     process.stdout.write('Android to browser note: OK\n');
 
-    await page.getByRole('button', { name: /Add activity/ }).click();
+    await page.locator('.actions-grid').getByRole('button', { name: /^More/ }).click();
     await page.getByRole('button', { name: 'Note', exact: true }).click();
     await page.getByLabel('What happened?').fill(browserNote);
     await page.getByRole('button', { name: 'Save note' }).click();

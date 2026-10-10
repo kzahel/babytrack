@@ -210,3 +210,52 @@ export function localInput(ms) {
   return date.toISOString().slice(0, 16);
 }
 export const fromLocalInput = (value) => new Date(value).getTime();
+
+/** "2h 15m", "45m", "3d": the large number on Today's since-last surfaces. */
+export function shortElapsed(ms) {
+  const minutes = Math.max(0, Math.floor(ms / 60_000));
+  if (minutes < 60) return c.shortMinutes(minutes);
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return c.shortHoursMinutes(hours, String(minutes % 60).padStart(2, '0'));
+  return c.shortDays(Math.floor(hours / 24));
+}
+
+/** One line under the last feed: what it was. */
+export function feedDetail(row) {
+  if (row.kind === 'feed.bottle') {
+    return c.bottleDetail(measure(row.bottleEntered, row.bottleUnit, bottleUnits, row.bottleMl, 'mL'));
+  }
+  if (row.kind === 'feed.breast') {
+    const side = row.breastSegments?.at(-1)?.side ?? row.breastSide;
+    return side ? c.breastSideDetail(side === 1 ? c.left : c.right) : c.breast;
+  }
+  return kindLabels[row.kind] || c.feeds;
+}
+
+/** The side to offer next: the one the last breast feed did not end on. */
+export function nextBreastSide(rows) {
+  const last = latest(rows, (kind) => kind === 'feed.breast');
+  const side = last?.breastSegments?.at(-1)?.side ?? last?.breastSide;
+  return side === 1 ? 2 : side === 2 ? 1 : null;
+}
+
+/**
+ * Positions on the day ribbon as percentages of the local day: sleep spans
+ * clipped to the day and the present, feed and diaper instants, and now.
+ */
+export function ribbon(rows, window, now = Date.now()) {
+  const span = window.endMs - window.startMs;
+  const at = (ms) => Math.min(100, Math.max(0, ((ms - window.startMs) / span) * 100));
+  const through = Math.min(now, window.endMs);
+  const inDay = (ms) => ms >= window.startMs && ms < window.endMs && ms <= through;
+  return {
+    sleeps: rows.filter((row) => row.kind === 'sleep').map((row) => {
+      const from = Math.max(row.startMs, window.startMs);
+      const to = Math.min(row.endMs ?? through, through);
+      return to > from ? { left: at(from), width: at(to) - at(from) } : null;
+    }).filter(Boolean),
+    feeds: rows.filter((row) => (row.kind.startsWith('feed.') || row.kind === 'pump') && inDay(row.startMs)).map((row) => at(row.startMs)),
+    diapers: rows.filter((row) => row.kind === 'diaper' && inDay(row.startMs)).map((row) => at(row.startMs)),
+    now: at(through),
+  };
+}

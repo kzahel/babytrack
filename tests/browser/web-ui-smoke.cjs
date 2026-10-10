@@ -18,7 +18,7 @@ const today = (page) => page.getByRole('navigation', { name: 'Primary navigation
 async function captureEveryKind(page) {
   const open = async (kind) => {
     await today(page);
-    await page.getByRole('button', { name: /Add activity/ }).click();
+    await page.locator('.actions-grid').getByRole('button', { name: /^More/ }).click();
     await page.getByRole('button', { name: new RegExp(`^${kind}$`) }).click();
   };
   const saved = async (button, text) => {
@@ -205,11 +205,9 @@ async function checkDayView(page) {
     await page.getByLabel('Birth date (optional)').fill('2026-06-01');
     await page.getByRole('button', { name: 'Start tracking' }).click();
     await page.getByRole('heading', { name: 'Sam' }).waitFor();
-    await page.getByRole('button', { name: 'Log diaper' }).click();
-    await page.getByRole('button', { name: 'Wet' }).click();
-    await page.getByRole('button', { name: 'Save diaper' }).click();
+    await page.locator('.actions-grid').getByRole('button', { name: /^Wet/ }).click();
     await page.getByText('Diaper · Wet').first().waitFor();
-    await page.getByRole('button', { name: 'Bottle', exact: true }).click();
+    await page.locator('.actions-grid').getByRole('button', { name: /^Bottle/ }).click();
     assert.equal(await page.getByLabel('Bottle amount (mL)').getAttribute('inputmode'), 'numeric');
     const save = await page.getByRole('button', { name: 'Save bottle' }).boundingBox();
     assert.ok(save.y + save.height <= 844 - 80, `Save sits under a mobile browser toolbar at ${save.y}`);
@@ -219,11 +217,11 @@ async function checkDayView(page) {
     const timerStart = new Date(Date.now() + 1000);
     await page.clock.install({ time: timerStart });
     await page.clock.pauseAt(new Date(timerStart.getTime() + 1000));
-    await page.getByRole('button', { name: 'Breast feed', exact: true }).click();
+    await page.locator('.actions-grid').getByRole('button', { name: /^Breast/ }).click();
     await page.getByRole('button', { name: /Left breast/ }).click();
     await page.clock.fastForward(30_000);
     await page.reload();
-    await page.getByRole('button', { name: 'Open timer' }).click();
+    await page.locator('.now-card').click();
     await page.getByRole('button', { name: /Right breast/ }).click();
     await page.clock.fastForward(15_000);
     await page.getByRole('button', { name: /Right breast/ }).click();
@@ -234,7 +232,7 @@ async function checkDayView(page) {
     await page.getByRole('button', { name: /Left breast/ }).click();
     await page.getByRole('button', { name: 'Save feeding' }).click();
     await page.getByText('Breast · Left 0:30 → Right 0:15 → Left 0:45').first().waitFor();
-    assert.equal(await page.getByRole('button', { name: 'Open timer' }).count(), 0, 'saved feeding retained its draft');
+    assert.equal(await page.locator('.now-card').count(), 0, 'saved feeding retained its draft');
     await historyTab(page);
     await page.locator('.entry-main').filter({ hasText: 'Breast · Left 0:30' }).click();
     await page.getByRole('button', { name: 'Edit breast feed' }).click();
@@ -243,19 +241,20 @@ async function checkDayView(page) {
     await page.getByText('Breast · Left 0:20 → Right 0:15 → Left 0:45').first().waitFor();
     await page.getByRole('navigation', { name: 'Primary navigation' }).last()
       .getByRole('button', { name: 'Today' }).click();
-    await page.getByRole('button', { name: 'Start sleep timer' }).click();
+    await page.locator('.actions-grid').getByRole('button', { name: /^Sleep/ }).click();
     await page.getByText('Sleep · running').first().waitFor();
-    assert.equal(await page.getByRole('button', { name: 'Start sleep timer' }).count(), 0, 'running sleep offered a second start');
+    assert.match(await page.locator('.actions-grid').getByRole('button', { name: /^Sleep/ }).innerText(), /Open timer/,
+      'running sleep offered a second start');
     await page.clock.fastForward(65 * 60_000);
-    assert.equal(await page.locator('.tile.sleep .tile-clock').textContent(), '1:05:00');
+    assert.equal(await page.locator('.now-card strong').textContent(), '1:05:00');
     await page.reload();
-    await page.getByRole('heading', { name: 'Sleeping' }).waitFor();
+    await page.locator('.now-card').filter({ hasText: 'Sleeping since' }).click();
     await page.getByRole('button', { name: 'Stop sleep' }).click();
     await page.getByText('Sleep · 1 h 5 min').first().waitFor();
-    assert.equal(await page.locator('.tile.sleep .tile-clock').count(), 0, 'stopped sleep still shown as running');
-    await page.getByText('Slept 1 h 5 min').first().waitFor();
-    assert.match(await page.locator('.summary').innerText(),
-      /2 feeds · bottle 90 mL\n+1 h 5 min of sleep\n+1 diaper · wet 1 · dirty 0/);
+    assert.equal(await page.locator('.now-card').count(), 0, 'stopped sleep still shown as running');
+    await page.getByText('Napped 1 h 5 min').first().waitFor();
+    assert.match(await page.locator('.day-totals-row').innerText(),
+      /2 feeds\s+90 mL bottle\s+1 h 5 min\s+sleep\s+1 diaper\s+1 wet · 0 dirty/);
     await captureEveryKind(page);
     await correctEveryKind(page);
     await checkDayView(page);

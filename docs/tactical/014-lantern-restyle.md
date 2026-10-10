@@ -29,7 +29,7 @@ place), store listing changes, renaming internal identifiers (`babytrack`,
 3. [x] Web shell and welcome: header with child switcher, age, date, and
    sync status; bottom and side navigation; the approved welcome and first
    child step.
-4. [ ] Web Today: the now card opening the running timer's detail, since-last
+4. [x] Web Today: the now card opening the running timer's detail, since-last
    surfaces, six icon quick actions, the day ribbon with core totals, and
    recent entries. Ribbon layout is a tested presentation function.
 5. [ ] Web remaining screens: capture forms, timers, History, entry editors,

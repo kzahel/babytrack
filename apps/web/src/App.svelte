@@ -4,7 +4,7 @@
   import * as api from './core.js';
   import { createTrackerController } from './tracker-controller.js';
   import { readDraft } from './breast-timer.js';
-  import { chooser, dayWindow, entrySummary, kindLabels, iconFor, category } from './presentation.js';
+  import { chooser, clock, clockTime, dayWindow, entrySummary, kindLabels, iconFor, category, sleepPlaces } from './presentation.js';
   import Icon from './components/Icon.svelte';
   import Capture from './components/Capture.svelte';
   import BreastFeed from './components/BreastFeed.svelte';
@@ -25,6 +25,8 @@
   let captureKind = '';
   let profileChild = null;
   let breastDraft = null;
+  let pumpStartMs = null;
+  let sleepTargetId = '';
   let nowMs = Date.now();
   let editing = null;
   let undo = null;
@@ -57,6 +59,11 @@
     syncStage, removedInfo, privateCopy, backupGap, backupCursor, devices, deviceId } = $tracker);
   // Reread the browser-local nursing draft whenever a route closes.
   $: breastDraft = screen === '' && $tracker.family && $tracker.child ? readDraft($tracker.family, $tracker.child) : breastDraft;
+  $: pumpStartMs = screen === '' && $tracker.family && $tracker.child
+    ? Number(localStorage.getItem(`babytrack-pump-draft-v1:${$tracker.family}:${$tracker.child}`)) || null : pumpStartMs;
+  // The running sleep shown in detail; it closes if the sleep ends elsewhere.
+  $: sleepTarget = entries.find((row) => row.id === sleepTargetId && row.kind === 'sleep' && row.endMs == null) || null;
+  $: if (screen === 'sleep-detail' && !sleepTarget && !loading) screen = '';
 
   onMount(() => {
     const clock = setInterval(() => nowMs = Date.now(), 1000);
@@ -152,10 +159,11 @@
       const saved = await saveActions([running ?
         { type: 'stopSleep', child, target: running.id, endMs: now, endOffset: api.offsetAt(now) } :
         { type: 'sleep', child, startMs: now, offset: api.offsetAt(now), place }]);
-      if (saved && screen === 'capture') { screen = ''; tab = 'today'; }
+      if (saved && (screen === 'capture' || screen === 'sleep-detail')) { screen = ''; tab = 'today'; }
     } finally { sleepBusy = false; }
   }
-  const wetNow = () => saveActions([{ type: 'diaper', child, kind: 1, startMs: Date.now(), offset: api.offsetAt(Date.now()) }]);
+  const logDiaper = (kind) => saveActions([{ type: 'diaper', child, kind, startMs: Date.now(), offset: api.offsetAt(Date.now()) }]);
+  function openSleep(row) { sleepTargetId = row.id; screen = 'sleep-detail'; error = ''; }
   function begin(kind) {
     error = '';
     if (!kind) { screen = 'chooser'; return; }
@@ -166,12 +174,14 @@
   function editProfile(row) { profileChild = row; screen = 'child'; error = ''; }
   function editEntry(row, action) { editing = { row, action }; screen = 'edit'; error = ''; }
   async function removeEntry(row) {
-    if (!window.confirm(c.deleteConfirm)) return;
+    if (!window.confirm(c.deleteConfirm)) return false;
     const target = tracker.target();
     if (await saveActions([{ type: 'delete', child: row.childId, target: row.id }])) {
       undo = { ...target, child: row.childId, id: row.id };
       setTimeout(() => { if (undo?.id === row.id) undo = null; }, 10_000);
+      return true;
     }
+    return false;
   }
   async function undoDelete() {
     const saved = undo;
@@ -264,6 +274,19 @@
           <h1>{c.breastFeed}</h1>
           {#key `${family}:${child}`}<BreastFeed {family} {child} {entries} {nowMs} save={saveEntry} done={finishEntry} />{/key}
         </section>
+      {:else if screen === 'sleep-detail' && sleepTarget}
+        <section class="form-view timer-detail">
+          <button class="back" onclick={() => screen = ''}>← {c.back}</button>
+          <div class="eyebrow">{c.forChild(selectedChild?.name)}</div>
+          <h1>{c.sleeping}</h1>
+          <p class="detail-clock">{clock(nowMs - sleepTarget.startMs)}</p>
+          <p class="muted">{c.sinceTime(clockTime(sleepTarget.startMs))}{#if sleepPlaces[sleepTarget.sleepPlace]} · {sleepPlaces[sleepTarget.sleepPlace]}{/if}</p>
+          <div class="detail-actions">
+            <button class="primary" disabled={sleepBusy} onclick={() => toggleSleep(sleepTarget)}>{c.stopSleep}</button>
+            <button class="secondary" onclick={() => editEntry(sleepTarget, 'sleep-place')}>{c.editSleepPlace}</button>
+            <button class="text-action danger" onclick={async () => { if (await removeEntry(sleepTarget)) screen = ''; }}>{c.deleteEntry}</button>
+          </div>
+        </section>
       {:else if screen === 'edit' && editing}
         <section class="form-view">
           <button class="back" onclick={() => { screen = ''; editing = null; }}>← {c.cancel}</button>
@@ -288,9 +311,8 @@
           </div>{/if}
           {#if selectedChild}
             {#if !removedInfo}
-              <Today {entries} summary={todaySummary} {breastDraft} {nowMs} busy={sleepBusy} open={begin}
-                startSleep={() => toggleSleep(null)} stopSleep={(entry) => toggleSleep(entry)} {wetNow}
-                viewHistory={() => tab = 'history'} />
+              <Today {entries} summary={todaySummary} {breastDraft} {pumpStartMs} {nowMs} busy={sleepBusy} open={begin}
+                startSleep={() => toggleSleep(null)} {openSleep} {logDiaper} viewHistory={() => tab = 'history'} />
             {:else}
               {#each entries.slice(0, 3) as row (row.id)}<p>{entrySummary(row)}</p>{/each}
             {/if}

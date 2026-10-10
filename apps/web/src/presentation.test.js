@@ -69,3 +69,26 @@ test('manual breast minutes end at the chosen time', () => {
   assert.equal(segments[0].end_utc_ms, segments[1].start_utc_ms);
   assert.equal(segments[1].end_utc_ms, end);
 });
+
+test('Today since-last values and the day ribbon', async () => {
+  const { shortElapsed, feedDetail, nextBreastSide, ribbon } = await import('./presentation.js');
+  assert.equal(shortElapsed(45 * 60_000), '45m');
+  assert.equal(shortElapsed(135 * 60_000), '2h 15m');
+  assert.equal(shortElapsed(65 * 60_000), '1h 05m');
+  assert.equal(shortElapsed(72 * 3_600_000), '3d');
+  assert.equal(feedDetail({ kind: 'feed.bottle', bottleEntered: '120', bottleUnit: 1 }), '120 mL bottle');
+  assert.equal(feedDetail({ kind: 'feed.breast', breastSegments: [{ side: 1 }, { side: 2 }] }), 'Breast · Right side');
+  assert.equal(nextBreastSide([{ kind: 'feed.breast', startMs: 1, breastSegments: [{ side: 1 }] }]), 2);
+  assert.equal(nextBreastSide([]), null);
+  const window = { startMs: 0, endMs: 100_000, throughMs: 50_000 };
+  const layout = ribbon([
+    { kind: 'sleep', startMs: -10_000, endMs: 20_000 },
+    { kind: 'sleep', startMs: 40_000 },
+    { kind: 'feed.bottle', startMs: 30_000 },
+    { kind: 'diaper', startMs: 60_000 },
+  ], window, 50_000);
+  assert.deepEqual(layout.sleeps, [{ left: 0, width: 20 }, { left: 40, width: 10 }]);
+  assert.deepEqual(layout.feeds, [30]);
+  assert.deepEqual(layout.diapers, [], 'a future diaper is not drawn');
+  assert.equal(layout.now, 50);
+});

@@ -26,11 +26,12 @@ export async function sharedFamilies(wasm) {
   finally { store.close(); }
 }
 
-export async function sharedSnapshot(wasm, family) {
+// Read the verified shared state, including pending browser edits.
+export async function readShared(wasm, family, read) {
   const store = await PublicStore.open(wasm, publicDatabase);
   try {
     const ready = await store.loadInitialReadySaved(family);
-    try { return JSON.parse(ready.snapshot_json()); }
+    try { return read(ready); }
     finally { ready.free(); }
   } finally { store.close(); }
 }
@@ -76,31 +77,8 @@ export async function writeShared(wasm, family, action, values, localAction) {
       const clock = credential.clock || { wallMs: -1, counter: 0 };
       const prefix = [credential.deviceId, BigInt(clock.wallMs), clock.counter];
       const now = BigInt(Date.now());
-      const offset = -new Date().getTimezoneOffset();
-      if (action === 'child') {
-        operation = ready.create_child_operation(...prefix, values.name,
-          values.birthDay, values.sex, now);
-      } else if (action === 'diaper') {
-        operation = ready.log_diaper_operation(...prefix, bytes(values.child),
-          Number(values.kind), now, offset);
-      } else if (action === 'bottle') {
-        operation = ready.log_bottle_operation(...prefix, bytes(values.child),
-          Number(values.ml), Number(values.content), now, offset);
-      } else if (action === 'note') {
-        operation = ready.log_note_operation(...prefix, bytes(values.child),
-          values.note, now, offset);
-      } else if (action === 'breast') {
-        operation = ready.log_breast_operation(...prefix, bytes(values.child),
-          JSON.stringify(values.segments), now);
-      } else if (action === 'breast-edit') {
-        operation = ready.edit_breast_operation(...prefix, bytes(values.child),
-          bytes(values.activity), JSON.stringify(values.segments), now);
-      } else if (action === 'sleep-start') {
-        operation = ready.start_sleep_operation(...prefix, bytes(values.child), now, offset);
-      } else if (action === 'sleep-stop') {
-        operation = ready.stop_sleep_operation(...prefix, bytes(values.child),
-          bytes(values.activity), now, offset);
-      } else throw new Error('Unknown shared action');
+      if (action !== 'action') throw new Error('Unknown shared action');
+      operation = ready.action_operation(...prefix, values.json, now);
       try { await store.queueInitial(family, operation, clock); }
       catch (error) {
         const removal = await store.removedStatus(family);

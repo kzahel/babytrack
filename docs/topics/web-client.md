@@ -41,6 +41,12 @@ reloads in localStorage. Saving writes one atomic segment list through the
 Rust core and clears the draft only after a durable append. History can edit
 sides, active durations, and pauses on that same event ID. IndexedDB replays
 saved operations through the Rust wasm projection after reload.
+Every browser create and correction is one JSON intent, such as
+`{type: 'editDiaper', child, target, kind}`, passed to the core's
+`web_actions::action`. Rust validates it, binds a correction to the current
+target record, and builds the same bytes the native adapter would; the web
+never assembles record fields itself. The snapshot carries every read-model
+field, and day totals and the analysis CSV come from the core.
 Sleep uses the same shared Rust start and stop operations as Android: Today
 offers a sleep start when none is running for the selected child, shows a
 running sleep, including one started on another device, with its start time

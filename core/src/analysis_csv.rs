@@ -4,8 +4,8 @@
 use std::collections::HashMap;
 
 use crate::{
-    local_api::{activities_from_records, children_from_records},
     projection::Record,
+    read_model::{activities_from_records, children_from_records},
 };
 
 const HEADER: &str = "family_id,child_id,child_name,child_birth_day,child_sex,activity_id,type,start_utc_ms,start_offset_minutes,end_utc_ms,note,diaper_kind,bottle_ml,bottle_content,breast_side,breast_segments,solids_foods,solids_amount,pump_left_ml,pump_right_ml,pump_total_ml,growth_weight_g,growth_length_mm,growth_head_mm,temperature_c,medication_name,medication_dose_amount,medication_dose_unit,sleep_place\r\n";

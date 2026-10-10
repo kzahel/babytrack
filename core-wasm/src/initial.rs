@@ -400,6 +400,80 @@ impl WasmInitialFamily {
             .map(|record| record.record_type.clone()))
     }
 
+    /// Build any browser create or correction for the shared Family.
+    pub fn action_operation(
+        &self,
+        device_id: &[u8],
+        last_wall_ms: i64,
+        last_counter: u32,
+        action_json: &str,
+        now_ms: i64,
+    ) -> Result<Vec<u8>, JsError> {
+        let action = web_actions::action::Action::parse(action_json).map_err(debug_error)?;
+        let ready = self
+            .ready
+            .as_ref()
+            .ok_or_else(|| JsError::new("Family not ready"))?;
+        let projection = ready.overlay.as_ref().unwrap_or(&ready.projection);
+        let target = match action.target() {
+            Some(id) => Some(
+                projection
+                    .record(&web_actions::action::parse_id(id).map_err(debug_error)?)
+                    .ok_or_else(|| JsError::new("correction target unavailable"))?,
+            ),
+            None => None,
+        };
+        let record = target.map_or(random_v7(now_ms)?, |record| record.id);
+        web_actions::action::build(
+            self.shared_identity(device_id, record, last_wall_ms, last_counter, now_ms)?,
+            action,
+            target,
+        )
+        .map_err(debug_error)
+    }
+
+    pub fn day_summary_json(
+        &self,
+        child_id: &[u8],
+        start_utc_ms: i64,
+        end_utc_ms: i64,
+        through_utc_ms: i64,
+    ) -> Result<String, JsError> {
+        let ready = self
+            .ready
+            .as_ref()
+            .ok_or_else(|| JsError::new("manifest objects not yet verified"))?;
+        web_actions::day_summary(
+            ready
+                .overlay
+                .as_ref()
+                .unwrap_or(&ready.projection)
+                .records(),
+            fixed(child_id, "child ID")?,
+            day_summary::DayWindow {
+                start_utc_ms,
+                end_utc_ms,
+                through_utc_ms,
+            },
+        )
+        .map_err(debug_error)
+    }
+
+    pub fn analysis_csv(&self) -> Result<Vec<u8>, JsError> {
+        let ready = self
+            .ready
+            .as_ref()
+            .ok_or_else(|| JsError::new("manifest objects not yet verified"))?;
+        Ok(analysis_csv::export(
+            ready.chain.family_id(),
+            ready
+                .overlay
+                .as_ref()
+                .unwrap_or(&ready.projection)
+                .records(),
+        ))
+    }
+
     pub fn snapshot_json(&self) -> Result<String, JsError> {
         let ready = self
             .ready

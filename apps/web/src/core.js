@@ -1,7 +1,7 @@
 import init, * as wasm from './generated/babytrack_core_wasm.js';
 import wasmUrl from './generated/babytrack_core_wasm_bg.wasm?url';
 import { LocalStore } from '../../../core-wasm/web/local-store.js';
-import { sharedFamilies, sharedSnapshot, syncShared, pendingJoins, rememberJoin,
+import { sharedFamilies, readShared, syncShared, pendingJoins, rememberJoin,
   advanceJoin, approveJoin, dismissJoin, sharedStatus, writeShared, copyRemoved,
   exportSharedReadable } from './shared-client.js';
 
@@ -37,12 +37,26 @@ export async function createFamily() {
 
 export async function snapshot(family) {
   await open();
-  if (await isShared(family)) {
-    return sharedSnapshot(wasm, family);
-  }
-  const projection = await (await open()).load(family);
-  try { return JSON.parse(projection.snapshot_json()); }
+  return JSON.parse(await read(family, (projection) => projection.snapshot_json()));
+}
+
+// One read over the local or verified shared projection.
+async function read(family, reader) {
+  await open();
+  if (await isShared(family)) return readShared(wasm, family, reader);
+  const projection = await store.load(family);
+  try { return reader(projection); }
   finally { projection.free(); }
+}
+
+// Totals from the shared core for one local day window, in UTC milliseconds.
+export async function daySummary(family, child, window) {
+  return JSON.parse(await read(family, (projection) => projection.day_summary_json(bytes(child),
+    BigInt(window.startMs), BigInt(window.endMs), BigInt(window.throughMs))));
+}
+
+export async function analysisCsv(family) {
+  return read(family, (projection) => projection.analysis_csv());
 }
 
 async function isShared(family) {
@@ -121,90 +135,18 @@ async function append(family, prepare) {
   finally { projection.free(); }
 }
 
-export async function addChild(family, name, birthDay, sex) {
-  const day = birthDay ? BigInt(Math.floor(new Date(`${birthDay}T12:00:00Z`).getTime() / 86400000)) : undefined;
-  const now = BigInt(Date.now());
-  const prepare = (projection) => projection.create_child_operation(
-    name, day, sex ? Number(sex) : undefined, now);
-  if (await isShared(family)) {
-    const result = await writeShared(wasm, family, 'child', { name, birthDay: day,
-      sex: sex ? Number(sex) : undefined },
-    { deliveryId: crypto.randomUUID(), prepare });
-    if (!result.redirectFamily) return result;
-    return result;
-  }
-  await append(family, prepare);
-  return null;
-}
+// The time-zone offset in effect at an instant, as recorded on events.
+export function offsetAt(ms) { return -new Date(ms).getTimezoneOffset(); }
 
-export async function logActivity(family, child, type, values) {
-  const id = bytes(child);
+// Save one create or correction. Rust validates the intent and builds the
+// operation; a shared Family queues it in the encrypted outbox.
+export async function act(family, action) {
+  const json = JSON.stringify(action);
   const now = BigInt(Date.now());
-  const offset = -new Date().getTimezoneOffset();
-  const prepare = (projection) => {
-    if (type === 'diaper') return projection.log_diaper_operation(id, Number(values.kind), now, offset);
-    if (type === 'bottle') return projection.log_bottle_operation(id, Number(values.ml), Number(values.content), now, offset);
-    if (type === 'note') return projection.log_note_operation(id, values.note, now, offset);
-    throw new Error('Unknown activity');
-  };
+  const prepare = (projection) => projection.action_operation(json, now);
   if (await isShared(family)) {
-    const result = await writeShared(wasm, family, type, { child, ...values },
+    return writeShared(wasm, family, 'action', { json },
       { deliveryId: crypto.randomUUID(), prepare });
-    if (!result.redirectFamily) return result;
-    return result;
-  }
-  await append(family, prepare);
-  return null;
-}
-
-export async function logBreastFeed(family, child, segments) {
-  const now = BigInt(Date.now());
-  const prepare = (projection) => projection.log_breast_operation(
-    bytes(child), JSON.stringify(segments), now);
-  if (await isShared(family)) {
-    const result = await writeShared(wasm, family, 'breast', { child, segments },
-      { deliveryId: crypto.randomUUID(), prepare });
-    if (!result.redirectFamily) return result;
-    return result;
-  }
-  await append(family, prepare);
-  return null;
-}
-
-export async function startSleep(family, child) {
-  const now = BigInt(Date.now());
-  const offset = -new Date().getTimezoneOffset();
-  const prepare = (projection) => projection.start_sleep_operation(bytes(child), now, offset);
-  if (await isShared(family)) {
-    return writeShared(wasm, family, 'sleep-start', { child },
-      { deliveryId: crypto.randomUUID(), prepare });
-  }
-  await append(family, prepare);
-  return null;
-}
-
-export async function stopSleep(family, child, activity) {
-  const now = BigInt(Date.now());
-  const offset = -new Date().getTimezoneOffset();
-  const prepare = (projection) => projection.stop_sleep_operation(
-    bytes(child), bytes(activity), now, offset);
-  if (await isShared(family)) {
-    return writeShared(wasm, family, 'sleep-stop', { child, activity },
-      { deliveryId: crypto.randomUUID(), prepare });
-  }
-  await append(family, prepare);
-  return null;
-}
-
-export async function editBreastFeed(family, child, activity, segments) {
-  const now = BigInt(Date.now());
-  const prepare = (projection) => projection.edit_breast_operation(
-    bytes(child), bytes(activity), JSON.stringify(segments), now);
-  if (await isShared(family)) {
-    const result = await writeShared(wasm, family, 'breast-edit', { child, activity, segments },
-      { deliveryId: crypto.randomUUID(), prepare });
-    if (!result.redirectFamily) return result;
-    return result;
   }
   await append(family, prepare);
   return null;

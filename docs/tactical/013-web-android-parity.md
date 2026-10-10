@@ -24,13 +24,20 @@ the shared core for both platforms, not reimplemented in JavaScript.
 
 ## Ordered delivery slices
 
-1. [ ] One web action boundary. Add a JSON action entry point in
+1. [x] One web action boundary. Add a JSON action entry point in
    `core/src/web_actions.rs` that builds every Android create and correction
    operation through the portable `event_actions`, looking up correction
    targets in the projection. Expose it on the local and shared wasm
    families, return the full read-model activity fields in the snapshot,
    and expose the core day summary. Byte-parity tests compare browser and
    native operations for each action.
+   Done: `web_actions::action` parses 29 create/correction intents and builds
+   them through `event_actions`; `core/tests/web_action_parity.rs` checks
+   each against the native `local_api` bytes and rejects unknown fields,
+   bad IDs, negative starts, and wrong targets. Local and shared wasm
+   families expose `action_operation`, `day_summary_json`, and
+   `analysis_csv`, which is now portable. Every existing web write uses
+   `act`; the local and real-relay browser flows pass unchanged.
 2. [ ] Capture parity: bottle units and repeat amount, solids, pumping with a
    local timer and amounts, growth with entered units, temperature with
    unit, medication, completed past sleep and sleep place, and a chosen

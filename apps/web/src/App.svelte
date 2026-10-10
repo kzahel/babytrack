@@ -111,7 +111,9 @@
   async function saveChild() {
     await run(async () => {
       const target = tracker.target();
-      const outcome = await api.addChild(target.family, childName, birthDate, sex);
+      const outcome = await api.act(target.family, { type: 'child', name: childName,
+        birthDay: birthDate ? Math.floor(Date.parse(`${birthDate}T12:00:00Z`) / 86400000) : null,
+        sex: sex ? Number(sex) : null });
       if (!await afterSave(outcome, target)) return;
       tracker.selectChild($tracker.data.children.at(-1)?.id || $tracker.child);
       childName = ''; birthDate = ''; sex = '';
@@ -121,9 +123,12 @@
   async function saveActivity() {
     await run(async () => {
       const target = tracker.target();
-      const outcome = await api.logActivity(target.family, target.child, activityType, {
-        kind: diaperKind, ml: bottleMl, content: bottleContent, note: noteText,
-      });
+      const at = { child: target.child, startMs: Date.now(), offset: api.offsetAt(Date.now()) };
+      const outcome = await api.act(target.family,
+        activityType === 'diaper' ? { type: 'diaper', ...at, kind: Number(diaperKind) } :
+        activityType === 'bottle' ? { type: 'bottle', ...at, entered: String(bottleMl), unit: 1,
+          content: Number(bottleContent) } :
+        { type: 'note', ...at, text: noteText });
       if (!await afterSave(outcome, target)) return;
       bottleMl = ''; noteText = '';
       screen = '';
@@ -137,8 +142,10 @@
     try {
       await run(async () => {
         const target = tracker.target();
-        const outcome = running ? await api.stopSleep(target.family, target.child, running.id)
-          : await api.startSleep(target.family, target.child);
+        const now = Date.now();
+        const outcome = await api.act(target.family, running ?
+          { type: 'stopSleep', child: target.child, target: running.id, endMs: now, endOffset: api.offsetAt(now) } :
+          { type: 'sleep', child: target.child, startMs: now, offset: api.offsetAt(now) });
         await afterSave(outcome, target);
       });
     } finally { sleepBusy = false; }
@@ -169,7 +176,7 @@
     const targetChild = target.child;
     try {
       const segments = completedSegments(breastDraft);
-      const outcome = await api.logBreastFeed(targetFamily, targetChild, segments);
+      const outcome = await api.act(targetFamily, { type: 'breast', child: targetChild, segments });
       persistDraft(targetFamily, targetChild, null);
       if (!await afterSave(outcome, target)) return;
       screen = '';
@@ -197,7 +204,8 @@
     try {
       const target = editTarget;
       const segments = rebuiltSegments(target.segments, editRows);
-      const outcome = await api.editBreastFeed(target.family, target.child, target.id, segments);
+      const outcome = await api.act(target.family, { type: 'editBreast', child: target.child,
+        target: target.id, segments });
       if (!await afterSave(outcome, target)) return;
       editTarget = null;
       screen = '';

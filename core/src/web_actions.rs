@@ -23,6 +23,8 @@ impl From<crate::operation::Error> for Error {
 
 pub use crate::event_actions::Identity;
 
+pub mod action;
+
 fn encode(
     id: Identity,
     scope: Scope,
@@ -186,6 +188,74 @@ pub fn edit_breast(
     Ok(Operation::encode_new(&operation)?)
 }
 
+/// Every read-model field the browser shows or edits; absent values are omitted.
+fn activity_json(activity: &crate::read_model::Activity) -> Json {
+    let mut row = json!({
+        "id": hex(&activity.id),
+        "childId": hex(&activity.child_id),
+        "kind": activity.kind,
+        "startMs": activity.start_utc_ms,
+        "offsetMinutes": activity.offset_minutes,
+        "endMs": activity.end_utc_ms,
+        "sleepPlace": activity.sleep_place,
+        "note": activity.note,
+        "diaperKind": activity.diaper_kind,
+        "bottleMl": activity.bottle_ml,
+        "bottleEntered": activity.bottle_entered,
+        "bottleUnit": activity.bottle_unit,
+        "bottleContent": activity.bottle_content,
+        "breastSide": activity.breast_side,
+        "breastSegments": activity.breast_segments,
+        "solidsFoods": activity.solids_foods,
+        "solidsAmount": activity.solids_amount,
+        "pumpLeftMl": activity.pump_left_ml,
+        "pumpRightMl": activity.pump_right_ml,
+        "pumpTotalMl": activity.pump_total_ml,
+        "growthWeightG": activity.growth_weight_g,
+        "growthWeightEntered": activity.growth_weight_entered,
+        "growthWeightUnit": activity.growth_weight_unit,
+        "growthLengthMm": activity.growth_length_mm,
+        "growthLengthEntered": activity.growth_length_entered,
+        "growthLengthUnit": activity.growth_length_unit,
+        "growthHeadMm": activity.growth_head_mm,
+        "growthHeadEntered": activity.growth_head_entered,
+        "growthHeadUnit": activity.growth_head_unit,
+        "temperatureC": activity.temperature_c,
+        "temperatureEntered": activity.temperature_entered,
+        "temperatureUnit": activity.temperature_unit,
+        "medicationName": activity.medication_name,
+        "medicationDoseAmount": activity.medication_dose_amount,
+        "medicationDoseUnit": activity.medication_dose_unit,
+    });
+    if let Json::Object(fields) = &mut row {
+        fields.retain(|_, value| !value.is_null());
+    }
+    row
+}
+
+/// The core's day totals for one child in a viewer-supplied local-day window.
+pub fn day_summary<'a>(
+    records: impl Iterator<Item = &'a Record>,
+    child_id: [u8; 16],
+    window: crate::day_summary::DayWindow,
+) -> Result<String, Error> {
+    let summary = crate::day_summary::summarize_day(
+        crate::read_model::activities_from_records(records),
+        child_id,
+        window,
+    )
+    .map_err(Error::Invalid)?;
+    Ok(json!({
+        "sleepMs": summary.sleep_ms,
+        "feedCount": summary.feed_count,
+        "bottleMl": summary.bottle_ml,
+        "diaperCount": summary.diaper_count,
+        "wetDiaperCount": summary.wet_diaper_count,
+        "dirtyDiaperCount": summary.dirty_diaper_count,
+    })
+    .to_string())
+}
+
 fn hex(id: &[u8; 16]) -> String {
     id.iter().map(|byte| format!("{byte:02x}")).collect()
 }
@@ -211,36 +281,9 @@ fn snapshot_records<'a>(records: impl Iterator<Item = &'a Record>) -> String {
                 }
             }
             Scope::Activity => {
-                let Some(activity) = crate::read_model::activity_summary(record) else {
-                    continue;
-                };
-                let mut row = json!({"id":hex(&activity.id),"childId":hex(&activity.child_id),"kind":activity.kind,"startMs":activity.start_utc_ms});
-                if let Json::Object(ref mut fields) = row {
-                    match activity.kind.as_str() {
-                        "diaper" => {
-                            fields.insert("diaperKind".to_owned(), json!(activity.diaper_kind));
-                        }
-                        "note" => {
-                            fields.insert("note".to_owned(), json!(activity.note));
-                        }
-                        "feed.bottle" => {
-                            fields.insert("bottleMl".to_owned(), json!(activity.bottle_ml));
-                            fields
-                                .insert("bottleContent".to_owned(), json!(activity.bottle_content));
-                        }
-                        "feed.breast" => {
-                            fields.insert(
-                                "breastSegments".to_owned(),
-                                json!(activity.breast_segments),
-                            );
-                        }
-                        "sleep" => {
-                            fields.insert("endMs".to_owned(), json!(activity.end_utc_ms));
-                        }
-                        _ => {}
-                    }
+                if let Some(activity) = crate::read_model::activity_summary(record) {
+                    activities.push(activity_json(&activity));
                 }
-                activities.push(row);
             }
             Scope::Family => {}
         }

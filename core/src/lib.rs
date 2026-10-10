@@ -4,7 +4,6 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod active_pull;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod analysis_csv;
 pub mod batch;
 pub mod bootstrap;

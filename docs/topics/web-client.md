@@ -128,11 +128,13 @@ build time (`VITE_RELAY_ORIGIN`); the browser then sends signed relay requests
 there without cookies, and accepts only invitations that name that relay.
 The relay answers cross-origin requests only from web origins listed at
 startup in `BABYTRACK_ALLOWED_ORIGINS`, and the hosted build's
-`connect-src` lists only its own origin and that relay. Since 2026-10-10 the
-`main` branch is hosted at `https://lantern.kzahel.com` on Cloudflare
-(static assets, `deploy/cloudflare/wrangler.jsonc`) against the Pi preview
-relay; the real-relay browser flow runs in both same-origin and cross-origin
-modes. The hosted code can access decrypted Family data while it
+`connect-src` lists only its own origin and that relay. Since 2026-10-10 each
+`main` build is also deployed as Cloudflare static assets against the
+disposable-data preview relay by `.github/workflows/web-hosted.yml`. The
+hosts, Cloudflare account, and token are private deployment settings kept in
+the `hosted-web` GitHub environment and the owner's private runbook, not in
+this repository. The real-relay browser flow runs in both same-origin and
+cross-origin modes. The hosted code can access decrypted Family data while it
 runs, so compromised delivered code can compromise a browser installation.
 The bounded native-managed web trust review is recorded in
 [006](../tactical/006-m2-web.md#bounded-native-managed-web-gate-at-fa2bcee).

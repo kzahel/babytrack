@@ -70,9 +70,10 @@ async function run() {
     await page.getByText(androidNote).waitFor();
     process.stdout.write('Android to browser note: OK\n');
 
-    await page.locator('.quick-grid button').filter({ hasText: 'Note' }).click();
-    await page.getByLabel('Note').fill(browserNote);
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('button', { name: /^More/ }).click();
+    await page.getByRole('button', { name: 'Note', exact: true }).click();
+    await page.getByLabel('What happened?').fill(browserNote);
+    await page.getByRole('button', { name: 'Save note' }).click();
     await page.getByText(browserNote).waitFor();
     await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();
     await page.getByText('Up to date').waitFor({ timeout: 30000 });

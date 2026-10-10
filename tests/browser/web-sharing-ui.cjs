@@ -110,9 +110,10 @@ async function run() {
     await page.locator('.child-row strong').getByText('DynamicHolderChild').waitFor();
     await page.locator('.bottom-nav').getByRole('button', { name: 'Today' }).click();
     await new Promise((resolve) => { relay.once('exit', resolve); relay.kill(); });
-    await page.locator('.quick-grid button').filter({ hasText: 'Note' }).click();
-    await page.getByLabel('Note').fill('WebOnlyPrivateMarker');
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('button', { name: /^More/ }).click();
+    await page.getByRole('button', { name: 'Note', exact: true }).click();
+    await page.getByLabel('What happened?').fill('WebOnlyPrivateMarker');
+    await page.getByRole('button', { name: 'Save note' }).click();
     await page.getByText('WebOnlyPrivateMarker').waitFor();
     await page.getByRole('button', { name: /^Sleep/ }).click();
     await page.getByText('Sleep · running').waitFor();
@@ -197,16 +198,18 @@ async function run() {
     const secondDevice = await deviceId(secondPage);
     await page.route('**/v1/**', (route) => route.abort());
     await page.locator('.bottom-nav').getByRole('button', { name: 'Today' }).click();
-    await page.locator('.quick-grid button').filter({ hasText: 'Note' }).click();
-    await page.getByLabel('Note').fill('RemovedPendingMarker');
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('button', { name: /^More/ }).click();
+    await page.getByRole('button', { name: 'Note', exact: true }).click();
+    await page.getByLabel('What happened?').fill('RemovedPendingMarker');
+    await page.getByRole('button', { name: 'Save note' }).click();
     await page.getByText('RemovedPendingMarker').waitFor();
     const staleTab = await first.newPage();
     await staleTab.route('**/v1/**', (route) => route.abort());
     await staleTab.goto(origin);
     await staleTab.getByText('RemovedPendingMarker').waitFor();
-    await staleTab.locator('.quick-grid button').filter({ hasText: 'Note' }).click();
-    await staleTab.getByLabel('Note').fill('StaleTabUnsentMarker');
+    await staleTab.getByRole('button', { name: /^More/ }).click();
+    await staleTab.getByRole('button', { name: 'Note', exact: true }).click();
+    await staleTab.getByLabel('What happened?').fill('StaleTabUnsentMarker');
     const firstDevice = await deviceId(page);
     const removal = spawnSync(holderBin, ['remove', manager, relayOrigin, firstDevice],
       { encoding: 'utf8' });
@@ -216,7 +219,7 @@ async function run() {
     const syncFirst = page.getByRole('button', { name: 'Sync now' });
     if (await syncFirst.count()) await syncFirst.click({ timeout: 2000 }).catch(() => {});
     await page.getByText('Access ended · private copy saved on this browser').waitFor();
-    await staleTab.getByRole('button', { name: 'Save' }).click();
+    await staleTab.getByRole('button', { name: 'Save note' }).click();
     await staleTab.getByText('This action was saved in your independent local Family').waitFor();
     await staleTab.getByText('StaleTabUnsentMarker').waitFor();
     const redirectedFamily = await staleTab.evaluate(() => localStorage.getItem('babytrack-family'));

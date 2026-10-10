@@ -3,7 +3,7 @@ export const copy = {
   app: 'Babytrack', preview: 'Early web preview', today: 'Today', history: 'History',
   family: 'Family', createFamily: 'Create a Family', noAccount: 'Start tracking here without an account.',
   addChild: 'Add a child', childName: 'Child name', birthDate: 'Birthday',
-  growthSex: 'Sex for growth charts', unspecified: 'Not specified', female: 'Female', male: 'Male', other: 'Other',
+  growthSex: 'Sex for growth charts', unspecified: 'Unspecified', female: 'Female', male: 'Male',
   save: 'Save', cancel: 'Cancel', localOnly: 'On this browser',
   localDescription: 'This Family is saved in this browser profile. Create a shared Family on Android, then invite this browser to join it.',
   chooseChild: 'Choose a child', recent: 'Recent entries', emptyHistory: 'No entries yet.',
@@ -67,13 +67,51 @@ export const copy = {
   restoreDescription: 'Lost this browser’s saved data? A readable backup restores its saved records into a new local Family.',
   restoreFile: 'Choose a backup file',
   pendingJoinResume: 'Resume joining',
+  // Activities, choices, and units shared with Android.
+  groupFeeding: 'Feeding', groupSleepDiapers: 'Sleep and diapers', groupHealth: 'Health', groupNotes: 'Notes',
+  pumping: 'Pumping', pump: 'Pump', solids: 'Solids', growth: 'Growth', temperature: 'Temperature',
+  medication: 'Medication', breast: 'Breast', left: 'Left', right: 'Right',
+  placeCrib: 'Crib', placePram: 'Pram', placeContact: 'Contact', placeCar: 'Car', placeOther: 'Other place',
+  placeNone: 'Not recorded', sleepPlace: 'Where did the sleep happen?', place: (value) => `Place: ${value}`,
+  filterAll: 'All', filterCare: 'Growth & care', filterNotes: 'Notes',
+  newerEntry: 'Entry from a newer app version',
+  entry: (...parts) => parts.filter((part) => part != null && part !== '').join(' · '),
+  totalMl: (ml) => `${ml} mL total`, leftMl: (ml) => `L ${ml} mL`, rightMl: (ml) => `R ${ml} mL`,
+  head: (value) => `head ${value}`,
+  minutesShort: (count) => `${new Intl.NumberFormat().format(count)} min`,
+  hoursShort: (count) => `${new Intl.NumberFormat().format(count)} h`,
+  hoursMinutesShort: (hours, mins) => `${new Intl.NumberFormat().format(hours)} h ${new Intl.NumberFormat().format(mins)} min`,
+  justNow: 'Just now', minutesAgo: (count) => `${new Intl.NumberFormat().format(count)} min ago`,
+  hoursAgo: (count) => `${new Intl.NumberFormat().format(count)} h ago`,
+  hoursMinutesAgo: (hours, mins) => `${new Intl.NumberFormat().format(hours)} h ${new Intl.NumberFormat().format(mins)} min ago`,
+  daysAgo: (count) => counted(count, 'day ago', 'days ago'),
+  yesterday: 'Yesterday', yesterdayAt: (time) => `Yesterday, ${time}`, dateAt: (date, time) => `${date}, ${time}`,
+  forChild: (name) => `For ${name}`, now: 'Now', changeTime: 'Change time', useNow: 'Use now',
+  whenLabel: 'When', futureTime: 'Choose a time that has already passed.',
+  saveFailed: 'Could not complete the action. Try again.',
+  inBottle: 'In the bottle', unit: 'Unit', bottleAmount: 'Bottle amount', less: 'Less', more: 'More',
+  sameAsLast: (amount, unit) => `Same as last: ${amount} ${unit}`, saveBottle: 'Save bottle',
+  saveDiaper: 'Save diaper', timerMode: 'Timer', minutesMode: 'Enter minutes', sideLabel: 'Side',
+  minutesOnSide: 'Minutes on selected side', addSegment: 'Add segment', removeSegment: 'Remove last segment',
+  segmentsDraft: (value) => `Segments: ${value}`, saveBreastFeed: 'Save breast feed',
+  startPumpTimer: 'Start pumping timer', stopTimer: 'Stop timer', minutesPumping: 'Minutes pumping',
+  amount: 'Amount', leftMlLabel: 'Left (mL)', rightMlLabel: 'Right (mL)', totalMlLabel: 'Total (mL), instead of sides',
+  savePumping: 'Save pumping', pumpRule: 'Enter left and right amounts, or one total.',
+  foods: 'Foods (one per line)', amountEaten: 'Amount eaten (optional)', saveSolids: 'Save solids',
+  minutesSlept: 'Minutes slept', saveSleep: 'Save sleep', addPastSleep: 'Add past sleep',
+  weight: 'Weight', length: 'Length', headCircumference: 'Head circumference', saveGrowth: 'Save growth',
+  growthRule: 'Enter at least one measurement.', temperatureIn: (unit) => `Temperature (${unit})`,
+  saveTemperature: 'Save temperature', medicationName: 'Medication name', doseAmount: 'Dose amount',
+  doseUnit: 'Dose unit', saveMedication: 'Save medication', whatHappened: 'What happened?', saveNote: 'Save note',
+  moreActivities: 'More', select: 'Select', editChildNamed: (name) => `Edit ${name}`,
+  clearBirthDate: 'Clear birth date', editChild: 'Edit child profile', addAnotherChild: 'Add another child',
+  childOptions: 'Child options', addActivityTitle: 'Add activity',
+  lastSide: 'Last side', lastFeedEnded: (side) => `Last feed ended on ${side}`, finishedAt: 'Finished',
   sleep: 'Sleep', startSleep: 'Start sleep timer', stopSleep: 'Stop sleep', sleepRunning: 'Sleep · running',
   sleepingSince: (time) => `Sleeping since ${time}`,
-  sleepEntry: (duration) => `Sleep · ${duration}`,
   feedCount: (count) => counted(count, 'feed', 'feeds'),
   diaperCount: (count) => counted(count, 'diaper', 'diapers'),
   sideNumber: (number) => `Side ${new Intl.NumberFormat().format(number)}`,
-  breastEntry: (left, right) => `Breastfeed · left ${left} · right ${right}`,
   familyNumber: (number) => `Family ${new Intl.NumberFormat().format(number)}`,
   ageUnit: {
     day: { one: 'day', other: 'days' }, week: { one: 'week', other: 'weeks' },
@@ -84,14 +122,6 @@ export const copy = {
 function counted(count, one, other) {
   const form = new Intl.PluralRules().select(count) === 'one' ? one : other;
   return `${new Intl.NumberFormat().format(count)} ${form}`;
-}
-
-export function sleepDuration(ms) {
-  const minutes = Math.max(0, Math.floor(ms / 60000));
-  const unit = (value, name) => new Intl.NumberFormat(undefined,
-    { style: 'unit', unit: name, unitDisplay: 'short' }).format(value);
-  if (minutes < 60) return unit(minutes, 'minute');
-  return `${unit(Math.floor(minutes / 60), 'hour')} ${unit(minutes % 60, 'minute')}`;
 }
 
 export function ageLabel(birthDay) {

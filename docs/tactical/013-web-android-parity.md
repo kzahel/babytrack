@@ -38,11 +38,21 @@ the shared core for both platforms, not reimplemented in JavaScript.
    families expose `action_operation`, `day_summary_json`, and
    `analysis_csv`, which is now portable. Every existing web write uses
    `act`; the local and real-relay browser flows pass unchanged.
-2. [ ] Capture parity: bottle units and repeat amount, solids, pumping with a
+2. [x] Capture parity: bottle units and repeat amount, solids, pumping with a
    local timer and amounts, growth with entered units, temperature with
    unit, medication, completed past sleep and sleep place, and a chosen
    activity time where Android offers one. Edit a child's name, birthday,
    and growth sex.
+   Done: an Add activity chooser in Android's groups and order opens one
+   form per type with Android's codes, defaults, and validation; each form
+   except the breast timer has a When row with a past date and time. Bottle
+   has units, steppers, and Same as last; breast has Timer and Enter
+   minutes; pumping has a browser-local stopwatch that fills its minutes;
+   sleep saves a past interval or starts a timer, with place. Child profiles
+   create and edit name, birthday, and growth sex; code 3 now reads
+   Unspecified as published. History lines follow Android's summaries.
+   The browser smoke saves every type through the chooser, checks its
+   summary, edits a child, and the real-relay flow uses the chooser.
 3. [ ] Correction parity: per-type field edits, instant time edits, moving a
    completed interval, sleep end and place edits, breast start correction,
    and delete with Undo.

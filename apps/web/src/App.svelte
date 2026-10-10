@@ -1,23 +1,20 @@
 <script>
   import { onMount } from 'svelte';
-  import { copy as c, ageLabel, sleepDuration } from './strings.js';
+  import { copy as c, ageLabel } from './strings.js';
   import * as api from './core.js';
   import { createTrackerController } from './tracker-controller.js';
-  import { readDraft, persistDraft, tapSide, completedSegments, sideTotals,
-    durationLabel, editableSegments, rebuiltSegments } from './breast-timer.js';
+  import { readDraft, sideTotals, durationLabel, editableSegments, rebuiltSegments } from './breast-timer.js';
+  import { chooser, entrySummary, kindLabels, symbol, category } from './presentation.js';
+  import Capture from './components/Capture.svelte';
+  import BreastFeed from './components/BreastFeed.svelte';
+  import ChildProfile from './components/ChildProfile.svelte';
 
   let error = '';
   let notice = '';
   let tab = 'today';
   let screen = '';
-  let childName = '';
-  let birthDate = '';
-  let sex = '';
-  let activityType = '';
-  let diaperKind = '1';
-  let bottleMl = '';
-  let bottleContent = '1';
-  let noteText = '';
+  let captureKind = '';
+  let profileChild = null;
   let breastDraft = null;
   let nowMs = Date.now();
   let editTarget = null;
@@ -40,7 +37,8 @@
     onRememberInvitation: () => history.replaceState(null, '', location.pathname + location.search) });
   $: ({ loading, familyRows, family, child, data, pendingFragment, joinStage,
     syncStage, removedInfo, privateCopy, backupGap, backupCursor } = $tracker);
-  $: breastDraft = $tracker.family && $tracker.child ? readDraft($tracker.family, $tracker.child) : null;
+  // Reread the browser-local nursing draft whenever a route closes.
+  $: breastDraft = screen === '' && $tracker.family && $tracker.child ? readDraft($tracker.family, $tracker.child) : breastDraft;
 
   onMount(() => {
     const clock = setInterval(() => nowMs = Date.now(), 1000);
@@ -73,7 +71,7 @@
   const confirmJoin = () => run(() => tracker.confirmJoin());
   const dismissJoin = () => run(() => tracker.dismissJoin());
   async function makeFamily() {
-    await run(async () => { if (await tracker.makeFamily()) screen = 'child'; });
+    await run(async () => { if (await tracker.makeFamily()) editProfile(null); });
   }
   async function selectFamily(value) {
     screen = ''; editTarget = null;
@@ -108,87 +106,52 @@
     tracker.selectChild(value);
     screen = ''; editTarget = null;
   }
-  async function saveChild() {
+  // Save one or more core actions for the current target; true when applied.
+  async function saveActions(actions) {
+    let saved = false;
     await run(async () => {
       const target = tracker.target();
-      const outcome = await api.act(target.family, { type: 'child', name: childName,
-        birthDay: birthDate ? Math.floor(Date.parse(`${birthDate}T12:00:00Z`) / 86400000) : null,
-        sex: sex ? Number(sex) : null });
-      if (!await afterSave(outcome, target)) return;
-      tracker.selectChild($tracker.data.children.at(-1)?.id || $tracker.child);
-      childName = ''; birthDate = ''; sex = '';
-      screen = '';
+      for (const action of actions) {
+        if (!await afterSave(await api.act(target.family, action), target)) return;
+      }
+      saved = true;
     });
+    return saved;
   }
-  async function saveActivity() {
-    await run(async () => {
-      const target = tracker.target();
-      const at = { child: target.child, startMs: Date.now(), offset: api.offsetAt(Date.now()) };
-      const outcome = await api.act(target.family,
-        activityType === 'diaper' ? { type: 'diaper', ...at, kind: Number(diaperKind) } :
-        activityType === 'bottle' ? { type: 'bottle', ...at, entered: String(bottleMl), unit: 1,
-          content: Number(bottleContent) } :
-        { type: 'note', ...at, text: noteText });
-      if (!await afterSave(outcome, target)) return;
-      bottleMl = ''; noteText = '';
-      screen = '';
-      tab = 'today';
-    });
+  const saveEntry = (action) => saveActions([action]);
+  // Forms clear their own drafts first, then return to Today.
+  function finishEntry() { screen = ''; tab = 'today'; }
+  async function saveProfile(actions) {
+    const before = new Set(data.children.map((row) => row.id));
+    if (!await saveActions(actions)) return;
+    const added = $tracker.data.children.find((row) => !before.has(row.id));
+    if (added) tracker.selectChild(added.id);
+    screen = '';
+    profileChild = null;
   }
   // A saved running sleep is shared state; the busy flag blocks a duplicate start or stop.
-  async function toggleSleep(running) {
+  async function toggleSleep(running, place = null) {
     if (sleepBusy) return;
     sleepBusy = true;
     try {
-      await run(async () => {
-        const target = tracker.target();
-        const now = Date.now();
-        const outcome = await api.act(target.family, running ?
-          { type: 'stopSleep', child: target.child, target: running.id, endMs: now, endOffset: api.offsetAt(now) } :
-          { type: 'sleep', child: target.child, startMs: now, offset: api.offsetAt(now) });
-        await afterSave(outcome, target);
-      });
+      const now = Date.now();
+      const saved = await saveActions([running ?
+        { type: 'stopSleep', child, target: running.id, endMs: now, endOffset: api.offsetAt(now) } :
+        { type: 'sleep', child, startMs: now, offset: api.offsetAt(now), place }]);
+      if (saved && screen === 'capture') { screen = ''; tab = 'today'; }
     } finally { sleepBusy = false; }
   }
-  function begin(type) { activityType = type; screen = 'capture'; error = ''; }
-  function openBreast() { breastDraft = readDraft(family, child); screen = 'breast'; error = ''; }
+  function begin(kind) {
+    error = '';
+    if (kind === 'feed.breast') { screen = 'breast'; return; }
+    captureKind = kind;
+    screen = 'capture';
+  }
+  function editProfile(row) { profileChild = row; screen = 'child'; error = ''; }
   function timerError(cause) { return ({
-    'too-short': c.timerTooShort,
-    'duration-limit': c.timerTooLong,
-    'segment-limit': c.timerTooManySegments,
-    'empty-timer': c.timerEmpty,
     'invalid-duration': c.invalidDuration,
     'future-end': c.futureEnd,
   })[cause?.message] || message(cause); }
-  function tapBreast(side) {
-    error = '';
-    try {
-      const next = tapSide(breastDraft, side);
-      persistDraft(family, child, next);
-      breastDraft = next;
-    } catch (cause) { error = timerError(cause); }
-  }
-  async function saveBreast() {
-    error = '';
-    notice = '';
-    const target = tracker.target();
-    const targetFamily = target.family;
-    const targetChild = target.child;
-    try {
-      const segments = completedSegments(breastDraft);
-      const outcome = await api.act(targetFamily, { type: 'breast', child: targetChild, segments });
-      persistDraft(targetFamily, targetChild, null);
-      if (!await afterSave(outcome, target)) return;
-      screen = '';
-      tab = 'today';
-    } catch (cause) { error = timerError(cause); }
-  }
-  function discardBreast() {
-    if (!window.confirm(c.discardBreastConfirm)) return;
-    persistDraft(family, child, null);
-    breastDraft = null;
-    screen = '';
-  }
   function beginBreastEdit(row) {
     editTarget = { ...tracker.target(), id: row.id, segments: row.breastSegments };
     editRows = editableSegments(row.breastSegments);
@@ -214,17 +177,6 @@
   }
   function formatTime(value) { return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(value); }
   function formatDay(value) { return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(value); }
-  function entryLabel(row) {
-    if (row.kind === 'diaper') return `${c.diaper} · ${[c.wet, c.dirty, c.both, c.dry][row.diaperKind - 1] || c.diaper}`;
-    if (row.kind === 'feed.bottle') return `${c.bottle} · ${row.bottleMl ?? '—'} mL`;
-    if (row.kind === 'feed.breast' && row.breastSegments) {
-      const totals = sideTotals({ segments: row.breastSegments });
-      return c.breastEntry(durationLabel(totals[1]), durationLabel(totals[2]));
-    }
-    if (row.kind === 'note') return row.note || c.note;
-    if (row.kind === 'sleep') return row.endMs == null ? c.sleepRunning : c.sleepEntry(sleepDuration(row.endMs - row.startMs));
-    return row.kind;
-  }
 </script>
 
 <svelte:head>
@@ -286,51 +238,31 @@
         </section>
       {:else if screen === 'child'}
         <section class="form-view">
-          <button class="back" onclick={() => screen = ''}>← {c.cancel}</button>
+          <button class="back" onclick={() => { screen = ''; profileChild = null; }}>← {c.cancel}</button>
           <div class="eyebrow">{c.family}</div>
-          <h1>{c.addChild}</h1>
-          <form onsubmit={(event) => { event.preventDefault(); saveChild(); }}>
-            <label>{c.childName}<input required maxlength="160" bind:value={childName} autocomplete="off" /></label>
-            <label>{c.birthDate}<input type="date" max={new Date().toISOString().slice(0, 10)} bind:value={birthDate} /></label>
-            <label>{c.growthSex}<select bind:value={sex}>
-              <option value="">{c.unspecified}</option><option value="1">{c.female}</option>
-              <option value="2">{c.male}</option><option value="3">{c.other}</option>
-            </select></label>
-            <button class="primary save" type="submit">{c.save}</button>
-          </form>
+          <h1>{profileChild ? c.editChild : c.addChild}</h1>
+          <ChildProfile child={profileChild} save={saveProfile} cancel={() => { screen = ''; profileChild = null; }} />
+        </section>
+      {:else if screen === 'chooser'}
+        <section>
+          <button class="back" onclick={() => screen = ''}>← {c.back}</button>
+          <div class="eyebrow">{c.forChild(selectedChild?.name)}</div>
+          <h1>{c.addActivityTitle}</h1>
+          {#each chooser as group}
+            <h2>{group.title}</h2>
+            <div class="quick-grid">
+              {#each group.kinds as kind}
+                <button onclick={() => begin(kind)}><span class="icon {category(kind)}" aria-hidden="true">{symbol(kind)}</span><strong>{kindLabels[kind]}</strong></button>
+              {/each}
+            </div>
+          {/each}
         </section>
       {:else if screen === 'breast'}
         <section class="form-view breast-view">
           <button class="back" onclick={() => screen = ''}>← {c.back}</button>
-          <div class="eyebrow">{selectedChild?.name} · {c.feeds}</div>
+          <div class="eyebrow">{c.forChild(selectedChild?.name)}</div>
           <h1>{c.breastFeed}</h1>
-          <p class="muted">{breastDraft?.active ? c.feedingNow : breastDraft?.segments.length ? c.feedingPaused : c.tapSideToStart}</p>
-          <div class="breast-totals panel">
-            <div><span>{c.leftBreast}</span><strong>{durationLabel(sideTotals(breastDraft, nowMs)[1])}</strong></div>
-            <div><span>{c.rightBreast}</span><strong>{durationLabel(sideTotals(breastDraft, nowMs)[2])}</strong></div>
-          </div>
-          <div class="breast-controls">
-            <button class:running={breastDraft?.active?.side === 1} aria-pressed={breastDraft?.active?.side === 1} onclick={() => tapBreast(1)}>
-              <span class="breast-control-symbol" aria-hidden="true">{breastDraft?.active?.side === 1 ? 'Ⅱ' : '▶'}</span>
-              <strong>{c.leftBreast}</strong>
-              <small>{breastDraft?.active?.side === 1 ? c.tapToPause : c.tapToStart}</small>
-            </button>
-            <button class:running={breastDraft?.active?.side === 2} aria-pressed={breastDraft?.active?.side === 2} onclick={() => tapBreast(2)}>
-              <span class="breast-control-symbol" aria-hidden="true">{breastDraft?.active?.side === 2 ? 'Ⅱ' : '▶'}</span>
-              <strong>{c.rightBreast}</strong>
-              <small>{breastDraft?.active?.side === 2 ? c.tapToPause : c.tapToStart}</small>
-            </button>
-          </div>
-          <p class="muted">{c.breastTimerHint}</p>
-          {#if breastDraft?.segments.length}
-            <div class="panel segment-list"><h2>{c.completedSides}</h2>
-              {#each breastDraft.segments as segment}
-                <div>{segment.side === 1 ? c.leftBreast : c.rightBreast} · {durationLabel(segment.end_utc_ms - segment.start_utc_ms)}</div>
-              {/each}
-            </div>
-          {/if}
-          <button class="primary save" disabled={!breastDraft} onclick={saveBreast}>{c.saveBreast}</button>
-          {#if breastDraft}<button class="text-action discard" onclick={discardBreast}>{c.discardSession}</button>{/if}
+          {#key `${family}:${child}`}<BreastFeed {family} {child} {entries} {nowMs} save={saveEntry} done={finishEntry} />{/key}
         </section>
       {:else if screen === 'breast-edit'}
         <section class="form-view">
@@ -357,25 +289,10 @@
       {:else if screen === 'capture'}
         <section class="form-view">
           <button class="back" onclick={() => screen = ''}>← {c.cancel}</button>
-          <div class="eyebrow">{selectedChild?.name} · {formatTime(Date.now())}</div>
-          <h1>{activityType === 'diaper' ? c.diaper : activityType === 'bottle' ? c.bottle : c.note}</h1>
-          <form onsubmit={(event) => { event.preventDefault(); saveActivity(); }}>
-            {#if activityType === 'diaper'}
-              <label>{c.type}<select bind:value={diaperKind}>
-                <option value="1">{c.wet}</option><option value="2">{c.dirty}</option>
-                <option value="3">{c.both}</option><option value="4">{c.dry}</option>
-              </select></label>
-            {:else if activityType === 'bottle'}
-              <label>{c.amount}<input type="number" inputmode="numeric" min="1" max="1000000" step="1" required bind:value={bottleMl} /></label>
-              <label>{c.content}<select bind:value={bottleContent}>
-                <option value="1">{c.milk}</option><option value="2">{c.formula}</option>
-                <option value="3">{c.mixed}</option><option value="4">{c.otherMilk}</option>
-              </select></label>
-            {:else}
-              <label>{c.noteText}<textarea rows="5" maxlength="4096" required bind:value={noteText}></textarea></label>
-            {/if}
-            <button class="primary save" type="submit">{c.save}</button>
-          </form>
+          <div class="eyebrow">{c.forChild(selectedChild?.name)}</div>
+          <h1>{kindLabels[captureKind]}</h1>
+          {#key `${family}:${child}:${captureKind}`}<Capture kind={captureKind} {family} {child} {entries} {nowMs}
+            save={saveEntry} done={finishEntry} startSleep={(place) => toggleSleep(null, place)} />{/key}
         </section>
       {:else if tab === 'today'}
         <section>
@@ -389,7 +306,7 @@
           {#if selectedChild}
             <div class="summary panel"><span>{c.todaySummary}</span><strong>{c.feedCount(todayEntries.filter((row) => row.kind.startsWith('feed.')).length)} · {c.diaperCount(todayEntries.filter((row) => row.kind === 'diaper').length)}</strong></div>
             {#if breastDraft && !removedInfo}
-              <button class="timer-resume panel" onclick={openBreast}><span>{c.breastFeed} · {breastDraft.active ? c.feedingNow : c.feedingPaused}</span><strong>{durationLabel(sideTotals(breastDraft, nowMs)[1] + sideTotals(breastDraft, nowMs)[2])} →</strong></button>
+              <button class="timer-resume panel" onclick={() => begin('feed.breast')}><span>{c.breastFeed} · {breastDraft.active ? c.feedingNow : c.feedingPaused}</span><strong>{durationLabel(sideTotals(breastDraft, nowMs)[1] + sideTotals(breastDraft, nowMs)[2])} →</strong></button>
             {/if}
             {#if runningSleep && !removedInfo}
               <div class="timer-resume panel sleep-running"><span>{c.sleepingSince(formatTime(runningSleep.startMs))}</span><strong>{durationLabel(nowMs - runningSleep.startMs)}</strong>
@@ -397,33 +314,35 @@
             {/if}
             {#if !removedInfo}<h2>{c.addActivity}</h2>
             <div class="quick-grid">
-              <button onclick={openBreast}><span class="icon feed" aria-hidden="true">◓</span><strong>{c.breastFeed}</strong><small>{c.feeds}</small></button>
-              <button onclick={() => begin('bottle')}><span class="icon feed" aria-hidden="true">◔</span><strong>{c.bottle}</strong><small>{c.feeds}</small></button>
+              <button onclick={() => begin('feed.breast')}><span class="icon feed" aria-hidden="true">◓</span><strong>{c.breastFeed}</strong><small>{c.feeds}</small></button>
+              <button onclick={() => begin('feed.bottle')}><span class="icon feed" aria-hidden="true">◔</span><strong>{c.bottle}</strong><small>{c.feeds}</small></button>
               <button onclick={() => begin('diaper')}><span class="icon care" aria-hidden="true">◇</span><strong>{c.diaper}</strong><small>{c.diapers}</small></button>
               {#if !runningSleep}<button disabled={sleepBusy} onclick={() => toggleSleep(null)}><span class="icon sleep" aria-hidden="true">☾</span><strong>{c.sleep}</strong><small>{c.startSleep}</small></button>{/if}
-              <button onclick={() => begin('note')}><span class="icon note" aria-hidden="true">✎</span><strong>{c.note}</strong><small>{c.addActivity}</small></button>
+              <button onclick={() => screen = 'chooser'}><span class="icon note" aria-hidden="true">＋</span><strong>{c.moreActivities}</strong><small>{c.addActivity}</small></button>
             </div>{/if}
             <div class="section-heading"><h2>{c.recent}</h2><button class="text-action" onclick={() => tab = 'history'}>{c.allEntries} →</button></div>
             {#if entries.length === 0}<p class="muted">{c.emptyHistory}</p>{/if}
             {#each entries.slice(0, 4) as row}
-              <div class="entry"><span class="entry-dot"></span><div><strong>{entryLabel(row)}</strong><small>{formatDay(row.startMs)}</small></div><time>{formatTime(row.startMs)}</time>{#if !removedInfo && row.kind === 'feed.breast' && row.breastSegments?.length}<button class="entry-edit" onclick={() => beginBreastEdit(row)}>{c.edit}</button>{/if}</div>
+              <div class="entry"><span class="entry-dot"></span><div><strong>{entrySummary(row)}</strong><small>{formatDay(row.startMs)}</small></div><time>{formatTime(row.startMs)}</time>{#if !removedInfo && row.kind === 'feed.breast' && row.breastSegments?.length}<button class="entry-edit" onclick={() => beginBreastEdit(row)}>{c.edit}</button>{/if}</div>
             {/each}
           {:else}
-            <div class="panel empty"><p>{c.addChildPrompt}</p>{#if !removedInfo}<button class="primary" onclick={() => screen = 'child'}>{c.addChild}</button>{/if}</div>
+            <div class="panel empty"><p>{c.addChildPrompt}</p>{#if !removedInfo}<button class="primary" onclick={() => editProfile(null)}>{c.addChild}</button>{/if}</div>
           {/if}
         </section>
       {:else if tab === 'history'}
         <section><div class="eyebrow">{selectedChild?.name || c.family}</div><h1>{c.history}</h1>
           {#if entries.length === 0}<div class="panel empty">{c.emptyHistory}</div>{/if}
           {#each entries as row}
-            <div class="entry"><span class="entry-dot"></span><div><strong>{entryLabel(row)}</strong><small>{formatDay(row.startMs)}</small></div><time>{formatTime(row.startMs)}</time>{#if !removedInfo && row.kind === 'feed.breast' && row.breastSegments?.length}<button class="entry-edit" onclick={() => beginBreastEdit(row)}>{c.edit}</button>{/if}</div>
+            <div class="entry"><span class="entry-dot"></span><div><strong>{entrySummary(row)}</strong><small>{formatDay(row.startMs)}</small></div><time>{formatTime(row.startMs)}</time>{#if !removedInfo && row.kind === 'feed.breast' && row.breastSegments?.length}<button class="entry-edit" onclick={() => beginBreastEdit(row)}>{c.edit}</button>{/if}</div>
           {/each}
         </section>
       {:else}
         <section><div class="eyebrow">{sharedSelected ? c.shared : c.localOnly}</div><h1>{c.family}</h1>
           <div class="panel"><h2>{c.children}</h2>
-            {#each data.children as row}<div class="child-row"><span class="avatar">{row.name.slice(0, 1).toUpperCase()}</span><div><strong>{row.name}</strong><small>{ageLabel(row.birthDay)}</small></div></div>{/each}
-            {#if !removedInfo}<button class="secondary" onclick={() => screen = 'child'}>＋ {c.addChild}</button>{/if}
+            {#each data.children as row}<div class="child-row"><span class="avatar">{row.name.slice(0, 1).toUpperCase()}</span><div><strong>{row.name}</strong><small>{ageLabel(row.birthDay)}</small></div>
+              {#if row.id !== child}<button class="text-action" onclick={() => selectChild(row.id)}>{c.select}</button>{/if}
+              {#if !removedInfo}<button class="entry-edit" aria-label={c.editChildNamed(row.name)} onclick={() => editProfile(row)}>{c.edit}</button>{/if}</div>{/each}
+            {#if !removedInfo}<button class="secondary" onclick={() => editProfile(null)}>＋ {data.children.length ? c.addAnotherChild : c.addChild}</button>{/if}
           </div>
           <div class="panel"><h2>{sharedSelected ? c.shared : c.localOnly}</h2><p class="muted">{sharedSelected ? c.sharedDescription : c.localDescription}</p>
             {#if sharedSelected}<p role="status">{syncStage || (removedInfo ? c.removedArchive : c.syncReady)}</p>{#if !removedInfo}<button class="secondary" onclick={poll}>{c.syncNow}</button>{/if}{/if}

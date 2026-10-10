@@ -33,8 +33,11 @@ site data loses that installation's credentials; another browser profile
 needs another invitation. A readable file backup restores saved current
 state into a new local Family; it never reinstates original shared access.
 
-The current preview creates local Families and children and logs diaper,
-whole-millilitre bottle, note, and timed left/right breast feeds. The breast
+The current preview creates local Families and children, edits a child's
+name, birthday, and growth sex, and logs every Android activity type from an
+Add activity chooser: bottle in mL or fluid ounces, timed or entered breast
+feeds, pumping with a browser-local stopwatch, solids, sleep, diaper, growth,
+temperature, medication, and notes, at now or a chosen past time. The breast
 timer starts or switches sides on tap, pauses on a second tap of the active
 side, excludes paused time, and keeps its unsaved, target-scoped draft across
 reloads in localStorage. Saving writes one atomic segment list through the

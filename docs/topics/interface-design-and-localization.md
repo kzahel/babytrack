@@ -125,6 +125,14 @@ that obscures whether a write or sync is complete.
   running one, and the others open their forms. A **day ribbon** from
   midnight to now marks sleep, feeds, and diapers above the core's day
   totals, then the three newest entries. An empty day shows one prompt.
+- **Entry details sheet:** tapping any entry, a recent row, or the running
+  timer opens a bottom sheet (a centered panel on wide screens) titled with
+  the activity, its summary, and time. A running sleep shows its clock and
+  Stop. **Details · optional** come first and save as soon as they are
+  picked: sleep place and diaper type as icon rows, bottle contents as
+  chips, and add or edit a note. **Change** lists corrections that need a
+  form (time, duration, amounts, sides), then Delete. Planned structured
+  sleep details are tracked as a [known data gap](product-feature-comparison.md#known-data-gaps).
 - **Capture:** one template for every activity: the activity icon and name
   with the child in the top bar, a tappable time row ("Now" or the chosen
   time), the fields in a simple column, and one full-width Save in a bottom

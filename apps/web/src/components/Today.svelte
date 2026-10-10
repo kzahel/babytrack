@@ -8,7 +8,7 @@
   // The approved Today: what is running now, time since the last feed,
   // sleep, and diaper, six one-tap actions, the day ribbon, and recent entries.
   let { entries = [], summary = null, breastDraft = null, pumpStartMs = null, nowMs, busy = false,
-    open, startSleep, openSleep, logDiaper, viewHistory } = $props();
+    open, startSleep, openEntry, logDiaper, viewHistory } = $props();
 
   const lastFeed = $derived(latest(entries, (kind) => ['feed.breast', 'feed.bottle', 'feed.solids'].includes(kind)));
   const runningSleep = $derived(entries.filter(isRunningSleep).reduce((best, row) =>
@@ -27,7 +27,7 @@
 </script>
 
 {#if runningSleep}
-  <button class="now-card" onclick={() => openSleep(runningSleep)}>
+  <button class="now-card" onclick={() => openEntry(runningSleep)}>
     <span><small>{c.sleepingSince(clockTime(runningSleep.startMs))}</small><strong>{clock(nowMs - runningSleep.startMs)}</strong></span>
     <Icon name="chevron" size={22} />
   </button>
@@ -79,7 +79,7 @@
     <span>{c.wet}<small>{c.logNow}</small></span></button>
   <button class="action care" disabled={busy} onclick={() => logDiaper(2)}><Icon name="dirty" size={30} />
     <span>{c.dirty}<small>{c.logNow}</small></span></button>
-  <button class="action sleep" disabled={busy} onclick={() => (runningSleep ? openSleep(runningSleep) : startSleep())}><Icon name="sleep" size={30} />
+  <button class="action sleep" disabled={busy} onclick={() => (runningSleep ? openEntry(runningSleep) : startSleep())}><Icon name="sleep" size={30} />
     <span>{c.sleep}<small>{runningSleep ? c.openTimer : c.startTimer}</small></span></button>
   <button class="action neutral" onclick={() => open(null)}><Icon name="plus" size={30} />
     <span>{c.moreActivities}<small>{c.moreHint}</small></span></button>
@@ -110,7 +110,7 @@
 {:else}
   <div class="recent-list">
     {#each entries.slice(0, 3) as row (row.id)}
-      <button class="recent-row" onclick={viewHistory}>
+      <button class="recent-row" onclick={() => openEntry(row)}>
         <span class="recent-dot {category(row.kind)}"><Icon name={iconFor(row.kind)} size={18} /></span>
         <strong>{entrySummary(row)}</strong><span>{compactDateTime(row.startMs, nowMs)}</span>
       </button>

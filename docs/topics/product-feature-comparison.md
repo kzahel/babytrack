@@ -104,7 +104,7 @@ end of this document.
 | Child profile / switching | Profile correction saved; add-child and family controls observed. [N1, N4] | Profile edit saved; Add Child form validated and cancelled. [H4] | Multiple Families/children and header target switching; name, optional birthday, growth-chart sex and derived age. | Keep clear target selection; avoid requiring later-use fields before a first log. |
 | Bottle feed | Milk/formula, mL/fl oz, notes, optional formula brand; save/edit tested. [N2] | Type, mL/oz, notes; save/edit tested. [H2] | Content choices, mL/US fl oz/UK fl oz, notes, time and same-entry correction. | Already broad enough. Improve remembered choices and fast entry rather than add brand catalogs first. |
 | Nursing | Live left/right counters, side switching, stop/resume and last-side summary. [N2] | Side switching pauses prior side; pause and manual duration correction tested. [H2] | Live left/right timer with switch, pause, last-side mark and force-stop recovery as a local draft; manual minutes remain; correction supported ([010](../tactical/010-android-design-pass.md)). | Local timing and a quiet running/paused notification are delivered ([011](../tactical/011-android-timer-notifications.md)); cross-device live timer sync remains open. |
-| Sleep | Active timer, reopen, stop and force-stop recovery tested. [N2, N5] | Closing editor preserves active timer; force-stop recovery and optional sleep context tested. [H2, H5] | Running and completed sleep, place, correction, Today start/stop with a live elapsed clock, an ongoing notification naming the child with an elapsed-time clock, and basic widget. The web preview starts, shows, and stops sleep. | Physical-phone checks remain. |
+| Sleep | Active timer, reopen, stop and force-stop recovery tested. [N2, N5] | Closing editor preserves active timer; force-stop recovery and optional sleep context tested. [H2, H5] | Running and completed sleep, place, correction, Today start/stop with a live elapsed clock, an ongoing notification naming the child with an elapsed-time clock, and basic widget. The web preview starts, shows, and stops sleep. | Physical-phone checks remain. Structured sleep details are a [known data gap](#known-data-gaps). |
 | Pumping | Live timer, total/split volume UI; total fixture saved/reopened. [N2] | Manual/timer modes, split volumes, pause and staged save tested. [H2] | Stopwatch with a quiet ongoing notification that reopens its exact target ([011](../tactical/011-android-timer-notifications.md)); fills the interval, total or left/right mL, and amount correction. | Improve unit entry. Freezer inventory is a separate deferred feature. |
 | Diaper | Wet/dirty/mixed, color/texture, blowout and rash. [N2] | Pee/poo/mixed/dry plus sizes, color, consistency and rash. [H2] | Wet/dirty/both/dry, notes, correction and quick wet action. | Core coverage present. Rich attributes are optional breadth, currently outside MVP. |
 | Solids | Category and combo-feeding choice observed; deeper path not tested. [N2] | Search/grid, banana selection, reaction, per-food calendar; custom food/photo affordances. [H2, H3] | Foods list and optional amount text; save and correction. | Later add food reuse/search and descriptive reactions/history. Do not turn reactions into allergy diagnosis. |
@@ -283,6 +283,30 @@ research did not audit their data practices. Our strongest comparison is
 observable: **we can deliver the first saved log without giving an email,
 choosing a password, or navigating a subscription offer.** The Android
 child-first flow now presents that advantage directly.
+
+## Known data gaps
+
+Wanted data the record model does not hold yet. Each needs an owning
+[event model](event-model.md) decision, new field IDs in
+[records v1](../protocol/records-v1.md) (published keys are never
+reinterpreted, and older clients retain unknown fields), cross-language
+vectors, core builders and read model, then UI on web and Android.
+
+- **Structured sleep details** (owner request, 2026-10-10). Huckleberry's
+  optional sleep details sheet records how a sleep started and ended. The
+  owner wants Lantern to support more structured sleep data. Candidates, all
+  optional single choices on the sleep event:
+  - how they fell asleep: on own in bed, nursing, bottle, worn or held,
+    next to caregiver, rocked or soothed;
+  - how it ended: woke on their own, woken by a caregiver;
+  - mood at start and at end: upset, content;
+  - time to fall asleep: under 10 minutes, 10 to 20 minutes, longer.
+  Today a sleep holds start, end, place (crib, pram, contact, car, other),
+  and a note; "how they fell asleep" stays separate from place (where they
+  slept). The details sheet ([014](../tactical/014-lantern-restyle.md))
+  shows place and note now and leaves room for these rows. Prioritize
+  fell-asleep and ended over mood and time to settle, which are subjective
+  and slower to log at night.
 
 ## Validation and open decisions
 

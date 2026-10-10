@@ -20,6 +20,14 @@
     lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
     phone: '<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4"/>',
     'no-account': '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/><path d="M3 3l18 18"/>',
+    crib: '<path d="M4 5v15M20 5v15M4 9h16M4 17h16M8 9v8M12 9v8M16 9v8"/>',
+    pram: '<path d="M4 9h11a5 5 0 0 1-5 5H8a4 4 0 0 1-4-4z"/><path d="M15 9V5l3-2"/><circle cx="7" cy="18" r="2"/><circle cx="14" cy="18" r="2"/>',
+    contact: '<circle cx="12" cy="6" r="3"/><path d="M6 21v-5a6 6 0 0 1 12 0v5"/><circle cx="12" cy="15" r="2.5"/>',
+    car: '<path d="M4 15l1.5-5A2 2 0 0 1 7.4 8.5h9.2a2 2 0 0 1 1.9 1.5L20 15v3H4z"/><circle cx="8" cy="18" r="1.6"/><circle cx="16" cy="18" r="1.6"/>',
+    dots: '<circle cx="6" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="18" cy="12" r="1.3" fill="currentColor"/>',
+    both: '<path d="M3.5 7.5h17v2.6a8.5 8.5 0 0 1-17 0z"/><path d="M12 11.2s1.6 1.7 1.6 2.9a1.6 1.6 0 0 1-3.2 0c0-1.2 1.6-2.9 1.6-2.9z"/>',
+    dry: '<path d="M3.5 7.5h17v2.6a8.5 8.5 0 0 1-17 0z"/>',
+    close: '<path d="M6 6l12 12M18 6L6 18"/>',
     mark: '<circle cx="12" cy="12" r="6.5" stroke-width="2.6"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>',
   };
 </script>

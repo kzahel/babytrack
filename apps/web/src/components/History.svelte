@@ -4,13 +4,12 @@
   import { dayHeading, dayWindow, durationLabel, filters, startOfDay, touchesDay } from '../presentation.js';
 
   // Android's History: one local day with the core's totals, or every day.
-  let { entries = [], nowMs, editable = true, loadSummary, edit, stopSleep, remove } = $props();
+  let { entries = [], nowMs, editable = true, loadSummary, open } = $props();
 
   let mode = $state('day');
   let filter = $state('all');
   let selected = $state(startOfDay(Date.now()));
   let summary = $state(null);
-  let expanded = $state('');
 
   const today = $derived(startOfDay(nowMs));
   const day = $derived(Math.min(selected, today));
@@ -87,8 +86,7 @@
   {#if rows.length}
     <div class="entry-list">
       {#each rows as row (row.id)}
-        <EntryRow {row} {editable} expanded={expanded === row.id} toggle={() => expanded = expanded === row.id ? '' : row.id}
-          {edit} {stopSleep} remove={async (entry) => { await remove(entry); expanded = ''; }} />
+        <EntryRow {row} {editable} {open} />
       {/each}
     </div>
   {/if}

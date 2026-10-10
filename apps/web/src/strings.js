@@ -161,6 +161,7 @@ export const copy = {
   diaperTotal: (count) => counted(count, 'diaper', 'diapers'), wetDirtyTotal: (wet, dirty) => `${wet} wet · ${dirty} dirty`,
   dayRibbon: 'Today since midnight: sleep, feeds, and diapers', sleepDetail: 'Sleep', placeLabel: 'Place',
   deleteSleepConfirm: 'Delete this running sleep?',
+  close: 'Close', otherShort: 'Other', details: 'Details', optional: 'Optional', change: 'Change',
   moveSession: 'Move session', editTime: 'Edit time', editSleepDuration: 'Edit sleep duration',
   editSleepPlace: 'Edit sleep place', editBottle: 'Edit bottle', editDiaperType: 'Edit diaper type',
   editSolids: 'Edit solids', editPumpAmounts: 'Edit pumping amounts', editMedication: 'Edit medication entry',

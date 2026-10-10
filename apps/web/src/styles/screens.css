@@ -92,8 +92,6 @@
 .recent-row strong { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-row > span:last-child { color: var(--muted); font-size: var(--text-small); white-space: nowrap; }
 .recent-dot { color: var(--accent); display: grid; }
-.timer-detail .detail-clock { font-size: 3rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.03em; margin: 0; }
-.detail-actions { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-6); }
 @media (min-width: 761px) { .actions-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
 /* Activity chooser */
@@ -155,3 +153,37 @@
 .device-name { display: flex; align-items: end; gap: var(--space-2); flex-basis: 100%; }
 .device-name label { flex: 1; }
 .restore-preview { background: var(--brand-soft); }
+
+/* Entry details sheet */
+.sheet-backdrop { position: fixed; inset: 0; z-index: 10; border: 0; padding: 0; cursor: default;
+  background: color-mix(in srgb, #000 40%, transparent); }
+.sheet { position: fixed; z-index: 11; inset: auto 0 0; max-height: 88dvh; overflow-y: auto;
+  background: var(--canvas); border-radius: var(--radius-card) var(--radius-card) 0 0;
+  padding: var(--space-5) var(--space-5) max(var(--space-6), env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: var(--space-3); }
+@media (min-width: 761px) { .sheet { inset: auto 0 0; margin: 0 auto; width: min(100%, 520px); bottom: 8vh;
+  border-radius: var(--radius-card); } }
+.sheet-head { display: flex; align-items: center; gap: var(--space-3); color: var(--accent); }
+.sheet-head > div { flex: 1; min-width: 0; color: var(--ink); }
+.sheet-head h2 { margin: 0; font-size: var(--text-heading); }
+.sheet-head h2:focus { outline: none; }
+.sheet-head small { color: var(--muted); font-size: var(--text-small); }
+.icon-button { border: 0; background: var(--surface-muted); color: var(--ink); width: 40px; height: 40px;
+  border-radius: 50%; display: grid; place-items: center; }
+.sheet-now { display: flex; flex-direction: column; background: var(--now-soft); border-radius: var(--radius-card); padding: var(--space-4); }
+.sheet-now small { color: var(--now-ink); font-weight: 650; font-size: var(--text-small); }
+.sheet-now strong { font-size: var(--text-title); font-variant-numeric: tabular-nums; }
+.sheet-section { display: flex; align-items: baseline; gap: var(--space-2); margin: var(--space-3) 0 0; font-size: var(--text-label); }
+.sheet-section small { color: var(--muted); font-weight: 600; }
+.icon-choices { display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: var(--space-1); }
+.icon-choices button { flex: 1 1 0; min-width: 56px; min-height: 84px; border: 0; border-radius: var(--radius-field); background: var(--surface);
+  color: var(--ink); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1);
+  font-size: var(--text-small); font-weight: 650; padding: var(--space-2); }
+.icon-choices button[aria-pressed=true] { background: var(--brand); color: var(--on-brand); }
+.sheet-row { width: 100%; min-height: var(--touch); display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-3); border: 0; border-radius: var(--radius-field); background: var(--surface); padding: var(--space-3) var(--space-4);
+  text-align: left; font-weight: 650; }
+.sheet-row em { font-style: normal; color: var(--brand); font-weight: 700; }
+.sheet-row .icon { color: var(--muted); }
+.sheet-note { display: flex; flex-direction: column; gap: var(--space-2); }
+.sheet-delete { align-self: center; margin-top: var(--space-2); }

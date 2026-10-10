@@ -129,9 +129,12 @@ async function correctEveryKind(page) {
   await correct('Sleep · 45 min', 'Edit sleep duration', async () => {
     await page.getByLabel('Minutes slept').fill('30');
   }, 'Sleep · 30 min');
-  await correct('Sleep · 30 min', 'Edit sleep place', async () => {
-    await page.getByRole('button', { name: 'Car' }).click();
-  }, 'Place: Car');
+  await historyTab(page);
+  await page.locator('.entry-main').filter({ hasText: 'Sleep · 30 min' }).first().click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Car' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Car' }).and(page.locator('[aria-pressed=true]')).waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByText('Place: Car', { exact: true }).first().waitFor();
   await correct('Sleep · 30 min', 'Move session', async () => {
     const start = await page.getByLabel('New start').inputValue();
     const earlier = new Date(new Date(start).getTime() - 3_600_000);
@@ -149,9 +152,14 @@ async function correctEveryKind(page) {
   await correct('Medication · Vitamin D', 'Edit medication entry', async () => {
     await page.getByLabel('Medication name').fill('Iron');
   }, 'Medication · Iron · 1 drop');
-  await correct('Medication · Iron', 'Add note to entry', async () => {
-    await page.getByLabel('Note').fill('After lunch');
-  }, 'Note: After lunch');
+  await historyTab(page);
+  await page.locator('.entry-main').filter({ hasText: 'Medication · Iron' }).first().click();
+  await page.getByRole('dialog').getByRole('button', { name: /Add note to entry/ }).click();
+  await page.getByRole('dialog').getByLabel('Note').fill('After lunch');
+  await page.getByRole('dialog').getByRole('button', { name: 'Save note' }).click();
+  await page.getByRole('dialog').getByText('Note: After lunch').waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByText('Note: After lunch', { exact: true }).first().waitFor();
   await correct('Note · Rolled over', 'Edit time', async () => {
     const at = new Date(new Date(await page.getByLabel('When').inputValue()).getTime() - 3_600_000);
     await page.getByLabel('When').fill(new Date(at.getTime() - at.getTimezoneOffset() * 60_000).toISOString().slice(0, 16));

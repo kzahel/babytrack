@@ -13,6 +13,7 @@
   import Today from './components/Today.svelte';
   import History from './components/History.svelte';
   import BackupPanel from './components/BackupPanel.svelte';
+  import EntrySheet from './components/EntrySheet.svelte';
   import SharingPanel from './components/SharingPanel.svelte';
   import Welcome from './components/Welcome.svelte';
   import FirstChild from './components/FirstChild.svelte';
@@ -26,7 +27,7 @@
   let profileChild = null;
   let breastDraft = null;
   let pumpStartMs = null;
-  let sleepTargetId = '';
+  let sheetId = '';
   let nowMs = Date.now();
   let editing = null;
   let undo = null;
@@ -52,7 +53,7 @@
   const loadSummary = (range) => api.daySummary(family, child, range);
 
   const tracker = createTrackerController({ api, copy: c, preferences: localStorage,
-    onSelect: () => { screen = ''; editing = null; tab = 'today'; },
+    onSelect: () => { screen = ''; editing = null; sheetId = ''; tab = 'today'; },
     onRemoval: () => { screen = ''; editing = null; },
     onRememberInvitation: () => history.replaceState(null, '', location.pathname + location.search) });
   $: ({ loading, familyRows, family, child, data, pendingFragment, joinStage,
@@ -61,9 +62,8 @@
   $: breastDraft = screen === '' && $tracker.family && $tracker.child ? readDraft($tracker.family, $tracker.child) : breastDraft;
   $: pumpStartMs = screen === '' && $tracker.family && $tracker.child
     ? Number(localStorage.getItem(`babytrack-pump-draft-v1:${$tracker.family}:${$tracker.child}`)) || null : pumpStartMs;
-  // The running sleep shown in detail; it closes if the sleep ends elsewhere.
-  $: sleepTarget = entries.find((row) => row.id === sleepTargetId && row.kind === 'sleep' && row.endMs == null) || null;
-  $: if (screen === 'sleep-detail' && !sleepTarget && !loading) screen = '';
+  // The entry in the details sheet, kept current; the sheet hides if the entry goes away.
+  $: sheetRow = sheetId ? entries.find((row) => row.id === sheetId) || null : null;
 
   onMount(() => {
     const clock = setInterval(() => nowMs = Date.now(), 1000);
@@ -124,6 +124,7 @@
   }
   function selectChild(value) {
     actionSequence++;
+    sheetId = '';
     tracker.selectChild(value);
     screen = ''; editing = null;
   }
@@ -159,11 +160,11 @@
       const saved = await saveActions([running ?
         { type: 'stopSleep', child, target: running.id, endMs: now, endOffset: api.offsetAt(now) } :
         { type: 'sleep', child, startMs: now, offset: api.offsetAt(now), place }]);
-      if (saved && (screen === 'capture' || screen === 'sleep-detail')) { screen = ''; tab = 'today'; }
+      if (saved && screen === 'capture') { screen = ''; tab = 'today'; }
     } finally { sleepBusy = false; }
   }
   const logDiaper = (kind) => saveActions([{ type: 'diaper', child, kind, startMs: Date.now(), offset: api.offsetAt(Date.now()) }]);
-  function openSleep(row) { sleepTargetId = row.id; screen = 'sleep-detail'; error = ''; }
+  function openEntry(row) { if (!removedInfo) { sheetId = row.id; error = ''; } }
   function begin(kind) {
     error = '';
     if (!kind) { screen = 'chooser'; return; }
@@ -172,7 +173,7 @@
     screen = 'capture';
   }
   function editProfile(row) { profileChild = row; screen = 'child'; error = ''; }
-  function editEntry(row, action) { editing = { row, action }; screen = 'edit'; error = ''; }
+  function editEntry(row, action) { sheetId = ''; editing = { row, action }; screen = 'edit'; error = ''; }
   async function removeEntry(row) {
     if (!window.confirm(c.deleteConfirm)) return false;
     const target = tracker.target();
@@ -274,19 +275,6 @@
           <h1>{c.breastFeed}</h1>
           {#key `${family}:${child}`}<BreastFeed {family} {child} {entries} {nowMs} save={saveEntry} done={finishEntry} />{/key}
         </section>
-      {:else if screen === 'sleep-detail' && sleepTarget}
-        <section class="form-view timer-detail">
-          <button class="back" onclick={() => screen = ''}>← {c.back}</button>
-          <div class="eyebrow">{c.forChild(selectedChild?.name)}</div>
-          <h1>{c.sleeping}</h1>
-          <p class="detail-clock">{clock(nowMs - sleepTarget.startMs)}</p>
-          <p class="muted">{c.sinceTime(clockTime(sleepTarget.startMs))}{#if sleepPlaces[sleepTarget.sleepPlace]} · {sleepPlaces[sleepTarget.sleepPlace]}{/if}</p>
-          <div class="detail-actions">
-            <button class="primary" disabled={sleepBusy} onclick={() => toggleSleep(sleepTarget)}>{c.stopSleep}</button>
-            <button class="secondary" onclick={() => editEntry(sleepTarget, 'sleep-place')}>{c.editSleepPlace}</button>
-            <button class="text-action danger" onclick={async () => { if (await removeEntry(sleepTarget)) screen = ''; }}>{c.deleteEntry}</button>
-          </div>
-        </section>
       {:else if screen === 'edit' && editing}
         <section class="form-view">
           <button class="back" onclick={() => { screen = ''; editing = null; }}>← {c.cancel}</button>
@@ -312,7 +300,7 @@
           {#if selectedChild}
             {#if !removedInfo}
               <Today {entries} summary={todaySummary} {breastDraft} {pumpStartMs} {nowMs} busy={sleepBusy} open={begin}
-                startSleep={() => toggleSleep(null)} {openSleep} {logDiaper} viewHistory={() => tab = 'history'} />
+                startSleep={() => toggleSleep(null)} {openEntry} {logDiaper} viewHistory={() => tab = 'history'} />
             {:else}
               {#each entries.slice(0, 3) as row (row.id)}<p>{entrySummary(row)}</p>{/each}
             {/if}
@@ -322,8 +310,7 @@
         </section>
       {:else if tab === 'history'}
         <section><h1 class="screen-title">{c.history}</h1>
-          {#key `${family}:${child}`}<History {entries} {nowMs} editable={!removedInfo} {loadSummary} edit={editEntry}
-            stopSleep={(entry) => toggleSleep(entry)} remove={removeEntry} />{/key}
+          {#key `${family}:${child}`}<History {entries} {nowMs} editable={!removedInfo} {loadSummary} open={openEntry} />{/key}
         </section>
       {:else}
         <section><h1 class="screen-title">{c.family}</h1>
@@ -348,6 +335,11 @@
         </section>
       {/if}
     </main>
+    {#if sheetRow && !screen}
+      <EntrySheet row={sheetRow} {nowMs} busy={sleepBusy} save={saveEntry} edit={editEntry} close={() => sheetId = ''}
+        stopSleep={async (entry) => { await toggleSleep(entry); sheetId = ''; }}
+        remove={async (entry) => { if (await removeEntry(entry)) sheetId = ''; }} />
+    {/if}
     {#if family && !screen}<nav class="bottom-nav" aria-label="Primary navigation">
       <button class:active={tab === 'today'} onclick={() => tab = 'today'}>{c.today}</button>
       <button class:active={tab === 'history'} onclick={() => tab = 'history'}>{c.history}</button>

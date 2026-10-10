@@ -34,6 +34,12 @@ place), store listing changes, renaming internal identifiers (`babytrack`,
    recent entries. Ribbon layout is a tested presentation function.
 5. [x] Web remaining screens: capture forms, timers, History, entry editors,
    Family, child profile, backups, and sharing in the same components.
+   The owner then asked for an entry details sheet after Huckleberry's
+   optional-details sheet: entries and the running timer open one sheet
+   with inline sleep place, diaper type, bottle contents, and note, plus
+   corrections and Delete. It replaces expanding rows and the separate
+   sleep detail screen. Structured sleep details beyond place are recorded
+   as a known data gap, not built.
    Web slices 2-5 were checked with phone screenshots in light and dark and
    a desktop screenshot against the mockups; the browser smoke and the
    real-relay flow pass on the restyled UI.

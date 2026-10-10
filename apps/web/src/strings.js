@@ -1,6 +1,6 @@
 // English launch copy lives in one catalog so routes can be translated later.
 export const copy = {
-  app: 'Babytrack', preview: 'Early web preview', today: 'Today', history: 'History',
+  app: 'Lantern', preview: 'Early web preview', today: 'Today', history: 'History',
   family: 'Family', createFamily: 'Create a Family', noAccount: 'Start tracking here without an account.',
   addChild: 'Add a child', childName: 'Child name', birthDate: 'Birthday',
   growthSex: 'Sex for growth charts', unspecified: 'Unspecified', female: 'Female', male: 'Male',

@@ -4,7 +4,8 @@
   import * as api from './core.js';
   import { createTrackerController } from './tracker-controller.js';
   import { readDraft } from './breast-timer.js';
-  import { chooser, dayWindow, entrySummary, kindLabels, symbol, category } from './presentation.js';
+  import { chooser, dayWindow, entrySummary, kindLabels, iconFor, category } from './presentation.js';
+  import Icon from './components/Icon.svelte';
   import Capture from './components/Capture.svelte';
   import BreastFeed from './components/BreastFeed.svelte';
   import ChildProfile from './components/ChildProfile.svelte';
@@ -178,7 +179,7 @@
 
 <div class="app-shell">
   <aside class="side-nav" aria-label="Primary navigation">
-    <div class="wordmark">◌ <span>{c.app}</span></div>
+    <div class="wordmark"><span class="mark"><Icon name="mark" size={22} /></span>{c.app}</div>
     {#if family}
       <button class:active={tab === 'today' && !screen} onclick={() => { screen = ''; tab = 'today'; }}>{c.today}</button>
       <button class:active={tab === 'history' && !screen} onclick={() => { screen = ''; tab = 'history'; }}>{c.history}</button>
@@ -189,7 +190,7 @@
 
   <div class="main-column">
     <header class="topbar">
-      <div class="brand-mobile">◌ {c.app}</div>
+      <div class="brand-mobile"><span class="mark"><Icon name="mark" size={20} /></span>{c.app}</div>
       {#if family && !screen}
         <div class="target">
           <span>{familyLabel}</span>
@@ -242,7 +243,7 @@
             <h2>{group.title}</h2>
             <div class="quick-grid">
               {#each group.kinds as kind}
-                <button onclick={() => begin(kind)}><span class="icon {category(kind)}" aria-hidden="true">{symbol(kind)}</span><strong>{kindLabels[kind]}</strong></button>
+                <button class={category(kind)} onclick={() => begin(kind)}><Icon name={iconFor(kind)} size={28} /><strong>{kindLabels[kind]}</strong></button>
               {/each}
             </div>
           {/each}

@@ -1,0 +1,17 @@
+/* Base elements and small utilities. */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--canvas); color: var(--ink); font-family: var(--font);
+  font-synthesis: none; line-height: 1.45; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .5; }
+:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+h1 { font-size: var(--text-title); line-height: 1.15; letter-spacing: -.03em; margin: var(--space-1) 0 var(--space-4); }
+h2 { font-size: 1.0625rem; letter-spacing: -.01em; margin: var(--space-6) 0 var(--space-3); }
+h3 { font-size: var(--text-label); margin: var(--space-4) 0 var(--space-2); }
+p { margin: 0 0 var(--space-3); }
+.muted { color: var(--muted); }
+.eyebrow { font-size: var(--text-tiny); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

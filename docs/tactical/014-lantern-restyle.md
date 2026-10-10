@@ -23,7 +23,7 @@ place), store listing changes, renaming internal identifiers (`babytrack`,
 ## Ordered delivery slices
 
 1. [x] Record the approved mockups, the token table, and this plan.
-2. [ ] Web foundation: `styles/tokens.css` for light and dark, modular base,
+2. [x] Web foundation: `styles/tokens.css` for light and dark, modular base,
    component, and screen styles replacing the single stylesheet, an icon
    component, and the Lantern name in web copy.
 3. [ ] Web shell and welcome: header with child switcher, age, date, and

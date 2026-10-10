@@ -1,0 +1,47 @@
+/* App shell: side rail on wide screens, bottom navigation on phones. */
+.app-shell { min-height: 100dvh; display: flex; max-width: 1280px; margin: auto; }
+.main-column { flex: 1; min-width: 0; }
+main { width: min(100%, 760px); padding: var(--space-2) var(--space-6) 7rem; }
+.side-nav { width: 232px; padding: var(--space-6) var(--space-4); display: flex; flex-direction: column; gap: var(--space-1);
+  position: sticky; top: 0; height: 100dvh; }
+.side-nav button { background: none; border: 0; text-align: left; padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-control); min-height: var(--touch); font-weight: 650; color: var(--muted); }
+.side-nav button:hover { color: var(--ink); }
+.side-nav button.active { background: var(--brand-soft); color: var(--brand); }
+.side-nav small { margin-top: auto; padding: var(--space-4); color: var(--muted); }
+.wordmark, .brand-mobile { display: flex; align-items: center; gap: var(--space-2); font-weight: 800;
+  letter-spacing: -.02em; color: var(--ink); }
+.wordmark { font-size: 1.25rem; padding: var(--space-1) var(--space-4) var(--space-8); }
+.topbar { min-height: 64px; padding: var(--space-3) var(--space-6); display: flex; align-items: center;
+  justify-content: space-between; gap: var(--space-3); }
+.brand-mobile { display: none; }
+.target { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-small); color: var(--muted); }
+.target select { max-width: 220px; padding: var(--space-2) var(--space-8) var(--space-2) var(--space-3);
+  border: 0; border-radius: var(--radius-control); background: var(--surface); font-weight: 700; color: var(--ink); }
+.bottom-nav { display: none; }
+.form-view { max-width: 560px; display: flex; flex-direction: column; }
+.form-view form { display: flex; flex-direction: column; gap: var(--space-4); }
+.save { margin-top: var(--space-4); align-self: stretch; }
+
+@media (max-width: 760px) {
+  .side-nav { display: none; }
+  .topbar { padding: var(--space-3) var(--space-4); }
+  .brand-mobile { display: flex; font-size: 1.125rem; }
+  .target select { max-width: 140px; }
+  main { padding: var(--space-2) var(--space-4) 7rem; }
+  .bottom-nav { position: fixed; inset: auto 0 0; z-index: 2; display: grid; grid-template-columns: repeat(3, 1fr);
+    background: var(--canvas); border-top: 1px solid var(--line);
+    padding: var(--space-1) var(--space-2) max(var(--space-2), env(safe-area-inset-bottom)); }
+  .bottom-nav button { background: none; border: 0; min-height: 52px; font-size: var(--text-small);
+    font-weight: 700; color: var(--muted); display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: var(--space-1); }
+  .bottom-nav button::before { content: ""; width: 22px; height: 4px; border-radius: 2px; background: transparent; }
+  .bottom-nav button.active { color: var(--brand); }
+  .bottom-nav button.active::before { background: var(--brand); }
+  /* Mobile Safari floats its toolbar over the page bottom; keep pinned actions above it. */
+  .form-view { min-height: calc(100dvh - 120px - 5.5rem); }
+  .form-view form, .form-view .capture-form { flex: 1; }
+  .save { margin-top: auto; }
+}
+.mark { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 10px;
+  background: var(--brand); color: var(--on-brand); }

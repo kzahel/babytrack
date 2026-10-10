@@ -143,7 +143,7 @@ export function invitationFragment(value) {
   const fragment = value.trim().startsWith('#') ? value.trim() :
     new URL(value.trim(), location.origin).hash;
   if (!fragment.startsWith('#bt-invite=v1.') || fragment.length > 2048) {
-    throw new Error('Enter a Babytrack invitation link');
+    throw new Error('Enter a Lantern invitation link');
   }
   return fragment;
 }

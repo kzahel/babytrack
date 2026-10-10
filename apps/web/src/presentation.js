@@ -27,9 +27,13 @@ const categories = {
   'feed.bottle': 'feed', 'feed.breast': 'feed', 'feed.solids': 'feed', pump: 'feed', sleep: 'sleep',
   diaper: 'care', growth: 'health', temperature: 'health', medication: 'health', note: 'note',
 };
-const symbols = { feed: '◔', sleep: '☾', care: '◇', health: '✚', note: '✎' };
+const icons = {
+  'feed.bottle': 'bottle', 'feed.breast': 'breast', pump: 'pump', 'feed.solids': 'solids', sleep: 'sleep',
+  diaper: 'diaper', growth: 'growth', temperature: 'temperature', medication: 'medication', note: 'note',
+};
 export const category = (kind) => categories[kind] || 'note';
-export const symbol = (kind) => symbols[category(kind)];
+/** The Icon name for an activity kind. */
+export const iconFor = (kind) => icons[kind] || 'note';
 
 export const filters = [
   { id: 'all', label: c.filterAll, match: () => true },

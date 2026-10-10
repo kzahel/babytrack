@@ -1,0 +1,65 @@
+/* Lantern design tokens. Screens use these roles, never literal colors.
+   The interface design topic owns the values; Android mirrors them. */
+:root {
+  color-scheme: light dark;
+
+  --canvas: #f7f5f0;
+  --surface: #ffffff;
+  --surface-muted: #ecebe5;
+  --line: #e7e3da;
+  --ink: #1d2a2e;
+  --muted: #66767a;
+  --brand: #176b75;
+  --on-brand: #ffffff;
+  --brand-soft: #e9f3f1;
+  --now: #e8952f;
+  --now-soft: #fff2df;
+  --now-ink: #7a4410;
+  --danger: #a2352a;
+  --danger-soft: #fbe6e2;
+  --success-soft: #e5f4ed;
+  --success-ink: #1f5c46;
+
+  /* Activity groups: accent, tonal container, ink on that container. */
+  --feed: #e0794f; --feed-soft: #fbe3d6; --feed-ink: #6e2f14;
+  --sleep: #5a63b8; --sleep-soft: #e3e5f6; --sleep-ink: #2c3270;
+  --care: #3f9a76; --care-soft: #dcefe4; --care-ink: #1c4c37;
+  --health: #8a5cb0; --health-soft: #ece3f4; --health-ink: #45285e;
+  --note: #8a7a5a; --note-soft: #efe9dc; --note-ink: #4a4130;
+
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px;
+  --radius-control: 12px; --radius-field: 16px; --radius-card: 20px; --radius-pill: 999px;
+
+  --font: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --text-display: 2.125rem; --text-title: 1.75rem; --text-heading: 1.25rem;
+  --text-body: 1rem; --text-label: 0.9375rem; --text-small: 0.8125rem; --text-tiny: 0.75rem;
+  --touch: 48px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #121513;
+    --surface: #1b201e;
+    --surface-muted: #24282a;
+    --line: #2b322f;
+    --ink: #f1ece2;
+    --muted: #a3a99f;
+    --brand: #8fd3cb;
+    --on-brand: #0f2a2a;
+    --brand-soft: #1f2b29;
+    --now: #f2a64a;
+    --now-soft: #2e2414;
+    --now-ink: #ffd9a6;
+    --danger: #ffb4a8;
+    --danger-soft: #3d2420;
+    --success-soft: #1f3329;
+    --success-ink: #cdeedd;
+
+    --feed: #f09a74; --feed-soft: #3a2a22; --feed-ink: #ffd6c2;
+    --sleep: #9aa3f0; --sleep-soft: #272a45; --sleep-ink: #d6daff;
+    --care: #7cc9a6; --care-soft: #1f3329; --care-ink: #c6ecd8;
+    --health: #c9a3e6; --health-soft: #2f2538; --health-ink: #ead8f7;
+    --note: #d8c79e; --note-soft: #2c2820; --note-ink: #efe4c8;
+  }
+}

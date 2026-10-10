@@ -1,6 +1,7 @@
 <script>
   import { copy as c } from '../strings.js';
-  import { category, clockTime, entrySummary, isRunningSleep, sleepPlaces, symbol } from '../presentation.js';
+  import { category, clockTime, entrySummary, iconFor, isRunningSleep, sleepPlaces } from '../presentation.js';
+  import Icon from './Icon.svelte';
 
   // A history row; tapping it reveals the corrections Android offers for that type.
   let { row, editable = true, expanded = false, toggle, edit, stopSleep, remove } = $props();
@@ -24,7 +25,7 @@
 </script>
 
 <div class="entry">
-  <span class="entry-dot icon {category(row.kind)}" aria-hidden="true">{symbol(row.kind)}</span>
+  <span class="entry-dot {category(row.kind)}"><Icon name={iconFor(row.kind)} size={22} /></span>
   <button class="entry-main" aria-expanded={editable ? expanded : undefined} disabled={!editable} onclick={toggle}>
     <strong>{entrySummary(row)}</strong>
     {#if row.kind !== 'note' && row.note}<small>{c.noteDetail(row.note)}</small>{/if}

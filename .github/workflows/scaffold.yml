@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
       - name: Show pinned toolchain
         run: rustup show active-toolchain
       - name: Format
@@ -57,8 +57,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4.2.2
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -70,8 +70,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4.2.2
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - name: Install Playwright Chromium shell
@@ -89,7 +89,7 @@ jobs:
         run: bash scripts/check_web_shared_ui.sh
       - name: Keep browser failure diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: babytrack-browser-diagnostics
           path: target/browser-diagnostics/
@@ -100,8 +100,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4.2.2
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -116,7 +116,7 @@ jobs:
         run: apps/android/gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
       - name: Render Android fixture gallery without an emulator
         run: bash scripts/render_android_gallery.sh
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - name: Check offline gallery browsing
@@ -128,7 +128,7 @@ jobs:
           node tests/browser/gallery-smoke.cjs
       - name: Keep Android screen gallery
         id: screen-gallery
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: babytrack-android-screen-gallery
           path: apps/android/app/build/outputs/screen-gallery/
@@ -145,7 +145,7 @@ jobs:
               summary.write('Unzip and open `index.html`: browse by destination, filter states, and compare dark/light or normal/1.5× text. Click a preview to inspect additional scroll positions. All fixtures use synthetic data and production Compose screens.\n')
           PY
       - name: Keep dogfood artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: babytrack-android-apks
           path: |
@@ -158,13 +158,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4.2.2
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v4.0.4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: babytrack-android-apks
           path: apps/android/app/build/outputs/apk
@@ -183,7 +183,7 @@ jobs:
           script: bash scripts/check_android_ci_emulator.sh
       - name: Keep Android navigation captures
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: babytrack-android-navigation
           path: |

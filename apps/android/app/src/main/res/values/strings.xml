@@ -262,7 +262,9 @@
     <string name="dev_share_title">Sharing setup preview</string>
     <string name="dev_share_description">Connect to a development relay. This screen prepares sharing, invitation, and key handoff. The app polls while open and schedules background sync; use Sync shared Family to retry now. Use a local relay only for test data.</string>
     <string name="share_family">Share this Family</string>
-    <string name="preview_share_description">Connect this Family to the early preview relay. Use test data for now. Anyone you invite can receive its existing history and future entries.</string>
+    <string name="preview_share_description">Connect this Family to the Babytrack preview relay. It stores only encrypted data and may be reset during testing; your entries stay on your devices. Anyone you invite can receive its existing history and future entries.</string>
+    <string name="preview_sharing">Preview sharing</string>
+    <string name="preview_sharing_supporting">Show Start sharing. The preview relay stores only encrypted data and may be reset during testing; everything stays on your devices.</string>
     <string name="share_family_action">Start sharing</string>
     <string name="share_origin_not_saved">Sharing reached the relay, but this phone could not save its connection. Keep this phone and retry setup.</string>
     <string name="invite_caregiver">Invite another caregiver</string>

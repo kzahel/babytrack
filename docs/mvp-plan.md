@@ -6,6 +6,9 @@ owns the gate evidence and post-M0 coverage queue. M1 physical-phone
 validation is next.
 An opt-in M2 early preview may be hosted with disposable data before M5;
 this is a development testbed, not the public hosted service or release gate.
+Android release builds may share through it only after an explicit
+in-app opt-in that says the relay stores only encrypted data and may be
+reset. Durable preview relay storage is an open owner decision.
 Owns scope, stack, milestone sequencing, and review gates. Read the
 [topic index](topics/README.md) for detailed decisions and the
 [tactical index](tactical/README.md) for current work. The

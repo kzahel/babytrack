@@ -236,6 +236,13 @@ internal fun TrackerRoute(
                                     .toMap()
                             )
                         }
+                        // Release builds share through the preview relay only after an opt-in.
+                        val previewSharingPrefs = remember {
+                            context.getSharedPreferences("preview_sharing", Context.MODE_PRIVATE)
+                        }
+                        var previewSharingOptIn by remember {
+                            mutableStateOf(previewSharingPrefs.getBoolean("enabled", false))
+                        }
                         var deviceLabelTarget by remember { mutableStateOf<String?>(null) }
                         var deviceLabelDraft by remember { mutableStateOf("") }
 
@@ -790,6 +797,8 @@ internal fun TrackerRoute(
                                             deviceLabels = deviceLabels,
                                             showAccessControls = showAccessControls,
                                             showFamilySetup = showFamilySetup,
+                                            previewSharingEnabled = BuildConfig.DEBUG || previewSharingOptIn,
+                                            previewSharingOptIn = previewSharingOptIn,
                                             showShareForm = showShareForm,
                                             shareInProgress = shareInProgress,
                                             relayOrigin = relayOrigin,
@@ -968,6 +977,12 @@ internal fun TrackerRoute(
                                             onToggleFamilyOptions = action@{
                                                     showFamilySetup = !showFamilySetup
                                                 },
+                                            onTogglePreviewSharing = {
+                                                previewSharingOptIn = !previewSharingOptIn
+                                                previewSharingPrefs.edit()
+                                                    .putBoolean("enabled", previewSharingOptIn)
+                                                    .apply()
+                                            },
                                             onNewFamily = action@{
                                                     scope.launch {
                                                         runCatching {

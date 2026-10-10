@@ -1,6 +1,7 @@
 package org.babytrack.app
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -15,6 +16,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -92,6 +94,10 @@ internal data class FamilyUiState(
     val pendingRestoreProtected: Boolean,
     val restorePassword: String,
     val restoreInfo: BackupInfoRow?,
+    /** Start sharing is shown in debug builds, or after the release opt-in. */
+    val previewSharingEnabled: Boolean = BuildConfig.DEBUG,
+    val previewSharingOptIn: Boolean = false,
+    val showPreviewSharingSwitch: Boolean = !BuildConfig.DEBUG,
 )
 
 internal data class FamilyActions(
@@ -117,6 +123,7 @@ internal data class FamilyActions(
     val onContinueInPrivateCopy: (FamilyRef) -> Unit = { _ -> },
     val onToggleFamilyOptions: () -> Unit = {},
     val onNewFamily: () -> Unit = {},
+    val onTogglePreviewSharing: () -> Unit = {},
     val onShareFamilyAction: () -> Unit = {},
     val onOpenSharingControls: () -> Unit = {},
     val onRelayOriginChange: (String) -> Unit = { _ -> },
@@ -304,7 +311,7 @@ internal fun ColumnScope.FamilyScreen(state: FamilyUiState, actions: FamilyActio
         if (family != null && children.isEmpty())
             Button(onClick = actions.onAddChild) { Text(stringResource(R.string.add_child)) }
 
-        if (family != null && (activeShared || (activeFamilyIsLocal && BuildConfig.DEBUG)))
+        if (family != null && (activeShared || (activeFamilyIsLocal && previewSharingEnabled)))
             SectionHeader(stringResource(R.string.section_sharing))
         if (activeShared) {
             SectionCard {
@@ -510,7 +517,7 @@ internal fun ColumnScope.FamilyScreen(state: FamilyUiState, actions: FamilyActio
             OutlinedButton(onClick = actions.onMakePrivateCopy) {
                 Text(stringResource(R.string.make_private_copy))
             }
-        if (family != null && activeFamilyIsLocal && !activeShared && BuildConfig.DEBUG)
+        if (family != null && activeFamilyIsLocal && !activeShared && previewSharingEnabled)
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -687,6 +694,28 @@ internal fun ColumnScope.FamilyScreen(state: FamilyUiState, actions: FamilyActio
                         null,
                         actions.onNewFamily,
                     )
+                if (showFamilySetup && showPreviewSharingSwitch)
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .toggleable(
+                                value = previewSharingOptIn,
+                                role = Role.Switch,
+                                onValueChange = { actions.onTogglePreviewSharing() },
+                            )
+                            .padding(vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(stringResource(R.string.preview_sharing), style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                stringResource(R.string.preview_sharing_supporting),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(checked = previewSharingOptIn, onCheckedChange = null)
+                    }
             }
         } else
             OutlinedButton(onClick = actions.onNewFamily) {

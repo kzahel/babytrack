@@ -256,7 +256,11 @@ records its limits. The subsequent bounded M0 exit passed at `4f5ef18`;
 physical two-phone validation remains open.
 The Android debug build now offers Share this Family directly in Family,
 with the disposable preview relay origin and public signing key pinned in
-`PreviewRelay.kt`. No manual URL or key entry is needed for this path.
+`PreviewRelay.kt`. Since October 10, release builds show it after an
+off-by-default Preview sharing switch under Family options, whose copy says
+the relay holds only encrypted data and may be reset; a Robolectric test
+renders the release layout and toggles it. Role changes, invitation
+cancellation, and manual relay setup remain debug-only. No manual URL or key entry is needed for this path.
 Managers issue a one-device member or manager invitation from Family access,
 then send an Android link, copy it, or send a browser link for the hosted
 preview. These are alternative links for the same invitation, not separate

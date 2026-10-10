@@ -137,8 +137,9 @@ flowchart TD
 5. **Family.** Present a settings-style list. Put device access and join progress beside backup, restore,
    analysis export, and child management. Show current local/shared status
    in plain language. Keep any developer relay configuration visibly
-   separate from caregiver actions. In the debug preview, Share this Family
-   uses the pinned disposable relay directly; manual relay setup remains
+   separate from caregiver actions. Share this Family uses the pinned
+   disposable relay directly, in debug builds and after the release Preview
+   sharing opt-in under Family options; manual relay setup remains debug-only
    under Family options, and invitation handoff lives in Family access.
 6. **Child profile.** After first use, create and edit use the same focused screen with name,
    birth date, growth-chart sex, derived age, and one Save action. The age

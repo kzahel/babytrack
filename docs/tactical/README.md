@@ -55,3 +55,6 @@ tactical with its current status.
   — Android internal release delivered from passing build/sign CI and
   available to the selected internal tester; iOS deferred. Follow-up full CI
   is green; broader platform/security gates remain open.
+- [013: Web parity with Android](013-web-android-parity.md) — active;
+  bring every Android tracking, correction, review, recovery, and sharing
+  flow to the web through the shared core before the visual redesign.

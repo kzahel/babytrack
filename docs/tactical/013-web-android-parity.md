@@ -53,9 +53,17 @@ the shared core for both platforms, not reimplemented in JavaScript.
    Unspecified as published. History lines follow Android's summaries.
    The browser smoke saves every type through the chooser, checks its
    summary, edits a child, and the real-relay flow uses the chooser.
-3. [ ] Correction parity: per-type field edits, instant time edits, moving a
+3. [x] Correction parity: per-type field edits, instant time edits, moving a
    completed interval, sleep end and place edits, breast start correction,
    and delete with Undo.
+   Done: tapping a History or recent row reveals Android's actions for its
+   type — add or edit a note on any entry, edit time on instant entries,
+   move a completed sleep or pump, sleep duration and place, bottle, diaper,
+   solids, pumping, medication, growth (blank keeps a value), temperature,
+   and breast feeds with a start correction and Keep finish or Keep start —
+   plus confirmed delete with a timed Undo that restores the same entry.
+   The browser smoke makes each correction, checks a future-ending breast
+   edit is refused, and deletes and restores an entry.
 4. [ ] Today and History parity: activity state tiles with last events and
    the running sleep, the core day summary, History day view with a week
    strip and date choice, day totals, All mode, and type filters.

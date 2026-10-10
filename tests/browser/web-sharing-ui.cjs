@@ -115,7 +115,7 @@ async function run() {
     await page.getByLabel('What happened?').fill('WebOnlyPrivateMarker');
     await page.getByRole('button', { name: 'Save note' }).click();
     await page.getByText('WebOnlyPrivateMarker').waitFor();
-    await page.getByRole('button', { name: /^Sleep/ }).click();
+    await page.locator('.quick-grid').getByRole('button', { name: /^Sleep/ }).click();
     await page.getByText('Sleep · running').waitFor();
     await page.getByRole('button', { name: 'Stop sleep' }).click();
     await page.getByText('Sleep · 0 min').waitFor();

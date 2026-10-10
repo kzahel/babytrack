@@ -95,6 +95,80 @@ async function captureEveryKind(page) {
   await today(page);
 }
 
+// Android's per-type corrections, made from History rows.
+async function correctEveryKind(page) {
+  const correct = async (entry, action, change, result) => {
+    await historyTab(page);
+    await page.locator('.entry-main').filter({ hasText: entry }).first().click();
+    await page.getByRole('button', { name: action }).click();
+    await change();
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await page.getByRole('button', { name: 'Save changes' }).waitFor({ state: 'detached', timeout: 8000 }).catch(async (cause) => {
+      throw new Error(`${action}: ${cause.message}\n${await page.locator('main').innerText()}`);
+    });
+    await historyTab(page);
+    await page.getByText(result, { exact: true }).first().waitFor();
+  };
+  await correct('Bottle · 4.5 US fl oz', 'Edit bottle', async () => {
+    await page.getByRole('button', { name: 'mL', exact: true }).click();
+    await page.getByLabel('Bottle amount (mL)').fill('120');
+    await page.getByRole('button', { name: 'Formula' }).click();
+  }, 'Bottle · 120 mL · Formula');
+  await correct('Pump · 90 mL total', 'Edit pumping amounts', async () => {
+    await page.getByLabel('Total (mL), instead of sides').fill('');
+    await page.getByLabel('Left (mL)').fill('40');
+    await page.getByLabel('Right (mL)').fill('35');
+  }, 'Pump · L 40 mL · R 35 mL · 12 min');
+  await correct('Solids · pear, oats', 'Edit solids', async () => {
+    await page.getByLabel('Foods (one per line)').fill('rice');
+  }, 'Solids · rice · half a bowl');
+  await correct('Sleep · 45 min', 'Edit sleep duration', async () => {
+    await page.getByLabel('Minutes slept').fill('30');
+  }, 'Sleep · 30 min');
+  await correct('Sleep · 30 min', 'Edit sleep place', async () => {
+    await page.getByRole('button', { name: 'Car' }).click();
+  }, 'Place: Car');
+  await correct('Sleep · 30 min', 'Move session', async () => {
+    const start = await page.getByLabel('New start').inputValue();
+    const earlier = new Date(new Date(start).getTime() - 3_600_000);
+    await page.getByLabel('New start').fill(new Date(earlier.getTime() - earlier.getTimezoneOffset() * 60_000)
+      .toISOString().slice(0, 16));
+  }, 'Sleep · 30 min');
+  await correct('Growth · 5.25 kg', 'Edit growth', async () => {
+    await page.getByRole('button', { name: 'cm', exact: true }).last().click();
+    await page.getByLabel('Head circumference', { exact: true }).fill('38');
+  }, 'Growth · 5.25 kg · 23 in · head 38 cm');
+  await correct('Temperature · 98.6 °F', 'Edit temperature', async () => {
+    await page.getByRole('button', { name: '°C' }).click();
+    await page.getByLabel('Temperature (°C)').fill('37,5');
+  }, 'Temperature · 37.5 °C');
+  await correct('Medication · Vitamin D', 'Edit medication entry', async () => {
+    await page.getByLabel('Medication name').fill('Iron');
+  }, 'Medication · Iron · 1 drop');
+  await correct('Medication · Iron', 'Add note to entry', async () => {
+    await page.getByLabel('Note').fill('After lunch');
+  }, 'Note: After lunch');
+  await correct('Note · Rolled over', 'Edit time', async () => {
+    await page.getByLabel('When').fill('2026-01-01T08:00');
+  }, 'Note · Rolled over');
+  await correct('Breast · Right 5 min', 'Edit breast feed', async () => {
+    await page.getByRole('button', { name: 'Keep start time' }).click();
+    await page.getByLabel('Feeding time (minutes:seconds)').last().fill('9:00');
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await page.getByText('The edited feeding cannot end in the future.').waitFor();
+    await page.getByRole('button', { name: 'Keep finish time' }).click();
+  }, 'Breast · Right 5 min → Left 9 min');
+  await historyTab(page);
+  await page.locator('.entry-main').filter({ hasText: 'Medication · Iron' }).click();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Delete entry' }).click();
+  await page.getByText('Entry deleted').waitFor();
+  assert.equal(await page.getByText('Medication · Iron').count(), 0, 'deleted entry still listed');
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await page.getByText('Medication · Iron · 1 drop').waitFor();
+  await today(page);
+}
+
 (async () => {
   const browser = await chromium.launch({ headless: true });
   try {
@@ -137,15 +211,16 @@ async function captureEveryKind(page) {
     await page.getByRole('button', { name: 'Save feeding' }).click();
     await page.getByText('Breast · Left 0:30 → Right 0:15 → Left 0:45').waitFor();
     assert.equal(await page.locator('.timer-resume').count(), 0, 'saved feeding retained its draft');
-    await page.getByRole('button', { name: 'Edit' }).click();
+    await page.locator('.entry-main').filter({ hasText: 'Breast · Left 0:30' }).click();
+    await page.getByRole('button', { name: 'Edit breast feed' }).click();
     await page.getByLabel('Feeding time (minutes:seconds)').first().fill('0:20');
     await page.getByRole('button', { name: 'Save changes' }).click();
     await page.getByText('Breast · Left 0:20 → Right 0:15 → Left 0:45').waitFor();
     await page.getByRole('navigation', { name: 'Primary navigation' }).last()
       .getByRole('button', { name: 'Today' }).click();
-    await page.getByRole('button', { name: /^Sleep/ }).click();
+    await page.locator('.quick-grid').getByRole('button', { name: /^Sleep/ }).click();
     await page.getByText('Sleep · running').waitFor();
-    assert.equal(await page.getByRole('button', { name: /^Sleep/ }).count(), 0, 'running sleep offered a second start');
+    assert.equal(await page.locator('.quick-grid').getByRole('button', { name: /^Sleep/ }).count(), 0, 'running sleep offered a second start');
     await page.clock.fastForward(65 * 60_000);
     assert.equal(await page.locator('.sleep-running strong').textContent(), '65:00');
     await page.reload();
@@ -155,6 +230,7 @@ async function captureEveryKind(page) {
     assert.equal(await page.locator('.sleep-running').count(), 0, 'stopped sleep still shown as running');
     assert.equal(await page.locator('.summary strong').textContent(), '2 feeds · 1 diaper');
     await captureEveryKind(page);
+    await correctEveryKind(page);
     const firstFamily = await page.evaluate(() => localStorage.getItem('babytrack-family'));
     await page.reload();
     await historyTab(page);

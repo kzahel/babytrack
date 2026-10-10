@@ -1,9 +1,12 @@
 <script>
+  import { untrack } from 'svelte';
   import { copy as c, ageLabel } from '../strings.js';
   import { dateInput, epochDay, sexes } from '../presentation.js';
 
   // Create a child, or correct an existing child's name, birthday, and sex.
-  let { child = null, save, cancel } = $props();
+  let { child: profile = null, save, cancel } = $props();
+  // The form is opened fresh per child, so fields start from that profile.
+  const child = untrack(() => profile);
   let name = $state(child?.name ?? '');
   let birthDate = $state(dateInput(child?.birthDay));
   let sex = $state(child?.sex ?? 3);

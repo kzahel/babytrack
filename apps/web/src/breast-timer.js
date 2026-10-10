@@ -85,29 +85,33 @@ export function editableSegments(segments) {
   }));
 }
 
-export function rebuiltSegments(original, rows) {
+// Rebuild an edited feed. A chosen start moves the whole feed; otherwise
+// changed durations keep the original finish (Android's default) or start.
+export function rebuiltSegments(original, rows, { startMs = null, keep = 'finish' } = {}) {
   if (!original?.length || !rows.length || rows.length > 8) throw new Error('segment-limit');
-  let cursor = original[0].start_utc_ms;
-  const rebuilt = rows.map((row, index) => {
+  let cursor = 0;
+  const spans = rows.map((row, index) => {
     const side = Number(row.side);
     if (![1, 2].includes(side)) throw new Error('invalid-side');
     if (index) cursor += parseDuration(row.pause, true);
-    const start = cursor;
-    const end = start + parseDuration(row.duration);
+    const span = { side, start: cursor, end: cursor + parseDuration(row.duration) };
+    cursor = span.end;
+    return span;
+  });
+  if (spans.reduce((sum, row) => sum + row.end - row.start, 0) > 240 * 60_000) throw new Error('duration-limit');
+  const base = startMs ?? (keep === 'finish' ? original.at(-1).end_utc_ms - cursor : original[0].start_utc_ms);
+  const rebuilt = spans.map((span, index) => {
+    const start = base + span.start;
+    const end = base + span.end;
     const previous = original[index];
-    const segment = {
-      side,
+    return {
+      side: span.side,
       start_utc_ms: start,
       end_utc_ms: end,
       start_offset_minutes: start === previous?.start_utc_ms ? previous.start_offset_minutes : offsetAt(start),
       end_offset_minutes: end === previous?.end_utc_ms ? previous.end_offset_minutes : offsetAt(end),
     };
-    cursor = end;
-    return segment;
   });
-  if (rebuilt.reduce((sum, row) => sum + row.end_utc_ms - row.start_utc_ms, 0) > 240 * 60_000) {
-    throw new Error('duration-limit');
-  }
-  if (cursor > Date.now()) throw new Error('future-end');
+  if (rebuilt.at(-1).end_utc_ms > Date.now()) throw new Error('future-end');
   return rebuilt;
 }

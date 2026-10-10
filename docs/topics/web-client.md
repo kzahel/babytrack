@@ -41,8 +41,10 @@ temperature, medication, and notes, at now or a chosen past time. The breast
 timer starts or switches sides on tap, pauses on a second tap of the active
 side, excludes paused time, and keeps its unsaved, target-scoped draft across
 reloads in localStorage. Saving writes one atomic segment list through the
-Rust core and clears the draft only after a durable append. History can edit
-sides, active durations, and pauses on that same event ID. IndexedDB replays
+Rust core and clears the draft only after a durable append. History rows
+offer Android's corrections for each type, including breast sides, active
+durations, pauses, and a moved start with Keep finish or Keep start, and a
+confirmed delete with Undo, always on the same event ID. IndexedDB replays
 saved operations through the Rust wasm projection after reload.
 Every browser create and correction is one JSON intent, such as
 `{type: 'editDiaper', child, target, kind}`, passed to the core's

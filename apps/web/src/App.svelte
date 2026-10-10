@@ -3,11 +3,13 @@
   import { copy as c, ageLabel } from './strings.js';
   import * as api from './core.js';
   import { createTrackerController } from './tracker-controller.js';
-  import { readDraft, sideTotals, durationLabel, editableSegments, rebuiltSegments } from './breast-timer.js';
+  import { readDraft, sideTotals, durationLabel } from './breast-timer.js';
   import { chooser, entrySummary, kindLabels, symbol, category } from './presentation.js';
   import Capture from './components/Capture.svelte';
   import BreastFeed from './components/BreastFeed.svelte';
   import ChildProfile from './components/ChildProfile.svelte';
+  import EntryEditor from './components/EntryEditor.svelte';
+  import EntryRow from './components/EntryRow.svelte';
 
   let error = '';
   let notice = '';
@@ -17,8 +19,9 @@
   let profileChild = null;
   let breastDraft = null;
   let nowMs = Date.now();
-  let editTarget = null;
-  let editRows = [];
+  let editing = null;
+  let expandedEntry = '';
+  let undo = null;
   let invitationInput = '';
   let actionSequence = 0;
   let sleepBusy = false;
@@ -32,8 +35,8 @@
   $: runningSleep = entries.find((row) => row.kind === 'sleep' && row.endMs == null);
 
   const tracker = createTrackerController({ api, copy: c, preferences: localStorage,
-    onSelect: () => { screen = ''; editTarget = null; tab = 'today'; },
-    onRemoval: () => { screen = ''; editTarget = null; },
+    onSelect: () => { screen = ''; editing = null; tab = 'today'; },
+    onRemoval: () => { screen = ''; editing = null; },
     onRememberInvitation: () => history.replaceState(null, '', location.pathname + location.search) });
   $: ({ loading, familyRows, family, child, data, pendingFragment, joinStage,
     syncStage, removedInfo, privateCopy, backupGap, backupCursor } = $tracker);
@@ -74,7 +77,7 @@
     await run(async () => { if (await tracker.makeFamily()) editProfile(null); });
   }
   async function selectFamily(value) {
-    screen = ''; editTarget = null;
+    screen = ''; editing = null;
     await run(async () => { await tracker.selectFamily(value); tab = 'today'; });
   }
   const makeRemovedCopy = () => run(() => tracker.makeRemovedCopy());
@@ -104,7 +107,7 @@
   function selectChild(value) {
     actionSequence++;
     tracker.selectChild(value);
-    screen = ''; editTarget = null;
+    screen = ''; editing = null;
   }
   // Save one or more core actions for the current target; true when applied.
   async function saveActions(actions) {
@@ -148,32 +151,20 @@
     screen = 'capture';
   }
   function editProfile(row) { profileChild = row; screen = 'child'; error = ''; }
-  function timerError(cause) { return ({
-    'invalid-duration': c.invalidDuration,
-    'future-end': c.futureEnd,
-  })[cause?.message] || message(cause); }
-  function beginBreastEdit(row) {
-    editTarget = { ...tracker.target(), id: row.id, segments: row.breastSegments };
-    editRows = editableSegments(row.breastSegments);
-    screen = 'breast-edit';
-    error = '';
+  function editEntry(row, action) { editing = { row, action }; screen = 'edit'; error = ''; }
+  async function removeEntry(row) {
+    if (!window.confirm(c.deleteConfirm)) return;
+    const target = tracker.target();
+    if (await saveActions([{ type: 'delete', child: row.childId, target: row.id }])) {
+      expandedEntry = '';
+      undo = { ...target, child: row.childId, id: row.id };
+      setTimeout(() => { if (undo?.id === row.id) undo = null; }, 10_000);
+    }
   }
-  function updateEditRow(index, field, value) {
-    editRows = editRows.map((row, position) => position === index ? { ...row, [field]: value } : row);
-  }
-  async function saveBreastEdit() {
-    error = '';
-    notice = '';
-    try {
-      const target = editTarget;
-      const segments = rebuiltSegments(target.segments, editRows);
-      const outcome = await api.act(target.family, { type: 'editBreast', child: target.child,
-        target: target.id, segments });
-      if (!await afterSave(outcome, target)) return;
-      editTarget = null;
-      screen = '';
-      tab = 'history';
-    } catch (cause) { error = timerError(cause); }
+  async function undoDelete() {
+    const saved = undo;
+    undo = null;
+    if (saved && tracker.current(saved)) await saveActions([{ type: 'restore', child: saved.child, target: saved.id }]);
   }
   function formatTime(value) { return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(value); }
   function formatDay(value) { return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(value); }
@@ -210,6 +201,7 @@
     <main>
       {#if error}<div class="error" role="alert">{error}</div>{/if}
       {#if notice}<div class="notice" role="status">{notice}</div>{/if}
+      {#if undo}<div class="notice undo" role="status"><span>{c.entryDeleted}</span><button class="text-action" onclick={undoDelete}>{c.undo}</button></div>{/if}
       {#if loading}
         <p class="muted">{c.loading}</p>
       {:else if !family}
@@ -264,27 +256,13 @@
           <h1>{c.breastFeed}</h1>
           {#key `${family}:${child}`}<BreastFeed {family} {child} {entries} {nowMs} save={saveEntry} done={finishEntry} />{/key}
         </section>
-      {:else if screen === 'breast-edit'}
+      {:else if screen === 'edit' && editing}
         <section class="form-view">
-          <button class="back" onclick={() => { screen = ''; editTarget = null; }}>← {c.cancel}</button>
-          <div class="eyebrow">{selectedChild?.name} · {formatDay(editTarget.segments[0].start_utc_ms)}</div>
-          <h1>{c.editBreast}</h1>
-          <p class="muted">{c.editBreastHint}</p>
-          <form onsubmit={(event) => { event.preventDefault(); saveBreastEdit(); }}>
-            {#each editRows as row, index}
-              <div class="panel edit-segment">
-                <h2>{c.sideNumber(index + 1)}</h2>
-                <label>{c.side}<select value={row.side} onchange={(event) => updateEditRow(index, 'side', event.currentTarget.value)}>
-                  <option value="1">{c.leftBreast}</option><option value="2">{c.rightBreast}</option>
-                </select></label>
-                {#if index > 0}<label>{c.pauseBefore}<input inputmode="numeric" value={row.pause} oninput={(event) => updateEditRow(index, 'pause', event.currentTarget.value)} required /></label>{/if}
-                <label>{c.durationMmSs}<input inputmode="numeric" value={row.duration} oninput={(event) => updateEditRow(index, 'duration', event.currentTarget.value)} required /></label>
-                {#if editRows.length > 1}<button type="button" class="text-action" onclick={() => editRows = editRows.filter((_, position) => position !== index)}>{c.removeSide}</button>{/if}
-              </div>
-            {/each}
-            {#if editRows.length < 8}<button type="button" class="secondary" onclick={() => editRows = [...editRows, { side: editRows.at(-1)?.side === '1' ? '2' : '1', pause: '0:00', duration: '5:00' }]}>{c.addSide}</button>{/if}
-            <button class="primary save" type="submit">{c.saveChanges}</button>
-          </form>
+          <button class="back" onclick={() => { screen = ''; editing = null; }}>← {c.cancel}</button>
+          <div class="eyebrow">{selectedChild?.name} · {formatDay(editing.row.startMs)}</div>
+          <h1>{entrySummary(editing.row)}</h1>
+          {#key editing}<EntryEditor row={editing.row} action={editing.action} child={editing.row.childId}
+            save={saveEntry} done={() => { screen = ''; editing = null; expandedEntry = ''; }} />{/key}
         </section>
       {:else if screen === 'capture'}
         <section class="form-view">
@@ -322,8 +300,10 @@
             </div>{/if}
             <div class="section-heading"><h2>{c.recent}</h2><button class="text-action" onclick={() => tab = 'history'}>{c.allEntries} →</button></div>
             {#if entries.length === 0}<p class="muted">{c.emptyHistory}</p>{/if}
-            {#each entries.slice(0, 4) as row}
-              <div class="entry"><span class="entry-dot"></span><div><strong>{entrySummary(row)}</strong><small>{formatDay(row.startMs)}</small></div><time>{formatTime(row.startMs)}</time>{#if !removedInfo && row.kind === 'feed.breast' && row.breastSegments?.length}<button class="entry-edit" onclick={() => beginBreastEdit(row)}>{c.edit}</button>{/if}</div>
+            {#each entries.slice(0, 4) as row (row.id)}
+              <EntryRow {row} editable={!removedInfo} expanded={expandedEntry === row.id}
+                toggle={() => expandedEntry = expandedEntry === row.id ? '' : row.id}
+                edit={editEntry} stopSleep={(entry) => toggleSleep(entry)} remove={removeEntry} />
             {/each}
           {:else}
             <div class="panel empty"><p>{c.addChildPrompt}</p>{#if !removedInfo}<button class="primary" onclick={() => editProfile(null)}>{c.addChild}</button>{/if}</div>
@@ -332,8 +312,10 @@
       {:else if tab === 'history'}
         <section><div class="eyebrow">{selectedChild?.name || c.family}</div><h1>{c.history}</h1>
           {#if entries.length === 0}<div class="panel empty">{c.emptyHistory}</div>{/if}
-          {#each entries as row}
-            <div class="entry"><span class="entry-dot"></span><div><strong>{entrySummary(row)}</strong><small>{formatDay(row.startMs)}</small></div><time>{formatTime(row.startMs)}</time>{#if !removedInfo && row.kind === 'feed.breast' && row.breastSegments?.length}<button class="entry-edit" onclick={() => beginBreastEdit(row)}>{c.edit}</button>{/if}</div>
+          {#each entries as row (row.id)}
+            <EntryRow {row} editable={!removedInfo} expanded={expandedEntry === row.id}
+              toggle={() => expandedEntry = expandedEntry === row.id ? '' : row.id}
+              edit={editEntry} stopSleep={(entry) => toggleSleep(entry)} remove={removeEntry} />
           {/each}
         </section>
       {:else}

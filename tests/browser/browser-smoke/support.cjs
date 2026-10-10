@@ -158,7 +158,7 @@ const server = http.createServer((request, response) => {
   const name = request.url.slice(1);
   if (name === 'local-store.js' || name === 'public-store.js' ||
       name === 'invitation-store.js' ||
-      name === 'relay-get.js' || name === 'relay-post.js') {
+      name === 'relay-get.js' || name === 'relay-post.js' || name === 'relay-origin.js') {
     response.writeHead(200, { 'Content-Type': 'text/javascript' });
     fs.createReadStream(path.join(browserRoot, '../../core-wasm/web', name)).pipe(response);
     return;

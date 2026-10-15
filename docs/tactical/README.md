@@ -66,3 +66,5 @@ tactical with its current status.
 - [015: Android public release](015-android-public-release.md) — active;
   0.1.1/code 4 submitted for Google review with automatic publication after
   approval; CI build/sign/upload verified, public availability pending.
+  Subsequent releases use `android-v*` tags with separate verified Play
+  promotion; the first tagged execution remains pending.

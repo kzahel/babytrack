@@ -1,34 +1,43 @@
-name: Android internal upload bundle
+name: Android release artifacts
 
 on:
+  push:
+    tags: ['android-v*']
   workflow_dispatch:
-    inputs:
-      version_code:
-        description: Unused Google Play version code (increase for each upload)
-        required: true
-        type: string
-      version_name:
-        description: Display version
-        required: true
-        default: '0.1.0'
-        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: android-internal
+  group: android-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/android-v')
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    outputs:
+      version_code: ${{ steps.version.outputs.version_code }}
+      version_name: ${{ steps.version.outputs.version_name }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Validate tracked version, changelog, and release tag
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          if [ "$REF_TYPE" = tag ]; then
+            python3 scripts/release_android.py --check --tag "$RELEASE_TAG" --github-output "$GITHUB_OUTPUT"
+          else
+            python3 scripts/release_android.py --check --github-output "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: temurin
@@ -36,6 +45,7 @@ jobs:
       - name: Verify signing guards with disposable credentials
         run: |
           python3 scripts/check_android_release_actions.py
+          python3 scripts/test_android_release.py
           python3 scripts/test_android_bundle_signing.py
       - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
       - name: Install Android build tools and Rust targets
@@ -45,12 +55,8 @@ jobs:
           cargo install --locked cargo-ndk --version 4.1.2
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
       - name: Test and build unsigned release bundle
-        env:
-          RELEASE_CODE: ${{ inputs.version_code }}
-          RELEASE_NAME: ${{ inputs.version_name }}
         run: |
-          apps/android/gradlew :app:testDebugUnitTest :app:lintRelease :app:bundleRelease \
-            "-PreleaseVersionCode=$RELEASE_CODE" "-PreleaseVersionName=$RELEASE_NAME" --no-daemon
+          apps/android/gradlew :app:testDebugUnitTest :app:lintRelease :app:bundleRelease --no-daemon
       - name: Verify Family safety in the actual release variant
         run: apps/android/gradlew :app:testReleaseUnitTest --tests org.babytrack.app.ReleaseFamilySafetyTest --no-daemon
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -101,21 +107,22 @@ jobs:
         run: rm -f "$RUNNER_TEMP/babytrack-upload.p12"
       - name: Record source and version
         env:
-          RELEASE_CODE: ${{ inputs.version_code }}
-          RELEASE_NAME: ${{ inputs.version_name }}
+          RELEASE_CODE: ${{ needs.build.outputs.version_code }}
+          RELEASE_NAME: ${{ needs.build.outputs.version_name }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
         run: |
           python3 - <<'PY'
           import json
           import os
           from pathlib import Path
           receipt = {key: os.environ[key] for key in
-                     ('GITHUB_SHA', 'GITHUB_RUN_ID', 'RELEASE_CODE', 'RELEASE_NAME')}
+                     ('GITHUB_SHA', 'GITHUB_RUN_ID', 'RELEASE_CODE', 'RELEASE_NAME', 'RELEASE_TAG')}
           Path(os.environ['RUNNER_TEMP'], 'signed', 'build.json').write_text(json.dumps(receipt, indent=2) + '\n')
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         id: bundle
         with:
-          name: babytrack-play-${{ inputs.version_code }}
+          name: babytrack-play-${{ needs.build.outputs.version_code }}
           path: ${{ runner.temp }}/signed/
           if-no-files-found: error
           retention-days: 14
@@ -124,4 +131,31 @@ jobs:
           ARTIFACT_URL: ${{ steps.bundle.outputs.artifact-url }}
         run: |
           echo "[Download the upload-signed AAB, public certificate, checksum, and build receipt]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
-          echo "Upload babytrack.aab to the Play internal draft. This workflow does not publish or upload to a store." >> "$GITHUB_STEP_SUMMARY"
+          echo "Play promotion is a separate manual workflow requiring a tagged build and exact-source CI." >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/android-v')
+    needs: [build, sign]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: babytrack-play-${{ needs.build.outputs.version_code }}
+          path: ${{ runner.temp }}/signed
+      - name: Publish the tagged Android candidate on GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+        run: |
+          python3 scripts/release_android.py --check --tag "$RELEASE_TAG" > "$RUNNER_TEMP/release-notes.md"
+          cd "$RUNNER_TEMP/signed"
+          sha256sum --check babytrack.aab.sha256
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --prerelease --latest=false --title "Lantern Android ${RELEASE_TAG#android-v}" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" babytrack.aab babytrack.aab.sha256 babytrack.aab.pem build.json

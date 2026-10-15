@@ -105,16 +105,23 @@ class PublishingTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             receipt = {"GITHUB_SHA": "a" * 40, "GITHUB_RUN_ID": "123",
-                       "RELEASE_CODE": "2", "RELEASE_NAME": "0.1.1"}
+                       "RELEASE_CODE": "2", "RELEASE_NAME": "0.1.1", "RELEASE_TAG": "android-v0.1.1"}
             (root / "build.json").write_text(json.dumps(receipt))
             (root / "babytrack.aab").write_bytes(BUNDLE)
             (root / "babytrack.aab.sha256").write_text(f"{DIGEST}  babytrack.aab\n")
-            self.assertEqual(verify_candidate(root, "a" * 40, "123", "2")[1], DIGEST)
+            self.assertEqual(verify_candidate(root, "a" * 40, "123", "2", "android-v0.1.1")[1], DIGEST)
             with self.assertRaisesRegex(ValueError, "GITHUB_RUN_ID"):
-                verify_candidate(root, "a" * 40, "124", "2")
+                verify_candidate(root, "a" * 40, "124", "2", "android-v0.1.1")
+            with self.assertRaisesRegex(ValueError, "RELEASE_TAG"):
+                verify_candidate(root, "a" * 40, "123", "2", "android-v0.1.2")
+            for change in ({"RELEASE_TAG": ""}, {"RELEASE_NAME": "0.1.2"}):
+                (root / "build.json").write_text(json.dumps(receipt | change))
+                with self.assertRaisesRegex(ValueError, "RELEASE_"):
+                    verify_candidate(root, "a" * 40, "123", "2", "android-v0.1.1")
+            (root / "build.json").write_text(json.dumps(receipt))
             (root / "babytrack.aab").write_bytes(b"tampered")
             with self.assertRaisesRegex(ValueError, "checksum"):
-                verify_candidate(root, "a" * 40, "123", "2")
+                verify_candidate(root, "a" * 40, "123", "2", "android-v0.1.1")
 
 
 if __name__ == "__main__":

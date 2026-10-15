@@ -44,6 +44,7 @@ jobs:
       - name: Verify Android publication transactions
         run: |
           python3 scripts/check_android_release_actions.py
+          python3 scripts/test_android_release.py
           python3 scripts/test_android_publishing.py
       - name: Check crate licenses and dependencies
         uses: EmbarkStudios/cargo-deny-action@v2.1.1

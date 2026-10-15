@@ -1,9 +1,14 @@
 import org.gradle.api.tasks.Exec
+import java.util.Properties
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+val releaseVersion = Properties().apply {
+    rootProject.file("version.properties").inputStream().use { load(it) }
 }
 
 android {
@@ -15,12 +20,12 @@ android {
         minSdk = 26
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = providers.gradleProperty("releaseVersionCode").orElse("1").get().let {
+        versionCode = providers.gradleProperty("releaseVersionCode").orElse(releaseVersion.getProperty("versionCode")).get().let {
             requireNotNull(it.toIntOrNull()?.takeIf { code -> code in 1..2100000000 }) {
                 "releaseVersionCode must be an integer from 1 to 2100000000"
             }
         }
-        versionName = providers.gradleProperty("releaseVersionName").orElse("0.1.0").get().also {
+        versionName = providers.gradleProperty("releaseVersionName").orElse(releaseVersion.getProperty("versionName")).get().also {
             require(it.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+([.-][A-Za-z0-9.-]+)?"))) {
                 "releaseVersionName must be a version such as 0.1.0 or 0.1.0-internal.1"
             }

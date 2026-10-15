@@ -12,19 +12,22 @@ from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+from release_android import tag_version
+
 
 PACKAGE = "org.babytrack.app"
 API = "https://androidpublisher.googleapis.com"
 
 
-def verify_candidate(directory, source, run_id, version_code):
+def verify_candidate(directory, source, run_id, version_code, release_tag):
     receipt = json.loads((directory / "build.json").read_text())
     if not re.fullmatch(r"[a-f0-9]{40}", source):
         raise ValueError("Invalid source revision")
     if not 1 <= int(version_code) <= 2100000000:
         raise ValueError("Invalid version code")
     for key, expected in (("GITHUB_SHA", source), ("GITHUB_RUN_ID", run_id),
-                          ("RELEASE_CODE", version_code)):
+                          ("RELEASE_CODE", version_code), ("RELEASE_TAG", release_tag),
+                          ("RELEASE_NAME", tag_version(release_tag))):
         if receipt.get(key) != str(expected):
             raise ValueError(f"Candidate receipt differs: {key}")
     bundle = (directory / "babytrack.aab").read_bytes()
@@ -117,15 +120,17 @@ def main():
     parser.add_argument("--source", required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--version-code", required=True)
+    parser.add_argument("--tag", required=True)
     parser.add_argument("--track", choices=["internal", "production"], required=True)
     parser.add_argument("--status", choices=["check", "draft", "completed"], default="check")
     parser.add_argument("--notes-file", type=Path, required=True)
     args = parser.parse_args()
-    bundle, digest, name = verify_candidate(args.directory, args.source, args.run_id, args.version_code)
+    bundle, digest, name = verify_candidate(args.directory, args.source, args.run_id,
+                                          args.version_code, args.tag)
     result = publish(Play(os.environ.get("PLAY_ACCESS_TOKEN")), bundle, digest,
                      int(args.version_code), name, args.track, args.status,
                      args.notes_file.read_text().strip())
-    result.update(source=args.source, buildRunId=args.run_id)
+    result.update(source=args.source, buildRunId=args.run_id, releaseTag=args.tag)
     (args.directory / "publication.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result))
     print("Check Play Console review/publication status; submission does not prove availability.")

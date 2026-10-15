@@ -71,18 +71,27 @@ with `BABYTRACK_UPLOAD_KEYSTORE`, `BABYTRACK_UPLOAD_STORE_PASSWORD`, and
 `upload` (`BABYTRACK_UPLOAD_ALIAS` overrides it). Keep credentials outside
 the repository. The script also writes public `.pem` and `.sha256` sidecars.
 
-The manual **Android internal upload bundle** Actions workflow builds,
-tests, and signs using the restricted `android-internal` environment. It
-creates a downloadable artifact without a store upload or rollout. Choose
-an unused increasing version code for every Play upload. See the
+Versions are tracked in `version.properties`. Add and commit the next section
+in `CHANGELOG.md`, then run `scripts/release-android.sh 0.1.2 --dry-run` from
+the repository root, followed by the same command without `--dry-run` when
+ready to release. The helper increments the Android code, commits the version,
+and atomically pushes `main` and an `android-v0.1.2` tag. Choose a version/code
+not already consumed by Play.
+
+The tag starts **Android release artifacts**, which builds, tests, and signs
+using the restricted `android-internal` environment and creates a GitHub
+prerelease with the signed AAB, checksum, public certificate, and receipt.
+A manual run on `main` builds only a diagnostic candidate. Neither route
+uploads to Play. See the
 [signing topic](../../docs/topics/mobile-release-signing.md) for credentials,
 platform responsibilities, and limits, and
 [012](../../docs/tactical/012-internal-release-preparation.md) for store setup
 and remaining work.
 
-For an existing CI-signed bundle, **Android Play publication** accepts the
-build run ID, version code, destination track, release notes, and draft or
-completed status. It requires passing full CI on the exact app source and
+For an existing tagged CI-signed bundle, **Android Play publication** accepts
+the release tag, build run ID, version code, destination track, release notes,
+and check, draft, or completed status. It rejects untagged manual candidates
+and requires passing full CI on the exact tagged source on `main` and
 configured app-scoped Google access. Production submission also requires the
 recorded public-release gate. See the [publishing contract](../../docs/topics/mobile-release-signing.md#automated-play-publication)
 and [015](../../docs/tactical/015-android-public-release.md) for setup and live status.

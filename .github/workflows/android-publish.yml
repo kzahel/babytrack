@@ -3,8 +3,12 @@ name: Android Play publication
 on:
   workflow_dispatch:
     inputs:
+      release_tag:
+        description: Android release tag (android-vMAJOR.MINOR.PATCH)
+        required: true
+        type: string
       build_run_id:
-        description: Successful Android internal upload bundle run ID
+        description: Successful tag-triggered Android release artifacts run ID
         required: true
         type: string
       version_code:
@@ -45,38 +49,20 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Verify publisher regressions
         run: |
           python3 scripts/check_android_release_actions.py
+          python3 scripts/test_android_release.py
           python3 scripts/test_android_publishing.py
-      - name: Require a successful main build and full source checks
+      - name: Require a matching tagged build and full source checks
         id: provenance
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD_RUN: ${{ inputs.build_run_id }}
           VERSION_CODE: ${{ inputs.version_code }}
-        run: |
-          python3 - <<'PY'
-          import json, os, re, subprocess
-          def api(path):
-              return json.loads(subprocess.check_output(['gh', 'api', path]))
-          run_id = os.environ['BUILD_RUN']
-          assert re.fullmatch(r'[1-9][0-9]*', run_id), 'Invalid build run ID'
-          assert re.fullmatch(r'[1-9][0-9]*', os.environ['VERSION_CODE']), 'Invalid version code'
-          repo = os.environ['GITHUB_REPOSITORY']
-          run = api(f'repos/{repo}/actions/runs/{run_id}')
-          assert run['head_repository']['full_name'] == repo
-          assert run['head_branch'] == 'main' and run['event'] == 'workflow_dispatch'
-          assert run['path'] == '.github/workflows/android-internal.yml'
-          assert run['status'] == 'completed' and run['conclusion'] == 'success'
-          sha = run['head_sha']
-          checks = api(f'repos/{repo}/actions/workflows/scaffold.yml/runs?head_sha={sha}&status=success&per_page=100')
-          assert any(r['head_branch'] == 'main' and r['event'] in ('push', 'schedule', 'workflow_dispatch')
-                     and r['head_repository']['full_name'] == repo
-                     for r in checks['workflow_runs']), 'Full scaffold checks must pass for the exact source'
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write(f'source={sha}\n')
-          PY
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: python3 scripts/verify_android_release.py
 
   publish:
     needs: verify
@@ -114,6 +100,7 @@ jobs:
           SOURCE: ${{ needs.verify.outputs.source }}
           BUILD_RUN: ${{ inputs.build_run_id }}
           VERSION_CODE: ${{ inputs.version_code }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           python3 - <<'PY'
           import os, sys
@@ -121,7 +108,7 @@ jobs:
           sys.path.insert(0, 'scripts')
           from publish_android_bundle import verify_candidate
           verify_candidate(Path(os.environ['RUNNER_TEMP']) / 'candidate', os.environ['SOURCE'],
-                           os.environ['BUILD_RUN'], os.environ['VERSION_CODE'])
+                           os.environ['BUILD_RUN'], os.environ['VERSION_CODE'], os.environ['RELEASE_TAG'])
           PY
       - name: Authenticate with short-lived Google Play credentials
         id: google
@@ -139,13 +126,14 @@ jobs:
           SOURCE: ${{ needs.verify.outputs.source }}
           BUILD_RUN: ${{ inputs.build_run_id }}
           VERSION_CODE: ${{ inputs.version_code }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
           TRACK: ${{ inputs.track }}
           STATUS: ${{ inputs.status }}
           NOTES: ${{ inputs.release_notes }}
         run: |
           printf '%s' "$NOTES" > "$RUNNER_TEMP/notes.txt"
           python3 scripts/publish_android_bundle.py "$RUNNER_TEMP/candidate" \
-            --source "$SOURCE" --run-id "$BUILD_RUN" --version-code "$VERSION_CODE" \
+            --source "$SOURCE" --run-id "$BUILD_RUN" --version-code "$VERSION_CODE" --tag "$RELEASE_TAG" \
             --track "$TRACK" --status "$STATUS" --notes-file "$RUNNER_TEMP/notes.txt"
           cat "$RUNNER_TEMP/candidate/publication.json" >> "$GITHUB_STEP_SUMMARY"
           echo 'Check Play Console for review and live availability.' >> "$GITHUB_STEP_SUMMARY"

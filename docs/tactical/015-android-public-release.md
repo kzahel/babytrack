@@ -281,3 +281,37 @@ Build/sign/upload/validation/draft creation through CI are live-verified.
 The `completed` API commit is configured and regression-tested but has not
 yet succeeded in a live run; this first review submission was completed in
 Console. Do not retry the failed completed run while this review is pending.
+
+## Versioned release flow alignment
+
+At the owner's request, compared yepanywhere's tag-triggered npm/component
+workflows and JSTorrent's `android-v*` release workflow/helper. Adopt the
+Android component convention, with Play promotion kept separate from the
+tag-triggered candidate build. The current contract is in
+[mobile release signing](../topics/mobile-release-signing.md#android).
+
+- [x] Track the existing 0.1.1/code-4 baseline and Android changelog in source.
+- [x] Add `scripts/release-android.sh VERSION`, including dry-run, clean/synced
+  `main` checks, monotonic version/code, annotated tag, and atomic push.
+- [x] Build/sign on `android-v*` pushes and create a downloadable GitHub
+  prerelease; manual `main` candidates remain diagnostic only.
+- [x] Require matching tag, source, tracked version/code, successful tag-push
+  build, full exact-source `main` CI, receipt, and checksum before Play auth.
+- [ ] Verify the first tagged build/sign/GitHub release and subsequent Play
+  promotion after these workflow changes are committed and deployed.
+
+This alignment creates no release tag, submits no new Play edit, and does not
+change the code-4 submission already under review. Historical pre-tag CI
+receipts remain evidence for that submission, not eligible inputs to the new
+publisher. Existing main-only Play environments and Google WIF restrictions
+remain the publishing boundary. The live `android-internal` signing environment
+now allows the `main` branch and `android-v*` tags; API readback verified both
+rules. Production Play's environment still allows only `main`; Google WIF was
+not changed. The optional internal Play environment has not been provisioned.
+
+Local checks passed: five release/authority tests, including an actual atomic
+push to a disposable local bare remote and tag/source/CI rejection cases;
+ten publisher transaction/receipt tests; real JDK signing/tamper regression;
+actionlint; immutable-action and workspace-boundary checks; and Gradle
+configuration plus release BuildConfig generation. First tagged CI execution
+and Play promotion remain unverified; no release or submission was started.

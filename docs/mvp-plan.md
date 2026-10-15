@@ -348,6 +348,17 @@ owns this expanded Android scope. Store declarations, actual release
 readiness, and the independent public-release security review still need
 evidence; authorization alone does not establish those results.
 
+The owner's subsequent instruction to publish the prepared release is
+executed as an **early Android public preview**, with optional sharing
+explicitly restricted to test data. For this bounded release, defer the
+M1 physical one-phone/two-Android-phone acceptance checks (daily-use timing,
+delayed join, offline convergence, removal/private copy, physical file
+recovery, and background retry) to M1. Record existing emulator/CI evidence
+and this limitation in 015; do not mark those physical checks or M1 complete,
+or claim readiness for real shared Family data. This explicit release-scope
+exception does not waive code/security blockers, truthful store declarations,
+exact-source CI/signing, privacy requirements, or Google review.
+
 0. **M-1, design closure.** Resolve the local-to-shared lifecycle, role
    authorization, protocol, recovery, event-model, and product-scope
    decisions in [the tactical](tactical/001-pre-m0-design.md), including

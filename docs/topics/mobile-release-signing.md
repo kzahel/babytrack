@@ -84,8 +84,9 @@ in 015 is recorded as passed. Draft preparation does not close that gate.
 The publisher refuses downgrades, checksum/version mismatches, and replacing
 unrelated drafts or active/halted rollouts. It can submit its own verified
 draft. It validates before committing, never silently falls back to draft,
-and does not retry an ambiguous commit. Reconcile ambiguous outcomes in Play
-Console before dispatching again. A receipt saying `submitted` establishes
+refuses to cancel an existing Google review, and does not retry an ambiguous
+commit. Reconcile ambiguous outcomes in Play Console before dispatching
+again. A receipt saying `submitted` establishes
 API acceptance; Google review and Console/store availability must be checked
 separately. First-release listing, declarations, countries, pricing, and
 Google review remain Play Console requirements; CI cannot bypass them.

@@ -44,7 +44,8 @@ class PublishingTest(unittest.TestCase):
         play = FakePlay()
         self.assertEqual(self.run_publish(play)["status"], "submitted")
         self.assertEqual([p for m, p, _ in play.calls if m == "POST"][-2:],
-                         ["/edit-1:validate", "/edit-1:commit?changesNotSentForReview=false"])
+                         ["/edit-1:validate", "/edit-1:commit?changesNotSentForReview=false"
+                          "&changesInReviewBehavior=ERROR_IF_IN_REVIEW"])
         self.assertFalse(any(m == "DELETE" for m, _, _ in play.calls))
 
     def test_reject_mismatched_existing_bytes_without_track_write(self):

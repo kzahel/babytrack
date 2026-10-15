@@ -24,7 +24,7 @@ Use the approved public name Lantern / Lantern Baby Tracker from the
    with exact-source CI checks and transactional publisher regressions.
 4. [x] Configure dedicated Google identities, restricted WIF, main-only
    GitHub environments, and app-scoped Play permissions; verify live CI auth.
-5. [ ] Complete truthful listing, assets, contact/privacy information,
+5. [x] Complete truthful listing, assets, contact/privacy information,
    access/ads/content/target-audience/Data safety/government/financial/health
    declarations, distribution countries, and pricing in Play Console.
 6. [ ] Record independent public-release security review at an immutable
@@ -171,3 +171,60 @@ environment variable false.
   the remaining Data safety or public-release gates.
 - Only one physical phone is currently attached. No app/data was installed,
   cleared, or replaced on it; the two-phone gate remains open.
+
+## Final early-preview submission preparation
+
+The owner instructed publication after the policy/site preparation. Execute
+the bounded early public preview exception now recorded in the owning MVP
+plan: M1 physical-phone checks remain deferred and unpassed. Sharing remains
+opt-in, test-data-only, and disposable. This is not real shared-data readiness
+or M1 completion; required code/security, CI, signing, store, and privacy
+checks still apply.
+
+At immutable `5191d0b161578f98685f0cfd7d68e8ceb618f5ec`, independent session
+`01a140e1-3066-7013-a4bb-d25692b2ad5b`, process
+`0c67c156-4748-4c26-ae01-5e44ba396989`, requested/reported Daybreak Blue at
+high effort, returned **PASS for code/privacy/CI**, with no substantive
+regression in the full-policy link. The reviewer independently passed all
+eight actual-release safety tests without skips and release lint. Verified
+idle, zero queue, no active work, clean detached checkout.
+
+Its overall gate was **FAIL for readiness evidence**, naming physical checks,
+incomplete store declarations, unfinished code-4 CI, and absent public
+submission. The physical-check disposition is the explicit plan exception
+above; the other evidence must be completed and recorded before enabling
+submission. No model verdict is represented as public availability.
+
+Play's initial setup tasks are now complete and saved for review: Parenting,
+adult audience 18+, Everyone/PEGI 3 with Users Interact and invitation-only
+sharing, no ads, no government affiliation or financial features, public
+privacy/contact and reviewer access instructions. Health declaration covers
+nutrition/weight, sleep, medication record keeping, and other manual infant
+care records; no clinical advice, diagnosis, dosing, or medical device claim.
+Data safety declares optional, retained app-interaction/device-ID metadata
+for functionality (device IDs also for security), TLS, no hosted accounts,
+operator deletion-request URL, and the applicable E2EE/user-initiated-transfer
+exemptions. No MASA/global-standard security badge is claimed.
+
+Production distribution is saved for 178 countries/regions, including Rest
+of World. App pricing is verified Free. Replaced the store screenshots with
+the same four fictional fixtures from the code-4 source's CI gallery; the
+Family image now includes the test-data-only warning. The published policy
+link also renders below Family options. The superseded code-3 production
+draft was deliberately discarded; its uploaded bundle remains in the library.
+
+[Code-4 build/sign 38787633603](https://github.com/kzahel/babytrack/actions/runs/38787633603)
+passed for 0.1.1 at `5191d0b161578f98685f0cfd7d68e8ceb618f5ec`.
+The downloaded source/run/version receipt and checksum matched; strict
+verification against the canonical upload keystore passed. SHA-256:
+`445128f9b3c51bb487566312aad8b9ffe89442b647c26dc29b2f1af81cdad59a`.
+Both supported ABIs contain the Rust core; all six native libraries have
+16 KiB ELF LOAD alignment.
+
+[Exact-source scaffold 38787633938](https://github.com/kzahel/babytrack/actions/runs/38787633938)
+passed all jobs, including the real-relay tests, caregiver correction/restart,
+readable/protected file recovery across fresh installs, navigation captures,
+and Required checks. No physical-phone evidence is inferred from this run.
+The publisher also requests `ERROR_IF_IN_REVIEW` when committing, so a later
+dispatch cannot silently cancel an existing Google review. All ten local
+publication regressions pass with that explicit API behavior.

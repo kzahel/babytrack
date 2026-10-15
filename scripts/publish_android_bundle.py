@@ -98,7 +98,8 @@ def publish(play, bundle, digest, version, name, track, status, notes):
         # A timeout here has an unknown outcome. Reconcile in Console before retrying;
         # do not silently downgrade to draft or suppress review errors.
         commit_attempted = True
-        play.call("POST", f"{path}:commit?changesNotSentForReview=false", {})
+        play.call("POST", f"{path}:commit?changesNotSentForReview=false"
+                  "&changesInReviewBehavior=ERROR_IF_IN_REVIEW", {})
         return {"status": "draft_saved" if status == "draft" else "submitted",
                 "track": track, "versionCode": version, "sha256": digest,
                 "editId": edit["id"]}

@@ -155,9 +155,18 @@ environment variable false.
   saved. Reviewer access instructions explain account-free fictional local
   setup and self-generated two-device preview invitations. These changes
   have not been sent to Google for review.
-- Public support/privacy contact and relay retention/deletion details await
-  the owner. A draft privacy policy is prepared privately; it is not
-  published or represented as approved. Complete the in-app policy and
-  public URL together before the production candidate is finalized.
+- At the owner's request, published Lantern's [support page](https://graehlarts.com/lantern/)
+  and [privacy policy](https://graehlarts.com/lantern/privacy.html) through the
+  existing Graehl Arts Pages repository, commit `107a4d5`. Pages deployment
+  [38786922768](https://github.com/GraehlArts/graehlarts.github.io/actions/runs/38786922768)
+  passed; all four deployed page/style/icon resources returned HTTPS 200
+  and matched source. Desktop and mobile rendering passed without overflow.
+  The policy reuses the site's existing privacy contact and discloses the
+  current absence of automatic relay expiry/self-service deletion, retained
+  encrypted history and metadata, operator requests, and other-device copies.
+  Its URL is saved in Play for review; the contact settings use the support
+  page and the same email. The app still needs the full policy
+  link before the production candidate is finalized; this does not close
+  the remaining Data safety or public-release gates.
 - Only one physical phone is currently attached. No app/data was installed,
   cleared, or replaced on it; the two-phone gate remains open.

@@ -63,12 +63,18 @@ Use separate Google service accounts with access only to this Play app:
 view app information and testing release permission for internal; production
 release permission only for the production account. Do not grant financial,
 account administration, tester-management, or unrelated-app access.
+Play automatically includes app-quality viewing, policy declarations, and
+deep-link management with the selected release permissions; record those
+dependencies in the access inventory rather than claiming they are absent.
 
 Authenticate through GitHub OIDC and Google Workload Identity Federation;
 do not create a service-account JSON key. Restrict each provider to this
 repository's immutable repository/owner IDs, `refs/heads/main`, the exact
 `android-publish.yml` workflow reference, and its exact environment subject.
 Bind only that environment subject as Workload Identity User on its account.
+Read the repository's OIDC customization API before provisioning: repositories
+using immutable subjects include the owner/repository IDs in the subject's
+repository segment. Match that exact format in both the condition and binding.
 Concrete cloud resource identities and provisioning commands belong in the
 private operational inventory. No broad project roles are required.
 

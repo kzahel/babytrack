@@ -22,7 +22,7 @@ Use the approved public name Lantern / Lantern Baby Tracker from the
 2. [x] Start a new CI build/sign candidate on unchanged app source.
 3. [x] Implement manual publication of an existing verified signed artifact,
    with exact-source CI checks and transactional publisher regressions.
-4. [ ] Configure dedicated Google identities, restricted WIF, main-only
+4. [x] Configure dedicated Google identities, restricted WIF, main-only
    GitHub environments, and app-scoped Play permissions; verify live CI auth.
 5. [ ] Complete truthful listing, assets, contact/privacy information,
    access/ads/content/target-audience/Data safety/government/financial/health
@@ -126,20 +126,35 @@ environment variable false.
   upload key passed. SHA-256
   `b32f3d3f9e74ff25414ac150a31ecb43d1b7e3391ee1c37aff0d69a9235fdd14`.
   ZIP/ELF inspection confirmed exactly the two supported ABIs, each with the
-  Rust core, and 16 KiB LOAD alignment in all six native libraries. No Play
-  upload/server validation has occurred yet.
+  Rust core, and 16 KiB LOAD alignment in all six native libraries.
 - [Full scaffold run 38773980956](https://github.com/kzahel/babytrack/actions/runs/38773980956)
-  checks that same source, including actual-release UI regressions.
+  passed for that same source, including actual-release UI regressions and
+  real-relay Android emulator checks.
 - The main-only `android-play-production` GitHub environment exists with
   WIF/provider variables and `ANDROID_PUBLIC_RELEASE_READY=false`.
 - The dedicated keyless Google account and constrained WIF pool/provider
-  exist without project roles. Impersonation binding and app-only Play
-  permission grant are prepared but await action-time owner confirmation.
-  Concrete identities and provisioning state stay in the private inventory.
+  exist without project roles. Following explicit owner approval, the
+  impersonation binding and app-only Play release permissions are active.
+  Play's release permission dependencies include app-quality viewing,
+  policy declarations, and deep-link management; no account-wide permissions
+  are selected. Concrete identities stay in the private inventory.
+- [Live CI access check 38783582538](https://github.com/kzahel/babytrack/actions/runs/38783582538)
+  passed on attempt 3, with an `access_verified` receipt for code 3 and the
+  exact reviewed source/build. The initial OIDC condition used the legacy
+  subject format; the repository's customization API revealed immutable
+  subjects. Both condition and service-account binding now match the exact
+  immutable subject. The second attempt reached impersonation before IAM
+  propagation completed; the third authenticated and exercised Play edits.
+- [Production draft run 38784732246](https://github.com/kzahel/babytrack/actions/runs/38784732246)
+  passed: Google accepted the bundle, edit validation passed, and commit
+  produced `draft_saved` for code 3 with the checksum above. This establishes
+  successful CI upload/validation/draft creation, not public distribution.
 - The Lantern Baby Tracker store description, launcher icon, feature graphic,
   and four source-matched fictional app screenshots are saved in Play for
   review. Sharing is explicitly test-data-only. The no-ads declaration is
-  saved. These changes have not been sent to Google for review.
+  saved. Reviewer access instructions explain account-free fictional local
+  setup and self-generated two-device preview invitations. These changes
+  have not been sent to Google for review.
 - Public support/privacy contact and relay retention/deletion details await
   the owner. A draft privacy policy is prepared privately; it is not
   published or represented as approved. Complete the in-app policy and

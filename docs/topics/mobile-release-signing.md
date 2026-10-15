@@ -1,6 +1,7 @@
 # Mobile release signing
 
-Status: early internal preparation; no public distribution. The
+Status: internal distribution exists; public Android preparation is authorized
+and tracked in [015](../tactical/015-android-public-release.md). The
 [MVP plan](../mvp-plan.md#milestones) owns scope and
 [012](../tactical/012-internal-release-preparation.md) owns execution status.
 
@@ -38,6 +39,44 @@ Supply an unused increasing `version_code` and a `version_name` on dispatch.
 Gradle validates their format/range. It cannot determine which codes Play
 already consumed; the operator checks Play before choosing the next code.
 Version properties also support local builds (see the Android README).
+
+### Automated Play publication
+
+`android-publish.yml` is a separate manual workflow on `main`. Supply a
+successful `android-internal.yml` run ID, its version code, English notes,
+destination (`internal` or `production`), and status (`draft` or `completed`).
+It consumes the existing signed bytes rather than rebuilding. It checks the
+build's repository, workflow, main branch, success, receipt, and SHA-256, and
+requires a successful complete scaffold workflow for the exact app source.
+The build/sign workflow and PR checks receive no publishing credentials.
+
+Each destination uses its own main-only GitHub environment:
+`android-play-internal` or `android-play-production`. Configure the non-secret
+variables `ANDROID_PLAY_WIF_PROVIDER` and `ANDROID_PLAY_SERVICE_ACCOUNT`.
+Use separate Google service accounts with access only to this Play app:
+view app information and testing release permission for internal; production
+release permission only for the production account. Do not grant financial,
+account administration, tester-management, or unrelated-app access.
+
+Authenticate through GitHub OIDC and Google Workload Identity Federation;
+do not create a service-account JSON key. Restrict each provider to this
+repository's immutable repository/owner IDs, `refs/heads/main`, the exact
+`android-publish.yml` workflow reference, and its exact environment subject.
+Bind only that environment subject as Workload Identity User on its account.
+Concrete cloud resource identities and provisioning commands belong in the
+private operational inventory. No broad project roles are required.
+
+Production `completed` also requires environment variable
+`ANDROID_PUBLIC_RELEASE_READY=true`, set only after the release/security gate
+in 015 is recorded as passed. Draft preparation does not close that gate.
+The publisher refuses downgrades, checksum/version mismatches, and replacing
+unrelated drafts or active/halted rollouts. It can submit its own verified
+draft. It validates before committing, never silently falls back to draft,
+and does not retry an ambiguous commit. Reconcile ambiguous outcomes in Play
+Console before dispatching again. A receipt saying `submitted` establishes
+API acceptance; Google review and Console/store availability must be checked
+separately. First-release listing, declarations, countries, pricing, and
+Google review remain Play Console requirements; CI cannot bypass them.
 
 `scripts/sign_android_bundle.sh` requires an unsigned AAB with both supported
 Rust ABIs, refuses to overwrite existing outputs, signs with JDK jarsigner,

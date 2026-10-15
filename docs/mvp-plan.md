@@ -167,8 +167,9 @@ dependencies.
 
 ### Before publishing
 
-Publishing is deliberately far off. These must be done before the first
-public release, not before development.
+These must be done before the first public release. The owner authorized
+early Android publication on 2026-10-15; [015](tactical/015-android-public-release.md)
+tracks that work without claiming the other M5 milestones complete.
 
 - Final name, then bundle and application IDs (see Open decisions).
 - Publishing identity (personal or company) for both stores, privacy
@@ -340,6 +341,12 @@ internal-release preparation, and the first CI-built Android internal test
 release to the owner-selected tester list; [012](tactical/012-internal-release-preparation.md)
 owns that bounded work. This does not authorize public publication or close
 the physical-phone, iOS implementation, or M5 security/release gates.
+
+On 2026-10-15 the owner authorized a new Android version, public Play
+distribution, and CI publishing. [015](tactical/015-android-public-release.md)
+owns this expanded Android scope. Store declarations, actual release
+readiness, and the independent public-release security review still need
+evidence; authorization alone does not establish those results.
 
 0. **M-1, design closure.** Resolve the local-to-shared lifecycle, role
    authorization, protocol, recovery, event-model, and product-scope

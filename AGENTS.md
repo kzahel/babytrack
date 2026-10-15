@@ -68,9 +68,11 @@ them true, and keep the tactical index status current.
 - Vendor services (push, device integrity, watch link, and any later key
   backup) are reached only through app-owned interfaces. Google Play
   services and Firebase may appear only in their implementation modules.
-- No public app-store publishing or general hosted-service work before M5.
-  The user-authorized early internal Android release work is bounded by
-  [012](docs/tactical/012-internal-release-preparation.md). M2 may
+- The owner authorized Android public-release preparation and publication on
+  2026-10-15; [015](docs/tactical/015-android-public-release.md) owns that
+  exception, its Play setup, and release/security gates. Other public store
+  and general hosted-service work stays at M5. The early internal release
+  record remains [012](docs/tactical/012-internal-release-preparation.md). M2 may
   run the explicitly authorized disposable-data early preview described in
   the MVP plan; keep machine-specific deployment files in private infra.
 - Keep medical advice and clinical content out of the MVP.

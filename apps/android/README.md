@@ -80,6 +80,13 @@ platform responsibilities, and limits, and
 [012](../../docs/tactical/012-internal-release-preparation.md) for store setup
 and remaining work.
 
+For an existing CI-signed bundle, **Android Play publication** accepts the
+build run ID, version code, destination track, release notes, and draft or
+completed status. It requires passing full CI on the exact app source and
+configured app-scoped Google access. Production submission also requires the
+recorded public-release gate. See the [publishing contract](../../docs/topics/mobile-release-signing.md#automated-play-publication)
+and [015](../../docs/tactical/015-android-public-release.md) for setup and live status.
+
 ## Automated checks
 
 The app supports API 26. Android binding generation uses

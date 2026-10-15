@@ -63,3 +63,6 @@ tactical with its current status.
 - [014: Lantern restyle](014-lantern-restyle.md) — active; the web is
   restyled to the approved Lantern design on modular tokens, including the
   new welcome and Today. The Android port follows.
+- [015: Android public release](015-android-public-release.md) — active;
+  owner authorized public Android publication and CI publishing; new signed
+  candidate and first-production store/access/security setup are in progress.

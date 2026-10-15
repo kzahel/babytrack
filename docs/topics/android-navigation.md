@@ -90,6 +90,8 @@ flowchart TD
    The private app preferences retain the UI draft across reopening. Back
    before saving creates no Family; failed or interrupted setup reuses its
    staged local Family, preserving input and avoiding duplicate creation.
+   The welcome privacy dialog and Family screen link to the full public
+   privacy policy in the browser.
    The draft is not canonical child storage. A link opens Join directly
    with its link filled in and an explicit Start or retry action. A saved
    pending enrollment and a restore preview take precedence over the welcome.

@@ -165,8 +165,9 @@ environment variable false.
   current absence of automatic relay expiry/self-service deletion, retained
   encrypted history and metadata, operator requests, and other-device copies.
   Its URL is saved in Play for review; the contact settings use the support
-  page and the same email. The app still needs the full policy
-  link before the production candidate is finalized; this does not close
+  page and the same email. The welcome privacy dialog and Family screen now
+  include the full policy link; replacement code 4 is required. Actual-release
+  safety tests and release lint passed locally. This does not close
   the remaining Data safety or public-release gates.
 - Only one physical phone is currently attached. No app/data was installed,
   cleared, or replaced on it; the two-phone gate remains open.

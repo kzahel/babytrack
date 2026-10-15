@@ -764,6 +764,7 @@ internal fun ColumnScope.FamilyScreen(state: FamilyUiState, actions: FamilyActio
                     }
             }
         }
+        PrivacyPolicyLink()
     }
 }
 

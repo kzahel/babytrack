@@ -379,6 +379,8 @@
     <string name="onboarding_saving">Setting up…</string>
     <string name="onboarding_privacy_link">Privacy</string>
     <string name="onboarding_privacy_title">Privacy</string>
+    <string name="full_privacy_policy">Full privacy policy (opens browser)</string>
+    <string name="privacy_policy_url" translatable="false">https://graehlarts.com/lantern/privacy.html</string>
     <string name="onboarding_privacy_body">Tracking is stored on this device and works offline.\n\nIf you share, invited caregivers can read shared records; our service cannot.\n\nAnyone with an unprotected backup can read it.</string>
     <string name="onboarding_got_it">Got it</string>
     <string name="onboarding_name_too_long">Please use a shorter name or nickname.</string>

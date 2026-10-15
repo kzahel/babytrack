@@ -75,10 +75,10 @@ internal fun OnboardingWelcomeScreen(
             onDismissRequest = { showPrivacy = false },
             title = { Text(stringResource(R.string.onboarding_privacy_title)) },
             text = {
-                Text(
-                    stringResource(R.string.onboarding_privacy_body),
-                    modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
-                )
+                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                    Text(stringResource(R.string.onboarding_privacy_body))
+                    PrivacyPolicyLink()
+                }
             },
             confirmButton = {
                 TextButton(onClick = { showPrivacy = false }) {

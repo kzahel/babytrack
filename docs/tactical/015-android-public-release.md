@@ -1,6 +1,7 @@
 # 015: Android public release
 
-Status: active, opened 2026-10-15 at the owner's request to publish a new
+Status: submitted for Google review; public availability pending. Opened
+2026-10-15 at the owner's request to publish a new
 Android version publicly and automate publication through CI. The
 [MVP plan](../mvp-plan.md#milestones) owns this Android scope exception;
 [mobile release signing](../topics/mobile-release-signing.md) owns the
@@ -30,8 +31,9 @@ Use the approved public name Lantern / Lantern Baby Tracker from the
 6. [x] Record independent public-release security review at an immutable
    revision using the [runbook](../security-review-runbook.md). Reconcile
    blockers and existing physical-phone readiness before enabling submission.
-7. [ ] Validate the new signed candidate; submit the production release and
-   verify Google's actual review/publication state.
+7. [x] Validate the new signed candidate, submit the production release, and
+   verify Google's actual review state.
+8. [ ] Verify production availability in Console and the public Play listing.
 
 Completion requires production availability verified in Console and the
 public Play listing, with the exact source, version, signed artifact checksum,
@@ -252,3 +254,30 @@ truthful Play setup, exact-source full CI/signing evidence, and successful
 code-4 server validation. Enable `ANDROID_PUBLIC_RELEASE_READY=true` for this
 submission. Google review and actual availability remain downstream; this
 does not mark physical checks, M1, or general real shared-data readiness passed.
+
+## Submitted for Google review
+
+The production `completed` attempt
+[38792602006](https://github.com/kzahel/babytrack/actions/runs/38792602006)
+passed provenance/authentication, then Google returned HTTP 400 at edit
+validation, before commit. The uncommitted edit was discarded; no ambiguous
+commit or silent fallback occurred. Console then surfaced an incomplete
+Advertising ID declaration. Verified no AD_ID permission or advertising-ID
+SDK in the release manifest/dependencies and saved the truthful No answer.
+
+Finished the existing code-4 release preview in Console, preserving the
+verified bundle and release notes, then submitted all 11 pending changes.
+At approximately 19:21 UTC on 2026-10-15, Play confirmed **11 changes sent
+for review** and **Changes in review**, including production 0.1.1/full
+rollout, countries, listing, and declarations. Google's quick checks were
+still running with up to 14 minutes shown; no issue remained displayed.
+Managed publishing is off: publication follows successful Google checks and
+approval automatically. This is a submission receipt, not live availability.
+
+The expected public listing is
+[Lantern Baby Tracker](https://play.google.com/store/apps/details?id=org.babytrack.app).
+Check Console and that listing before marking step 8 or this tactical complete.
+Build/sign/upload/validation/draft creation through CI are live-verified.
+The `completed` API commit is configured and regression-tested but has not
+yet succeeded in a live run; this first review submission was completed in
+Console. Do not retry the failed completed run while this review is pending.

@@ -1,7 +1,7 @@
 # Mobile release signing
 
-Status: internal distribution exists; public Android preparation is authorized
-and tracked in [015](../tactical/015-android-public-release.md). The
+Status: internal distribution exists; the Android public preview is submitted
+for Google review, tracked in [015](../tactical/015-android-public-release.md). The
 [MVP plan](../mvp-plan.md#milestones) owns scope and
 [012](../tactical/012-internal-release-preparation.md) owns execution status.
 

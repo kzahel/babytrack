@@ -64,5 +64,5 @@ tactical with its current status.
   restyled to the approved Lantern design on modular tokens, including the
   new welcome and Today. The Android port follows.
 - [015: Android public release](015-android-public-release.md) — active;
-  owner authorized public Android publication and CI publishing; new signed
-  candidate and first-production store/access/security setup are in progress.
+  0.1.1/code 4 submitted for Google review with automatic publication after
+  approval; CI build/sign/upload verified, public availability pending.

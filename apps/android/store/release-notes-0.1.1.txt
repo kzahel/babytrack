@@ -1,1 +1,1 @@
-Track daily care with Today summaries and History. Correct feeding entries, use live nursing and pumping timers, and save or restore readable and password-protected backups. Includes navigation and usability improvements.
+Lantern 0.1.1: offline baby tracking, clearer backup status, family access controls, and the full privacy policy. Optional encrypted sharing is a test-data-only preview.

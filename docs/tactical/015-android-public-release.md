@@ -100,3 +100,49 @@ debug unit suite, debug app/instrumentation APK assembly, ten publisher
 transaction tests, immutable-action checks, actionlint, workspace boundaries,
 and diff checks passed locally. Shared backup freshness is deliberately
 conservative; no shared journal revision or file format was changed.
+
+### Focused recheck
+
+At immutable revision `a953a4b97b13760e9760cfb473e1dca00adededd`, session
+`01a14084-7260-7200-b5c0-be93bd9ad994`, process
+`41b302f3-54ca-4a97-8e94-4632c0e1615a`, the same requested/reported reviewer
+and high effort returned **PASS for remediation of all three code/CI
+blockers**. Completion was verified idle, queue depth zero, no active work;
+the detached checkout remained clean. The reviewer independently reran all
+eight actual-release UI cases without skips, release lint, full debug units,
+app/test APK assembly, ten publisher regressions, the action checker plus a
+mutable-tag rejection probe, actionlint, workspace and diff checks.
+
+This is not an overall public-release PASS. Cloud/Play access and live
+verification, store/privacy declarations, two-physical-phone evidence, and
+replacement CI/build receipts remain required. Keep the public-ready
+environment variable false.
+
+## Store and deployment preparation
+
+- [Replacement build/sign run 38773979740](https://github.com/kzahel/babytrack/actions/runs/38773979740)
+  passed for version 0.1.1, code 3 at the rechecked source above. Downloaded
+  receipt and checksum matched; strict JDK verification against the existing
+  upload key passed. SHA-256
+  `b32f3d3f9e74ff25414ac150a31ecb43d1b7e3391ee1c37aff0d69a9235fdd14`.
+  ZIP/ELF inspection confirmed exactly the two supported ABIs, each with the
+  Rust core, and 16 KiB LOAD alignment in all six native libraries. No Play
+  upload/server validation has occurred yet.
+- [Full scaffold run 38773980956](https://github.com/kzahel/babytrack/actions/runs/38773980956)
+  checks that same source, including actual-release UI regressions.
+- The main-only `android-play-production` GitHub environment exists with
+  WIF/provider variables and `ANDROID_PUBLIC_RELEASE_READY=false`.
+- The dedicated keyless Google account and constrained WIF pool/provider
+  exist without project roles. Impersonation binding and app-only Play
+  permission grant are prepared but await action-time owner confirmation.
+  Concrete identities and provisioning state stay in the private inventory.
+- The Lantern Baby Tracker store description, launcher icon, feature graphic,
+  and four source-matched fictional app screenshots are saved in Play for
+  review. Sharing is explicitly test-data-only. The no-ads declaration is
+  saved. These changes have not been sent to Google for review.
+- Public support/privacy contact and relay retention/deletion details await
+  the owner. A draft privacy policy is prepared privately; it is not
+  published or represented as approved. Complete the in-app policy and
+  public URL together before the production candidate is finalized.
+- Only one physical phone is currently attached. No app/data was installed,
+  cleared, or replaced on it; the two-phone gate remains open.

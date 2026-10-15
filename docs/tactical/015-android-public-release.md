@@ -27,7 +27,7 @@ Use the approved public name Lantern / Lantern Baby Tracker from the
 5. [x] Complete truthful listing, assets, contact/privacy information,
    access/ads/content/target-audience/Data safety/government/financial/health
    declarations, distribution countries, and pricing in Play Console.
-6. [ ] Record independent public-release security review at an immutable
+6. [x] Record independent public-release security review at an immutable
    revision using the [runbook](../security-review-runbook.md). Reconcile
    blockers and existing physical-phone readiness before enabling submission.
 7. [ ] Validate the new signed candidate; submit the production release and
@@ -228,3 +228,27 @@ and Required checks. No physical-phone evidence is inferred from this run.
 The publisher also requests `ERROR_IF_IN_REVIEW` when committing, so a later
 dispatch cannot silently cancel an existing Google review. All ten local
 publication regressions pass with that explicit API behavior.
+
+[Code-4 production draft 38792052993](https://github.com/kzahel/babytrack/actions/runs/38792052993)
+passed upload, server validation, and commit with `draft_saved`, matching the
+source, build run, version, and SHA-256 above. Console independently shows
+code 4, 178 countries/regions, and a 13.1 MB new-install size. Its sole
+non-blocking warning is the missing deobfuscation file; this build does not
+enable obfuscation.
+
+Final focused submission recheck at immutable
+`0ff3ab9eb33a9a348ec7321906309c6facf0879c`, session
+`01a140fb-e901-7a12-9ee5-8cdde12941b9`, process
+`76ce832f-a15d-455d-863e-aab5cb6c69e1`, requested/reported Daybreak Blue,
+high effort, returned **PASS for submitting this bounded preview after
+successful code-4 validation**. No substantive findings or scope
+contradictions. It independently passed all ten publisher tests and verified
+the review-cancellation guard; unchanged Android/Rust suites were not rerun.
+Verified idle, zero queue, no active work, clean detached checkout.
+
+Implementer gate disposition: **PASS for submission**, reconciling the prior
+readiness FAIL with the explicit physical-check scope exception, completed
+truthful Play setup, exact-source full CI/signing evidence, and successful
+code-4 server validation. Enable `ANDROID_PUBLIC_RELEASE_READY=true` for this
+submission. Google review and actual availability remain downstream; this
+does not mark physical checks, M1, or general real shared-data readiness passed.

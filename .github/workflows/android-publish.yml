@@ -17,10 +17,10 @@ on:
         options: [internal, production]
         default: production
       status:
-        description: Save a draft or submit the release for review/distribution
+        description: Check access, save a draft, or submit for review/distribution
         type: choice
-        options: [draft, completed]
-        default: draft
+        options: [check, draft, completed]
+        default: check
       release_notes:
         description: English release notes (maximum 500 characters)
         required: true
@@ -42,11 +42,13 @@ jobs:
     outputs:
       source: ${{ steps.provenance.outputs.source }}
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
       - name: Verify publisher regressions
-        run: python3 scripts/test_android_publishing.py
+        run: |
+          python3 scripts/check_android_release_actions.py
+          python3 scripts/test_android_publishing.py
       - name: Require a successful main build and full source checks
         id: provenance
         env:
@@ -86,7 +88,7 @@ jobs:
       actions: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
       - name: Check configured publication access and release gate
@@ -101,7 +103,7 @@ jobs:
           if [ "$TRACK" = production ] && [ "$STATUS" = completed ]; then
             test "$PUBLIC_READY" = true || { echo 'Complete and record the public-release gate first'; exit 1; }
           fi
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: babytrack-play-${{ inputs.version_code }}
           path: ${{ runner.temp }}/candidate
@@ -147,7 +149,7 @@ jobs:
             --track "$TRACK" --status "$STATUS" --notes-file "$RUNNER_TEMP/notes.txt"
           cat "$RUNNER_TEMP/candidate/publication.json" >> "$GITHUB_STEP_SUMMARY"
           echo 'Check Play Console for review and live availability.' >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: play-publication-${{ inputs.version_code }}-${{ inputs.track }}-${{ github.run_attempt }}

@@ -93,6 +93,13 @@ class PublishingTest(unittest.TestCase):
     def test_draft_is_not_reported_as_published(self):
         self.assertEqual(self.run_publish(FakePlay(), status="draft")["status"], "draft_saved")
 
+    def test_check_authentication_does_not_upload_or_change_a_track(self):
+        play = FakePlay()
+        self.assertEqual(self.run_publish(play, status="check")["status"], "access_verified")
+        self.assertFalse(any(m == "PUT" or "uploadType" in p or ":commit" in p
+                             for m, p, _ in play.calls))
+        self.assertEqual(play.calls[-1][:2], ("DELETE", "/edit-1"))
+
     def test_receipt_and_bytes_must_match_the_requested_ci_run(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

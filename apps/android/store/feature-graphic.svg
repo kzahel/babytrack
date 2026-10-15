@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="500" viewBox="0 0 1024 500">
+  <rect width="1024" height="500" fill="#176B75"/>
+  <g transform="translate(116 146) scale(1.9)">
+    <circle cx="54" cy="54" r="20" fill="none" stroke="#A5E7E5" stroke-width="7"/>
+    <circle cx="54" cy="54" r="6" fill="#A5E7E5"/>
+  </g>
+  <g fill="#FFFFFF" font-family="sans-serif">
+    <text x="362" y="215" font-size="68" font-weight="600">Lantern</text>
+    <text x="365" y="270" font-size="30">Baby Tracker</text>
+    <text x="365" y="325" font-size="25">Everyday care, kept close.</text>
+  </g>
+</svg>

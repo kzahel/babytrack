@@ -45,6 +45,9 @@ android {
         java.srcDir(layout.buildDirectory.dir("generated/rust/kotlin"))
         jniLibs.srcDir(layout.buildDirectory.dir("generated/rust/jniLibs"))
     }
+    // Render the same fictional states against actual release BuildConfig values.
+    // These sources belong only to unit tests, never to the release app.
+    sourceSets.getByName("testRelease").java.srcDir("src/debug/java")
 }
 
 val buildRust by tasks.registering(Exec::class) {

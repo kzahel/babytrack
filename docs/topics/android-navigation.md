@@ -141,6 +141,12 @@ flowchart TD
    disposable relay directly, in debug builds and after the release Preview
    sharing opt-in under Family options; manual relay setup remains debug-only
    under Family options, and invitation handoff lives in Family access.
+   Managers can change admitted device roles and cancel unused invitations
+   in release builds as well as debug builds. Backup controls always identify
+   the last completed saved point or say no completed backup is known. Local
+   revision comparisons warn about newer edits; shared Families show their
+   saved timestamp with a conservative freshness warning because the current
+   shared backup receipt does not identify a comparable journal revision.
 6. **Child profile.** After first use, create and edit use the same focused screen with name,
    birth date, growth-chart sex, derived age, and one Save action. The age
    appears with the selected child on Today and Family. A missing birth date

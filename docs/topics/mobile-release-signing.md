@@ -44,11 +44,17 @@ Version properties also support local builds (see the Android README).
 
 `android-publish.yml` is a separate manual workflow on `main`. Supply a
 successful `android-internal.yml` run ID, its version code, English notes,
-destination (`internal` or `production`), and status (`draft` or `completed`).
+destination (`internal` or `production`), and status (`check`, `draft`, or
+`completed`). Start with `check` to verify app-scoped access: it reads tracks
+and bundles in a temporary edit, then deletes that edit without uploading or
+changing any release.
 It consumes the existing signed bytes rather than rebuilding. It checks the
 build's repository, workflow, main branch, success, receipt, and SHA-256, and
 requires a successful complete scaffold workflow for the exact app source.
 The build/sign workflow and PR checks receive no publishing credentials.
+All third-party action references in both release workflows are pinned to
+full commit SHAs. `check_android_release_actions.py` enforces this in normal
+CI and before privileged workflows proceed. Dependabot owns pin updates.
 
 Each destination uses its own main-only GitHub environment:
 `android-play-internal` or `android-play-production`. Configure the non-secret

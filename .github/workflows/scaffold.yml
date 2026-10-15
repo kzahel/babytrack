@@ -42,7 +42,9 @@ jobs:
       - name: Verify dependency direction
         run: python3 scripts/check_workspace.py
       - name: Verify Android publication transactions
-        run: python3 scripts/test_android_publishing.py
+        run: |
+          python3 scripts/check_android_release_actions.py
+          python3 scripts/test_android_publishing.py
       - name: Check crate licenses and dependencies
         uses: EmbarkStudios/cargo-deny-action@v2.1.1
         with:
@@ -116,6 +118,8 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
       - name: Build source-linked debug APK
         run: apps/android/gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
+      - name: Verify release Family access and backup status
+        run: apps/android/gradlew :app:testReleaseUnitTest --tests org.babytrack.app.ReleaseFamilySafetyTest --no-daemon
       - name: Render Android fixture gallery without an emulator
         run: bash scripts/render_android_gallery.sh
       - uses: actions/setup-node@v4

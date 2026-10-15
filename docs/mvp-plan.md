@@ -409,9 +409,12 @@ inventory, voice, and paid extras come after launch.
 ## Open decisions
 
 - Hosting: a small Hetzner VPS or Fly.io. Deferred to M5.
-- Final public name remains open. The early internal draft uses the existing
-  `org.babytrack.app` identity; the code name remains in crate/package names.
+- The approved public name is Lantern, with store listing "Lantern Baby
+  Tracker"; the [interface topic](topics/interface-design-and-localization.md)
+  owns branding. Retain `org.babytrack.app`; the internal code name remains
+  in crate/package names. The early internal draft used Babytrack.
   Treat a registered store identity as long-lived. A later public rename
   must decide whether to retain it or create a separate app, with the
   resulting install/update migration. Display names can be changed; the
-  early draft exception does not settle public branding.
+  early draft exception did not settle public branding; the later approved
+  Lantern direction does.

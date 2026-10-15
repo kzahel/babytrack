@@ -63,8 +63,10 @@ device's replacement. Detailed behavior and remaining choices live in the
 
 One Rust core owns the model, storage, merge, crypto, sync, and import/export.
 Native clients own UI and platform adapters. The server relays encrypted
-data without reading entries. Android is the first product UI; publishing
-and hosting wait until M5.
+data without reading entries. Android is the first product UI. The owner
+authorized early Android public-release preparation and CI publication;
+[015](docs/tactical/015-android-public-release.md) tracks its remaining
+store and security gates. Other distribution work remains at M5.
 
 This is the current overview. The linked plan and topics own requirements;
 the original proposal is preserved as background and may contain unresolved

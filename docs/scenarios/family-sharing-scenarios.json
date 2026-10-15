@@ -682,6 +682,7 @@
       ],
       "expect": [
         "The app identifies the last completed saved point or says no backup is known.",
+        "This status is visible for both local and shared Families; shared freshness that cannot be compared is explicitly unknown, never implied current.",
         "It does not claim unsaved entries or original-Family authority are recoverable from a file, account, or relay ciphertext alone."
       ],
       "variants": [

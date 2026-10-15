@@ -58,7 +58,7 @@ class Play:
 
 
 def publish(play, bundle, digest, version, name, track, status, notes):
-    if track not in ("internal", "production") or status not in ("draft", "completed"):
+    if track not in ("internal", "production") or status not in ("check", "draft", "completed"):
         raise ValueError("Unsupported track or release status")
     if not notes.strip() or len(notes) > 500:
         raise ValueError("Release notes must contain 1–500 characters")
@@ -67,6 +67,9 @@ def publish(play, bundle, digest, version, name, track, status, notes):
     commit_attempted = False
     try:
         tracks = play.call("GET", f"{path}/tracks").get("tracks", [])
+        if status == "check":
+            play.call("GET", f"{path}/bundles")
+            return {"status": "access_verified", "track": track, "versionCode": version}
         current = next((entry for entry in tracks if entry["track"] == track), {})
         releases = current.get("releases", [])
         exact = next((r for r in releases if r.get("versionCodes") == [str(version)]
@@ -114,7 +117,7 @@ def main():
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--version-code", required=True)
     parser.add_argument("--track", choices=["internal", "production"], required=True)
-    parser.add_argument("--status", choices=["draft", "completed"], default="draft")
+    parser.add_argument("--status", choices=["check", "draft", "completed"], default="check")
     parser.add_argument("--notes-file", type=Path, required=True)
     args = parser.parse_args()
     bundle, digest, name = verify_candidate(args.directory, args.source, args.run_id, args.version_code)

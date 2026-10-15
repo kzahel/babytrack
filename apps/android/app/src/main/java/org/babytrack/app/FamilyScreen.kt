@@ -404,21 +404,19 @@ internal fun ColumnScope.FamilyScreen(state: FamilyUiState, actions: FamilyActio
                             OutlinedButton(onClick = { actions.onRemoveDevice(device) }) {
                                 Text(stringResource(R.string.remove_device, label))
                             }
-                            if (BuildConfig.DEBUG) {
-                                val nextRole =
-                                    if (device.role == 2.toUByte()) 1u.toUByte()
-                                    else 2u.toUByte()
-                                OutlinedButton(
-                                    onClick = { actions.onPromoteDevice(device, nextRole) }
-                                ) {
-                                    Text(
-                                        stringResource(
-                                            if (nextRole == 2.toUByte()) R.string.promote_device
-                                            else R.string.demote_device,
-                                            label,
-                                        )
+                            val nextRole =
+                                if (device.role == 2.toUByte()) 1u.toUByte()
+                                else 2u.toUByte()
+                            OutlinedButton(
+                                onClick = { actions.onPromoteDevice(device, nextRole) }
+                            ) {
+                                Text(
+                                    stringResource(
+                                        if (nextRole == 2.toUByte()) R.string.promote_device
+                                        else R.string.demote_device,
+                                        label,
                                     )
-                                }
+                                )
                             }
                         }
                     if (snapshot.pendingDevices.isNotEmpty()) {
@@ -445,25 +443,23 @@ internal fun ColumnScope.FamilyScreen(state: FamilyUiState, actions: FamilyActio
                             }
                         }
                     }
-                    if (BuildConfig.DEBUG) {
-                        if (activeUnusedInvitationIds == null) {
-                            Text(stringResource(R.string.invitation_list_delayed))
-                        } else if (!activeUnusedInvitationIds.isNullOrEmpty()) {
-                            Text(
-                                stringResource(R.string.unused_invitations),
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                            activeUnusedInvitationIds.orEmpty().forEach { invitationId ->
-                                OutlinedButton(
-                                    onClick = { actions.onCancelInvitation(invitationId) }
-                                ) {
-                                    Text(
-                                        stringResource(
-                                            R.string.cancel_invitation,
-                                            invitationId.key().take(8),
-                                        )
+                    if (activeUnusedInvitationIds == null) {
+                        Text(stringResource(R.string.invitation_list_delayed))
+                    } else if (!activeUnusedInvitationIds.isNullOrEmpty()) {
+                        Text(
+                            stringResource(R.string.unused_invitations),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        activeUnusedInvitationIds.orEmpty().forEach { invitationId ->
+                            OutlinedButton(
+                                onClick = { actions.onCancelInvitation(invitationId) }
+                            ) {
+                                Text(
+                                    stringResource(
+                                        R.string.cancel_invitation,
+                                        invitationId.key().take(8),
                                     )
-                                }
+                                )
                             }
                         }
                     }
@@ -557,12 +553,15 @@ internal fun ColumnScope.FamilyScreen(state: FamilyUiState, actions: FamilyActio
                             stringResource(R.string.backup_title),
                             style = MaterialTheme.typography.titleLarge,
                         )
-                        if (!activeShared)
-                            completed?.let { saved ->
-                                Text(stringResource(R.string.last_saved_at, savedTime(saved.atMs)))
-                                if (revision > saved.revision)
-                                    Text(stringResource(R.string.changes_after_save))
-                            }
+                        if (completed == null) {
+                            Text(stringResource(R.string.no_backup_known))
+                        } else {
+                            Text(stringResource(R.string.last_saved_at, savedTime(completed.atMs)))
+                            if (activeShared)
+                                Text(stringResource(R.string.shared_backup_freshness_unknown))
+                            else if (revision > completed.revision)
+                                Text(stringResource(R.string.changes_after_save))
+                        }
                         Text(
                             stringResource(
                                 if (activeShared) R.string.shared_backup_description

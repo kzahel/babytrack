@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 108 108">
+  <!-- Same mark and colors as the Android adaptive launcher icon. -->
+  <path fill="#176B75" d="M0 0h108v108H0z"/>
+  <circle cx="54" cy="54" r="20" fill="none" stroke="#A5E7E5" stroke-width="7"/>
+  <circle cx="54" cy="54" r="6" fill="#A5E7E5"/>
+</svg>

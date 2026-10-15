@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Babytrack</string>
+    <string name="app_name">Lantern</string>
     <string name="screen_title">Today</string>
     <string name="nav_today">Today</string>
     <string name="nav_history">History</string>
@@ -252,6 +252,8 @@
     <string name="saved">Backup saved</string>
     <string name="restored">Backup restored as a new Family</string>
     <string name="last_saved_at">Last completed file save: %1$s</string>
+    <string name="no_backup_known">No completed backup is known on this device.</string>
+    <string name="shared_backup_freshness_unknown">This phone cannot confirm whether that file includes the latest shared history. Changes after its saved point may be missing. Save a new backup to include the records currently on this device.</string>
     <string name="changes_after_save">Changes since that save are not in that file.</string>
     <string name="restored_from">Restored from a file saved at %1$s</string>
     <string name="file_saved_at">File saved at %1$s · %2$d records</string>
@@ -262,9 +264,9 @@
     <string name="dev_share_title">Sharing setup preview</string>
     <string name="dev_share_description">Connect to a development relay. This screen prepares sharing, invitation, and key handoff. The app polls while open and schedules background sync; use Sync shared Family to retry now. Use a local relay only for test data.</string>
     <string name="share_family">Share this Family</string>
-    <string name="preview_share_description">Connect this Family to the Babytrack preview relay. It stores only encrypted data and may be reset during testing; your entries stay on your devices. Anyone you invite can receive its existing history and future entries.</string>
+    <string name="preview_share_description">Connect this Family to the Lantern preview relay. Use test data only. It stores only encrypted data and may be reset during testing; your entries stay on your devices. Anyone you invite can receive its existing history and future entries.</string>
     <string name="preview_sharing">Preview sharing</string>
-    <string name="preview_sharing_supporting">Show Start sharing. The preview relay stores only encrypted data and may be reset during testing; everything stays on your devices.</string>
+    <string name="preview_sharing_supporting">Show Start sharing. Use test data only. The preview relay stores only encrypted data and may be reset during testing; everything stays on your devices.</string>
     <string name="share_family_action">Start sharing</string>
     <string name="share_origin_not_saved">Sharing reached the relay, but this phone could not save its connection. Keep this phone and retry setup.</string>
     <string name="invite_caregiver">Invite another caregiver</string>

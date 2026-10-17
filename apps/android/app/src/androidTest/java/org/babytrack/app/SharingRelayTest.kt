@@ -501,9 +501,13 @@ class SharingRelayTest {
                     SleepTimerWidget.views(context, running.count).apply(context, FrameLayout(context))
                         .findViewById<TextView>(R.id.widget_status).text.toString(),
                 )
+                // A previous screen/test can leave the same notification ID posted.
+                // Android replaces it asynchronously; presence alone is not readiness.
+                val earlier = RunningSleeps(1, now - 60_000L, "Earlier child")
+                SleepTimerNotifications.update(context, earlier)
+                waitForSleepNotification(manager, earlier)
                 SleepTimerNotifications.update(context, running)
-                assertTrue("Running timer notification should appear", waitForSleepNotification(manager, true))
-                val posted = manager.activeNotifications.first { it.id == SleepTimerNotifications.notificationId }.notification
+                val posted = waitForSleepNotification(manager, running)
                 assertEquals(
                     context.getString(R.string.sleep_notification_child, "Timer child"),
                     posted.extras.getString(Notification.EXTRA_TITLE),
@@ -517,7 +521,7 @@ class SharingRelayTest {
                 SleepTimerNotifications.update(context, RunningSleeps(0))
                 assertTrue("Cleared notification should disappear", waitForSleepNotification(manager, false))
                 refreshSleepTimers(context, path.absolutePath)
-                assertTrue("Saved timer should restore its notification", waitForSleepNotification(manager, true))
+                waitForSleepNotification(manager, running)
                 local.stopSleep(family, child, activity, now + 60_000, 0, now + 60_000)
                 val stopped = runningSleeps(local, sharing, listOf(family), emptyList())
                 assertEquals(RunningSleeps(0), stopped)
@@ -530,6 +534,24 @@ class SharingRelayTest {
                 assertTrue("Stopped timer notification should clear", waitForSleepNotification(manager, false))
             }
         }
+    }
+
+    private fun waitForSleepNotification(
+        manager: NotificationManager,
+        expected: RunningSleeps,
+    ): Notification {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val title = context.getString(R.string.sleep_notification_child, expected.childName)
+        var matched: Notification? = null
+        composeRule.waitUntil(10_000) {
+            matched = manager.activeNotifications.firstOrNull {
+                it.id == SleepTimerNotifications.notificationId &&
+                    it.notification.extras.getString(Notification.EXTRA_TITLE) == title &&
+                    it.notification.`when` == expected.earliestStartMs
+            }?.notification
+            matched != null
+        }
+        return checkNotNull(matched)
     }
 
     private fun waitForSleepNotification(

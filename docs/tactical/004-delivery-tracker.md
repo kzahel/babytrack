@@ -74,6 +74,16 @@ workspace, binding, browser/web, Android relay/UI/recovery, and independent
 two-emulator evidence. These maintenance workstreams preserve the existing
 milestone gates.
 
+2026-10-22 dependency maintenance: the daily
+[CI run](https://github.com/kzahel/babytrack/actions/runs/39755305533) failed
+on the new unmaintained `basic-toml` advisory. The
+[temporary Askama compiler patch](../topics/repository-layout.md#temporary-askama-compiler-source)
+removes that dependency using the pinned upstream fix. Local all-feature
+dependency policy, rustfmt, Clippy, all 139 workspace tests, workspace/wasm
+checks, Kotlin/Swift smokes, production fixture exclusion, and Android unit
+tests, lint, and both debug APK builds pass. The generated Android Kotlin
+binding is byte-for-byte unchanged. Remote CI for this patch is pending.
+
 ## Ordered delivery handoffs
 
 | Checkpoint | Owning work and exit evidence | Flow-level observation |

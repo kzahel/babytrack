@@ -95,6 +95,20 @@ specific executed coverage; a build alone is not protocol evidence.
 The workspace uses package names such as `babytrack-core` rather than a Rust
 crate named `core`, and pins Rust 1.92.0. Path names above remain short.
 
+### Temporary Askama compiler source
+
+The workspace patches UniFFI's `askama_derive` to upstream Askama revision
+`d47daf8767805c0c4dfb456145fc857bfd9c1d2c`, which replaces the unmaintained
+`basic-toml` parser with `toml`. The patch also uses that revision's
+`askama_parser` through its upstream path dependency. Askama 0.16.1 and
+UniFFI 0.32.2 are still the latest published versions as of 2026-10-22;
+[upstream PR 771](https://github.com/askama-rs/askama/pull/771) is merged but
+unreleased. This removes
+[RUSTSEC-2026-0374](https://rustsec.org/advisories/RUSTSEC-2026-0374.html)
+without suppressing the advisory. `deny.toml` allows only Askama's Git
+repository and requires revision pins. Remove the patch and Git-source
+allowance once a compatible published Askama release includes the fix.
+
 ## Dependency boundaries
 
 - `core-ffi`, `core-wasm`, and `cli` consume the same core. Bindings translate

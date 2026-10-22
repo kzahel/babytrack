@@ -12,3 +12,8 @@ publish = false
 [workspace.dependencies]
 babytrack-wire = { path = "wire" }
 babytrack-core = { path = "core" }
+
+[patch.crates-io]
+# Remove basic-toml from UniFFI's template compiler until Askama releases
+# https://github.com/askama-rs/askama/pull/771. Keep this revision immutable.
+askama_derive = { git = "https://github.com/askama-rs/askama", rev = "d47daf8767805c0c4dfb456145fc857bfd9c1d2c" }

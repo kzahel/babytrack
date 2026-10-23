@@ -76,7 +76,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4.2.2
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - name: Install Playwright Chromium shell
@@ -123,7 +123,7 @@ jobs:
         run: apps/android/gradlew :app:testReleaseUnitTest --tests org.babytrack.app.ReleaseFamilySafetyTest --no-daemon
       - name: Render Android fixture gallery without an emulator
         run: bash scripts/render_android_gallery.sh
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - name: Check offline gallery browsing

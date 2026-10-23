@@ -98,7 +98,19 @@ majors (#11) remain separate migration work. Local rustfmt, Clippy,
 workspace tests/checks, wasm compilation, workspace boundaries, and
 all-feature dependency policy pass, including the published protected-file
 decryption and tampering test. Web unit tests and the production build pass;
-`npm audit` reports no vulnerabilities. Remote CI is pending.
+`npm audit` reports no vulnerabilities. Local wasm, Kotlin/Swift, browser
+relay/storage, responsive web, shared web, Android debug unit tests/lint/APK
+builds, and the focused release Family safety suite also pass.
+
+At `5d00738`, the full
+[required CI run](https://github.com/kzahel/babytrack/actions/runs/39906217329/attempts/2)
+passed Rust and dependency policy, Linux/macOS native bindings, browser
+wasm/storage and product flows, Android builds/gallery, the real-relay
+emulator sharing/UI/recovery checks, and the aggregate required gate.
+The [hosted web run](https://github.com/kzahel/babytrack/actions/runs/39906217254)
+also passed. The first scaffold attempt stalled waiting for runners; its
+single retry passed. Superseded dependency PRs are closed; the separately
+grouped migration PRs remain deferred.
 
 ## Ordered delivery handoffs
 

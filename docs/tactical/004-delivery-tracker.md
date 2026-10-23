@@ -128,7 +128,18 @@ explicitly and retains traces/screenshots/page text for future failures.
 All 14 local web unit tests, same- and cross-origin shared flows, local
 tracking UI, actionlint, workspace boundaries, and release-action pin checks
 pass. An intentional browser failure retained its trace, screenshots, page
-text, and logs. Remote CI is pending.
+text, and logs.
+
+At `487c6dd`, the full
+[required CI run](https://github.com/kzahel/babytrack/actions/runs/39917254567)
+passed all Rust, Linux/macOS native, browser, Android build/gallery,
+real-relay emulator, and aggregate checks. The browser job ran all 14 unit
+tests and passed both same- and cross-origin shared product flows. The
+[hosted web run](https://github.com/kzahel/babytrack/actions/runs/39917254590)
+also passed and deployed that source revision. CI exercised cold CLI
+installation for cargo-ndk and wasm-bindgen, then restored wasm-bindgen from
+cache in the Rust job and passed its exact-version check. The plan's CI
+summary now links to the owning trigger policy.
 
 ## Ordered delivery handoffs
 

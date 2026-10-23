@@ -305,7 +305,9 @@ GitHub Actions on the public repo
 [kzahel/babytrack](https://github.com/kzahel/babytrack), where standard
 macOS runners are free. Keep an always-running required check. The current
 foundation workflow checks the Rust, browser, native, and Android boundaries
-on each push and PR; add selective
+on PRs and main/tag pushes; the
+[CI trigger policy](topics/repository-layout.md#ci-triggers-and-rust-tool-installation)
+owns the exact events and tool caching. Add selective
 component jobs as the suites grow, based on changed paths. Changes to shared
 core, bindings, `docs/protocol/`, `docs/scenarios/`, `tests/vectors/`,
 dependency manifests, or CI configuration run every affected job.
@@ -317,8 +319,8 @@ publishing jobs run only from protected tags or environments.
   to GHCR on tags from M5 only.
 - **android:** build, unit tests, lint, screenshot tests, and the service
   boundary check. The current emulator job runs full real-relay sharing and
-  file recovery on pushes and PRs, a short daily-use UI path on each push and
-  PR, and the longer UI walkthrough daily or on manual dispatch. Debug APKs
+  file recovery and a short daily-use UI path for those push and PR events,
+  and the longer UI walkthrough daily or on manual dispatch. Debug APKs
   are attached as build artifacts for dogfooding.
 - **ios:** build and unit tests on the simulator. UI tests nightly.
 - **web:** lint, type-check, Vitest, Playwright.

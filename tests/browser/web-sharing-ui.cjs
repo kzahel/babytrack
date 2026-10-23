@@ -203,7 +203,11 @@ async function run() {
     await canceledPage.reload();
     await canceledPage.getByText('This invitation was canceled. Ask a manager for a new link.').waitFor();
     await canceledPage.getByRole('button', { name: 'Dismiss invitation' }).click();
+    // The click returns before the async IndexedDB deletion commits. Wait for
+    // its UI acknowledgement before reloading to check durable dismissal.
+    await canceledPage.locator('.join-stage').waitFor({ state: 'detached' });
     await canceledPage.reload();
+    await canceledPage.getByRole('button', { name: 'Join a Family', exact: true }).waitFor();
     assert.equal(await canceledPage.getByText('This invitation was canceled.', { exact: false }).count(), 0);
     await canceledContext.close();
     const later = spawnSync(holderBin, ['later_issue', manager, relayOrigin, inviteOrigin],

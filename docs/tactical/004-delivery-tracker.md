@@ -141,6 +141,21 @@ installation for cargo-ndk and wasm-bindgen, then restored wasm-bindgen from
 cache in the Rust job and passed its exact-version check. The plan's CI
 summary now links to the owning trigger policy.
 
+2026-10-23 scheduled CI follow-up: the
+[scheduled run](https://github.com/kzahel/babytrack/actions/runs/39931298854)
+at `772fd6f` failed dependency policy on RUSTSEC-2026-0385 and the shared
+browser dismissal/reload check. `Cargo.lock` now selects patched `ctutils`
+0.4.4 without suppressing the advisory. The retained browser trace shows
+reload starting about 1 ms after the dismissal click returned, before the
+asynchronous IndexedDB deletion completed. The test now waits for the
+pending-invitation panel to disappear before reload and for the welcome
+action afterward, so it checks committed dismissal instead of interrupting
+it or asserting absence before initialization. Local rustfmt, Clippy,
+workspace tests/checks, wasm compilation, workspace boundaries, all-feature
+dependency policy, 14 web unit tests, production web build, and both
+same- and cross-origin shared browser flows pass. Full remote verification
+of the repair remains pending.
+
 ## Ordered delivery handoffs
 
 | Checkpoint | Owning work and exit evidence | Flow-level observation |

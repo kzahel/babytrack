@@ -153,8 +153,13 @@ action afterward, so it checks committed dismissal instead of interrupting
 it or asserting absence before initialization. Local rustfmt, Clippy,
 workspace tests/checks, wasm compilation, workspace boundaries, all-feature
 dependency policy, 14 web unit tests, production web build, and both
-same- and cross-origin shared browser flows pass. Full remote verification
-of the repair remains pending.
+same- and cross-origin shared browser flows pass. At `39a3c1f`, the full
+[required CI run](https://github.com/kzahel/babytrack/actions/runs/39937688801)
+passed every Rust, Linux/macOS native, browser, Android build/gallery,
+real-relay emulator, and aggregate check. Both shared-browser origin modes
+passed the dismissal/reload flow. The
+[hosted web run](https://github.com/kzahel/babytrack/actions/runs/39937688759)
+also passed and deployed that source revision.
 
 ## Ordered delivery handoffs
 

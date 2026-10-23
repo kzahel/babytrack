@@ -10,7 +10,7 @@ publish.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-argon2 = { version = "=0.5.3", default-features = false, features = ["alloc", "zeroize"] }
+argon2 = { version = "=0.6.0", default-features = false, features = ["alloc", "zeroize"] }
 babytrack-wire.workspace = true
 getrandom = "=0.4.3"
 hpke = { version = "0.14", default-features = false, features = ["alloc", "chacha", "x25519"] }

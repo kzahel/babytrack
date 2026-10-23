@@ -95,6 +95,17 @@ specific executed coverage; a build alone is not protocol evidence.
 The workspace uses package names such as `babytrack-core` rather than a Rust
 crate named `core`, and pins Rust 1.92.0. Path names above remain short.
 
+### Dependency update policy
+
+Dependabot checks Cargo, Android Gradle, GitHub Actions, and both npm
+manifests (`apps/web` and `tests/browser`) weekly. Routine minor and patch
+updates are grouped by ecosystem; Actions major updates stay separate for
+review. Kotlin and its Compose compiler plugin share a group so a version
+update does not leave their compiler versions mismatched. npm security
+updates use their own group and retain the default security-update timing.
+Dependency PRs must pass the existing required checks. Changes to password
+derivation must also preserve the published protected-backup byte vector.
+
 ### Temporary Askama compiler source
 
 The workspace patches UniFFI's `askama_derive` to upstream Askama revision

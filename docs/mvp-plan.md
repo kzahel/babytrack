@@ -328,8 +328,11 @@ publishing jobs run only from protected tags or environments.
 - **release (M5):** fastlane uploads to TestFlight and Play on version tags,
   and a reproducibility check for the F-Droid build.
 - **dependencies:** Dependabot version and security updates in
-  `.github/dependabot.yml`. The current file covers Cargo and GitHub Actions;
-  add later platforms as their manifests arrive.
+  `.github/dependabot.yml` cover the existing Cargo, Android Gradle,
+  GitHub Actions, and npm manifests. The
+  [dependency update policy](topics/repository-layout.md#dependency-update-policy)
+  owns grouping and compatibility requirements; add later platforms when
+  their manifests arrive.
 
 ## Milestones
 

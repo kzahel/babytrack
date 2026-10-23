@@ -82,7 +82,23 @@ removes that dependency using the pinned upstream fix. Local all-feature
 dependency policy, rustfmt, Clippy, all 139 workspace tests, workspace/wasm
 checks, Kotlin/Swift smokes, production fixture exclusion, and Android unit
 tests, lint, and both debug APK builds pass. The generated Android Kotlin
-binding is byte-for-byte unchanged. Remote CI for this patch is pending.
+binding is byte-for-byte unchanged. Remote
+[CI passed](https://github.com/kzahel/babytrack/actions/runs/39769575390)
+at `3293aa2`.
+
+2026-10-23 Dependabot maintenance: consolidate the Vite/source-map-js
+security fixes (#15 and #13), routine Cargo patches (#14), JNA and Android
+test updates (#7, #8, #9), and Argon2 (#4) on the current main baseline.
+The existing published protected-backup vector gates Argon2 compatibility.
+Activate npm monitoring for the app and browser harness, group the Kotlin
+compiler plugins together, and separate Actions majors from routine updates;
+the [layout topic](../topics/repository-layout.md#dependency-update-policy)
+owns that policy. rusqlite (#5), Kotlin (#6), Compose BOM (#10), and Actions
+majors (#11) remain separate migration work. Local rustfmt, Clippy,
+workspace tests/checks, wasm compilation, workspace boundaries, and
+all-feature dependency policy pass, including the published protected-file
+decryption and tampering test. Web unit tests and the production build pass;
+`npm audit` reports no vulnerabilities. Remote CI is pending.
 
 ## Ordered delivery handoffs
 

@@ -119,11 +119,13 @@ owns the trigger and pinned Rust CLI cache policy. A deterministic controller
 test reproduced a committed save returning false when a newer poll refresh
 superseded its snapshot. The form now completes for its still-current target
 without replacing the newer snapshot; the delayed Family-switch regression
-still suppresses completion for the old selection. The reported
+still suppresses completion for the old selection. Completion also waits
+for a superseding read that has not published yet, so follow-up UI actions
+can read the saved entry. The reported
 `RemovedPendingMarker` timeout occurs before removal, and is consistent with
 that form remaining open. The real-relay flow now checks form closure
 explicitly and retains traces/screenshots/page text for future failures.
-All 13 local web unit tests, same- and cross-origin shared flows, local
+All 14 local web unit tests, same- and cross-origin shared flows, local
 tracking UI, actionlint, workspace boundaries, and release-action pin checks
 pass. An intentional browser failure retained its trace, screenshots, page
 text, and logs. Remote CI is pending.

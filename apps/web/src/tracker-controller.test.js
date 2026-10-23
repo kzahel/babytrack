@@ -108,6 +108,34 @@ test('a background refresh cannot make a committed save appear unsuccessful', as
   assert.equal(get(tracker).syncStage, 'pending');
 });
 
+test('save completion waits for an in-flight superseding snapshot', async () => {
+  const saveRead = deferred();
+  const pollRead = deferred();
+  let reads = null;
+  const tracker = setup({
+    snapshot: async () => reads ? reads.shift().promise : snapshot('A'),
+    syncFamily: async () => ({}),
+    familySyncStatus: async () => ({ pending: 1 }),
+  }, [{ family: 'A', source: 'shared' }]);
+  await tracker.initialize('');
+  reads = [saveRead, pollRead];
+  let finished = false;
+  const completion = tracker.afterSave({}, tracker.target()).then((result) => {
+    finished = true;
+    return result;
+  });
+  const poll = tracker.poll();
+  await new Promise((done) => setImmediate(done));
+  const savedData = { ...snapshot('A'), activities: [{ id: 'saved-note' }] };
+  saveRead.resolve(savedData);
+  await new Promise((done) => setImmediate(done));
+  assert.equal(finished, false, 'follow-up UI needs the saved entry in its current snapshot');
+  pollRead.resolve(savedData);
+  assert.equal(await completion, true);
+  await poll;
+  assert.equal(get(tracker).data.activities[0].id, 'saved-note');
+});
+
 test('disposing the route prevents an in-flight load from publishing', async () => {
   const old = deferred();
   const tracker = setup({ snapshot: () => old.promise });

@@ -12,6 +12,7 @@ export function createTrackerController({ api, copy: c, preferences, onSelect = 
   const store = writable(state);
   let generation = 0;
   let refreshSequence = 0;
+  let latestRefresh = Promise.resolve(false);
   let polling = false;
   let disposed = false;
   const publish = (patch) => {
@@ -33,15 +34,18 @@ export function createTrackerController({ api, copy: c, preferences, onSelect = 
     if (!disposed) onSelect();
     return target();
   }
-  async function refresh(saved = target()) {
+  function refresh(saved = target()) {
     const sequence = ++refreshSequence;
-    if (!saved.family) return false;
-    const data = await api.snapshot(saved.family);
-    const status = shared(saved.family) ? await api.familySyncStatus(saved.family) : null;
-    if (!current(saved) || sequence !== refreshSequence) return false;
-    const child = data.children.find((row) => row.id === state.child)?.id || data.children[0]?.id || '';
-    publish({ data, child, loading: false, ...statusPatch(status) });
-    return true;
+    latestRefresh = (async () => {
+      if (!saved.family) return false;
+      const data = await api.snapshot(saved.family);
+      const status = shared(saved.family) ? await api.familySyncStatus(saved.family) : null;
+      if (!current(saved) || sequence !== refreshSequence) return false;
+      const child = data.children.find((row) => row.id === state.child)?.id || data.children[0]?.id || '';
+      publish({ data, child, loading: false, ...statusPatch(status) });
+      return true;
+    })();
+    return latestRefresh;
   }
   async function selectFamily(family) {
     const saved = choose(family);
@@ -133,10 +137,17 @@ export function createTrackerController({ api, copy: c, preferences, onSelect = 
       return selectFamily(outcome.redirectFamily);
     }
     const applied = await refresh(saved);
+    // A newer refresh can publish the saved entry first. Wait for that view
+    // before follow-up UI actions read it, without competing with another read.
+    let published = applied;
+    while (!published && current(saved)) {
+      const latest = latestRefresh;
+      published = await latest;
+      if (latest === latestRefresh) break;
+    }
+    if (!current(saved)) return false;
     if (applied && shared(saved.family)) { publish({ syncStage: c.savedPending }); void poll(); }
-    // A newer refresh can publish the saved entry first. The committed action
-    // still succeeded for this selection, so its form must finish normally.
-    return current(saved);
+    return published;
   }
   async function createAndSelect(create) {
     const saved = target();

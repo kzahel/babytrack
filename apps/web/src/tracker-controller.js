@@ -134,7 +134,9 @@ export function createTrackerController({ api, copy: c, preferences, onSelect = 
     }
     const applied = await refresh(saved);
     if (applied && shared(saved.family)) { publish({ syncStage: c.savedPending }); void poll(); }
-    return applied;
+    // A newer refresh can publish the saved entry first. The committed action
+    // still succeeded for this selection, so its form must finish normally.
+    return current(saved);
   }
   async function createAndSelect(create) {
     const saved = target();

@@ -17,6 +17,12 @@ Durable writes keep their original target, and their later completion cannot
 redirect a different selection. Fragment removal follows durable remembering;
 verification and storage remain in the core adapters.
 
+A committed save finishes its form while its original Family/child selection
+is still current, even if a newer background refresh published the data
+first. Superseding a snapshot does not turn an accepted write into a failed
+save. The newer snapshot remains authoritative; changing selection or
+disposing the route still suppresses the old form's completion.
+
 The web app follows the Android Today, History, Family, and focused capture
 routes. Today follows the approved Lantern composition in the
 [interface design topic](interface-design-and-localization.md): a now card

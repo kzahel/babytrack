@@ -1,0 +1,54 @@
+name: Install pinned Rust CLI
+description: Cache the versioned wasm-bindgen or Android build tool binaries.
+inputs:
+  tool:
+    description: wasm-bindgen-cli or cargo-ndk
+    required: true
+  version:
+    description: Exact release version
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: tool
+      shell: bash
+      env:
+        TOOL: ${{ inputs.tool }}
+        TOOL_VERSION: ${{ inputs.version }}
+      run: |
+        case "$TOOL" in
+          wasm-bindgen-cli) binary=wasm-bindgen ;;
+          cargo-ndk) binary=cargo-ndk ;;
+          *) echo 'Unsupported Rust CLI' >&2; exit 1 ;;
+        esac
+        [[ "$TOOL_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+        echo "root=$RUNNER_TEMP/babytrack-tools/$TOOL/$TOOL_VERSION" >> "$GITHUB_OUTPUT"
+        echo "binary=$binary" >> "$GITHUB_OUTPUT"
+    - id: cache
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ${{ steps.tool.outputs.root }}/bin
+        key: rust-cli-${{ runner.os }}-${{ runner.arch }}-${{ inputs.tool }}-${{ inputs.version }}-${{ hashFiles('rust-toolchain.toml', '.github/actions/install-rust-tool/action.yml') }}
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        TOOL: ${{ inputs.tool }}
+        TOOL_VERSION: ${{ inputs.version }}
+        INSTALL_ROOT: ${{ steps.tool.outputs.root }}
+      run: cargo install --locked --root "$INSTALL_ROOT" --version "$TOOL_VERSION" "$TOOL"
+    - shell: bash
+      env:
+        TOOL_VERSION: ${{ inputs.version }}
+        INSTALL_ROOT: ${{ steps.tool.outputs.root }}
+        TOOL_BINARY: ${{ steps.tool.outputs.binary }}
+      run: |
+        test -x "$INSTALL_ROOT/bin/$TOOL_BINARY"
+        export PATH="$INSTALL_ROOT/bin:$PATH"
+        if [ "$TOOL_BINARY" = cargo-ndk ]; then
+          actual="$(cargo ndk --version)"
+        else
+          actual="$("$INSTALL_ROOT/bin/$TOOL_BINARY" --version)"
+        fi
+        test "$actual" = "$TOOL_BINARY $TOOL_VERSION"
+        echo "$actual"
+        echo "$INSTALL_ROOT/bin" >> "$GITHUB_PATH"

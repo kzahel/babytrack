@@ -2,6 +2,8 @@ name: Scaffold checks
 
 on:
   push:
+    branches: [main]
+    tags: ['**']
   pull_request:
   workflow_dispatch:
   schedule:
@@ -34,7 +36,10 @@ jobs:
       - name: Compile wasm boundary
         run: cargo check -p babytrack-core-wasm --target wasm32-unknown-unknown --locked
       - name: Install wasm-bindgen CLI
-        run: cargo install --locked wasm-bindgen-cli --version 0.2.127
+        uses: ./.github/actions/install-rust-tool
+        with:
+          tool: wasm-bindgen-cli
+          version: 0.2.127
       - name: Run wasm JavaScript byte smoke
         run: bash scripts/check_wasm_smoke.sh
       - name: Exclude fixture primitives from production bindings
@@ -85,7 +90,10 @@ jobs:
           npm ci --ignore-scripts
           npx playwright install --with-deps --only-shell chromium
       - name: Install wasm-bindgen CLI
-        run: cargo install --locked wasm-bindgen-cli --version 0.2.127
+        uses: ./.github/actions/install-rust-tool
+        with:
+          tool: wasm-bindgen-cli
+          version: 0.2.127
       - name: Exercise wasm and IndexedDB
         run: bash scripts/check_browser_smoke.sh
       - name: Exercise responsive web tracking
@@ -111,11 +119,15 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v4.0.4
+      - name: Install cargo-ndk
+        uses: ./.github/actions/install-rust-tool
+        with:
+          tool: cargo-ndk
+          version: 4.1.2
       - name: Install Android build tools and Rust targets
         run: |
           sdkmanager "platforms;android-36" "build-tools;35.0.0" "ndk;27.0.12077973"
           rustup target add aarch64-linux-android x86_64-linux-android
-          cargo install --locked cargo-ndk --version 4.1.2
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
       - name: Build source-linked debug APK
         run: apps/android/gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon

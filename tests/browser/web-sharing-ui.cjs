@@ -44,6 +44,29 @@ async function deviceId(page) {
   });
 }
 
+async function saveDiagnostics(browser, temporary, crossOrigin) {
+  const directory = path.join(process.env.BABYTRACK_BROWSER_DIAGNOSTICS_DIR ||
+    path.join(root, 'target/browser-diagnostics'),
+  `web-sharing-${crossOrigin ? 'cross-origin' : 'same-origin'}-${Date.now()}`);
+  fs.mkdirSync(directory, { recursive: true });
+  for (const name of ['relay.log', 'web.log']) {
+    fs.copyFileSync(path.join(temporary, name), path.join(directory, name));
+  }
+  const pages = [];
+  for (const [index, context] of (browser?.contexts() || []).entries()) {
+    for (const [pageIndex, page] of context.pages().entries()) {
+      pages.push({ url: page.url(), text: await page.locator('body').innerText({ timeout: 2000 })
+        .catch((error) => `Could not read page: ${error.message}`) });
+      await page.screenshot({ path: path.join(directory, `page-${index}-${pageIndex}.png`), timeout: 3000 })
+        .catch((error) => console.error('Could not capture page:', error.message));
+    }
+    await context.tracing.stop({ path: path.join(directory, `context-${index}.zip`) })
+      .catch((error) => console.error('Could not save trace:', error.message));
+  }
+  fs.writeFileSync(path.join(directory, 'pages.json'), JSON.stringify(pages, null, 2));
+  console.error(`Browser failure diagnostics: ${directory}`);
+}
+
 async function run() {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'babytrack-web-sharing-'));
   const manager = path.join(temporary, 'manager.db');
@@ -70,6 +93,11 @@ async function run() {
   let relay;
   let browser;
   let passed = false;
+  const createContext = async (options) => {
+    const context = await browser.newContext(options);
+    await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+    return context;
+  };
   const holder = (mode) => {
     const result = spawnSync(holderBin, [mode, manager, relayOrigin], { encoding: 'utf8' });
     assert.equal(result.status, 0, `Native holder ${mode}: ${result.stderr}`);
@@ -89,7 +117,7 @@ async function run() {
     };
     await startRelay();
     browser = await chromium.launch({ headless: true });
-    const first = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const first = await createContext({ viewport: { width: 390, height: 844 } });
     const page = await first.newPage();
     const failures = [];
     const controlPosts = [];
@@ -165,7 +193,7 @@ async function run() {
     const cancel = spawnSync(holderBin, ['cancel', manager, relayOrigin, canceled.stdout.trim()],
       { encoding: 'utf8' });
     assert.equal(cancel.status, 0, `Native cancellation: ${cancel.stderr}`);
-    const canceledContext = await browser.newContext();
+    const canceledContext = await createContext();
     const canceledPage = await canceledContext.newPage();
     await canceledPage.goto(origin + '/' + canceled.stdout.trim());
     await canceledPage.getByText('Invitation ready to join').waitFor();
@@ -181,7 +209,7 @@ async function run() {
     const later = spawnSync(holderBin, ['later_issue', manager, relayOrigin, inviteOrigin],
       { encoding: 'utf8' });
     assert.equal(later.status, 0, `Native later issue: ${later.stderr}`);
-    const second = await browser.newContext({ viewport: { width: 1024, height: 800 } });
+    const second = await createContext({ viewport: { width: 1024, height: 800 } });
     const secondPage = await second.newPage();
     secondPage.on('pageerror', (error) => failures.push(error.message));
     await secondPage.goto(origin + '/' + later.stdout.trim());
@@ -230,6 +258,7 @@ async function run() {
     await page.getByRole('button', { name: 'Note', exact: true }).click();
     await page.getByLabel('What happened?').fill('RemovedPendingMarker');
     await page.getByRole('button', { name: 'Save note' }).click();
+    await page.locator('.capture-form').waitFor({ state: 'hidden' });
     await page.getByText('RemovedPendingMarker').waitFor();
     const staleTab = await first.newPage();
     await staleTab.route('**/v1/**', (route) => route.abort());
@@ -279,7 +308,7 @@ async function run() {
     const rotatedIssue = spawnSync(holderBin, ['later_issue', manager, relayOrigin, inviteOrigin],
       { encoding: 'utf8' });
     assert.equal(rotatedIssue.status, 0, `Native rotated issue: ${rotatedIssue.stderr}`);
-    const third = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const third = await createContext({ viewport: { width: 390, height: 844 } });
     const thirdPage = await third.newPage();
     thirdPage.on('pageerror', (error) => failures.push(error.message));
     await thirdPage.goto(origin + '/' + rotatedIssue.stdout.trim());
@@ -324,6 +353,8 @@ async function run() {
     console.log(crossOrigin ? 'Cross-origin web client: ' : '', 'Web joins, offline note and sleep, rotated keys, removal copies, shared backup restore, offline edit, and reload passed');
   } finally {
     if (!passed) {
+      await saveDiagnostics(browser, temporary, crossOrigin)
+        .catch((error) => console.error('Could not save browser diagnostics:', error));
       console.error('Relay log:', fs.readFileSync(relayLog, 'utf8'));
       console.error('Web log:', fs.readFileSync(path.join(temporary, 'web.log'), 'utf8'));
     }

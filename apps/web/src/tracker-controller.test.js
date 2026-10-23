@@ -69,12 +69,43 @@ test('older refresh of the same Family cannot replace a newer snapshot', async (
 });
 
 test('save completion retains its original target after a selection switch', async () => {
-  const tracker = setup();
+  const savedSnapshot = deferred();
+  let holdNextSnapshot = false;
+  const tracker = setup({ snapshot: async (family) => {
+    if (holdNextSnapshot) { holdNextSnapshot = false; return savedSnapshot.promise; }
+    return snapshot(family);
+  } });
   await tracker.selectFamily('A');
-  const saved = tracker.target();
+  holdNextSnapshot = true;
+  const completion = tracker.afterSave({}, tracker.target());
   await tracker.selectFamily('B');
-  assert.equal(await tracker.afterSave({ redirectFamily: 'copy-A' }, saved), false);
+  savedSnapshot.resolve(snapshot('A'));
+  assert.equal(await completion, false);
   assert.equal(get(tracker).family, 'B');
+});
+
+test('a background refresh cannot make a committed save appear unsuccessful', async () => {
+  const savedSnapshot = deferred();
+  let holdNextSnapshot = false;
+  let data = snapshot('A');
+  const tracker = setup({
+    snapshot: async () => {
+      if (holdNextSnapshot) { holdNextSnapshot = false; return savedSnapshot.promise; }
+      return data;
+    },
+    syncFamily: async () => ({}),
+    familySyncStatus: async () => ({ pending: 1 }),
+  }, [{ family: 'A', source: 'shared' }]);
+  await tracker.initialize('');
+  const savedData = { ...data, activities: [{ id: 'saved-note', note: 'Pending note' }] };
+  data = { ...savedData, activities: [...savedData.activities, { id: 'remote-note' }] };
+  holdNextSnapshot = true;
+  const completion = tracker.afterSave({}, tracker.target());
+  await tracker.poll();
+  savedSnapshot.resolve(savedData);
+  assert.equal(await completion, true, 'the form must finish after the committed save');
+  assert.deepEqual(get(tracker).data.activities.map((row) => row.id), ['saved-note', 'remote-note']);
+  assert.equal(get(tracker).syncStage, 'pending');
 });
 
 test('disposing the route prevents an in-flight load from publishing', async () => {

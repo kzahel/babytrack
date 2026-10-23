@@ -19,6 +19,7 @@ on:
       - 'scripts/check_web_ui.sh'
       - 'tests/browser/web-ui-smoke.cjs'
       - '.github/workflows/web-hosted.yml'
+      - '.github/actions/install-rust-tool/**'
   workflow_dispatch:
 
 permissions:
@@ -47,7 +48,10 @@ jobs:
           npm ci --ignore-scripts
           npx playwright install --with-deps --only-shell chromium
       - name: Install wasm-bindgen CLI
-        run: cargo install --locked wasm-bindgen-cli --version 0.2.127
+        uses: ./.github/actions/install-rust-tool
+        with:
+          tool: wasm-bindgen-cli
+          version: 0.2.127
       - name: Exercise responsive web tracking
         run: bash scripts/check_web_ui.sh
       - name: Build the hosted bundle

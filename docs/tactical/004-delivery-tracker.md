@@ -112,6 +112,22 @@ also passed. The first scaffold attempt stalled waiting for runners; its
 single retry passed. Superseded dependency PRs are closed; the separately
 grouped migration PRs remain deferred.
 
+2026-10-23 CI and browser save follow-up: scaffold pushes now cover main
+and tags, with PR events covering feature branches once. The
+[layout topic](../topics/repository-layout.md#ci-triggers-and-rust-tool-installation)
+owns the trigger and pinned Rust CLI cache policy. A deterministic controller
+test reproduced a committed save returning false when a newer poll refresh
+superseded its snapshot. The form now completes for its still-current target
+without replacing the newer snapshot; the delayed Family-switch regression
+still suppresses completion for the old selection. The reported
+`RemovedPendingMarker` timeout occurs before removal, and is consistent with
+that form remaining open. The real-relay flow now checks form closure
+explicitly and retains traces/screenshots/page text for future failures.
+All 13 local web unit tests, same- and cross-origin shared flows, local
+tracking UI, actionlint, workspace boundaries, and release-action pin checks
+pass. An intentional browser failure retained its trace, screenshots, page
+text, and logs. Remote CI is pending.
+
 ## Ordered delivery handoffs
 
 | Checkpoint | Owning work and exit evidence | Flow-level observation |

@@ -35,6 +35,12 @@ CI retains these artifacts when present. Product UI flows remain in
 `web-ui-smoke.cjs` and `web-sharing-ui.cjs`; their build wrappers share the
 web output directory and must run sequentially.
 
+The shared product flow also keeps Playwright traces, page screenshots and
+visible text, and web/relay logs under that diagnostics root on failure.
+Same-origin and cross-origin runs have separate directories. Its pending
+note check first requires the capture form to close, distinguishing a UI
+save-completion failure from later removal or private-copy failures.
+
 The offline Android gallery has its own presentation regression runner.
 After generating it with `bash scripts/render_android_gallery.sh`, run:
 

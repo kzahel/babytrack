@@ -106,6 +106,20 @@ updates use their own group and retain the default security-update timing.
 Dependency PRs must pass the existing required checks. Changes to password
 derivation must also preserve the published protected-backup byte vector.
 
+### CI triggers and Rust tool installation
+
+The scaffold runs for pull requests, pushes to `main`, all tag pushes,
+scheduled checks, and manual dispatches. Feature-branch pushes rely on their
+pull request run, avoiding duplicate full suites for Dependabot branches.
+The aggregate required check retains every platform and relay dependency.
+
+The local `install-rust-tool` composite action caches only the installed
+binaries of the pinned wasm-bindgen CLI and cargo-ndk. Cache keys include
+OS, architecture, exact tool version, and the Rust toolchain/action files.
+Misses build with `cargo install --locked`; both hits and misses check the
+executable's exact version before adding its directory to `PATH`. The cache
+action itself is pinned to an immutable commit.
+
 ### Temporary Askama compiler source
 
 The workspace patches UniFFI's `askama_derive` to upstream Askama revision

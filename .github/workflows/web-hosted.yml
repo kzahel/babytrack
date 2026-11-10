@@ -38,7 +38,7 @@ jobs:
       name: hosted-web
       url: ${{ vars.LANTERN_WEB_ORIGIN }}
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

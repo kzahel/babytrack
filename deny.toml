@@ -4,6 +4,8 @@ unused-allowed-license = "allow"
 # The M0 native binding uses UniFFI. Keep its MPL allowance limited to the
 # pinned UniFFI crates; project-authored sources remain MIT.
 exceptions = [
+  # rusqlite's statement-cache hash table; Zlib permits MIT distribution.
+  { crate = "foldhash@=0.2.0", allow = ["Zlib"] },
   { crate = "uniffi@=0.32.2", allow = ["MPL-2.0"] },
   { crate = "uniffi_bindgen@=0.32.2", allow = ["MPL-2.0"] },
   { crate = "uniffi_core@=0.32.2", allow = ["MPL-2.0"] },

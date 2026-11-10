@@ -32,7 +32,7 @@ concurrency:
 jobs:
   deploy:
     name: Test, build, and deploy the hosted web app
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     environment:
       name: hosted-web

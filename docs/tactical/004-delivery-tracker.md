@@ -161,6 +161,18 @@ passed the dismissal/reload flow. The
 [hosted web run](https://github.com/kzahel/babytrack/actions/runs/39937688759)
 also passed and deployed that source revision.
 
+2026-11-10 scheduled CI repair: daily runs at unchanged `4e26299` failed
+Playwright installation after `ubuntu-latest` selected Ubuntu 26.04, then
+dependency policy on RUSTSEC-2026-0459. The
+[layout topic](../topics/repository-layout.md#ci-triggers-and-rust-tool-installation)
+owns the Ubuntu 24.04 pin for all three Playwright-installing jobs and the
+[dependency policy](../topics/repository-layout.md#dependency-update-policy)
+records the patched bundled SQLite version and compatibility features.
+Local rustfmt, Clippy, workspace tests/checks, wasm compilation, workspace
+boundaries, actionlint, release-action pins, and all-feature dependency
+policy pass. No advisory is suppressed. Remote CI remains unverified until
+the repair's full required run completes.
+
 ## Ordered delivery handoffs
 
 | Checkpoint | Owning work and exit evidence | Flow-level observation |

@@ -106,12 +106,28 @@ updates use their own group and retain the default security-update timing.
 Dependency PRs must pass the existing required checks. Changes to password
 derivation must also preserve the published protected-backup byte vector.
 
+Native client and relay storage pin `rusqlite` 0.41.1 with bundled SQLite
+3.54.1 (`libsqlite3-sys` 0.39.1), fixing RUSTSEC-2026-0459 without an
+advisory exception. Keep all three consumers on the same version and
+validate existing SQLite storage and relay regressions when upgrading.
+Explicit features retain statement caching and the existing checked `u64`
+SQL conversions (`fallible_uint`), without adding rusqlite's default wasm
+SQLite backend. The browser continues to use IndexedDB. The cache's
+`foldhash` 0.2.0 dependency has a crate-scoped Zlib license exception in
+`deny.toml`; its permissive terms allow MIT distribution.
+
 ### CI triggers and Rust tool installation
 
 The scaffold runs for pull requests, pushes to `main`, all tag pushes,
 scheduled checks, and manual dispatches. Feature-branch pushes rely on their
 pull request run, avoiding duplicate full suites for Dependabot branches.
 The aggregate required check retains every platform and relay dependency.
+
+Jobs that install Playwright Chromium (browser smoke, Android gallery, and
+hosted web) pin Ubuntu 24.04. Playwright 1.58.2 does not support Ubuntu 26.04,
+which `ubuntu-latest` now selects. Reconsider this runner pin when upgrading
+Playwright to a version that supports the newer image; exercise browser
+installation and flows before moving these jobs together.
 
 The local `install-rust-tool` composite action caches only the installed
 binaries of the pinned wasm-bindgen CLI and cargo-ndk. Cache keys include

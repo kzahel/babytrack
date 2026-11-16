@@ -173,6 +173,14 @@ boundaries, actionlint, release-action pins, and all-feature dependency
 policy pass. No advisory is suppressed. Remote CI remains unverified until
 the repair's full required run completes.
 
+2026-11-16 scheduled CI investigation: both runs at `59cd14c` failed the
+shared-browser offline-edit/removal flow; Rust, both native jobs, Android
+build/gallery, and the real-relay emulator passed. The
+[web tactical](006-m2-web.md#interrupted-admission-hydration-follow-up-2026-11-16)
+records the interrupted admission-object download, corrected offline
+precondition, local validation, and remaining product recovery issue.
+The repaired required CI run remains unverified.
+
 ## Ordered delivery handoffs
 
 | Checkpoint | Owning work and exit evidence | Flow-level observation |

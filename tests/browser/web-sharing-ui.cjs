@@ -256,6 +256,12 @@ async function run() {
     await secondPage.locator('.side-nav').getByRole('button', { name: 'Today' }).click();
     await secondPage.getByText('WebOnlyPrivateMarker').waitFor();
     const secondDevice = await deviceId(secondPage);
+    // Admission is ready on the second browser before the first browser has
+    // necessarily fetched its control objects. Finish that sync before going
+    // offline; aborting object hydration can leave the first view unready.
+    await page.locator('.bottom-nav').getByRole('button', { name: 'Family' }).click();
+    await page.getByRole('button', { name: 'Sync now' }).click();
+    await page.getByText('3 devices have access').waitFor();
     await page.route('**/v1/**', (route) => route.abort());
     await page.locator('.bottom-nav').getByRole('button', { name: 'Today' }).click();
     await page.locator('.actions-grid').getByRole('button', { name: /^More/ }).click();
@@ -268,6 +274,8 @@ async function run() {
     await staleTab.route('**/v1/**', (route) => route.abort());
     await staleTab.goto(origin);
     await staleTab.getByText('RemovedPendingMarker').waitFor();
+    assert.equal(await staleTab.evaluate(() => localStorage.getItem('babytrack-family')), sharedFamily,
+      'the offline tab must retain the shared Family rather than fall back to a private copy');
     await staleTab.locator('.actions-grid').getByRole('button', { name: /^More/ }).click();
     await staleTab.getByRole('button', { name: 'Note', exact: true }).click();
     await staleTab.getByLabel('What happened?').fill('StaleTabUnsentMarker');

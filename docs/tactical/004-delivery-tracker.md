@@ -179,7 +179,9 @@ build/gallery, and the real-relay emulator passed. The
 [web tactical](006-m2-web.md#interrupted-admission-hydration-follow-up-2026-11-16)
 records the interrupted admission-object download, corrected offline
 precondition, local validation, and remaining product recovery issue.
-The repaired required CI run remains unverified.
+At `ae310d4`, [run 43882473432](https://github.com/kzahel/babytrack/actions/runs/43882473432)
+passed all seven required jobs, including the browser shared flows in both
+origin modes and the Android real-relay emulator.
 
 ## Ordered delivery handoffs
 
